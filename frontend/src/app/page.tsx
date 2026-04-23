@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 import type { ReportListItem } from "@/lib/dashboard-types";
+import { upsertActiveRun } from "@/lib/active-runs";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -12,6 +14,7 @@ type RunStatusResponse = {
   job_id: string;
   ticker: string;
   status: "queued" | "running" | "completed" | "failed";
+  created_at?: string;
   llm_total_estimated?: number;
   llm_completed?: number;
   llm_progress_pct?: number;
@@ -66,6 +69,13 @@ export default function Home() {
       setJobId(json.job_id);
       setStatus((json.status as RunStatusResponse["status"]) || "queued");
       setPollMisses(0);
+      upsertActiveRun({
+        job_id: json.job_id,
+        ticker: normalizedTicker,
+        status: ((json.status as RunStatusResponse["status"]) || "queued"),
+        llm_progress_pct: 0,
+        created_at: new Date().toISOString(),
+      });
     } catch (err) {
       setStatus("failed");
       setError(String(err));
@@ -116,6 +126,13 @@ export default function Home() {
         setLlmTotal(Number(json.llm_total_estimated || 0));
         setLlmDone(Number(json.llm_completed || 0));
         setLlmPct(Number(json.llm_progress_pct || 0));
+        upsertActiveRun({
+          job_id: json.job_id || jobId,
+          ticker: String(json.ticker || jobTicker || "").toUpperCase(),
+          status: json.status,
+          llm_progress_pct: Number(json.llm_progress_pct || 0),
+          created_at: String(json.created_at || new Date().toISOString()),
+        });
 
         if (json.status === "completed") {
           setLlmPct(100);
@@ -149,6 +166,16 @@ export default function Home() {
   return (
     <div className="hib-shell min-h-screen px-4 py-8 sm:px-8">
       <div className="mx-auto flex min-h-[80vh] w-full max-w-4xl flex-col items-center justify-center">
+        <div className="mb-6 flex w-full items-center justify-end gap-3">
+          <Link href="/dashboard" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
+            Dashboard
+          </Link>
+          <Link href="/discovery" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
+            Discovery
+          </Link>
+          <ThemeToggle />
+        </div>
+
         <div className="mb-8 text-center">
           <h1 className="font-display text-5xl tracking-tight text-zinc-100 sm:text-6xl">Hedge in a Box</h1>
           <p className="mt-3 text-sm uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboard</p>
@@ -170,7 +197,7 @@ export default function Home() {
             <button
               type="submit"
               disabled={isRunning}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="hib-run-btn inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
               {isRunning ? "Running..." : "Run Analysis"}

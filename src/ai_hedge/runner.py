@@ -145,6 +145,60 @@ def _fmt_money(value: Any) -> str:
         return "N/A"
 
 
+def _fmt_number(value: Any, decimals: int = 4) -> str:
+    try:
+        num = float(value)
+    except Exception:
+        return "N/A"
+    if abs(num) >= 1000:
+        return f"{num:,.2f}"
+    return f"{num:.{decimals}f}"
+
+
+def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
+    if not isinstance(final_dict, dict):
+        return None
+    payload = final_dict.get(metric_key, {})
+    if not isinstance(payload, dict):
+        return None
+    overall = payload.get("Overall")
+    if not isinstance(overall, (list, tuple)) or not overall:
+        return None
+    mean_v = _first_float(overall[0]) if len(overall) >= 1 else None
+    min_v = _first_float(overall[1]) if len(overall) >= 2 else mean_v
+    max_v = _first_float(overall[2]) if len(overall) >= 3 else mean_v
+    if mean_v is None and min_v is None and max_v is None:
+        return None
+    if mean_v is None:
+        mean_v = min_v if min_v is not None else max_v
+    if min_v is None:
+        min_v = mean_v
+    if max_v is None:
+        max_v = mean_v
+    if mean_v is None or min_v is None or max_v is None:
+        return None
+    return float(mean_v), float(min_v), float(max_v)
+
+
+def _build_assumptions_pack_text(final_dict: Dict[str, Any]) -> str:
+    specs = [
+        ("Predicted Revenue", "Revenue"),
+        ("Predicted Earnings", "Net Income"),
+        ("Predicted P/E", "P/E"),
+    ]
+    lines: List[str] = []
+    for label, key in specs:
+        triplet = _extract_overall_triplet(final_dict, key)
+        if not triplet:
+            continue
+        mean_v, min_v, max_v = triplet
+        lines.append(
+            f"- {label} (Mean/Min/Max): "
+            f"{_fmt_number(mean_v)} / {_fmt_number(min_v)} / {_fmt_number(max_v)}"
+        )
+    return "\n".join(lines).strip()
+
+
 def _collect_investments_from_methods(methods: Dict[str, Any]) -> List[float]:
     out: List[float] = []
     if not isinstance(methods, dict):
@@ -247,7 +301,11 @@ def _extract_reason_sections(value: Any, prefix: str = "") -> List[tuple[str, st
     return out
 
 
-def _build_prices_explain_text(ticker: str, explain_payload: Dict[str, Any]) -> str:
+def _build_prices_explain_text(
+    ticker: str,
+    explain_payload: Dict[str, Any],
+    final_dict: Optional[Dict[str, Any]] = None,
+) -> str:
     methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
     aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
@@ -299,6 +357,16 @@ def _build_prices_explain_text(ticker: str, explain_payload: Dict[str, Any]) -> 
             f"LMIL: [{float(lmil[0]):.2f}%, {float(lmil[1]):.2f}]",
         ]
     )
+
+    assumptions_pack = _build_assumptions_pack_text(final_dict if isinstance(final_dict, dict) else {})
+    if assumptions_pack:
+        lines.extend(
+            [
+                "",
+                "## Assumptions Pack",
+                assumptions_pack,
+            ]
+        )
 
     if not isinstance(methods, dict) or not methods:
         lines.extend(["", "No valuation JSON outputs were collected."])
@@ -545,8 +613,13 @@ def run_ticker_valuation(
     prices_explain_pdf = ""
     prices_explain_html = out_dir / f"{ticker}_prices_explain.html"
     dashboard_json = ""
+    explain_text = ""
     try:
-        explain_text = _build_prices_explain_text(ticker, explain_payload)
+        explain_text = _build_prices_explain_text(
+            ticker,
+            explain_payload,
+            final_dict if isinstance(final_dict, dict) else {},
+        )
         prices_explain_txt.write_text(explain_text, encoding="utf-8")
     except Exception as explain_err:
         notes.append(f"Prices explain TXT generation failed: {explain_err}")
@@ -592,18 +665,41 @@ def run_ticker_valuation(
 
     pdf_dst = ""
     if save_pdf:
+        target_pdf = out_dir / f"{ticker}_analysis.pdf"
+        target_html = out_dir / f"{ticker}_analysis.html"
         try:
-            legacy.pdf_downloader(ticker)
-        except Exception as pdf_err:
-            print(f"Warning: PDF generation failed, continuing without PDF. Error: {pdf_err}")
-        pdf_src = Path(f"{ticker}_analysis.pdf")
-        html_src = Path(f"{ticker}_analysis.html")
-        if pdf_src.exists():
-            target_pdf = out_dir / pdf_src.name
-            shutil.move(str(pdf_src), target_pdf)
-            pdf_dst = str(target_pdf.resolve())
-        if html_src.exists():
-            shutil.move(str(html_src), out_dir / html_src.name)
+            from .text_to_pdf_check import convert_text_to_pdf
+
+            merged_pdf_source = out_dir / f"{ticker}_analysis_pdf_source.txt"
+            merged_parts: List[str] = []
+            if analysis_src.exists():
+                merged_parts.append(analysis_src.read_text(encoding="utf-8"))
+            elif analysis_dst.exists():
+                merged_parts.append(analysis_dst.read_text(encoding="utf-8"))
+            if prices_explain_txt.exists():
+                merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
+
+            merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
+            if merged_text:
+                merged_pdf_source.write_text(merged_text + "\n", encoding="utf-8")
+                convert_text_to_pdf(merged_pdf_source, target_pdf, target_html)
+                if target_pdf.exists():
+                    pdf_dst = str(target_pdf.resolve())
+        except Exception as merged_pdf_err:
+            notes.append(f"Merged analysis PDF generation failed: {merged_pdf_err}")
+
+        if not pdf_dst:
+            try:
+                legacy.pdf_downloader(ticker)
+            except Exception as pdf_err:
+                print(f"Warning: PDF generation failed, continuing without PDF. Error: {pdf_err}")
+            pdf_src = Path(f"{ticker}_analysis.pdf")
+            html_src = Path(f"{ticker}_analysis.html")
+            if pdf_src.exists():
+                shutil.move(str(pdf_src), target_pdf)
+                pdf_dst = str(target_pdf.resolve())
+            if html_src.exists():
+                shutil.move(str(html_src), target_html)
 
     artifacts = RunArtifacts(
         ticker=ticker,

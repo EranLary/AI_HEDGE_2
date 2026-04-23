@@ -95,6 +95,14 @@ html[data-theme="light"] .bg-white\/5 {
   background-color: rgba(241, 245, 249, 0.95) !important;
 }
 
+/* New run button readability */
+html[data-theme="light"] .hib-run-btn {
+  color: #14532d !important;
+  border-color: rgba(22, 163, 74, 0.85) !important;
+  background-color: rgba(134, 239, 172, 0.92) !important;
+  font-weight: 700 !important;
+}
+
 html[data-theme="light"] .border-white\/10,
 html[data-theme="light"] .border-white\/15,
 html[data-theme="light"] .border-white\/20 {
@@ -138,6 +146,186 @@ html[data-theme="light"] .hib-select {
 html[data-theme="light"] .hib-select-option {
   background-color: #ffffff !important;
   color: #111827 !important;
+}
+
+/* Tabs: keep active/inactive readability in both themes */
+.hib-tab-active {
+  color: #ecfdf5 !important;
+}
+.hib-tab-inactive {
+  color: #d1d5db !important;
+}
+html[data-theme="light"] .hib-tab-active {
+  color: #052e16 !important;
+  border-color: rgba(22, 163, 74, 0.92) !important;
+  background-color: rgba(134, 239, 172, 0.95) !important;
+  font-weight: 600;
+}
+html[data-theme="light"] .hib-tab-inactive {
+  color: #334155 !important;
+  border-color: rgba(148, 163, 184, 0.52) !important;
+  background-color: rgba(241, 245, 249, 0.98) !important;
+}
+
+/* Table sorting/highlight readability */
+.hib-table-sort-btn {
+  width: 100%;
+  cursor: pointer;
+}
+.hib-table-head-active {
+  color: #f8fafc !important;
+  background-color: rgba(71, 85, 105, 0.45);
+}
+.hib-table-col-active {
+  color: #f1f5f9 !important;
+  background-color: rgba(51, 65, 85, 0.32);
+}
+html[data-theme="light"] .hib-table-head-active {
+  color: #0f172a !important;
+  background-color: rgba(148, 163, 184, 0.28);
+}
+html[data-theme="light"] .hib-table-col-active {
+  color: #0f172a !important;
+  background-color: rgba(226, 232, 240, 0.78);
+}
+
+/* Target table up/down coloring */
+.hib-target-up {
+  color: #34d399 !important;
+}
+.hib-target-down {
+  color: #fca5a5 !important;
+}
+html[data-theme="light"] .hib-target-up {
+  color: #15803d !important;
+}
+html[data-theme="light"] .hib-target-down {
+  color: #b91c1c !important;
+}
+
+/* Chart readability */
+.hib-chart .recharts-cartesian-grid line {
+  stroke: rgba(100, 116, 139, 0.35) !important;
+}
+.hib-chart .recharts-cartesian-axis-tick-value,
+.hib-chart .recharts-label {
+  fill: #e5e7eb !important;
+}
+.hib-chart-tooltip {
+  color: #e5e7eb;
+}
+.hib-chart .recharts-tooltip-cursor {
+  fill: transparent !important;
+}
+.hib-chart .recharts-rectangle:focus,
+.hib-chart .recharts-bar-rectangle:focus {
+  outline: none !important;
+}
+.hib-chart .recharts-active-bar .recharts-rectangle {
+  stroke: transparent !important;
+}
+html[data-theme="light"] .hib-chart .recharts-cartesian-axis-tick-value,
+html[data-theme="light"] .hib-chart .recharts-label {
+  fill: #334155 !important;
+}
+html[data-theme="light"] .hib-chart-tooltip {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.55) !important;
+}
+html[data-theme="light"] .hib-chart-tooltip p {
+  color: #0f172a !important;
+}
+
+/* Decision signal tones */
+.hib-signal-hold {
+  color: #cbd5e1 !important;
+}
+.hib-signal-underperform {
+  color: #fb923c !important;
+}
+.hib-signal-sell {
+  color: #f87171 !important;
+}
+.hib-signal-buy {
+  color: #86efac !important;
+}
+.hib-signal-strong {
+  color: #22c55e !important;
+}
+html[data-theme="light"] .hib-signal-hold {
+  color: #334155 !important;
+}
+html[data-theme="light"] .hib-signal-underperform {
+  color: #c2410c !important;
+}
+html[data-theme="light"] .hib-signal-sell {
+  color: #b91c1c !important;
+}
+html[data-theme="light"] .hib-signal-buy {
+  color: #15803d !important;
+}
+html[data-theme="light"] .hib-signal-strong {
+  color: #166534 !important;
+}
+
+/* Active run banner: readable in both themes */
+.hib-active-run-banner {
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  background-color: rgba(5, 10, 20, 0.92) !important;
+  color: #d1fae5 !important;
+}
+.hib-active-run-text {
+  color: rgba(209, 250, 229, 0.92) !important;
+}
+.hib-active-run-link {
+  border-color: rgba(167, 243, 208, 0.5) !important;
+  background-color: rgba(16, 185, 129, 0.22) !important;
+  color: #ecfdf5 !important;
+}
+.hib-active-run-link:hover {
+  background-color: rgba(16, 185, 129, 0.32) !important;
+}
+html[data-theme="light"] .hib-active-run-banner {
+  border-color: rgba(30, 64, 175, 0.45) !important;
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  color: #e2e8f0 !important;
+}
+html[data-theme="light"] .hib-active-run-text {
+  color: rgba(226, 232, 240, 0.94) !important;
+}
+html[data-theme="light"] .hib-active-run-link {
+  border-color: rgba(125, 211, 252, 0.5) !important;
+  background-color: rgba(30, 64, 175, 0.45) !important;
+  color: #eff6ff !important;
+}
+html[data-theme="light"] .hib-active-run-link:hover {
+  background-color: rgba(30, 64, 175, 0.6) !important;
+}
+
+/* Bull/Bear probability emphasis readability in both themes */
+.hib-bull-prob-label {
+  color: #86efac;
+}
+.hib-bull-prob-value {
+  color: #ecfdf5;
+}
+.hib-bear-prob-label {
+  color: #fca5a5;
+}
+.hib-bear-prob-value {
+  color: #fee2e2;
+}
+html[data-theme="light"] .hib-bull-prob-label {
+  color: #166534;
+}
+html[data-theme="light"] .hib-bull-prob-value {
+  color: #14532d;
+}
+html[data-theme="light"] .hib-bear-prob-label {
+  color: #991b1b;
+}
+html[data-theme="light"] .hib-bear-prob-value {
+  color: #7f1d1d;
 }
 
 /* Executive summary markdown styling */

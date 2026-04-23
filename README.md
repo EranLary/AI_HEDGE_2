@@ -110,3 +110,67 @@ The bot will:
 
 Job outputs are isolated by job id under:
 `outputs/<job_id>/`
+
+## Easy Fly Deploy
+
+Use these scripts from project root:
+
+```powershell
+.\deploy-site.ps1
+.\deploy-bot.ps1
+```
+
+Windows cmd equivalents:
+
+```cmd
+deploy-site.cmd
+deploy-bot.cmd
+```
+
+Unified helper (all actions):
+
+```powershell
+.\deploy_fly.ps1 site
+.\deploy_fly.ps1 bot
+.\deploy_fly.ps1 status-site
+.\deploy_fly.ps1 status-bot
+.\deploy_fly.ps1 logs-site
+.\deploy_fly.ps1 logs-bot
+```
+
+Optional flags:
+
+- `-NoDepot` adds `--depot=false`
+- `-NoRemote` omits `--remote-only`
+
+## Easy Git Push
+
+Use these scripts from project root:
+
+```powershell
+.\push-git.ps1 -Message "feat: update dashboard"
+```
+
+Windows cmd:
+
+```cmd
+push-git.cmd feat: update dashboard
+```
+
+What it does:
+- `git add -A`
+- `git commit -m "<message>"` (only if there are changes)
+- `git push` (or `git push -u origin <current-branch>` if upstream is missing)
+
+## GitHub Auto Deploy (Fly)
+
+This repo includes `.github/workflows/deploy-fly.yml` for automatic deploys on push to:
+- `main`
+- `master`
+
+It deploys both apps:
+- `ai-hedge-telegram-bot` using `fly.toml`
+- `hedge-in-a-box-site` using `fly.site.toml`
+
+Required GitHub secret:
+- `FLY_API_TOKEN` (Fly API token with access to both apps)

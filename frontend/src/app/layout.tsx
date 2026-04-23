@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { ActiveRunIndicator } from "@/components/active-run-indicator";
+import { ThemeInit } from "@/components/theme-init";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -31,6 +33,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-carbon text-zinc-100">
+        <ThemeInit />
+        <ActiveRunIndicator />
         {children}
       </body>
     </html>

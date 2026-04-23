@@ -156,10 +156,10 @@ export type DashboardPayload = {
   };
   downloads?: {
     analysis_pdf: string;
-    prices_explain_txt: string;
-    prices_explain_pdf: string;
-    dashboard_json: string;
-    analysis_txt: string;
+    prices_explain_txt?: string;
+    prices_explain_pdf?: string;
+    dashboard_json?: string;
+    analysis_txt?: string;
   };
 };
 
@@ -169,6 +169,10 @@ export type DiscoveryRow = {
   margin_safety_pct: number;
   overvaluation_pct: number;
   dispersion: number;
+  return_pct: number;
+  confidence_cv: number;
+  decision_label?: string;
+  decision_tone?: "buy" | "sell" | "hold";
   updated_at: string;
 };
 

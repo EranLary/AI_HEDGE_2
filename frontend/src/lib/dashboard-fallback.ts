@@ -88,10 +88,6 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
     artifacts: {},
     downloads: {
       analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
-      prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt`,
-      prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf`,
-      dashboard_json: `/api/artifacts/${tk}/dashboard-json`,
-      analysis_txt: `/api/artifacts/${tk}/analysis-txt`,
     },
   };
 }

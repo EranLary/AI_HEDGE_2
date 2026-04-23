@@ -132,22 +132,58 @@ export function resolveDashboardReportPath(reportId: string): string | null {
 }
 
 export function listDashboardReports(): DashboardReportEntry[] {
-  const reports = listDashboardFiles()
+  const candidates = listDashboardFiles()
     .map((item) => {
       const base = path.basename(item.path);
       const ticker = String(base.split("_")[0] || "").toUpperCase();
       if (!ticker) {
         return null;
       }
-      return {
-        report_id: toReportId(item.path),
-        ticker,
-        path: item.path,
-        mtimeMs: item.mtimeMs,
-      } satisfies DashboardReportEntry;
-    })
-    .filter((item): item is DashboardReportEntry => Boolean(item));
+      const rel = path.relative(outputsRoot(), item.path).replace(/\\/g, "/");
+      const upperRel = rel.toUpperCase();
+      const isNestedTickerArtifact = upperRel.includes(`/${ticker}/${ticker}_DASHBOARD.JSON`);
+      const isSiteRun = upperRel.startsWith("_SITE_RUNS/");
+      const score = (isNestedTickerArtifact ? 10 : 0) + (isSiteRun ? 2 : 0);
 
+      let dedupeKey = `file:${rel}`;
+      const parts = rel.split("/").filter(Boolean);
+      const siteRunsIdx = parts.findIndex((p) => p.toLowerCase() === "_site_runs");
+      if (siteRunsIdx >= 0 && siteRunsIdx + 1 < parts.length) {
+        const runId = String(parts[siteRunsIdx + 1] || "").trim();
+        if (runId) {
+          dedupeKey = `site:${runId}:${ticker}`;
+        }
+      }
+
+      return {
+        report: {
+          report_id: toReportId(item.path),
+          ticker,
+          path: item.path,
+          mtimeMs: item.mtimeMs,
+        } satisfies DashboardReportEntry,
+        dedupeKey,
+        score,
+      };
+    })
+    .filter((item): item is { report: DashboardReportEntry; dedupeKey: string; score: number } => Boolean(item));
+
+  const deduped = new Map<string, { report: DashboardReportEntry; score: number }>();
+  for (const candidate of candidates) {
+    const existing = deduped.get(candidate.dedupeKey);
+    if (!existing) {
+      deduped.set(candidate.dedupeKey, { report: candidate.report, score: candidate.score });
+      continue;
+    }
+    const preferCandidate =
+      candidate.score > existing.score ||
+      (candidate.score === existing.score && candidate.report.mtimeMs > existing.report.mtimeMs);
+    if (preferCandidate) {
+      deduped.set(candidate.dedupeKey, { report: candidate.report, score: candidate.score });
+    }
+  }
+
+  const reports = Array.from(deduped.values()).map((v) => v.report);
   reports.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return reports;
 }

@@ -72,10 +72,6 @@ function normalizePayload(
 
   merged.downloads = {
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
-    prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt`,
-    prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf`,
-    dashboard_json: `/api/artifacts/${tk}/dashboard-json`,
-    analysis_txt: `/api/artifacts/${tk}/analysis-txt`,
   };
 
   return merged;
@@ -85,6 +81,52 @@ function parseMoney(text: string): number | null {
   const cleaned = String(text || "").replace(/[$,]/g, "").trim();
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
+}
+
+function parseAssumptionsPackRows(text: string, sourcePath: string) {
+  const src = String(text || "");
+  const specs = [
+    { label: "Predicted Revenue", key: "predicted_revenue" },
+    { label: "Predicted Earnings", key: "predicted_earnings" },
+    { label: "Predicted P/E", key: "predicted_pe" },
+  ];
+  const rows: Array<{
+    metric_key: string;
+    label: string;
+    mean: number;
+    min: number;
+    max: number;
+    sample_count: number;
+    method_count: number;
+    methods: string[];
+    source_paths: string[];
+  }> = [];
+
+  for (const spec of specs) {
+    const escaped = spec.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(
+      `-\\s*${escaped}\\s*\\(Mean\\/Min\\/Max\\):\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`,
+      "i",
+    );
+    const match = src.match(rx);
+    if (!match) continue;
+    const mean = parseMoney(match[1]);
+    const min = parseMoney(match[2]);
+    const max = parseMoney(match[3]);
+    if (mean === null || min === null || max === null) continue;
+    rows.push({
+      metric_key: spec.key,
+      label: spec.label,
+      mean,
+      min,
+      max,
+      sample_count: 1,
+      method_count: 1,
+      methods: ["Overall"],
+      source_paths: [sourcePath],
+    });
+  }
+  return rows;
 }
 
 function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
@@ -139,6 +181,15 @@ function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
 
   if (explainFile) {
     const txt = readUtf8(explainFile.path);
+    const assumptionsRows = parseAssumptionsPackRows(txt, "prices_explain.assumptions_pack");
+    if (assumptionsRows.length) {
+      const existing = base.valuation_hub.all_values?.metric_means || [];
+      base.valuation_hub.all_values = {
+        metric_means: [...existing, ...assumptionsRows],
+        source_values: base.valuation_hub.all_values?.source_values || [],
+      };
+    }
+
     const sections = txt.split(/\n##\s+/g);
     const blocks: DashboardPayload["valuation_hub"]["method_blocks"] = [];
 

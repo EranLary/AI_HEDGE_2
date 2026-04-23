@@ -5486,6 +5486,29 @@ def run_valuations(
             print(f"[WARN] {block_name} failed, continuing with remaining blocks: {exc}")
             return fallback
 
+    def _result_is_empty(result):
+        return (
+            isinstance(result, tuple)
+            and len(result) >= 1
+            and isinstance(result[0], list)
+            and len(result[0]) == 0
+        )
+
+    def _retry_block_once_if_empty(result, rerun_fn, block_name):
+        if not _result_is_empty(result):
+            return result
+        print(f"[INFO] {block_name} produced no valid JSON results. Retrying once.")
+        try:
+            retried = rerun_fn()
+        except Exception as exc:
+            print(f"[WARN] {block_name} retry failed: {exc}")
+            return result
+        if _result_is_empty(retried):
+            print(f"[WARN] {block_name} retry also produced no valid JSON results.")
+        else:
+            print(f"[INFO] {block_name} retry succeeded with valid JSON output.")
+        return retried
+
     # Launch all blocks in parallel
     with ThreadPoolExecutor(max_workers=blocks_workers) as ex:
         fut_dcf = ex.submit(_run_dcf_mixed)
@@ -5498,46 +5521,64 @@ def run_valuations(
         fut_bbb_ni_pe = ex.submit(_run_bbb_ni_pe_mixed)
         fut_forest_logic = ex.submit(_run_forest_logic_mixed)
 
-        all_results_dcf, text_dcf, details_dcf = _safe_future_result(
+        dcf_result = _safe_future_result(
             fut_dcf,
             ([], ("\nNo results\n\n", "DCF Range Price Valuation"), []),
             "DCF block",
         )
+        dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "DCF block")
+        all_results_dcf, text_dcf, details_dcf = dcf_result
 
-        all_results_profit_pe, pe_results_profit_pe, ni_results_profit_pe, text_pe, details_pe = _safe_future_result(
+        pe_result = _safe_future_result(
             fut_pe,
             ([], [], [], ("\nNo results\n\n", "P/E & Earnings Range Price Valuation"), []),
             "P/E & Earnings block",
         )
+        pe_result = _retry_block_once_if_empty(pe_result, _run_profit_pe_mixed, "P/E & Earnings block")
+        all_results_profit_pe, pe_results_profit_pe, ni_results_profit_pe, text_pe, details_pe = pe_result
 
-        all_results_revenue_ps, ps_results_revenue_ps, revenue_results_revenue_ps, text_ps, details_ps = _safe_future_result(
+        ps_result = _safe_future_result(
             fut_ps,
             ([], [], [], ("\nNo results\n\n", "Revenue & EV/S Range Price Valuation"), []),
             "Revenue & EV/S block",
         )
+        ps_result = _retry_block_once_if_empty(ps_result, _run_revenue_ps_mixed, "Revenue & EV/S block")
+        all_results_revenue_ps, ps_results_revenue_ps, revenue_results_revenue_ps, text_ps, details_ps = ps_result
 
         # all_results_target, text_target = fut_target.result()
 
-        all_results_dream, text_dream, details_dream = _safe_future_result(
+        dream_result = _safe_future_result(
             fut_dream,
             ([], ("\nNo results\n\n", "Dream Team Target Price Valuation"), []),
             "Dream Team block",
         )
+        dream_result = _retry_block_once_if_empty(dream_result, _run_dream_mixed, "Dream Team block")
+        all_results_dream, text_dream, details_dream = dream_result
 
         # all_results_sotp, text_sotp = fut_sotp.result()
 
-        all_results_bbb_tp, text_bbb_tp, details_bbb_tp = _safe_future_result(
+        bbb_tp_result = _safe_future_result(
             fut_bbb_tp,
             ([], ("\nNo results\n\n", "Bull Base Bear Target Price Valuation"), []),
             "BBB Target block",
         )
+        bbb_tp_result = _retry_block_once_if_empty(bbb_tp_result, _run_bbb_tp_mixed, "BBB Target block")
+        all_results_bbb_tp, text_bbb_tp, details_bbb_tp = bbb_tp_result
 
-        all_results_bbb_ni_pe, ni_results_bbb_ni_pe, pe_results_bbb_ni_pe, text_bbb_ni_pe, details_bbb_ni_pe = _safe_future_result(
+        bbb_ni_pe_result = _safe_future_result(
             fut_bbb_ni_pe,
             ([], [], [], ("\nNo results\n\n", "Bull Base Bear Net Income & P/E Valuation"), []),
             "BBB NI & P/E block",
         )
+        bbb_ni_pe_result = _retry_block_once_if_empty(bbb_ni_pe_result, _run_bbb_ni_pe_mixed, "BBB NI & P/E block")
+        all_results_bbb_ni_pe, ni_results_bbb_ni_pe, pe_results_bbb_ni_pe, text_bbb_ni_pe, details_bbb_ni_pe = bbb_ni_pe_result
 
+        forest_result = _safe_future_result(
+            fut_forest_logic,
+            ([], [], [], [], ("\nNo results\n\n", "Forest Logic Valuation"), []),
+            "Forest Logic block",
+        )
+        forest_result = _retry_block_once_if_empty(forest_result, _run_forest_logic_mixed, "Forest Logic block")
         (
             all_results_forest_logic,
             revenue_results_forest_logic,
@@ -5545,11 +5586,7 @@ def run_valuations(
             pe_results_forest_logic,
             text_forest_logic,
             details_forest_logic,
-        ) = _safe_future_result(
-            fut_forest_logic,
-            ([], [], [], [], ("\nNo results\n\n", "Forest Logic Valuation"), []),
-            "Forest Logic block",
-        )
+        ) = forest_result
 
     method_details["DCF"] = details_dcf
     method_details["Net Income & P/E"] = details_pe

@@ -4,20 +4,27 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Gem, Radar, ShieldAlert } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
 type DiscoveryPayload = {
   generated_at: string;
-  window_hours: number;
+  window_hours: number | null;
   count: number;
-  top_gems: DiscoveryRow[];
-  bubbles: DiscoveryRow[];
-  high_conviction: DiscoveryRow[];
+  top_undervalued: DiscoveryRow[];
+  top_overvalued: DiscoveryRow[];
+  top_conviction: DiscoveryRow[];
 };
 
 function fmtPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function decisionClass(tone?: DiscoveryRow["decision_tone"]): string {
+  if (tone === "buy") return "hib-signal-buy";
+  if (tone === "sell") return "hib-signal-sell";
+  return "hib-signal-hold";
 }
 
 function SectionCard({
@@ -25,11 +32,13 @@ function SectionCard({
   icon,
   rows,
   accent,
+  metricLabel,
 }: {
   title: string;
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
+  metricLabel: "return" | "confidence";
 }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -38,12 +47,12 @@ function SectionCard({
         <h2 className="text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
       </div>
       <div className="space-y-2">
-        {rows.length ? (
-          rows.map((row) => (
-            <div key={`${title}-${row.ticker}`} className="rounded-lg border border-white/10 bg-black/30 p-3">
+            {rows.length ? (
+              rows.map((row, idx) => (
+            <div key={`${title}-${row.ticker}-${row.updated_at}-${idx}`} className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-semibold">{row.ticker}</p>
+                  <p className="font-semibold">#{idx + 1} {row.ticker}</p>
                   <p className="text-xs text-zinc-500">{row.company_name}</p>
                 </div>
                 <Link
@@ -53,18 +62,24 @@ function SectionCard({
                   Open
                 </Link>
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                {metricLabel === "return" ? (
+                  <div>
+                    <p className="text-zinc-500">Return</p>
+                    <p className={accent}>{fmtPct(row.return_pct)}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-zinc-500">Confidence (CV)</p>
+                    <p className={accent}>{Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}</p>
+                    <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
+                      {row.decision_label || "Hold"}
+                    </p>
+                  </div>
+                )}
                 <div>
-                  <p className="text-zinc-500">Margin Safety</p>
-                  <p className={accent}>{fmtPct(row.margin_safety_pct)}</p>
-                </div>
-                <div>
-                  <p className="text-zinc-500">Overvaluation</p>
-                  <p className="text-red-300">{fmtPct(row.overvaluation_pct)}</p>
-                </div>
-                <div>
-                  <p className="text-zinc-500">Dispersion</p>
-                  <p className="text-zinc-100">{row.dispersion.toFixed(3)}</p>
+                  <p className="text-zinc-500">Updated</p>
+                  <p className="text-zinc-200">{new Date(row.updated_at).toLocaleString()}</p>
                 </div>
               </div>
             </div>
@@ -109,7 +124,7 @@ export default function DiscoveryPage() {
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <div>
             <h1 className="font-display text-2xl">Market Discovery</h1>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Last 24 Hours</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">All Reports (Latest Per Ticker)</p>
           </div>
           <Link
             href="/dashboard"
@@ -117,6 +132,7 @@ export default function DiscoveryPage() {
           >
             Back to Dashboard
           </Link>
+          <ThemeToggle />
         </header>
 
         {loading || !data ? (
@@ -128,26 +144,29 @@ export default function DiscoveryPage() {
         ) : (
           <>
             <p className="mb-4 text-sm text-zinc-400">
-              Scanned {data.count} dashboards. Generated at {new Date(data.generated_at).toLocaleString()}.
+              Scanned {data.count} latest dashboards (one per ticker). Generated at {new Date(data.generated_at).toLocaleString()}.
             </p>
             <div className="grid gap-4 md:grid-cols-3">
               <SectionCard
-                title="Top Gems"
+                title="Most Undervalued"
                 icon={<Gem size={16} className="text-emerald-400" />}
-                rows={data.top_gems}
+                rows={data.top_undervalued}
                 accent="text-emerald-300"
+                metricLabel="return"
               />
               <SectionCard
-                title="Bubbles"
+                title="Most Overvalued"
                 icon={<ShieldAlert size={16} className="text-red-400" />}
-                rows={data.bubbles}
+                rows={data.top_overvalued}
                 accent="text-red-300"
+                metricLabel="return"
               />
               <SectionCard
-                title="High Conviction"
+                title="Top Conviction"
                 icon={<Radar size={16} className="text-cyan-300" />}
-                rows={data.high_conviction}
+                rows={data.top_conviction}
                 accent="text-cyan-300"
+                metricLabel="confidence"
               />
             </div>
           </>

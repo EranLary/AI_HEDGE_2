@@ -1,74 +1,111 @@
 param(
-  [string]$AppName = "ai-hedge-telegram-bot",
-  [string]$Region = "iad",
-  [int]$VolumeSizeGb = 20,
-  [string]$TelegramBotToken = "",
-  [string]$DeepseekApiKey = "",
-  [string]$ValuationIterations = "",
-  [string]$LlmWorkers = ""
+  [Parameter(Position = 0)]
+  [ValidateSet(
+    "site",
+    "bot",
+    "status-site",
+    "status-bot",
+    "logs-site",
+    "logs-bot",
+    "help"
+  )]
+  [string]$Action = "help",
+  [switch]$NoDepot,
+  [switch]$NoRemote
 )
 
 $ErrorActionPreference = "Stop"
 $fly = "$env:USERPROFILE\.fly\bin\flyctl.exe"
+$root = $PSScriptRoot
 
-if (-not (Test-Path $fly)) {
-  throw "flyctl not found at $fly. Install Fly CLI first."
+$siteApp = "hedge-in-a-box-site"
+$botApp = "ai-hedge-telegram-bot"
+$siteConfig = Join-Path $root "fly.site.toml"
+$botConfig = Join-Path $root "fly.toml"
+
+function Assert-FlyCli {
+  if (-not (Test-Path $fly)) {
+    throw "flyctl not found at $fly. Install Fly CLI first."
+  }
+  Write-Host "Using flyctl: $fly"
 }
 
-Write-Host "Using flyctl: $fly"
+function Assert-Config([string]$configPath) {
+  if (-not (Test-Path $configPath)) {
+    throw "Config file not found: $configPath"
+  }
+}
 
-# Ensure logged in
+function Invoke-Deploy([string]$app, [string]$configPath) {
+  Assert-Config $configPath
+
+  $args = @("deploy", "--app", $app, "--config", $configPath)
+  if (-not $NoRemote) {
+    $args += "--remote-only"
+  }
+  if ($NoDepot) {
+    $args += "--depot=false"
+  }
+
+  Write-Host "Deploying app '$app' with config '$configPath'..."
+  & $fly @args | Out-Host
+  & $fly status --app $app | Out-Host
+}
+
+function Show-Help {
+  Write-Host ""
+  Write-Host "Fly Deploy Helper"
+  Write-Host "Usage: .\deploy_fly.ps1 <action> [options]"
+  Write-Host ""
+  Write-Host "Actions:"
+  Write-Host "  site         Deploy website app (hedge-in-a-box-site)"
+  Write-Host "  bot          Deploy telegram bot app (ai-hedge-telegram-bot)"
+  Write-Host "  status-site  Show website app status"
+  Write-Host "  status-bot   Show bot app status"
+  Write-Host "  logs-site    Tail website logs"
+  Write-Host "  logs-bot     Tail bot logs"
+  Write-Host ""
+  Write-Host "Options:"
+  Write-Host "  -NoDepot     Deploy with --depot=false"
+  Write-Host "  -NoRemote    Omit --remote-only"
+  Write-Host ""
+  Write-Host "Examples:"
+  Write-Host "  .\deploy_fly.ps1 site"
+  Write-Host "  .\deploy_fly.ps1 bot -NoDepot"
+  Write-Host "  .\deploy_fly.ps1 status-site"
+  Write-Host ""
+}
+
+Assert-FlyCli
 & $fly auth whoami | Out-Host
 
-# Update app name in fly.toml to match param
-$flyToml = Join-Path $PSScriptRoot "fly.toml"
-if (-not (Test-Path $flyToml)) {
-  throw "fly.toml not found in project root."
+switch ($Action) {
+  "site" {
+    Invoke-Deploy -app $siteApp -configPath $siteConfig
+    break
+  }
+  "bot" {
+    Invoke-Deploy -app $botApp -configPath $botConfig
+    break
+  }
+  "status-site" {
+    & $fly status --app $siteApp | Out-Host
+    break
+  }
+  "status-bot" {
+    & $fly status --app $botApp | Out-Host
+    break
+  }
+  "logs-site" {
+    & $fly logs --app $siteApp | Out-Host
+    break
+  }
+  "logs-bot" {
+    & $fly logs --app $botApp | Out-Host
+    break
+  }
+  default {
+    Show-Help
+    break
+  }
 }
-
-$content = Get-Content $flyToml -Raw
-$content = [regex]::Replace($content, '(?m)^app\s*=\s*".*"$', "app = `"$AppName`"")
-Set-Content -Path $flyToml -Value $content -Encoding UTF8
-Write-Host "Updated fly.toml app name to: $AppName"
-
-# Create app if missing
-$appExists = $false
-try {
-  & $fly status --app $AppName | Out-Null
-  $appExists = $true
-} catch {
-  $appExists = $false
-}
-
-if (-not $appExists) {
-  & $fly apps create $AppName | Out-Host
-}
-
-# Create volume if missing
-$volumes = & $fly volumes list --app $AppName 2>$null
-if ($volumes -notmatch "bot_data") {
-  & $fly volumes create bot_data --size $VolumeSizeGb --region $Region --app $AppName | Out-Host
-}
-
-# Required secrets
-if ([string]::IsNullOrWhiteSpace($TelegramBotToken) -or [string]::IsNullOrWhiteSpace($DeepseekApiKey)) {
-  throw "Provide -TelegramBotToken and -DeepseekApiKey."
-}
-& $fly secrets set TELEGRAM_BOT_TOKEN="$TelegramBotToken" DEEPSEEK_API_KEY="$DeepseekApiKey" --app $AppName | Out-Host
-
-# Optional tuning
-$optional = @{}
-if (-not [string]::IsNullOrWhiteSpace($ValuationIterations)) { $optional["VALUATION_ITERATIONS"] = $ValuationIterations }
-if (-not [string]::IsNullOrWhiteSpace($LlmWorkers)) { $optional["LLM_WORKERS"] = $LlmWorkers }
-if ($optional.Count -gt 0) {
-  $pairs = $optional.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }
-  & $fly secrets set @pairs --app $AppName | Out-Host
-}
-
-# Deploy + ensure one always-on machine.
-# Force Fly remote builder and disable Depot because some networks block api.depot.dev.
-& $fly deploy --app $AppName --remote-only --depot=false | Out-Host
-& $fly scale count 1 --app $AppName | Out-Host
-
-Write-Host "Deployment complete."
-Write-Host "Tail logs with: $fly logs --app $AppName"

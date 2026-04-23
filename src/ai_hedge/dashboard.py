@@ -823,7 +823,19 @@ def _build_method_tab(
     }
 
 
-def _build_all_values_payload(method_details: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_overall_triplet(metric_dict: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    if not isinstance(metric_dict, dict):
+        return None, None, None
+    overall = metric_dict.get("Overall")
+    if not isinstance(overall, (list, tuple)) or not overall:
+        return None, None, None
+    mean_v = _safe_float(overall[0]) if len(overall) >= 1 else None
+    min_v = _safe_float(overall[1]) if len(overall) >= 2 else mean_v
+    max_v = _safe_float(overall[2]) if len(overall) >= 3 else mean_v
+    return mean_v, min_v, max_v
+
+
+def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     metric_map: Dict[str, Dict[str, Any]] = {}
     source_values: List[Dict[str, Any]] = []
 
@@ -881,6 +893,39 @@ def _build_all_values_payload(method_details: Dict[str, Any]) -> Dict[str, Any]:
                 "source_paths": sorted(rec["source_paths"])[:12],
             }
         )
+
+    # Add unified predicted range rows from final_dict overall outputs.
+    if isinstance(final_dict, dict):
+        synthetic_rows = [
+            ("predicted_revenue", "Predicted Revenue", final_dict.get("Revenue", {})),
+            ("predicted_pe", "Predicted P/E", final_dict.get("P/E", {})),
+            ("predicted_earnings", "Predicted Earnings", final_dict.get("Net Income", {})),
+        ]
+        for metric_key, label, metric_payload in synthetic_rows:
+            mean_v, min_v, max_v = _extract_overall_triplet(metric_payload if isinstance(metric_payload, dict) else {})
+            if mean_v is None and min_v is None and max_v is None:
+                continue
+            if mean_v is None:
+                mean_v = min_v if min_v is not None else max_v
+            if min_v is None:
+                min_v = mean_v
+            if max_v is None:
+                max_v = mean_v
+            if mean_v is None:
+                continue
+            metric_means.append(
+                {
+                    "metric_key": metric_key,
+                    "label": label,
+                    "mean": float(mean_v),
+                    "min": float(min_v),
+                    "max": float(max_v),
+                    "sample_count": 1,
+                    "method_count": 1,
+                    "methods": ["Overall"],
+                    "source_paths": [f"final_dict.{metric_key}.Overall"],
+                }
+            )
 
     metric_means.sort(key=lambda x: x["label"])
     source_values.sort(key=lambda x: (x["method"], x["metric_key"], x["persona"]))
@@ -959,6 +1004,13 @@ def build_dashboard_payload(
             if isinstance(raw_json, dict):
                 sample_rationale = _extract_rationale(raw_json)
 
+        has_items = isinstance(items, list) and len(items) > 0
+        has_target = target_price is not None
+        has_investment = investment_amount is not None
+        if not has_items and not has_target and not has_investment:
+            # Method failed JSON extraction even after retry; skip it from dashboard tables/tabs.
+            continue
+
         method_blocks.append(
             {
                 "name": method_name,
@@ -979,7 +1031,10 @@ def build_dashboard_payload(
             )
         )
 
-    all_values_payload = _build_all_values_payload(method_details if isinstance(method_details, dict) else {})
+    all_values_payload = _build_all_values_payload(
+        method_details if isinstance(method_details, dict) else {},
+        final_dict if isinstance(final_dict, dict) else {},
+    )
 
     dream_cards: List[Dict[str, Any]] = []
     for item in method_details.get("Dream Team", []) if isinstance(method_details, dict) else []:

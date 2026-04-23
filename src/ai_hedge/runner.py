@@ -1,0 +1,648 @@
+﻿from __future__ import annotations
+
+import os
+import shutil
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .dashboard import (
+    build_dashboard_appendix_text,
+    build_dashboard_payload,
+    deterministic_red_flags,
+    generate_dashboard_sections,
+    write_dashboard_payload,
+)
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        val = int(raw)
+        return val if val > 0 else default
+    except Exception:
+        return default
+
+
+# Valuation runs as a single combined-context pass.
+DEFAULT_VALUATION_ITERATIONS = 1
+DEFAULT_ANALYSIS_WORKERS = _env_int("ANALYSIS_WORKERS", 8)
+DEFAULT_LLM_WORKERS = _env_int("LLM_WORKERS", 8)
+DEFAULT_VALUATION_BLOCK_WORKERS = _env_int("VALUATION_BLOCK_WORKERS", 8)
+
+
+@dataclass
+class RunArtifacts:
+    ticker: str
+    output_dir: str
+    analysis_txt: str
+    prices_plot: str
+    revenue_plot: str
+    net_income_plot: str
+    analysis_pdf: str
+    prices_explain_txt: str
+    prices_explain_pdf: str
+    dashboard_json: str
+    notes: List[str]
+    current_revenue: Optional[float]
+    target_revenue: Optional[float]
+    current_earnings: Optional[float]
+    target_earnings: Optional[float]
+    f_score_text: str
+    sec_fallback_used: bool
+    sec_fallback_message: str
+
+
+
+def _require_api_key() -> None:
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+        if env_path.exists():
+            for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key.strip() != "DEEPSEEK_API_KEY":
+                    continue
+                api_key = value.strip().strip('"').strip("'").strip()
+                if api_key:
+                    os.environ["DEEPSEEK_API_KEY"] = api_key
+                break
+    if not api_key:
+        raise RuntimeError("Missing DEEPSEEK_API_KEY environment variable")
+
+
+
+def _append_progress(progress_file: Optional[str], message: str) -> None:
+    if not progress_file:
+        return
+    try:
+        path = Path(progress_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{message.strip()}\n")
+    except Exception:
+        pass
+
+
+def _first_float(value) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _format_sec_sources(files_dict: Optional[Dict[str, object]]) -> str:
+    if not isinstance(files_dict, dict):
+        return "No SEC filings available."
+
+    entries: List[str] = []
+    for form_type, raw in files_dict.items():
+        if not isinstance(raw, dict):
+            continue
+        filing_text = str(raw.get("text", "") or "").strip()
+        if not filing_text:
+            continue
+        label = str(form_type or "").strip() or "Unknown form"
+        date = str(raw.get("date", "") or "").strip()
+        if date:
+            entries.append(f"{label} ({date})")
+        else:
+            entries.append(label)
+
+    if not entries:
+        return "No SEC filings available."
+    return ", ".join(entries)
+
+
+def _merge_unique_lines(base: List[str], extra: List[str], limit: int = 12) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for raw in list(base or []) + list(extra or []):
+        txt = str(raw or "").strip()
+        if not txt:
+            continue
+        key = txt.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(txt)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _fmt_money(value: Any) -> str:
+    try:
+        return f"${float(value):,.2f}"
+    except Exception:
+        return "N/A"
+
+
+def _collect_investments_from_methods(methods: Dict[str, Any]) -> List[float]:
+    out: List[float] = []
+    if not isinstance(methods, dict):
+        return out
+    for items in methods.values():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw = item.get("investment_amount")
+            try:
+                val = float(raw)
+            except Exception:
+                continue
+            if -100000.0 <= val <= 100000.0:
+                out.append(val)
+    return out
+
+
+def _raw_json_dict_for_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    raw_json = item.get("raw_json", {})
+    if isinstance(raw_json, dict) and raw_json:
+        return raw_json
+
+    raw_json_text = str(item.get("raw_json_text", "") or "").strip()
+    if raw_json_text.startswith("{") and raw_json_text.endswith("}"):
+        try:
+            parsed = json.loads(raw_json_text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _is_reason_key(key: str) -> bool:
+    key_l = str(key).strip().lower()
+    return key_l == "step_by_step_analysis" or "rationale" in key_l or "reason" in key_l
+
+
+def _extract_numeric_pairs(value: Any, prefix: str = "") -> List[tuple[str, str]]:
+    pairs: List[tuple[str, str]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_s = str(key)
+            if _is_reason_key(key_s):
+                continue
+            child_prefix = f"{prefix}.{key_s}" if prefix else key_s
+            pairs.extend(_extract_numeric_pairs(nested, child_prefix))
+        return pairs
+    if isinstance(value, list):
+        for idx, nested in enumerate(value):
+            child_prefix = f"{prefix}[{idx}]"
+            pairs.extend(_extract_numeric_pairs(nested, child_prefix))
+        return pairs
+    if isinstance(value, bool):
+        return pairs
+    if isinstance(value, (int, float)):
+        label = prefix or "value"
+        pairs.append((label, str(value)))
+    return pairs
+
+
+def _as_readable_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        chunks = [_as_readable_text(v) for v in value]
+        chunks = [chunk for chunk in chunks if chunk]
+        return "\n\n".join(chunks).strip()
+    if isinstance(value, dict):
+        parts: List[str] = []
+        for key, nested in value.items():
+            nested_txt = _as_readable_text(nested)
+            if nested_txt:
+                parts.append(f"{key}: {nested_txt}")
+        return "\n\n".join(parts).strip()
+    return str(value).strip()
+
+
+def _extract_reason_sections(value: Any, prefix: str = "") -> List[tuple[str, str]]:
+    out: List[tuple[str, str]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_s = str(key)
+            path = f"{prefix}.{key_s}" if prefix else key_s
+            if _is_reason_key(key_s):
+                txt = _as_readable_text(nested)
+                if txt:
+                    out.append((path, txt))
+                continue
+            out.extend(_extract_reason_sections(nested, path))
+    elif isinstance(value, list):
+        for idx, nested in enumerate(value):
+            path = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
+            out.extend(_extract_reason_sections(nested, path))
+    return out
+
+
+def _build_prices_explain_text(ticker: str, explain_payload: Dict[str, Any]) -> str:
+    methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
+    aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
+    aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
+    current_price = explain_payload.get("current_price") if isinstance(explain_payload, dict) else None
+
+    lines: List[str] = [
+        f"# {ticker} Prices Explain",
+        "",
+        "This report organizes each valuation method output from the valuation stage.",
+        "Each output is split into key numeric values first, then full step-by-step/rationale text.",
+        f"Current Price: {_fmt_money(current_price)}",
+    ]
+
+    all_investments = explain_payload.get("all_investments", []) if isinstance(explain_payload, dict) else []
+    if not isinstance(all_investments, list) or not all_investments:
+        all_investments = _collect_investments_from_methods(methods)
+    all_investments = [float(v) for v in all_investments if isinstance(v, (int, float))]
+
+    mean_investment = explain_payload.get("mean_investment") if isinstance(explain_payload, dict) else None
+    std_investment = explain_payload.get("investment_std") if isinstance(explain_payload, dict) else None
+    lmil = explain_payload.get("lmil") if isinstance(explain_payload, dict) else None
+    if not isinstance(mean_investment, (int, float)):
+        mean_investment = (sum(all_investments) / len(all_investments)) if all_investments else 0.0
+    if not isinstance(std_investment, (int, float)):
+        if all_investments:
+            avg = float(mean_investment)
+            var = sum((float(v) - avg) ** 2 for v in all_investments) / len(all_investments)
+            std_investment = var ** 0.5
+        else:
+            std_investment = 0.0
+    if not (isinstance(lmil, (list, tuple)) and len(lmil) >= 2):
+        mean_pct = (float(mean_investment) / 100000.0) * 100.0
+        lmil_cv = (float(std_investment) / float(mean_investment)) if abs(float(mean_investment)) > 1e-9 else 0.0
+        lmil = [mean_pct, lmil_cv]
+
+    lines.extend(
+        [
+            "",
+            "## Investment Signal",
+            f"Total Investment Votes: {len(all_investments)}",
+            (
+                "Investment Votes (USD): "
+                + ", ".join(_fmt_money(v) for v in all_investments)
+                if all_investments
+                else "Investment Votes (USD): None"
+            ),
+            f"Mean Investment Amount: {_fmt_money(mean_investment)}",
+            f"Investment STD: {_fmt_money(std_investment)}",
+            f"LMIL: [{float(lmil[0]):.2f}%, {float(lmil[1]):.2f}]",
+        ]
+    )
+
+    if not isinstance(methods, dict) or not methods:
+        lines.extend(["", "No valuation JSON outputs were collected."])
+        return "\n".join(lines).strip() + "\n"
+
+    for method_name, items in methods.items():
+        lines.extend(["", "---", "", f"## {method_name}"])
+        aggregate_target = aggregate_targets.get(method_name) if isinstance(aggregate_targets, dict) else None
+        aggregate_investment = (
+            aggregate_investments.get(method_name) if isinstance(aggregate_investments, dict) else None
+        )
+        lines.append(f"Method Target Price: {_fmt_money(aggregate_target)}")
+        lines.append(f"Method Mean Investment: {_fmt_money(aggregate_investment)}")
+        lines.append(f"Captured Outputs: {len(items) if isinstance(items, list) else 0}")
+
+        if not isinstance(items, list) or not items:
+            lines.append("No valid JSON output captured for this method.")
+            continue
+
+        for idx, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                continue
+            persona = str(item.get("persona", "") or "").strip()
+            run_header = f"### Output {idx}"
+            if persona:
+                run_header = f"{run_header} ({persona})"
+            lines.extend(["", run_header])
+
+            lines.append(f"Output Target Price: {_fmt_money(item.get('target_price'))}")
+            lines.append(f"Output Investment Amount: {_fmt_money(item.get('investment_amount'))}")
+            raw_json = _raw_json_dict_for_item(item)
+            if not raw_json:
+                lines.append("No JSON payload captured for this output.")
+                continue
+
+            numeric_pairs = _extract_numeric_pairs(raw_json)
+            lines.append("#### Key Numeric Values")
+            if numeric_pairs:
+                for key, value in numeric_pairs:
+                    lines.append(f"- {key}: {value}")
+            else:
+                lines.append("No numeric fields were captured in this JSON output.")
+
+            reason_sections = _extract_reason_sections(raw_json)
+            if reason_sections:
+                lines.append("")
+                lines.append("#### Step-by-Step and Rationale (Full Text)")
+                for key, txt in reason_sections:
+                    label = key.replace("_", " ").strip()
+                    lines.append("")
+                    lines.append(f"##### {label}")
+                    lines.append(txt)
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def run_ticker_valuation(
+    ticker: str,
+    *,
+    output_root: str = "outputs",
+    save_pdf: bool = True,
+    show_plots: bool = True,
+    valuation_iterations: int = DEFAULT_VALUATION_ITERATIONS,
+    analysis_workers: int = DEFAULT_ANALYSIS_WORKERS,
+    llm_workers_each_block: int = DEFAULT_LLM_WORKERS,
+    valuation_blocks_workers: int = DEFAULT_VALUATION_BLOCK_WORKERS,
+    progress_file: Optional[str] = None,
+    run_source: str = "site",
+) -> Dict[str, object]:
+    """
+    Runs the notebook-equivalent valuation flow for one ticker and saves artifacts.
+
+    Core valuation idea/methods remain in `legacy_port.py`.
+    This function only orchestrates IO and artifact paths.
+
+    Note:
+      `valuation_iterations` is retained for backward compatibility and is
+      intentionally ignored. The valuation flow always runs with 1 combined pass.
+    """
+    _ = valuation_iterations
+    _require_api_key()
+    from . import legacy_port as legacy
+
+    ticker = ticker.upper().strip()
+    out_dir = Path(output_root) / ticker
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    legacy.ticker = ticker
+
+    info_dict, files_dict, financial_dict, variables_dict = legacy.make_analysis_file(
+        ticker,
+        parallel_workers=analysis_workers,
+    )
+    _append_progress(progress_file, "Finished analysis of Files and Financials")
+    if not info_dict.get("short_name"):
+        raise ValueError(f"Ticker '{ticker}' is invalid or unavailable")
+
+    text = legacy.load_text_from_file("analysis.txt")
+    regular_text = str(text or "").strip()
+    sec_short_text = ""
+    notes: List[str] = []
+    sec_fallback_used = False
+    sec_fallback_message = ""
+    try:
+        from .service import build_sec_short_analysis_text
+
+        sec_out = build_sec_short_analysis_text(
+            ticker=ticker,
+            info_dict=info_dict,
+            files_dict=files_dict,
+            financial_dict=financial_dict,
+        )
+
+        sec_errors = [str(e) for e in sec_out.get("errors", [])]
+        sec_candidate = str(sec_out.get("text", "")).strip()
+        if sec_out.get("status") == "success" and sec_candidate:
+            sec_short_text = sec_candidate
+            legacy.append_text_to_file(
+                text=sec_short_text,
+                header="SEC Short Analysis Context",
+            )
+            print(f"SEC short analysis generated successfully for {ticker}")
+            
+            if sec_errors:
+                legacy.append_text_to_file(
+                    text="\n".join(sec_errors[:3]),
+                    header="SEC Short Analysis Notes",
+                )
+                notes.extend(sec_errors[:3])
+        else:
+            warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
+            legacy.append_text_to_file(
+                text=warn,
+                header="SEC Short Analysis Context (Warning)",
+            )
+            sec_fallback_used = True
+            sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
+            notes.append(
+                "SEC short analysis failed or was empty. "
+                "Valuation fallback applied: using regular analysis text for the combined pass."
+            )
+            if sec_errors:
+                notes.extend(sec_errors[:3])
+    except Exception as sec_exc:
+        warn_text = f"SEC short analysis generation failed: {sec_exc}"
+        legacy.append_text_to_file(
+            text=warn_text,
+            header="SEC Short Analysis Context (Warning)",
+        )
+        print(f"Warning: SEC short analysis generation failed for {ticker}.")
+        sec_fallback_used = True
+        sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
+        notes.append(
+            "SEC short analysis generation raised an exception. "
+            "Valuation fallback applied: using regular analysis text for the combined pass."
+        )
+        notes.append(warn_text)
+    sec_sources = _format_sec_sources(files_dict)
+    _append_progress(
+        progress_file,
+        f"Finished analysis from SEC Filings. Sources used: {sec_sources}",
+    )
+
+    if not regular_text:
+        regular_text = str(text or "")
+    try:
+        latest_text = legacy.load_text_from_file("analysis.txt")
+        if str(latest_text or "").strip():
+            regular_text = str(latest_text or "").strip()
+    except Exception:
+        pass
+
+    pre_dashboard_red_flags = deterministic_red_flags(
+        f_score_text=str(variables_dict.get("f_score", "") or ""),
+        price_cv=None,
+        lmil=None,
+    )
+    qualitative_sections = generate_dashboard_sections(
+        ticker=ticker,
+        analysis_text=regular_text,
+        sec_short_text=sec_short_text,
+        financial_dict=financial_dict,
+        deterministic_red_flags=pre_dashboard_red_flags,
+        enable_llm_extractions=True,
+    )
+    _append_progress(progress_file, "Finished Dashboard Extraction (Pre-Valuation)")
+
+    try:
+        appendix_text = build_dashboard_appendix_text(ticker, qualitative_sections)
+        legacy.append_text_to_file(
+            text=appendix_text,
+            header="Dashboard Extraction Pack",
+        )
+        latest_text = legacy.load_text_from_file("analysis.txt")
+        if str(latest_text or "").strip():
+            regular_text = str(latest_text or "").strip()
+    except Exception as extraction_err:
+        notes.append(f"Dashboard extraction append failed: {extraction_err}")
+
+    valuation_contexts = [regular_text]
+
+    explain_payload: Dict[str, Any] = {}
+    final_dict = legacy.run_valuations(
+        ticker,
+        info_dict,
+        financial_dict,
+        variables_dict,
+        regular_text,
+        n=1,
+        llm_workers_each_block=llm_workers_each_block,
+        blocks_workers=valuation_blocks_workers,
+        add_text=False,
+        valuation_contexts=valuation_contexts,
+        explain_collector=explain_payload,
+    )
+    _append_progress(progress_file, "Finished Valuations")
+
+    revenue_dict = final_dict.get("Revenue", {}) if isinstance(final_dict, dict) else {}
+    earnings_dict = final_dict.get("Net Income", {}) if isinstance(final_dict, dict) else {}
+    revenue_overall = revenue_dict.get("Overall", []) if isinstance(revenue_dict, dict) else []
+    earnings_overall = earnings_dict.get("Overall", []) if isinstance(earnings_dict, dict) else []
+    current_revenue = _first_float(revenue_dict.get("Current")) if isinstance(revenue_dict, dict) else None
+    target_revenue = _first_float(revenue_overall[0] if isinstance(revenue_overall, list) and revenue_overall else None)
+    current_earnings = _first_float(earnings_dict.get("Current")) if isinstance(earnings_dict, dict) else None
+    target_earnings = _first_float(earnings_overall[0] if isinstance(earnings_overall, list) and earnings_overall else None)
+    f_score_text = str(variables_dict.get("f_score", "") or "").strip()
+
+    legacy.plot_all_three(
+        final_dict,
+        ticker,
+        output_dir=str(out_dir),
+        show_plot=show_plots,
+        include_pe=False,
+    )
+
+    legacy.print_overall_valuations(ticker, final_dict, variables_dict)
+
+    analysis_src = Path("analysis.txt")
+    analysis_dst = out_dir / f"{ticker}_analysis.txt"
+    if analysis_src.exists():
+        shutil.copy(analysis_src, analysis_dst)
+
+    prices_explain_txt = out_dir / f"{ticker}_prices_explain.txt"
+    prices_explain_pdf = ""
+    prices_explain_html = out_dir / f"{ticker}_prices_explain.html"
+    dashboard_json = ""
+    try:
+        explain_text = _build_prices_explain_text(ticker, explain_payload)
+        prices_explain_txt.write_text(explain_text, encoding="utf-8")
+    except Exception as explain_err:
+        notes.append(f"Prices explain TXT generation failed: {explain_err}")
+
+    if prices_explain_txt.exists():
+        try:
+            from .text_to_pdf_check import convert_text_to_pdf
+
+            convert_text_to_pdf(
+                prices_explain_txt,
+                out_dir / f"{ticker}_prices_explain.pdf",
+                prices_explain_html,
+            )
+            pdf_candidate = out_dir / f"{ticker}_prices_explain.pdf"
+            if pdf_candidate.exists():
+                prices_explain_pdf = str(pdf_candidate.resolve())
+        except Exception as explain_pdf_err:
+            notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
+
+    try:
+        dashboard_payload = build_dashboard_payload(
+            ticker=ticker,
+            info_dict=info_dict,
+            financial_dict=financial_dict,
+            variables_dict=variables_dict,
+            final_dict=final_dict if isinstance(final_dict, dict) else {},
+            explain_payload=explain_payload,
+            analysis_text=regular_text,
+            sec_short_text=sec_short_text,
+            qualitative_sections=qualitative_sections,
+            enable_llm_extractions=True,
+            artifacts={
+                "analysis_txt": str(analysis_dst.resolve()) if analysis_dst.exists() else "",
+                "prices_plot": str((out_dir / f"{ticker}_prices_valuation.png").resolve()),
+                "revenue_plot": str((out_dir / f"{ticker}_revenue_valuation.png").resolve()),
+                "net_income_plot": str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
+                "prices_explain_txt": str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
+            },
+        )
+        dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
+    except Exception as dashboard_err:
+        notes.append(f"Dashboard JSON generation failed: {dashboard_err}")
+
+    pdf_dst = ""
+    if save_pdf:
+        try:
+            legacy.pdf_downloader(ticker)
+        except Exception as pdf_err:
+            print(f"Warning: PDF generation failed, continuing without PDF. Error: {pdf_err}")
+        pdf_src = Path(f"{ticker}_analysis.pdf")
+        html_src = Path(f"{ticker}_analysis.html")
+        if pdf_src.exists():
+            target_pdf = out_dir / pdf_src.name
+            shutil.move(str(pdf_src), target_pdf)
+            pdf_dst = str(target_pdf.resolve())
+        if html_src.exists():
+            shutil.move(str(html_src), out_dir / html_src.name)
+
+    artifacts = RunArtifacts(
+        ticker=ticker,
+        output_dir=str(out_dir.resolve()),
+        analysis_txt=str(analysis_dst.resolve()),
+        prices_plot=str((out_dir / f"{ticker}_prices_valuation.png").resolve()),
+        revenue_plot=str((out_dir / f"{ticker}_revenue_valuation.png").resolve()),
+        net_income_plot=str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
+        analysis_pdf=pdf_dst,
+        prices_explain_txt=str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
+        prices_explain_pdf=prices_explain_pdf,
+        dashboard_json=dashboard_json,
+        notes=notes,
+        current_revenue=current_revenue,
+        target_revenue=target_revenue,
+        current_earnings=current_earnings,
+        target_earnings=target_earnings,
+        f_score_text=f_score_text,
+        sec_fallback_used=sec_fallback_used,
+        sec_fallback_message=sec_fallback_message,
+    )
+
+    return {
+        "ticker": artifacts.ticker,
+        "output_dir": artifacts.output_dir,
+        "analysis_txt": artifacts.analysis_txt,
+        "prices_plot": artifacts.prices_plot,
+        "revenue_plot": artifacts.revenue_plot,
+        "net_income_plot": artifacts.net_income_plot,
+        "analysis_pdf": artifacts.analysis_pdf,
+        "prices_explain_txt": artifacts.prices_explain_txt,
+        "prices_explain_pdf": artifacts.prices_explain_pdf,
+        "dashboard_json": artifacts.dashboard_json,
+        "notes": artifacts.notes,
+        "current_revenue": artifacts.current_revenue,
+        "target_revenue": artifacts.target_revenue,
+        "current_earnings": artifacts.current_earnings,
+        "target_earnings": artifacts.target_earnings,
+        "f_score_text": artifacts.f_score_text,
+        "sec_fallback_used": artifacts.sec_fallback_used,
+        "sec_fallback_message": artifacts.sec_fallback_message,
+    }

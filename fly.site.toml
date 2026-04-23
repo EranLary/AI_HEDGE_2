@@ -1,0 +1,30 @@
+app = "hedge-in-a-box-site"
+primary_region = "fra"
+kill_signal = "SIGINT"
+kill_timeout = "60s"
+
+[build]
+  dockerfile = "Dockerfile.site"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  PYTHON_EXECUTABLE = "python3"
+  NODE_ENV = "production"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  processes = ["app"]
+
+[[mounts]]
+  source = "site_data_fra"
+  destination = "/data"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048

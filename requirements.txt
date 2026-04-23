@@ -1,0 +1,12 @@
+﻿pandas>=2.0
+numpy>=1.25
+matplotlib>=3.8
+requests>=2.31
+yfinance>=0.2.40
+html2text>=2024.2.26
+Markdown>=3.6
+weasyprint>=62.0
+python-pptx>=0.6.23
+xhtml2pdf>=0.2.16
+python-telegram-bot[job-queue]>=21.0
+python-dotenv>=1.0.1

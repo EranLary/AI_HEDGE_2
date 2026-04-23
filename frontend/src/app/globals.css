@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050608;
+  --foreground: #f5f7fa;
+  --carbon: #050608;
+  --carbon-soft: #0b0f14;
+  --emerald: #10b981;
+  --danger: #ef4444;
+  --slate: #9ca3af;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-carbon: var(--carbon);
+  --color-carbon-soft: var(--carbon-soft);
+  --color-emerald: var(--emerald);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+.hib-shell {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.18), transparent 35%),
+    radial-gradient(circle at 85% 10%, rgba(239, 68, 68, 0.14), transparent 35%),
+    #050608;
+  color: #f5f7fa;
+}
+
+html[data-theme="light"] .hib-shell {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.12), transparent 35%),
+    radial-gradient(circle at 85% 10%, rgba(239, 68, 68, 0.08), transparent 35%),
+    #f7fafc;
+  color: #111827;
+}
+
+/* Markdown color by theme */
+.hib-markdown {
+  color: #e5e7eb;
+}
+html[data-theme="light"] .hib-markdown {
+  color: #1f2937;
+}
+
+/* Light-mode overrides for heavily used dark utility classes in the dashboard. */
+html[data-theme="light"] .text-zinc-100 {
+  color: #111827 !important;
+}
+html[data-theme="light"] .text-zinc-200 {
+  color: #1f2937 !important;
+}
+html[data-theme="light"] .text-zinc-300 {
+  color: #334155 !important;
+}
+html[data-theme="light"] .text-zinc-400 {
+  color: #475569 !important;
+}
+html[data-theme="light"] .text-zinc-500 {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] .bg-zinc-950\/70 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+html[data-theme="light"] .bg-zinc-950\/80 {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+}
+html[data-theme="light"] .bg-black\/35 {
+  background-color: rgba(241, 245, 249, 0.85) !important;
+}
+html[data-theme="light"] .bg-black\/30 {
+  background-color: rgba(248, 250, 252, 0.92) !important;
+}
+html[data-theme="light"] .bg-black\/40 {
+  background-color: rgba(226, 232, 240, 0.85) !important;
+}
+html[data-theme="light"] .bg-white\/5 {
+  background-color: rgba(241, 245, 249, 0.95) !important;
+}
+
+html[data-theme="light"] .border-white\/10,
+html[data-theme="light"] .border-white\/15,
+html[data-theme="light"] .border-white\/20 {
+  border-color: rgba(148, 163, 184, 0.45) !important;
+}
+
+/* Stronger red readability in light mode */
+html[data-theme="light"] .bg-red-500\/8 {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+}
+html[data-theme="light"] .bg-red-500\/10 {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+}
+html[data-theme="light"] .border-red-500\/25,
+html[data-theme="light"] .border-red-500\/30,
+html[data-theme="light"] .border-red-500\/35,
+html[data-theme="light"] .border-red-500\/50 {
+  border-color: rgba(220, 38, 38, 0.65) !important;
+}
+html[data-theme="light"] .text-red-100 {
+  color: #7f1d1d !important;
+}
+html[data-theme="light"] .text-red-200 {
+  color: #7f1d1d !important;
+}
+html[data-theme="light"] .text-red-300 {
+  color: #991b1b !important;
+}
+
+/* Ticker select styles per theme */
+.hib-select {
+  color: #f5f7fa;
+}
+.hib-select-option {
+  background-color: #0b0f14;
+  color: #f5f7fa;
+}
+html[data-theme="light"] .hib-select {
+  color: #111827 !important;
+}
+html[data-theme="light"] .hib-select-option {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+/* Executive summary markdown styling */
+.hib-markdown h1,
+.hib-markdown h2,
+.hib-markdown h3,
+.hib-markdown h4 {
+  margin-top: 0.9rem;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.hib-markdown h1 {
+  font-size: 1.1rem;
+}
+.hib-markdown h2 {
+  font-size: 1rem;
+}
+.hib-markdown h3,
+.hib-markdown h4 {
+  font-size: 0.95rem;
+}
+.hib-markdown p {
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.hib-markdown ul,
+.hib-markdown ol {
+  margin: 0.4rem 0 0.6rem 1.2rem;
+}
+.hib-markdown li {
+  margin: 0.2rem 0;
+}
+.hib-markdown strong {
+  font-weight: 700;
+}
+.hib-markdown hr {
+  margin: 0.8rem 0;
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.font-display {
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-ibm-plex-mono), monospace;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f4854 #0b0f14;
+}

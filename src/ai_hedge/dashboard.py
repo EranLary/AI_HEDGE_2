@@ -62,9 +62,10 @@ Important requirements:
 - Avoid repeating the same idea in different wording
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
 - Write in simple, clear, professional language
-Prioritize non-obvious insights over surface-level observations.
-- Use **bold** emphasis for key facts and turning points
+- Prioritize non-obvious insights over surface-level observations.
+- Use **bold** emphasis for key facts and turning points, it's much more readible
 - Think like a smart investor trying to justify a position
+- make at readible interstingly, not robotic
 
 Content to consider:
 - Business model strength
@@ -114,10 +115,11 @@ Important requirements:
 - Avoid generic statements (e.g. "competition exists")
 - Avoid repeating the same idea in different wording
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
-- Use **bold** emphasis for key facts and turning points
+- Use **bold** emphasis for key facts and turning points, it's much more readible
 - Clearly explain why each point matters when necessary
 - Prioritize non-obvious insights over surface-level observations.
 - Prioritize risks that could materially damage the business or valuation
+- make at readible interstingly, not robotic
 
 Content to consider:
 - Weak or deteriorating financial trends

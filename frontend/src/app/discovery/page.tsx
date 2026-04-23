@@ -130,7 +130,7 @@ export default function DiscoveryPage() {
             href="/dashboard"
             className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.18em] text-zinc-100 transition hover:border-emerald-400/50 hover:bg-emerald-500/10"
           >
-            Back to Dashboard
+            BACK TO DASHBOARDS
           </Link>
           <ThemeToggle />
         </header>

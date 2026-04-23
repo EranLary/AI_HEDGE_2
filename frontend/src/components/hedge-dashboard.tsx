@@ -47,6 +47,13 @@ const fmtMoney = (v?: number | null) =>
   typeof v === "number" && Number.isFinite(v)
     ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v)
     : "N/A";
+const fmtMoneyCompact = (v?: number | null) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000_000) return `${v < 0 ? "-" : ""}$${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${v < 0 ? "-" : ""}$${(abs / 1_000_000).toFixed(2)}M`;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v);
+};
 const fmtMarketCap = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const abs = Math.abs(v);
@@ -57,6 +64,13 @@ const fmtMarketCap = (v?: number | null) => {
 const fmtNum = (v?: number | null) =>
   typeof v === "number" && Number.isFinite(v) ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(v) : "N/A";
 const fmtPct = (v?: number | null) => (typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A");
+const fmtLargeAware = (v?: number | null) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+  return fmtNum(v);
+};
 const fmtAssumptionValue = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const abs = Math.abs(v);
@@ -68,6 +82,27 @@ const fmtDecisionPctOnly = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   if (Math.abs(v) < 1e-9) return "0.00%";
   return `${v > 0 ? "+" : "-"}${Math.abs(v).toFixed(2)}%`;
+};
+const NOTIONAL_BASE_USD = 100_000;
+const toneClassFromSign = (v?: number | null) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "text-zinc-400";
+  if (Math.abs(v) < 1e-9) return "text-zinc-200";
+  return v > 0 ? "hib-target-up" : "hib-target-down";
+};
+const toneClassFromTarget = (target?: number | null, current?: number | null) => {
+  if (typeof target !== "number" || !Number.isFinite(target)) return "text-zinc-400";
+  if (typeof current !== "number" || !Number.isFinite(current) || Math.abs(target - current) < 1e-9) return "text-zinc-200";
+  return target > current ? "hib-target-up" : "hib-target-down";
+};
+const fmtNotionalPct = (v?: number | null) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  const pct = (v / NOTIONAL_BASE_USD) * 100;
+  if (Math.abs(pct) < 1e-9) return "0.00%";
+  return `${pct.toFixed(2)}%`;
+};
+const fmtTargetOrFloor = (v?: number | null) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "<0";
+  return fmtMoneyCompact(v);
 };
 
 function renderInlineMarkdown(text: string): ReactNode {
@@ -86,13 +121,14 @@ function renderInlineMarkdown(text: string): ReactNode {
     });
 }
 
-function BulletList({ items }: { items: string[] }) {
+function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" | "bear" }) {
   if (!items.length) return <p className="text-sm text-zinc-500">No items yet.</p>;
+  const dotClass = tone === "bear" ? "bg-red-400" : "bg-emerald-400";
   return (
     <ul className="space-y-2 text-sm text-zinc-200">
       {items.map((item, i) => (
         <li key={`${i}-${item.slice(0, 12)}`} className="flex gap-2">
-          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+          <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
           <span>{renderInlineMarkdown(item)}</span>
         </li>
       ))}
@@ -125,14 +161,56 @@ function MarkdownBlock({ text }: { text: string }) {
 function prettyReasonLabel(label: string): string {
   const raw = String(label || "").trim();
   if (!raw) return "Rationale";
-  const clean = raw
-    .replace(/\./g, " ")
-    .replace(/_/g, " ")
+  const leaf = raw.split(".").pop() || raw;
+  const cleaned = leaf
+    .replace(/\[\d+\]/g, " ")
+    .replace(/[./_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
-  if (clean === "step by step analysis" || clean === "step by step") return "Step-by-Step Analysis";
-  return clean.replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const normalized = cleaned
+    .replace(/\bratinale\b/g, "rationale")
+    .replace(/\brationale\b/g, "rationale")
+    .replace(/\bstep by step and rationale full text\b/g, "step by step analysis")
+    .replace(/\bstep by step\b/g, "step by step analysis")
+    .replace(/\bev\s+sales\b/g, "ev sales")
+    .replace(/\bp\/e\b/g, "pe");
+
+  const exactLabels: Record<string, string> = {
+    "step by step analysis": "Step-by-Step Analysis",
+    "fcf rationale": "FCF Rationale",
+    "g rationale": "Growth Rate (G) Rationale",
+    "growth rate rationale": "Growth Rate (G) Rationale",
+    "wacc rationale": "WACC Rationale",
+    "terminal rationale": "Terminal Value Rationale",
+    "terminal value rationale": "Terminal Value Rationale",
+    "ev sales rationale": "EV/Sales Rationale",
+    "pe rationale": "P/E Rationale",
+    "net income rationale": "Net Income Rationale",
+    "revenue rationale": "Revenue Rationale",
+    "target market cap rationale": "Target Market Cap Rationale",
+    "investment rationale": "Investment Rationale",
+    "bull rationale": "Bull Case Rationale",
+    "base rationale": "Base Case Rationale",
+    "bear rationale": "Bear Case Rationale",
+    "revenue growth rationale": "Revenue Growth Rationale",
+    "margin rationale": "Margin Rationale",
+    "financing rationale": "Financing Rationale",
+  };
+  if (exactLabels[normalized]) return exactLabels[normalized];
+
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((token) => {
+      if (token === "ev") return "EV";
+      if (token === "pe") return "P/E";
+      if (token === "fcf") return "FCF";
+      if (token === "wacc") return "WACC";
+      return token.charAt(0).toUpperCase() + token.slice(1);
+    })
+    .join(" ");
 }
 
 function normalizeReasonText(text: string): string {
@@ -395,6 +473,10 @@ export function HedgeDashboard() {
     Array.isArray(consensus?.lmil) && typeof consensus?.lmil?.[1] === "number"
       ? Math.abs(Number(consensus.lmil[1]))
       : null;
+  const activeMethodTargetClass = toneClassFromTarget(activeMethod?.target_price, consensusCurrent);
+  const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
+  const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
+  const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
   const chartScale = useMemo(() => {
     const values = chartData
       .map((x) => Number(x.target))
@@ -460,16 +542,11 @@ export function HedgeDashboard() {
         typeof currentPrice === "number" && Math.abs(currentPrice) > 1e-9 && typeof target === "number"
           ? ((target - currentPrice) / currentPrice) * 100
           : null;
-      const isUp =
-        typeof currentPrice === "number" && typeof target === "number"
-          ? target >= currentPrice
-          : null;
       return {
         name: b.name,
         target,
         investment: b.investment_amount,
         changePct,
-        isUp,
       };
     });
     return rows.sort((a, b) => {
@@ -668,12 +745,13 @@ export function HedgeDashboard() {
       <div className="mx-auto w-full max-w-[1500px] px-4 pb-12 pt-6 sm:px-8">
         <header className="mb-6 grid gap-3 rounded-2xl border border-white/10 bg-black/35 p-4 sm:grid-cols-[1fr_auto_auto]">
           <div>
-            <h1 className="font-display text-2xl text-zinc-100">Hedge in a Box</h1>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Institutional Dashboard</p>
+            <h1 className="font-display text-2xl text-zinc-100">DASHBOARDS</h1>
+            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Institutional Dashboards</p>
           </div>
-          <div className="rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2">
-            <label className="mr-2 text-xs uppercase tracking-[0.16em] text-zinc-400">Ticker</label>
+          <label htmlFor="dashboard-ticker-select" className="rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2">
+            <span className="mr-2 text-xs uppercase tracking-[0.16em] text-zinc-400">Ticker</span>
             <select
+              id="dashboard-ticker-select"
               value={selectedTicker}
               onChange={(e) => {
                 setLoading(true);
@@ -688,7 +766,7 @@ export function HedgeDashboard() {
                 </option>
               ))}
             </select>
-          </div>
+          </label>
           <div className="flex items-center gap-2">
             <Link href="/" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
               New Run
@@ -834,20 +912,20 @@ export function HedgeDashboard() {
                           <th className="px-3 py-2 text-left font-medium">Model Name</th>
                           <th className="px-3 py-2 text-right font-medium">Target Price</th>
                           <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
-                          <th className="px-3 py-2 text-right font-medium">Investment</th>
+                          <th className="px-3 py-2 text-right font-medium">Investment %</th>
                         </tr>
                       </thead>
                       <tbody>
                         {targetTableRows.map((row) => (
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
                             <td className="px-3 py-2 font-medium text-zinc-200">{row.name}</td>
-                            <td className={`px-3 py-2 text-right font-semibold ${row.isUp === null ? "text-zinc-400" : row.isUp ? "hib-target-up" : "hib-target-down"}`}>
-                              {typeof row.target === "number" ? fmtMoney(row.target) : "<0"}
+                            <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
+                              {fmtTargetOrFloor(row.target)}
                             </td>
-                            <td className={`px-3 py-2 text-right font-semibold ${row.isUp === null ? "text-zinc-400" : row.isUp ? "hib-target-up" : "hib-target-down"}`}>
+                            <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.changePct)}`}>
                               {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                             </td>
-                            <td className="px-3 py-2 text-right text-zinc-300">{fmtMoney(row.investment)}</td>
+                            <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>{fmtNotionalPct(row.investment)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -855,14 +933,30 @@ export function HedgeDashboard() {
                   </div>
                 ) : activeMethod ? (
                   <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
-                    <article className="rounded-xl border border-white/10 bg-black/35 p-3"><p className="font-semibold">{activeMethod.name}</p><p className="text-sm text-zinc-400">Mean Target: {fmtMoney(activeMethod.target_price)}</p><p className="text-sm text-zinc-400">Mean Investment: {fmtMoney(activeMethod.investment_amount)}</p>{Object.entries(activeMethod.key_metric_means || {}).map(([k, v]) => <p key={k} className="text-xs text-zinc-500">{prettyMetricName(k)}: {fmtNum(v)}</p>)}</article>
+                    <article className="rounded-xl border border-white/10 bg-black/35 p-3">
+                      <p className="font-semibold">{activeMethod.name}</p>
+                      <p className="text-sm text-zinc-400">
+                        Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price)}</span>
+                      </p>
+                      <p className="text-sm text-zinc-400">
+                        Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>
+                      </p>
+                      {Object.entries(activeMethod.key_metric_means || {}).map(([k, v]) => (
+                        <p key={k} className="text-xs text-zinc-500">
+                          {prettyMetricName(k)}: {fmtLargeAware(v)}
+                        </p>
+                      ))}
+                    </article>
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
                       {activeMethod.outputs.length ? (
                         <>
                           <div className="mb-2 flex flex-wrap gap-2">{activeMethod.outputs.map((o) => { const key = o.persona || `Output ${o.output_id}`; return <Tab key={key} active={(outputTab[activeMethod.name] || (activeMethod.outputs[0].persona || `Output ${activeMethod.outputs[0].output_id}`)) === key} onClick={() => setOutputTab((p) => ({ ...p, [activeMethod.name]: key }))} label={key} />; })}</div>
                           {selectedOutput ? (
                             <>
-                              <p className="text-sm text-zinc-400">Target: {fmtMoney(selectedOutput.target_price)} | Investment: {fmtMoney(selectedOutput.investment_amount)}</p>
+                              <p className="text-sm text-zinc-400">
+                                Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price)}</span>{" "}
+                                | Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>
+                              </p>
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
                                 {selectedOutput.reason_sections.length ? (
                                   selectedOutput.reason_sections.map((r) => (
@@ -896,7 +990,7 @@ export function HedgeDashboard() {
                   <p className="hib-bull-prob-label text-xs uppercase tracking-[0.14em]">Bull Probability</p>
                   <p className="hib-bull-prob-value text-2xl font-semibold">{fmtProbability(bullProbability)}</p>
                 </div>
-                <BulletList items={bullReasons} />
+                <BulletList items={bullReasons} tone="bull" />
               </section>
             ) : null}
             {mainTab === "bear" ? (
@@ -905,7 +999,7 @@ export function HedgeDashboard() {
                   <p className="hib-bear-prob-label text-xs uppercase tracking-[0.14em]">Bear Probability</p>
                   <p className="hib-bear-prob-value text-2xl font-semibold">{fmtProbability(bearProbability)}</p>
                 </div>
-                <BulletList items={bearReasons} />
+                <BulletList items={bearReasons} tone="bear" />
               </section>
             ) : null}
             {mainTab === "values" ? (

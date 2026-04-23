@@ -4882,7 +4882,20 @@ def dream_valuation_full(
                 continue
             target_price_json = extract_target_market_cap_json(answer)
             if not target_price_json:
-                continue
+                # Retry this persona once if strict JSON validation failed.
+                try:
+                    _, retry_answer = _one_name(name)
+                    retry_json = extract_target_market_cap_json(retry_answer)
+                    if retry_json:
+                        answer = retry_answer
+                        target_price_json = retry_json
+                        print(f"[INFO] Dream Team retry succeeded for analyst: {name}")
+                    else:
+                        print(f"[WARN] Dream Team output invalid after retry, skipping analyst: {name}")
+                        continue
+                except Exception as retry_exc:
+                    print(f"[WARN] Dream Team retry failed for analyst {name}: {retry_exc}")
+                    continue
             prices = get_target_price_dreamteam(target_price_json, name, vdict)
             all_results.extend(prices)
             if collect_details:

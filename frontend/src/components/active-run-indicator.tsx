@@ -133,7 +133,7 @@ export function ActiveRunIndicator() {
     <>
       {activeRuns.length ? (
         <div className="sticky top-0 z-50 px-3 pt-2 sm:px-6">
-          <div className="hib-active-run-banner mx-auto flex max-w-[1500px] items-center justify-between rounded-xl border px-3 py-2 text-xs backdrop-blur-md">
+          <div className="hib-active-run-banner mx-auto flex max-w-[1500px] items-center rounded-xl border px-3 py-2 text-xs backdrop-blur-md">
             <div className="inline-flex items-center gap-2">
               <Loader2 size={14} className="animate-spin" />
               <span className="font-medium uppercase tracking-[0.12em]">Active Run</span>
@@ -142,9 +142,6 @@ export function ActiveRunIndicator() {
               </span>
               {activeRuns.length > 1 ? <span className="hib-active-run-text">(+{activeRuns.length - 1} more)</span> : null}
             </div>
-            <Link href="/" className="hib-active-run-link pointer-events-auto rounded-md border px-2 py-1 text-[11px] uppercase tracking-[0.12em]">
-              View Progress
-            </Link>
           </div>
         </div>
       ) : null}

@@ -168,17 +168,17 @@ export default function Home() {
       <div className="mx-auto flex min-h-[80vh] w-full max-w-4xl flex-col items-center justify-center">
         <div className="mb-6 flex w-full items-center justify-end gap-3">
           <Link href="/dashboard" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
-            Dashboard
+            DASHBOARDS
           </Link>
           <Link href="/discovery" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
-            Discovery
+            MARKET DISCOVERY
           </Link>
           <ThemeToggle />
         </div>
 
         <div className="mb-8 text-center">
           <h1 className="font-display text-5xl tracking-tight text-zinc-100 sm:text-6xl">Hedge in a Box</h1>
-          <p className="mt-3 text-sm uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboard</p>
+          <p className="mt-3 text-sm uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboards</p>
         </div>
 
         <form
@@ -237,7 +237,7 @@ export default function Home() {
 
         <div className="mt-6 flex items-center gap-4 text-xs uppercase tracking-[0.12em] text-zinc-500">
           <Link href="/dashboard" className="hover:text-zinc-300">
-            Open Dashboard
+            Open Dashboards
           </Link>
           <Link href="/discovery" className="hover:text-zinc-300">
             Market Discovery

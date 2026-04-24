@@ -31,10 +31,11 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
         run: |
-          TOKEN="${FLY_API_TOKEN:-$FLY_TOKEN}"
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
           if [ -z "$TOKEN" ]; then
-            echo "No Fly token found. Set either FLY_API_TOKEN or FLY_TOKEN in GitHub Actions secrets."
+            echo "No Fly token found. Set one of: FLY_API_TOKEN, FLY_TOKEN, or FLY_AUTH_TOKEN in GitHub Actions secrets."
             exit 1
           fi
           echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
@@ -76,10 +77,11 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
         run: |
-          TOKEN="${FLY_API_TOKEN:-$FLY_TOKEN}"
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
           if [ -z "$TOKEN" ]; then
-            echo "No Fly token found. Set either FLY_API_TOKEN or FLY_TOKEN in GitHub Actions secrets."
+            echo "No Fly token found. Set one of: FLY_API_TOKEN, FLY_TOKEN, or FLY_AUTH_TOKEN in GitHub Actions secrets."
             exit 1
           fi
           echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"

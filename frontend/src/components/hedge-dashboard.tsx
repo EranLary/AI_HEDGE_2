@@ -1364,6 +1364,11 @@ export function HedgeDashboard() {
                       <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
                         {modelExplanation(activeMethod.name)}
                       </p>
+                      {activeMethod.name === "Dream Team" ? (
+                        <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs font-semibold leading-relaxed text-zinc-200">
+                          These views are AI-generated representations of well-known investors&apos; thinking styles, not their actual opinions.
+                        </p>
+                      ) : null}
                     </article>
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
                       {activeMethod.outputs.length ? (

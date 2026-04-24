@@ -42,12 +42,6 @@ jobs:
       - name: flyctl version
         run: flyctl version
 
-      - name: Validate Fly auth
-        run: flyctl auth whoami
-        env:
-          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
-          FLY_ACCESS_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
-
       - name: Deploy bot app
         run: |
           n=0
@@ -92,12 +86,6 @@ jobs:
 
       - name: flyctl version
         run: flyctl version
-
-      - name: Validate Fly auth
-        run: flyctl auth whoami
-        env:
-          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
-          FLY_ACCESS_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
 
       - name: Deploy site app
         run: |

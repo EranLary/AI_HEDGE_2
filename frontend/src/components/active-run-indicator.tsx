@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 import { listActiveRuns, removeActiveRun, type ClientActiveRun, upsertActiveRun } from "@/lib/active-runs";
+import { getProgressStep, getProgressStepNumber, RUN_PROGRESS_STEPS } from "@/lib/run-progress";
 
 type RunStatusApi = {
   job_id: string;
@@ -128,19 +129,32 @@ export function ActiveRunIndicator() {
     [runs],
   );
   const topRun = activeRuns[0];
+  const topPct = safePct(topRun?.llm_progress_pct);
+  const topStep = getProgressStep(topPct);
+  const topStepNo = getProgressStepNumber(topPct);
 
   return (
     <>
       {activeRuns.length ? (
         <div className="sticky top-0 z-50 px-3 pt-2 sm:px-6">
           <div className="hib-active-run-banner mx-auto flex max-w-[1500px] items-center rounded-xl border px-3 py-2 text-xs backdrop-blur-md">
-            <div className="inline-flex items-center gap-2">
+            <div className="w-full">
+              <div className="inline-flex items-center gap-2">
               <Loader2 size={14} className="animate-spin" />
               <span className="font-medium uppercase tracking-[0.12em]">Active Run</span>
               <span className="hib-active-run-text">
-                {topRun?.ticker || "Ticker"} {typeof topRun?.llm_progress_pct === "number" ? `${safePct(topRun.llm_progress_pct).toFixed(1)}%` : ""}
+                {topRun?.ticker || "Ticker"} {typeof topRun?.llm_progress_pct === "number" ? `${topPct.toFixed(1)}%` : ""}
               </span>
               {activeRuns.length > 1 ? <span className="hib-active-run-text">(+{activeRuns.length - 1} more)</span> : null}
+            </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="hib-active-run-text text-[11px] uppercase tracking-[0.12em]">
+                  Step {topStepNo}/{RUN_PROGRESS_STEPS.length}: {topStep}
+                </span>
+                <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-emerald-300 transition-all duration-500" style={{ width: `${topPct}%` }} />
+                </div>
+              </div>
             </div>
           </div>
         </div>

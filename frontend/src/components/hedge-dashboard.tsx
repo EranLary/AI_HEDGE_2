@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Gauge } from "lucide-react";
 import {
   Bar,
@@ -21,6 +21,14 @@ import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
+
+type CurrencyContext = {
+  code: "USD" | "ILS";
+  symbol: "$" | "₪";
+  isIsraeli: boolean;
+  priceUsdToDisplay: number;
+  financialUsdToDisplay: number;
+};
 
 const METHOD_METRIC_LABELS: Record<string, string> = {
   fcf_next_year: "FCF (Next Year)",
@@ -43,35 +51,98 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   net_financing_result: "Net Financing Result",
 };
 
-const fmtMoney = (v?: number | null) =>
-  typeof v === "number" && Number.isFinite(v)
-    ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v)
-    : "N/A";
-const fmtMoneyCompact = (v?: number | null) => {
-  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000_000) return `${v < 0 ? "-" : ""}$${(abs / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${v < 0 ? "-" : ""}$${(abs / 1_000_000).toFixed(2)}M`;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v);
+const MODEL_EXPLANATIONS: Record<string, string> = {
+  DCF: "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
+  "Net Income & P/E": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
+  "Revenue & EV/S": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
+  "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",
+  "BBB Target": "This framework forces a full scenario map: Bull, Base, and Bear cases with explicit probabilities. It helps separate upside story from downside risk and gives a weighted target grounded in all three paths.",
+  "BBB NI & P/E": "This is the scenario version of earnings-based valuation: each Bull/Base/Bear case gets its own net income and P/E assumptions. The final target reflects both business outcomes and changing market sentiment across scenarios.",
+  "Lary's Logic": "Lary's Logic is a pragmatic synthesis model that blends growth, profitability, and financing realism into one decision-friendly output. It is designed to stay intuitive while still stress-testing the assumptions that usually break valuation models.",
 };
-const fmtMarketCap = (v?: number | null) => {
+
+const MONEY_METRIC_KEYS = new Set([
+  "target_market_cap",
+  "bull_target_market_cap",
+  "base_target_market_cap",
+  "bear_target_market_cap",
+  "bull_net_income",
+  "base_net_income",
+  "bear_net_income",
+  "net_income_3y",
+  "revenue_3y",
+  "fcf_next_year",
+]);
+
+const ASSUMPTION_MONEY_LABELS = new Set([
+  "predicted revenue",
+  "predicted earnings",
+  "predicted fcf (next year)",
+]);
+
+function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
+  const header = data?.header || {};
+  const displayCurrency = String(header.display_currency || header.currency || "USD").toUpperCase();
+  const isIsraeli = Boolean(header.is_israeli) || displayCurrency === "ILS" || String(data?.ticker || "").toUpperCase().endsWith(".TA");
+  const priceUsdToDisplay = typeof header.price_usd_to_display === "number" && Number.isFinite(header.price_usd_to_display) && header.price_usd_to_display > 0
+    ? header.price_usd_to_display
+    : 1;
+  const financialUsdToDisplay = typeof header.financial_usd_to_display === "number" && Number.isFinite(header.financial_usd_to_display) && header.financial_usd_to_display > 0
+    ? header.financial_usd_to_display
+    : priceUsdToDisplay;
+  if (!isIsraeli) {
+    return {
+      code: "USD",
+      symbol: "$",
+      isIsraeli: false,
+      priceUsdToDisplay: 1,
+      financialUsdToDisplay: 1,
+    };
+  }
+  return {
+    code: "ILS",
+    symbol: "₪",
+    isIsraeli: true,
+    priceUsdToDisplay,
+    financialUsdToDisplay,
+  };
+}
+
+function toDisplayAmount(v: number, ctx: CurrencyContext, kind: "price" | "financial" = "price"): number {
+  if (!Number.isFinite(v)) return v;
+  const multiplier = kind === "financial" ? ctx.financialUsdToDisplay : ctx.priceUsdToDisplay;
+  return v * (Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1);
+}
+
+function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(v);
-};
+  const display = toDisplayAmount(v, ctx, kind);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: ctx.code,
+    maximumFractionDigits: 2,
+  }).format(display);
+}
+
+function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  const display = toDisplayAmount(v, ctx, kind);
+  const abs = Math.abs(display);
+  const sign = display < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return `${sign}${ctx.symbol}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${sign}${ctx.symbol}${(abs / 1_000_000).toFixed(2)}M`;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: ctx.code, maximumFractionDigits: 2 }).format(display);
+}
+
+function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  return fmtMoneyCompact(v, ctx, "financial");
+}
+
 const fmtNum = (v?: number | null) =>
   typeof v === "number" && Number.isFinite(v) ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(v) : "N/A";
 const fmtPct = (v?: number | null) => (typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A");
 const fmtLargeAware = (v?: number | null) => {
-  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
-  return fmtNum(v);
-};
-const fmtAssumptionValue = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const abs = Math.abs(v);
   if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
@@ -100,12 +171,40 @@ const fmtNotionalPct = (v?: number | null) => {
   if (Math.abs(pct) < 1e-9) return "0.00%";
   return `${pct.toFixed(2)}%`;
 };
-const fmtTargetOrFloor = (v?: number | null) => {
+const fmtTargetOrFloor = (v: number | null | undefined, ctx: CurrencyContext) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "<0";
-  return fmtMoneyCompact(v);
+  return fmtMoneyCompact(v, ctx, "price");
 };
 
+function formatMethodMetric(metricKey: string, value: number | null | undefined, ctx: CurrencyContext): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  if (MONEY_METRIC_KEYS.has(String(metricKey || "").trim().toLowerCase())) {
+    return fmtMoneyCompact(value, ctx, "financial");
+  }
+  return fmtLargeAware(value);
+}
+
+function formatAssumptionValue(label: string, value: number | null | undefined, ctx: CurrencyContext): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  const normalizedLabel = String(label || "").trim().toLowerCase();
+  if (ASSUMPTION_MONEY_LABELS.has(normalizedLabel)) {
+    return fmtMoneyCompact(value, ctx, "financial");
+  }
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  return fmtNum(value);
+}
+
+function modelExplanation(modelName: string): string {
+  return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision.";
+}
+
 function InlineMarkdown({ text }: { text: string }) {
+  const cleaned = String(text || "")
+    .replace(/\u200b/g, "")
+    .replace(/~~/g, "")
+    .trim();
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -113,7 +212,7 @@ function InlineMarkdown({ text }: { text: string }) {
         p: ({ children }) => <>{children}</>,
       }}
     >
-      {text}
+      {cleaned}
     </ReactMarkdown>
   );
 }
@@ -150,26 +249,110 @@ function Tab({ active, onClick, label }: { active: boolean; onClick: () => void;
 }
 
 function MarkdownBlock({ text }: { text: string }) {
+  const cleaned = String(text || "")
+    .replace(/\u200b/g, "")
+    .replace(/~~/g, "")
+    .trim();
   return (
     <div className="hib-markdown text-sm leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
     </div>
   );
 }
 
 function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [bubbleStyle, setBubbleStyle] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 280,
+  });
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const updateMobile = () => setIsMobile(window.matchMedia("(max-width: 639px)").matches);
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
+  }, []);
+
+  useEffect(() => {
+    if (!open || isMobile || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const width = Math.min(320, Math.max(220, window.innerWidth - 24));
+    let left = rect.left + rect.width / 2 - width / 2;
+    left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
+    let top = rect.bottom + 10;
+    if (top + 140 > window.innerHeight) {
+      top = Math.max(12, rect.top - 150);
+    }
+    setBubbleStyle({ top, left, width });
+  }, [open, isMobile]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (btnRef.current?.contains(target)) return;
+      if (bubbleRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  const cleaned = String(text || "").replace(/\u200b/g, "").replace(/~~/g, "").trim();
+
   return (
-    <span className="group relative inline-flex align-middle">
+    <span className="relative inline-flex align-middle">
       <button
+        ref={btnRef}
         type="button"
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => {
+          if (!isMobile) setOpen(true);
+        }}
+        onMouseLeave={() => {
+          if (!isMobile) setOpen(false);
+        }}
         aria-label="More information"
-        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/30 text-[10px] font-semibold leading-none text-zinc-300"
+        className="hib-info-tip-btn ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-semibold leading-none"
       >
         i
       </button>
-      <span className="pointer-events-none absolute left-1/2 top-6 z-20 w-64 -translate-x-1/2 rounded-md border border-white/15 bg-zinc-950/95 px-2 py-1 text-[11px] normal-case leading-snug text-zinc-200 opacity-0 shadow-xl transition group-hover:opacity-100 group-focus-within:opacity-100">
-        {text}
-      </span>
+      {open && isMobile ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+          <div
+            ref={bubbleRef}
+            className="hib-tooltip-panel w-full max-w-sm rounded-xl border px-3 py-2 text-xs leading-relaxed shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {cleaned}
+          </div>
+        </div>
+      ) : null}
+      {open && !isMobile ? (
+        <div
+          ref={bubbleRef}
+          className="hib-tooltip-panel fixed z-[80] rounded-md border px-2 py-1 text-[11px] normal-case leading-snug shadow-xl"
+          style={{ top: bubbleStyle.top, left: bubbleStyle.left, width: bubbleStyle.width }}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {cleaned}
+        </div>
+      ) : null}
     </span>
   );
 }
@@ -234,7 +417,12 @@ function normalizeReasonText(text: string): string {
   const src = String(text || "").replace(/\r\n/g, "\n").trim();
   if (!src) return "";
   const mergedLines = src.replace(/([^\n])\n(?!\n)/g, "$1 ");
-  return mergedLines.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return mergedLines
+    .replace(/\u0336/g, "")
+    .replace(/~~/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function reportTimestamp(report: ReportListItem): number {
@@ -282,21 +470,23 @@ function prettyMetricName(raw: string): string {
     .join(" ");
 }
 
-function getDecisionSignal(pct?: number | null): { label: string; tone: "hold" | "underperform" | "sell" | "buy" | "strong" } {
+function getDecisionSignal(pct?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof pct === "number" && Number.isFinite(pct) ? pct : 0;
-  if (v <= -10) return { label: "Sell", tone: "sell" };
-  if (v < -5) return { label: "Underperform", tone: "underperform" };
-  if (v <= 5) return { label: "Hold", tone: "hold" };
-  if (v <= 10) return { label: "Buy", tone: "buy" };
-  return { label: "Strong Buy", tone: "strong" };
+  if (v <= -10) return { label: "Strong Sell", tone: "negative" };
+  if (v < -1) return { label: "Sell", tone: "negative" };
+  if (v < 1) return { label: "Hold", tone: "neutral" };
+  if (v < 10) return { label: "Buy", tone: "positive" };
+  return { label: "Strong Buy", tone: "positive" };
 }
 
 function ChartHoverTooltip({
   active,
   payload,
+  currencyContext,
 }: {
   active?: boolean;
   payload?: Array<{ payload?: { name?: string; target?: number } }>;
+  currencyContext: CurrencyContext;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
@@ -304,10 +494,22 @@ function ChartHoverTooltip({
   return (
     <div className="hib-chart-tooltip rounded-lg border border-white/15 bg-zinc-950/95 px-3 py-2 shadow-xl">
       <p className="text-xs font-semibold tracking-[0.08em] text-zinc-100">{row.name}</p>
-      <p className="text-sm font-medium text-zinc-200">{fmtMoney(row.target)}</p>
+      <p className="text-sm font-medium text-zinc-200">{fmtMoney(row.target, currencyContext, "price")}</p>
     </div>
   );
 }
+
+type ChartHoverState = {
+  chartX?: number;
+  chartY?: number;
+  offset?: {
+    top?: number;
+    left?: number;
+    width?: number;
+    height?: number;
+  };
+  yAxisMap?: Record<string, { scale?: (value: number) => number }>;
+};
 
 export function HedgeDashboard() {
   const [reports, setReports] = useState<ReportListItem[]>([]);
@@ -321,6 +523,13 @@ export function HedgeDashboard() {
   const [valuationTab, setValuationTab] = useState("overview");
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
+  const [livePerformance, setLivePerformance] = useState<DashboardPayload["header"]["price_performance_pct"] | null>(null);
+  const [currentLineTooltip, setCurrentLineTooltip] = useState<{ visible: boolean; x: number; y: number }>({
+    visible: false,
+    x: 0,
+    y: 0,
+  });
+  const chartWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const tickerFromUrl =
@@ -412,6 +621,27 @@ export function HedgeDashboard() {
       .finally(() => setLoading(false));
   }, [selectedTicker, currentReportId]);
 
+  useEffect(() => {
+    if (!selectedTicker) return;
+    let cancelled = false;
+    fetch(`/api/performance/${encodeURIComponent(selectedTicker)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        const returns = json?.returns_pct;
+        if (returns && typeof returns === "object") {
+          setLivePerformance(returns);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLivePerformance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTicker, currentReportId]);
+
+  const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
   const consensus = data?.valuation_hub?.consensus;
   const methodTabs = useMemo(
     () => data?.valuation_hub?.method_tabs || [],
@@ -492,6 +722,18 @@ export function HedgeDashboard() {
   const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
   const consensusChangeClass = toneClassFromSign(consensusChangePct);
+  const overallDisagreement =
+    [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
+      ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
+      : null;
+  const overallDisagreementClass =
+    typeof overallDisagreement !== "number"
+      ? "text-zinc-300"
+      : overallDisagreement <= 0.25
+        ? "hib-target-up"
+        : overallDisagreement <= 0.6
+          ? "hib-conviction-accent"
+          : "hib-target-down";
   const chartScale = useMemo(() => {
     const values = chartData
       .map((x) => Number(x.target))
@@ -583,10 +825,15 @@ export function HedgeDashboard() {
     data?.generated_at || data?.report_mtime
       ? new Date(String(data?.generated_at || data?.report_mtime)).toLocaleString()
       : "N/A";
+  const reportDateIso =
+    data?.generated_at || data?.report_mtime
+      ? new Date(String(data?.generated_at || data?.report_mtime)).toISOString().slice(0, 10)
+      : "N/A";
   const analysisDurationText =
     typeof data?.analysis_duration_minutes === "number" && Number.isFinite(data.analysis_duration_minutes)
       ? `${data.analysis_duration_minutes.toFixed(1)} min`
       : "N/A";
+  const performanceRows = livePerformance || data?.header?.price_performance_pct || {};
 
   const assumptionsModelRows = useMemo(() => {
     const sourceRows = data?.valuation_hub.all_values?.metric_means || [];
@@ -757,7 +1004,65 @@ export function HedgeDashboard() {
   const bullProbability = assumptionsByNorm.get(normalizeMetricLabel("Bull Probability"))?.mean ?? null;
   const bearProbability = assumptionsByNorm.get(normalizeMetricLabel("Bear Probability"))?.mean ?? null;
   const decisionSignal = getDecisionSignal(data?.decision_card?.position_size_pct_of_notional);
-  const decisionToneClass = `hib-signal-${decisionSignal.tone}`;
+  const decisionToneClass =
+    decisionSignal.tone === "positive" ? "hib-target-up" : decisionSignal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
+
+  const hideCurrentLineTooltip = () => {
+    setCurrentLineTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+  };
+
+  const handleChartMouseMove = (state: unknown) => {
+    const hoverState: ChartHoverState | undefined =
+      state && typeof state === "object" ? (state as ChartHoverState) : undefined;
+    if (typeof consensusCurrent !== "number" || !Number.isFinite(consensusCurrent) || !chartWrapRef.current) {
+      hideCurrentLineTooltip();
+      return;
+    }
+    const chartX = Number(hoverState?.chartX);
+    const chartY = Number(hoverState?.chartY);
+    const offset = hoverState?.offset;
+    if (!Number.isFinite(chartX) || !Number.isFinite(chartY) || !offset) {
+      hideCurrentLineTooltip();
+      return;
+    }
+
+    const yAxisMap = hoverState?.yAxisMap;
+    const axisKey = yAxisMap ? Object.keys(yAxisMap)[0] : undefined;
+    const axisState = axisKey && yAxisMap ? yAxisMap[axisKey] : undefined;
+    const scaleFn = axisState?.scale ?? null;
+    let lineY: number;
+    if (typeof scaleFn === "function") {
+      const scaled = scaleFn(consensusCurrent);
+      lineY = Number(scaled);
+    } else {
+      const span = chartScale.max - chartScale.min;
+      if (!Number.isFinite(span) || Math.abs(span) < 1e-9) {
+        hideCurrentLineTooltip();
+        return;
+      }
+      const ratio = (chartScale.max - consensusCurrent) / span;
+      lineY = Number(offset.top) + ratio * Number(offset.height || 0);
+    }
+
+    if (!Number.isFinite(lineY)) {
+      hideCurrentLineTooltip();
+      return;
+    }
+
+    const nearLine = Math.abs(chartY - lineY) <= 8;
+    const insidePlot = chartX >= Number(offset.left) && chartX <= Number(offset.left) + Number(offset.width || 0);
+    if (!nearLine || !insidePlot) {
+      hideCurrentLineTooltip();
+      return;
+    }
+
+    const rect = chartWrapRef.current.getBoundingClientRect();
+    const tipW = 220;
+    const tipH = 32;
+    const x = Math.max(10, Math.min(chartX + 12, rect.width - tipW - 10));
+    const y = Math.max(8, Math.min(lineY - 28, rect.height - tipH - 8));
+    setCurrentLineTooltip({ visible: true, x, y });
+  };
 
   return (
     <div className="hib-shell min-h-screen">
@@ -840,8 +1145,33 @@ export function HedgeDashboard() {
                   Report Date: {reportDateText} | Analysis Duration: {analysisDurationText}
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-lg border border-white/10 bg-black/35 p-2"><p className="text-zinc-500">Price</p><p>{fmtMoney(data.header.current_price)}</p></div>
-                  <div className="rounded-lg border border-white/10 bg-black/35 p-2"><p className="text-zinc-500">Market Cap</p><p>{fmtMarketCap(data.header.market_cap)}</p></div>
+                  <div className="rounded-lg border border-white/10 bg-black/35 p-2">
+                    <p className="text-zinc-500">Price ({reportDateIso})</p>
+                    <p>{fmtMoney(data.header.current_price, currencyContext, "price")}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/35 p-2">
+                    <p className="text-zinc-500">Market Cap ({reportDateIso})</p>
+                    <p>{fmtMarketCap(data.header.market_cap, currencyContext)}</p>
+                  </div>
+                </div>
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/35 p-2">
+                  <p className="text-zinc-500">Price Performance</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4 xl:grid-cols-8">
+                    {(["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const).map((key) => {
+                      const value = performanceRows?.[key];
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-md border border-white/10 bg-black/25 px-2 py-1.5"
+                        >
+                          <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
+                          <span className={`mt-1 block text-sm font-semibold ${toneClassFromSign(value)}`}>
+                            {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </article>
             </section>
@@ -856,12 +1186,15 @@ export function HedgeDashboard() {
 
             {mainTab === "valuation" ? (
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-                <div className="mb-3 inline-flex items-center gap-2 text-zinc-300">
-                  <Gauge size={14} /> Target Price by Model
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-zinc-200">
+                  <span className="inline-flex items-center gap-2">
+                    <Gauge size={14} /> Target Price by Model
+                  </span>
+                  <InfoTip text="This chart compares each valuation model's target price against the report-date market price line." />
                 </div>
-                <div className="hib-chart h-96">
+                <div ref={chartWrapRef} className="hib-chart relative h-96">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
+                    <BarChart data={chartData} onMouseMove={handleChartMouseMove} onMouseLeave={hideCurrentLineTooltip}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#29303a" />
                       <XAxis dataKey="name" tick={false} axisLine={false} tickLine={false} />
                       <YAxis
@@ -870,7 +1203,7 @@ export function HedgeDashboard() {
                         ticks={chartScale.ticks}
                         tickFormatter={(v) => {
                           const value = Number(v);
-                          const label = fmtMoney(value);
+                          const label = fmtMoney(value, currencyContext, "price");
                           if (
                             typeof consensusCurrent === "number" &&
                             Math.abs(value - consensusCurrent) <= chartScale.currentEpsilon
@@ -897,39 +1230,47 @@ export function HedgeDashboard() {
                         {chartData.map((entry) => (
                           <Cell
                             key={`target-${entry.name}`}
-                            fill={entry.aboveCurrent ? "#22c55e" : "#f87171"}
+                            fill={entry.aboveCurrent ? "#22c55e" : "#ef4444"}
                             style={{ cursor: "pointer" }}
                           />
                         ))}
                       </Bar>
                       <Tooltip
                         cursor={false}
-                        content={<ChartHoverTooltip />}
+                        content={<ChartHoverTooltip currencyContext={currencyContext} />}
                         wrapperStyle={{ outline: "none" }}
                       />
                     </BarChart>
                   </ResponsiveContainer>
+                  {currentLineTooltip.visible ? (
+                    <div
+                      className="hib-line-tooltip pointer-events-none absolute z-20 rounded-md border px-2 py-1 text-[11px] shadow-lg"
+                      style={{ left: `${currentLineTooltip.x}px`, top: `${currentLineTooltip.y}px` }}
+                    >
+                      Current Price: {fmtMoney(consensusCurrent, currencyContext, "price")}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Main Results</p>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
                   <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Mean Target Price</p>
-                      <p className={`mt-1 text-4xl font-semibold leading-none ${consensusMeanClass}`}>{fmtTargetOrFloor(consensus?.mean_target_price)}</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Target Price</p>
+                      <p className={`mt-1 text-5xl font-bold leading-none ${consensusMeanClass}`}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Current Price</p>
-                      <p className="hib-current-price mt-1 text-3xl font-semibold leading-none">{fmtMoneyCompact(consensus?.current_price)}</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Price ({reportDateIso})</p>
+                      <p className="hib-current-price mt-1 text-4xl font-bold leading-none">{fmtMoneyCompact(consensus?.current_price, currencyContext, "price")}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Change (%)</p>
-                      <p className={`mt-1 text-3xl font-semibold leading-none ${consensusChangeClass}`}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Change (%)</p>
+                      <p className={`mt-1 text-4xl font-bold leading-none ${consensusChangeClass}`}>
                         {typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Disagreement Score</p>
-                      <p className="mt-1 text-3xl font-semibold leading-none text-zinc-200">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Target Disagreement Score</p>
+                      <p className="mt-1 text-4xl font-bold leading-none text-zinc-100">
                         {typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A"}
                       </p>
                     </div>
@@ -943,7 +1284,6 @@ export function HedgeDashboard() {
                   <div className="mt-3">
                     <div className="mb-2 px-1 text-xs text-zinc-400">
                       Price table
-                      <InfoTip text="Each row is a valuation model. Target Price is the model target; Change compares that target against current market price." />
                     </div>
                     <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
                     <table className="w-full min-w-[640px] text-sm">
@@ -954,7 +1294,7 @@ export function HedgeDashboard() {
                           <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
                           <th className="px-3 py-2 text-right font-medium">
                             Investment %
-                            <InfoTip text="Investment % = (investment_amount / $100,000) × 100. Positive means long exposure; negative means short exposure." />
+                            <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
                           </th>
                         </tr>
                       </thead>
@@ -963,7 +1303,7 @@ export function HedgeDashboard() {
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
                             <td className="px-3 py-2 font-medium text-zinc-200">{row.name}</td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
-                              {fmtTargetOrFloor(row.target)}
+                              {fmtTargetOrFloor(row.target, currencyContext)}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.changePct)}`}>
                               {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
@@ -980,16 +1320,19 @@ export function HedgeDashboard() {
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
                       <p className="font-semibold">{activeMethod.name}</p>
                       <p className="text-sm text-zinc-400">
-                        Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price)}</span>
+                        Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price, currencyContext)}</span>
                       </p>
                       <p className="text-sm text-zinc-400">
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>
                       </p>
                       {Object.entries(activeMethod.key_metric_means || {}).map(([k, v]) => (
                         <p key={k} className="text-xs text-zinc-500">
-                          {prettyMetricName(k)}: {fmtLargeAware(v)}
+                          {prettyMetricName(k)}: {formatMethodMetric(k, v, currencyContext)}
                         </p>
                       ))}
+                      <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2 text-xs leading-relaxed text-zinc-300">
+                        {modelExplanation(activeMethod.name)}
+                      </p>
                     </article>
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
                       {activeMethod.outputs.length ? (
@@ -998,7 +1341,7 @@ export function HedgeDashboard() {
                           {selectedOutput ? (
                             <>
                               <p className="text-sm text-zinc-400">
-                                Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price)}</span>{" "}
+                                Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
                                 | Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>
                               </p>
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
@@ -1006,7 +1349,9 @@ export function HedgeDashboard() {
                                   selectedOutput.reason_sections.map((r) => (
                                     <details key={r.path} className="mb-2 rounded border border-white/10 bg-black/30 p-3" open>
                                       <summary className="cursor-pointer font-medium">{prettyReasonLabel(r.label)}</summary>
-                                      <p className="mt-2 whitespace-pre-line leading-relaxed text-zinc-300">{normalizeReasonText(r.text)}</p>
+                                      <div className="mt-2">
+                                        <MarkdownBlock text={normalizeReasonText(r.text)} />
+                                      </div>
                                     </details>
                                   ))
                                 ) : (
@@ -1076,9 +1421,9 @@ export function HedgeDashboard() {
                         ) : entry?.type === "metric" ? (
                           <tr key={entry.key} className="border-b border-white/5">
                             <td className="py-1 pr-2">{entry.row.label}</td>
-                            <td className="py-1 text-right font-mono">{fmtAssumptionValue(entry.row.mean)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{fmtAssumptionValue(entry.row.min)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{fmtAssumptionValue(entry.row.max)}</td>
+                            <td className="py-1 text-right font-mono">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</td>
+                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</td>
+                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</td>
                           </tr>
                         ) : null,
                       )}
@@ -1090,16 +1435,18 @@ export function HedgeDashboard() {
 
             <section className="grid gap-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4 lg:grid-cols-[1fr_auto]">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Decision</p>
-                <p className={`text-3xl font-semibold ${decisionToneClass}`}>{decisionSignal.label}</p>
-                <p className={`text-lg font-semibold ${consensusChangeClass}`}>
-                  Mean Target Price: {fmtTargetOrFloor(consensus?.mean_target_price)}{" "}
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Decision</p>
+                <p className={`text-4xl font-bold ${decisionToneClass}`}>{decisionSignal.label}</p>
+                <p className={`mt-2 text-xl font-semibold ${consensusChangeClass}`}>
+                  Mean Target Price: {fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}{" "}
                   {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
                 </p>
                 <p className={`text-lg font-semibold ${decisionToneClass}`}>
                   Mean Investment Decision: {fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}
                 </p>
-                <p className="text-sm text-zinc-400">Disagreement Score: {typeof lmilCvRaw === "number" ? fmtNum(lmilCvRaw) : "N/A"}</p>
+                <p className={`text-sm ${overallDisagreementClass}`}>
+                  Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
+                </p>
               </div>
               <div className="grid gap-2">
                 <a className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" href={data.downloads?.analysis_pdf}><Download size={14} />Analysis PDF</a>

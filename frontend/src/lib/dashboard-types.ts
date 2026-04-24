@@ -48,6 +48,25 @@ export type DashboardPayload = {
     market_cap?: number | null;
     shares_outstanding?: number | null;
     currency?: string;
+    display_currency?: "USD" | "ILS" | string;
+    is_israeli?: boolean;
+    original_price_currency?: string;
+    original_financial_currency?: string;
+    price_currency_to_usd?: number | null;
+    financial_currency_to_usd?: number | null;
+    price_usd_to_display?: number | null;
+    financial_usd_to_display?: number | null;
+    price_unit_note?: string;
+    price_performance_pct?: {
+      "1D"?: number | null;
+      "1W"?: number | null;
+      "1M"?: number | null;
+      "3M"?: number | null;
+      "6M"?: number | null;
+      "1Y"?: number | null;
+      "3Y"?: number | null;
+      "5Y"?: number | null;
+    };
     f_score_text?: string;
   };
   red_flag_shield: string[];

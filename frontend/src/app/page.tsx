@@ -7,6 +7,7 @@ import { Loader2, Search } from "lucide-react";
 import type { ReportListItem } from "@/lib/dashboard-types";
 import { upsertActiveRun } from "@/lib/active-runs";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { getProgressStep, getProgressStepNumber, RUN_PROGRESS_STEPS } from "@/lib/run-progress";
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -32,8 +33,6 @@ export default function Home() {
   const [jobTicker, setJobTicker] = useState("");
   const [status, setStatus] = useState<RunStatusResponse["status"] | "idle">("idle");
   const [progress, setProgress] = useState<string[]>([]);
-  const [llmTotal, setLlmTotal] = useState(0);
-  const [llmDone, setLlmDone] = useState(0);
   const [llmPct, setLlmPct] = useState(0);
   const [error, setError] = useState("");
   const [pollMisses, setPollMisses] = useState(0);
@@ -51,9 +50,7 @@ export default function Home() {
     setError("");
     setStatus("queued");
     setProgress([]);
-    setLlmDone(0);
     setLlmPct(0);
-    setLlmTotal(0);
     setJobTicker(normalizedTicker);
 
     try {
@@ -123,8 +120,6 @@ export default function Home() {
         setPollMisses(0);
         setStatus(json.status);
         setProgress(Array.isArray(json.progress) ? json.progress : []);
-        setLlmTotal(Number(json.llm_total_estimated || 0));
-        setLlmDone(Number(json.llm_completed || 0));
         setLlmPct(Number(json.llm_progress_pct || 0));
         upsertActiveRun({
           job_id: json.job_id || jobId,
@@ -162,6 +157,9 @@ export default function Home() {
 
   const isRunning = status === "queued" || status === "running";
   const showProgress = isRunning || status === "completed" || status === "failed";
+  const progressPct = Math.max(0, Math.min(100, llmPct));
+  const progressStep = getProgressStep(progressPct);
+  const progressStepNo = getProgressStepNumber(progressPct);
 
   return (
     <div className="hib-shell min-h-screen px-4 py-8 sm:px-8">
@@ -177,10 +175,11 @@ export default function Home() {
         </div>
 
         <div className="mb-8 text-center">
-          <h1 className="font-display text-4xl tracking-tight text-zinc-100 sm:text-5xl">
-            A hedge fund in a box. Powered by AI. Ready in 30 minutes.
+          <h1 className="font-display text-5xl tracking-tight text-zinc-100 sm:text-6xl">
+            Hedge in a box
           </h1>
-          <p className="mt-3 text-sm italic tracking-[0.08em] text-zinc-300">From raw data to investment-grade insight.</p>
+          <p className="mt-3 text-base text-zinc-200 sm:text-lg">A hedge fund in a box. Powered by AI. Ready in 30 minutes.</p>
+          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-zinc-500">From raw data to investment-grade insight.</p>
           <p className="mt-2 text-xs uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboards</p>
         </div>
 
@@ -216,22 +215,20 @@ export default function Home() {
           <section className="mt-5 w-full rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
             <div className="mb-2 flex items-center justify-between text-sm">
               <p className="uppercase tracking-[0.14em] text-zinc-400">Status: {status}</p>
-              <p className="text-zinc-300">
-                LLM Calls: {llmDone}/{llmTotal || "?"}
-              </p>
+              <p className="text-zinc-300">Step {progressStepNo}/{RUN_PROGRESS_STEPS.length}</p>
             </div>
             <div className="mb-2 flex items-end justify-between">
-              <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Run Progress</p>
-              <p className="text-2xl font-semibold text-emerald-300">{llmPct.toFixed(1)}%</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">{progressStep}</p>
+              <p className="text-2xl font-semibold text-emerald-300">{progressPct.toFixed(1)}%</p>
             </div>
             <div className="relative h-3 w-full overflow-hidden rounded-full bg-black/40">
               <div className="absolute inset-y-0 left-0 w-full animate-pulse bg-gradient-to-r from-emerald-500/5 via-transparent to-emerald-500/5" />
               <div
                 className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-300 to-emerald-400 transition-all duration-500"
-                style={{ width: `${Math.max(0, Math.min(100, llmPct))}%` }}
+                style={{ width: `${progressPct}%` }}
               />
             </div>
-            <p className="mt-2 text-xs text-zinc-400">Estimated completion by LLM calls</p>
+            <p className="mt-2 text-xs text-zinc-400">Progress updates adapt automatically every 10%.</p>
 
             <div className="mt-3 max-h-40 overflow-auto rounded-lg border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">
               {(progress.length ? progress : ["Preparing run..."]).map((line, idx) => (

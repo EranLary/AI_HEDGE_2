@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+import yfinance as yf
+
 
 INSTRUCTION_EXECUTIVE_SUMMARY = """
 Create a clean, well-written executive summary of the company, based only on the analysis document and financial data.
@@ -837,6 +839,97 @@ def _extract_overall_triplet(metric_dict: Dict[str, Any]) -> Tuple[Optional[floa
     return mean_v, min_v, max_v
 
 
+def _compute_price_performance_pct(ticker: str) -> Dict[str, Optional[float]]:
+    try:
+        hist = yf.Ticker(str(ticker or "").strip()).history(period="max")
+    except Exception:
+        return {}
+    if hist is None or getattr(hist, "empty", True):
+        return {}
+    try:
+        close_series = hist["Close"]
+    except Exception:
+        return {}
+    if getattr(close_series, "empty", True):
+        return {}
+
+    last_price = _safe_float(close_series.iloc[-1])
+    if last_price is None or last_price <= 0:
+        return {}
+
+    def calc_return(trading_days: int) -> Optional[float]:
+        if trading_days <= 0:
+            return None
+        try:
+            past_price = _safe_float(close_series.iloc[-trading_days - 1])
+        except Exception:
+            return None
+        if past_price is None or past_price <= 0:
+            return None
+        return ((last_price / past_price) - 1.0) * 100.0
+
+    periods = {
+        "1D": 1,
+        "1W": 5,
+        "1M": 21,
+        "3M": 63,
+        "6M": 126,
+        "1Y": 252,
+        "3Y": 252 * 3,
+        "5Y": 252 * 5,
+    }
+    returns: Dict[str, Optional[float]] = {}
+    for label, days in periods.items():
+        value = calc_return(days)
+        returns[label] = round(value, 2) if value is not None else None
+    return returns
+
+
+def _currency_context(ticker: str, info: Mapping[str, Any]) -> Dict[str, Any]:
+    original_price_currency = str(info.get("original_price_currency") or info.get("currency") or "USD").upper()
+    original_financial_currency = str(info.get("original_financial_currency") or info.get("financialCurrency") or "USD").upper()
+    price_currency_to_usd = _safe_float(info.get("price_currency_to_USD")) or 1.0
+    financial_currency_to_usd = _safe_float(info.get("financial_currency_to_USD")) or 1.0
+
+    is_israeli = (
+        str(ticker or "").upper().endswith(".TA")
+        or original_price_currency in {"ILS", "ILA"}
+        or original_financial_currency in {"ILS", "ILA"}
+    )
+    if not is_israeli:
+        return {
+            "display_currency": "USD",
+            "is_israeli": False,
+            "original_price_currency": original_price_currency,
+            "original_financial_currency": original_financial_currency,
+            "price_currency_to_usd": price_currency_to_usd,
+            "financial_currency_to_usd": financial_currency_to_usd,
+            "price_usd_to_display": 1.0,
+            "financial_usd_to_display": 1.0,
+            "price_unit_note": None,
+        }
+
+    price_usd_to_display = price_currency_to_usd
+    if original_price_currency == "ILA":
+        price_usd_to_display = price_currency_to_usd / 100.0
+
+    financial_usd_to_display = financial_currency_to_usd
+    if original_financial_currency == "ILA":
+        financial_usd_to_display = financial_currency_to_usd / 100.0
+
+    return {
+        "display_currency": "ILS",
+        "is_israeli": True,
+        "original_price_currency": original_price_currency,
+        "original_financial_currency": original_financial_currency,
+        "price_currency_to_usd": price_currency_to_usd,
+        "financial_currency_to_usd": financial_currency_to_usd,
+        "price_usd_to_display": price_usd_to_display,
+        "financial_usd_to_display": financial_usd_to_display,
+        "price_unit_note": "agorot" if original_price_currency == "ILA" else None,
+    }
+
+
 def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     metric_map: Dict[str, Dict[str, Any]] = {}
     source_values: List[Dict[str, Any]] = []
@@ -953,6 +1046,8 @@ def build_dashboard_payload(
     enable_llm_extractions: bool = True,
 ) -> Dict[str, Any]:
     info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
+    currency_context = _currency_context(ticker=ticker, info=info if isinstance(info, dict) else {})
+    price_performance_pct = _compute_price_performance_pct(ticker)
     prices = final_dict.get("Prices", {}) if isinstance(final_dict.get("Prices"), dict) else {}
     current_price = _safe_float(prices.get("Current")) or _safe_float(variables_dict.get("price")) or 0.0
     overall = prices.get("Overall") if isinstance(prices.get("Overall"), (list, tuple)) else []
@@ -1086,6 +1181,16 @@ def build_dashboard_payload(
             "market_cap": _safe_float(variables_dict.get("market_cap")),
             "shares_outstanding": _safe_float(variables_dict.get("shares_outstanding")),
             "currency": _first_non_empty(info.get("currency"), "USD"),
+            "display_currency": currency_context.get("display_currency"),
+            "is_israeli": currency_context.get("is_israeli"),
+            "original_price_currency": currency_context.get("original_price_currency"),
+            "original_financial_currency": currency_context.get("original_financial_currency"),
+            "price_currency_to_usd": currency_context.get("price_currency_to_usd"),
+            "financial_currency_to_usd": currency_context.get("financial_currency_to_usd"),
+            "price_usd_to_display": currency_context.get("price_usd_to_display"),
+            "financial_usd_to_display": currency_context.get("financial_usd_to_display"),
+            "price_unit_note": currency_context.get("price_unit_note"),
+            "price_performance_pct": price_performance_pct,
             "f_score_text": str(variables_dict.get("f_score", "") or ""),
         },
         "red_flag_shield": [],

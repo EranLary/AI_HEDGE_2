@@ -91,11 +91,6 @@ function inferLegacyModelTargetScale(payload: DashboardPayload): number {
     (originalPriceCurrency && originalPriceCurrency !== "USD");
   const fxFromHeader = asFinite(payload.header?.price_currency_to_usd);
 
-  // Do not alter plain USD dashboards here.
-  if (!isNonUsd) {
-    return 1;
-  }
-
   const consensusMean = asFinite(payload.valuation_hub?.consensus?.mean_target_price);
   if (consensusMean === null || Math.abs(consensusMean) < 1e-9) {
     return 1;
@@ -127,7 +122,7 @@ function inferLegacyModelTargetScale(payload: DashboardPayload): number {
 
   // Deterministic path when FX metadata is present:
   // apply only if mismatch is close to the expected local-scale factor.
-  if (typeof fxFromHeader === "number" && fxFromHeader > 0) {
+  if (isNonUsd && typeof fxFromHeader === "number" && fxFromHeader > 0) {
     const closeness = ratio / fxFromHeader;
     if (closeness >= 0.7 && closeness <= 1.3) {
       return fxFromHeader;
@@ -135,7 +130,7 @@ function inferLegacyModelTargetScale(payload: DashboardPayload): number {
     return 1;
   }
 
-  // Legacy fallback for old non-USD payloads without FX metadata:
+  // Legacy fallback (old payloads may miss currency metadata):
   // scale only for clear raw-USD-to-local mismatch.
   return ratio >= 5 ? ratio : 1;
 }

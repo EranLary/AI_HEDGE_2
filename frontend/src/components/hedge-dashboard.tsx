@@ -351,7 +351,9 @@ function InfoTip({ text }: { text: string }) {
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
           <div
             ref={bubbleRef}
-            className="hib-tooltip-panel w-full max-w-sm rounded-xl border px-3 py-2 text-xs leading-relaxed shadow-2xl"
+            className="hib-tooltip-panel w-full max-w-sm rounded-xl border px-3 py-2 text-left text-xs leading-relaxed shadow-2xl"
+            dir="ltr"
+            style={{ unicodeBidi: "isolate" }}
             onClick={(e) => e.stopPropagation()}
           >
             {cleaned}
@@ -361,8 +363,9 @@ function InfoTip({ text }: { text: string }) {
       {open && !isMobile ? (
         <div
           ref={bubbleRef}
-          className="hib-tooltip-panel fixed z-[80] rounded-md border px-2 py-1 text-[11px] normal-case leading-snug shadow-xl"
-          style={{ top: bubbleStyle.top, left: bubbleStyle.left, width: bubbleStyle.width }}
+          className="hib-tooltip-panel fixed z-[80] rounded-md border px-2 py-1 text-left text-[11px] normal-case leading-snug shadow-xl"
+          dir="ltr"
+          style={{ top: bubbleStyle.top, left: bubbleStyle.left, width: bubbleStyle.width, unicodeBidi: "isolate" }}
           onMouseLeave={() => setOpen(false)}
         >
           {cleaned}
@@ -1318,8 +1321,8 @@ export function HedgeDashboard() {
                           <th className="px-3 py-2 text-left font-medium">Model Name</th>
                           <th className="px-3 py-2 text-right font-medium">Target Price</th>
                           <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
-                          <th className="px-3 py-2 text-right font-medium">
-                            <span dir="ltr" className="inline-flex items-center gap-1">
+                          <th className="px-3 py-2 text-right font-medium" dir="ltr" style={{ unicodeBidi: "isolate" }}>
+                            <span dir="ltr" style={{ unicodeBidi: "isolate" }} className="inline-flex items-center gap-1">
                               <span>Investment %</span>
                               <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
                             </span>
@@ -1358,7 +1361,7 @@ export function HedgeDashboard() {
                           {prettyMetricName(k)}: {formatMethodMetric(k, v, currencyContext)}
                         </p>
                       ))}
-                      <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2 text-xs leading-relaxed text-zinc-300">
+                      <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
                         {modelExplanation(activeMethod.name)}
                       </p>
                     </article>

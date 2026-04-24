@@ -200,10 +200,17 @@ function modelExplanation(modelName: string): string {
   return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision.";
 }
 
+function stripBrokenMarkdownArtifacts(text: string): string {
+  return String(text || "")
+    .replace(/[\u0334\u0335\u0336\u0337\u0338]/g, "")
+    .replace(/<\s*\/?\s*del\s*>/gi, "")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/~~/g, "");
+}
+
 function InlineMarkdown({ text }: { text: string }) {
-  const cleaned = String(text || "")
+  const cleaned = stripBrokenMarkdownArtifacts(String(text || ""))
     .replace(/\u200b/g, "")
-    .replace(/~~/g, "")
     .trim();
   return (
     <ReactMarkdown
@@ -249,9 +256,8 @@ function Tab({ active, onClick, label }: { active: boolean; onClick: () => void;
 }
 
 function MarkdownBlock({ text }: { text: string }) {
-  const cleaned = String(text || "")
+  const cleaned = stripBrokenMarkdownArtifacts(String(text || ""))
     .replace(/\u200b/g, "")
-    .replace(/~~/g, "")
     .trim();
   return (
     <div className="hib-markdown text-sm leading-relaxed">
@@ -414,12 +420,10 @@ function prettyReasonLabel(label: string): string {
 }
 
 function normalizeReasonText(text: string): string {
-  const src = String(text || "").replace(/\r\n/g, "\n").trim();
+  const src = stripBrokenMarkdownArtifacts(String(text || "")).replace(/\r\n/g, "\n").trim();
   if (!src) return "";
   const mergedLines = src.replace(/([^\n])\n(?!\n)/g, "$1 ");
   return mergedLines
-    .replace(/\u0336/g, "")
-    .replace(/~~/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -726,14 +730,6 @@ export function HedgeDashboard() {
     [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
       ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
       : null;
-  const overallDisagreementClass =
-    typeof overallDisagreement !== "number"
-      ? "text-zinc-300"
-      : overallDisagreement <= 0.25
-        ? "hib-target-up"
-        : overallDisagreement <= 0.6
-          ? "hib-conviction-accent"
-          : "hib-target-down";
   const chartScale = useMemo(() => {
     const values = chartData
       .map((x) => Number(x.target))
@@ -1142,7 +1138,8 @@ export function HedgeDashboard() {
                 <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">{data.ticker}</p>
                 <h2 className="text-2xl font-semibold">{data.header.company_name || data.ticker}</h2>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Report Date: {reportDateText} | Analysis Duration: {analysisDurationText}
+                  <span className="block sm:inline">Report Date: {reportDateText}</span>
+                  <span className="block sm:inline sm:ml-1">Analysis Duration: {analysisDurationText}</span>
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-black/35 p-2">
@@ -1160,10 +1157,7 @@ export function HedgeDashboard() {
                     {(["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const).map((key) => {
                       const value = performanceRows?.[key];
                       return (
-                        <div
-                          key={key}
-                          className="rounded-md border border-white/10 bg-black/25 px-2 py-1.5"
-                        >
+                        <div key={key} className="hib-perf-cell rounded-md px-2 py-1.5">
                           <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
                           <span className={`mt-1 block text-sm font-semibold ${toneClassFromSign(value)}`}>
                             {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
@@ -1444,7 +1438,7 @@ export function HedgeDashboard() {
                 <p className={`text-lg font-semibold ${decisionToneClass}`}>
                   Mean Investment Decision: {fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}
                 </p>
-                <p className={`text-sm ${overallDisagreementClass}`}>
+                <p className="hib-neutral-metric text-sm">
                   Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                 </p>
               </div>

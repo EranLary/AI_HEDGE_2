@@ -779,12 +779,58 @@ def build_dashboard_appendix_text(ticker: str, qualitative: Dict[str, Any]) -> s
     return "\n".join(lines).strip() + "\n"
 
 
+def _scale_price_value(value: Any, multiplier: float) -> Optional[float]:
+    n = _safe_float(value)
+    if n is None:
+        return None
+    return float(n * multiplier)
+
+
+def _resolve_model_price_multiplier(
+    *,
+    aggregate_targets: Mapping[str, Any],
+    consensus_price: Optional[float],
+    price_currency_to_usd: float,
+    is_foreign: bool,
+) -> float:
+    multiplier = _safe_float(price_currency_to_usd) or 1.0
+    if not is_foreign or multiplier <= 0 or abs(multiplier - 1.0) < 1e-9:
+        return 1.0
+
+    target_values: List[float] = []
+    for raw in aggregate_targets.values():
+        v = _safe_float(raw)
+        if v is None or abs(v) < 1e-9:
+            continue
+        target_values.append(abs(v))
+
+    if not target_values:
+        return multiplier
+
+    target_values.sort()
+    median_target = target_values[len(target_values) // 2]
+    if median_target <= 0:
+        return multiplier
+
+    c = abs(consensus_price) if consensus_price is not None else None
+    if c is None or c <= 0:
+        return multiplier
+
+    ratio = c / median_target
+    if 0.5 <= ratio <= 2.0:
+        return 1.0
+    if 0.5 <= (ratio / multiplier) <= 2.0:
+        return multiplier
+    return multiplier
+
+
 def _build_method_tab(
     *,
     method_name: str,
     items: List[Dict[str, Any]],
     method_target: Optional[float],
     method_investment: Optional[float],
+    price_scale_multiplier: float = 1.0,
 ) -> Dict[str, Any]:
     outputs: List[Dict[str, Any]] = []
     for idx, item in enumerate(items, start=1):
@@ -797,7 +843,7 @@ def _build_method_tab(
             {
                 "output_id": idx,
                 "persona": str(item.get("persona", "") or "").strip(),
-                "target_price": _safe_float(item.get("target_price")),
+                "target_price": _scale_price_value(item.get("target_price"), price_scale_multiplier),
                 "investment_amount": _safe_float(item.get("investment_amount")),
                 "key_numeric_values": [
                     {
@@ -1073,6 +1119,12 @@ def build_dashboard_payload(
     method_details = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
     aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
+    target_multiplier = _resolve_model_price_multiplier(
+        aggregate_targets=aggregate_targets if isinstance(aggregate_targets, dict) else {},
+        consensus_price=consensus_price,
+        price_currency_to_usd=_safe_float(currency_context.get("price_currency_to_usd")) or 1.0,
+        is_foreign=bool(currency_context.get("display_currency")) and str(currency_context.get("display_currency")).upper() != "USD",
+    )
     method_order = [
         "DCF",
         "Net Income & P/E",
@@ -1087,7 +1139,8 @@ def build_dashboard_payload(
     method_tabs: List[Dict[str, Any]] = []
     for method_name in method_order:
         items = method_details.get(method_name, []) if isinstance(method_details, dict) else []
-        target_price = _safe_float(aggregate_targets.get(method_name)) if isinstance(aggregate_targets, dict) else None
+        raw_target_price = _safe_float(aggregate_targets.get(method_name)) if isinstance(aggregate_targets, dict) else None
+        target_price = _scale_price_value(raw_target_price, target_multiplier) if raw_target_price is not None else None
         investment_amount = (
             _safe_float(aggregate_investments.get(method_name))
             if isinstance(aggregate_investments, dict)
@@ -1126,6 +1179,7 @@ def build_dashboard_payload(
                 items=items if isinstance(items, list) else [],
                 method_target=target_price,
                 method_investment=investment_amount,
+                price_scale_multiplier=target_multiplier,
             )
         )
 
@@ -1142,7 +1196,7 @@ def build_dashboard_payload(
         dream_cards.append(
             {
                 "persona": str(item.get("persona", "") or "").strip(),
-                "target_price": _safe_float(item.get("target_price")),
+                "target_price": _scale_price_value(item.get("target_price"), target_multiplier),
                 "target_market_cap": _safe_float(raw_json.get("target_market_cap")),
                 "investment_amount": _safe_float(item.get("investment_amount")),
                 "investment_rationale": _first_non_empty(

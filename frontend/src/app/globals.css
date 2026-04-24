@@ -315,6 +315,22 @@ html[data-theme="light"] .hib-line-tooltip {
   color: #7c2d12 !important;
 }
 
+.hib-neutral-metric {
+  color: #cbd5e1 !important;
+}
+html[data-theme="light"] .hib-neutral-metric {
+  color: #334155 !important;
+}
+
+.hib-perf-cell {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(0, 0, 0, 0.25);
+}
+html[data-theme="light"] .hib-perf-cell {
+  border-color: rgba(148, 163, 184, 0.35);
+  background-color: transparent;
+}
+
 /* Active run banner: readable in both themes */
 .hib-active-run-banner {
   border-color: rgba(16, 185, 129, 0.45) !important;
@@ -408,6 +424,10 @@ html[data-theme="light"] .hib-bear-prob-value {
 }
 .hib-markdown strong {
   font-weight: 700;
+}
+.hib-markdown del,
+.hib-inline-markdown del {
+  text-decoration: none !important;
 }
 .hib-markdown hr {
   margin: 0.8rem 0;

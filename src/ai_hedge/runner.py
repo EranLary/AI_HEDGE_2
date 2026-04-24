@@ -3,6 +3,7 @@
 import os
 import shutil
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -453,6 +454,7 @@ def run_ticker_valuation(
     ticker = ticker.upper().strip()
     out_dir = Path(output_root) / ticker
     out_dir.mkdir(parents=True, exist_ok=True)
+    run_started = time.perf_counter()
 
     legacy.ticker = ticker
 
@@ -640,6 +642,7 @@ def run_ticker_valuation(
             notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
 
     try:
+        analysis_duration_minutes = round((time.perf_counter() - run_started) / 60.0, 2)
         dashboard_payload = build_dashboard_payload(
             ticker=ticker,
             info_dict=info_dict,
@@ -651,6 +654,7 @@ def run_ticker_valuation(
             sec_short_text=sec_short_text,
             qualitative_sections=qualitative_sections,
             enable_llm_extractions=True,
+            analysis_duration_minutes=analysis_duration_minutes,
             artifacts={
                 "analysis_txt": str(analysis_dst.resolve()) if analysis_dst.exists() else "",
                 "prices_plot": str((out_dir / f"{ticker}_prices_valuation.png").resolve()),
@@ -739,6 +743,7 @@ def run_ticker_valuation(
         "current_earnings": artifacts.current_earnings,
         "target_earnings": artifacts.target_earnings,
         "f_score_text": artifacts.f_score_text,
+        "analysis_duration_minutes": round((time.perf_counter() - run_started) / 60.0, 2),
         "sec_fallback_used": artifacts.sec_fallback_used,
         "sec_fallback_message": artifacts.sec_fallback_message,
     }

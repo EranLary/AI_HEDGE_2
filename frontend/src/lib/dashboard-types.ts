@@ -37,6 +37,7 @@ export type DashboardMethodTab = {
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
+  analysis_duration_minutes?: number | null;
   report_id?: string;
   report_file?: string;
   report_mtime?: string;

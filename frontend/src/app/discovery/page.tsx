@@ -38,7 +38,7 @@ function SectionCard({
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
-  metricLabel: "return" | "confidence";
+  metricLabel: "return" | "disagreement";
 }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -70,7 +70,7 @@ function SectionCard({
                   </div>
                 ) : (
                   <div>
-                    <p className="text-zinc-500">Confidence (CV)</p>
+                    <p className="text-zinc-500">Disagreement Score</p>
                     <p className={accent}>{Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}</p>
                     <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
                       {row.decision_label || "Hold"}
@@ -163,10 +163,10 @@ export default function DiscoveryPage() {
               />
               <SectionCard
                 title="Top Conviction"
-                icon={<Radar size={16} className="text-cyan-300" />}
+                icon={<Radar size={16} className="hib-conviction-accent" />}
                 rows={data.top_conviction}
-                accent="text-cyan-300"
-                metricLabel="confidence"
+                accent="hib-conviction-accent"
+                metricLabel="disagreement"
               />
             </div>
           </>

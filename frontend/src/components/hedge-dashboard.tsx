@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, Gauge } from "lucide-react";
 import {
   Bar,
@@ -39,7 +39,7 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   base_net_income: "Base Net Income",
   bear_net_income: "Bear Net Income",
   revenue_growth_3y_avg: "Revenue Growth (3Y Avg)",
-  operating_margin: "Operating Profitability Margin",
+  operating_margin: "EBIT Margin",
   net_financing_result: "Net Financing Result",
 };
 
@@ -105,20 +105,17 @@ const fmtTargetOrFloor = (v?: number | null) => {
   return fmtMoneyCompact(v);
 };
 
-function renderInlineMarkdown(text: string): ReactNode {
-  return String(text || "")
-    .split(/(\*\*[^*]+\*\*)/g)
-    .filter(Boolean)
-    .map((part, i) => {
-      const bold = part.match(/^\*\*([^*]+)\*\*$/);
-      return bold ? (
-        <strong key={i} className="font-semibold text-zinc-100">
-          {bold[1]}
-        </strong>
-      ) : (
-        <Fragment key={i}>{part}</Fragment>
-      );
-    });
+function InlineMarkdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <>{children}</>,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 }
 
 function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" | "bear" }) {
@@ -129,7 +126,9 @@ function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" |
       {items.map((item, i) => (
         <li key={`${i}-${item.slice(0, 12)}`} className="flex gap-2">
           <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
-          <span>{renderInlineMarkdown(item)}</span>
+          <span className="hib-inline-markdown">
+            <InlineMarkdown text={item} />
+          </span>
         </li>
       ))}
     </ul>
@@ -158,6 +157,23 @@ function MarkdownBlock({ text }: { text: string }) {
   );
 }
 
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex align-middle">
+      <button
+        type="button"
+        aria-label="More information"
+        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/30 text-[10px] font-semibold leading-none text-zinc-300"
+      >
+        i
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-6 z-20 w-64 -translate-x-1/2 rounded-md border border-white/15 bg-zinc-950/95 px-2 py-1 text-[11px] normal-case leading-snug text-zinc-200 opacity-0 shadow-xl transition group-hover:opacity-100 group-focus-within:opacity-100">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function prettyReasonLabel(label: string): string {
   const raw = String(label || "").trim();
   if (!raw) return "Rationale";
@@ -174,6 +190,7 @@ function prettyReasonLabel(label: string): string {
     .replace(/\brationale\b/g, "rationale")
     .replace(/\bstep by step and rationale full text\b/g, "step by step analysis")
     .replace(/\bstep by step\b/g, "step by step analysis")
+    .replace(/\bstep by step analysis(?:\s+analysis)+\b/g, "step by step analysis")
     .replace(/\bev\s+sales\b/g, "ev sales")
     .replace(/\bp\/e\b/g, "pe");
 
@@ -195,7 +212,7 @@ function prettyReasonLabel(label: string): string {
     "base rationale": "Base Case Rationale",
     "bear rationale": "Bear Case Rationale",
     "revenue growth rationale": "Revenue Growth Rationale",
-    "margin rationale": "Margin Rationale",
+    "margin rationale": "EBIT Margin Rationale",
     "financing rationale": "Financing Rationale",
   };
   if (exactLabels[normalized]) return exactLabels[normalized];
@@ -459,10 +476,6 @@ export function HedgeDashboard() {
     typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
       ? Number(consensus.mean_target_price)
       : null;
-  const consensusChangeAbs =
-    typeof consensusCurrent === "number" && typeof consensusMean === "number"
-      ? consensusMean - consensusCurrent
-      : null;
   const consensusChangePct =
     typeof consensusCurrent === "number" && typeof consensusMean === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusMean - consensusCurrent) / consensusCurrent) * 100
@@ -477,6 +490,8 @@ export function HedgeDashboard() {
   const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
   const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
   const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
+  const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
+  const consensusChangeClass = toneClassFromSign(consensusChangePct);
   const chartScale = useMemo(() => {
     const values = chartData
       .map((x) => Number(x.target))
@@ -567,6 +582,10 @@ export function HedgeDashboard() {
   const reportDateText =
     data?.generated_at || data?.report_mtime
       ? new Date(String(data?.generated_at || data?.report_mtime)).toLocaleString()
+      : "N/A";
+  const analysisDurationText =
+    typeof data?.analysis_duration_minutes === "number" && Number.isFinite(data.analysis_duration_minutes)
+      ? `${data.analysis_duration_minutes.toFixed(1)} min`
       : "N/A";
 
   const assumptionsModelRows = useMemo(() => {
@@ -714,10 +733,10 @@ export function HedgeDashboard() {
       "Terminal Value Growth",
       "WACC",
       "",
-      "Predicted EV/Sales",
-      "Predicted P/E",
-      "Predicted Earnings",
       "Predicted Revenue",
+      "Predicted EV/Sales",
+      "Predicted Earnings",
+      "Predicted P/E",
     ];
     return orderedLabels.map((label, idx) => {
       if (!label) {
@@ -818,7 +837,7 @@ export function HedgeDashboard() {
                 <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">{data.ticker}</p>
                 <h2 className="text-2xl font-semibold">{data.header.company_name || data.ticker}</h2>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Report Date: {reportDateText}
+                  Report Date: {reportDateText} | Analysis Duration: {analysisDurationText}
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-black/35 p-2"><p className="text-zinc-500">Price</p><p>{fmtMoney(data.header.current_price)}</p></div>
@@ -837,7 +856,9 @@ export function HedgeDashboard() {
 
             {mainTab === "valuation" ? (
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-                <div className="mb-3 inline-flex items-center gap-2 text-zinc-300"><Gauge size={14} /> Consensus + Models</div>
+                <div className="mb-3 inline-flex items-center gap-2 text-zinc-300">
+                  <Gauge size={14} /> Target Price by Model
+                </div>
                 <div className="hib-chart h-96">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
@@ -889,30 +910,52 @@ export function HedgeDashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-2 grid gap-2 text-base font-medium text-zinc-300 sm:grid-cols-4">
-                  <p>Current: {fmtMoney(consensus?.current_price)}</p>
-                  <p>Mean: {fmtMoney(consensus?.mean_target_price)}</p>
-                  <p>
-                    Change:{" "}
-                    {typeof consensusChangeAbs === "number" && typeof consensusChangePct === "number"
-                      ? `${fmtMoney(consensusChangeAbs)} (${fmtPct(consensusChangePct)})`
-                      : "N/A"}
-                  </p>
-                  <p>CV: {typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A"}</p>
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Main Results</p>
+                  <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Mean Target Price</p>
+                      <p className={`mt-1 text-4xl font-semibold leading-none ${consensusMeanClass}`}>{fmtTargetOrFloor(consensus?.mean_target_price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Current Price</p>
+                      <p className="hib-current-price mt-1 text-3xl font-semibold leading-none">{fmtMoneyCompact(consensus?.current_price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Change (%)</p>
+                      <p className={`mt-1 text-3xl font-semibold leading-none ${consensusChangeClass}`}>
+                        {typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Disagreement Score</p>
+                      <p className="mt-1 text-3xl font-semibold leading-none text-zinc-200">
+                        {typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tab active={valuationTab === "overview"} onClick={() => setValuationTab("overview")} label="Overview" />
                   {methodTabs.map((m) => <Tab key={m.name} active={valuationTab === m.name} onClick={() => setValuationTab(m.name)} label={m.name} />)}
                 </div>
                 {valuationTab === "overview" ? (
-                  <div className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-black/30">
+                  <div className="mt-3">
+                    <div className="mb-2 px-1 text-xs text-zinc-400">
+                      Price table
+                      <InfoTip text="Each row is a valuation model. Target Price is the model target; Change compares that target against current market price." />
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
                     <table className="w-full min-w-[640px] text-sm">
                       <thead className="border-b border-white/10 text-zinc-400">
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Model Name</th>
                           <th className="px-3 py-2 text-right font-medium">Target Price</th>
                           <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
-                          <th className="px-3 py-2 text-right font-medium">Investment %</th>
+                          <th className="px-3 py-2 text-right font-medium">
+                            Investment %
+                            <InfoTip text="Investment % = (investment_amount / $100,000) × 100. Positive means long exposure; negative means short exposure." />
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -930,6 +973,7 @@ export function HedgeDashboard() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
                   </div>
                 ) : activeMethod ? (
                   <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
@@ -1048,10 +1092,14 @@ export function HedgeDashboard() {
               <div>
                 <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Decision</p>
                 <p className={`text-3xl font-semibold ${decisionToneClass}`}>{decisionSignal.label}</p>
+                <p className={`text-lg font-semibold ${consensusChangeClass}`}>
+                  Mean Target Price: {fmtTargetOrFloor(consensus?.mean_target_price)}{" "}
+                  {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
+                </p>
                 <p className={`text-lg font-semibold ${decisionToneClass}`}>
                   Mean Investment Decision: {fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}
                 </p>
-                <p className="text-sm text-zinc-400">CV: {typeof lmilCvRaw === "number" ? fmtNum(lmilCvRaw) : "N/A"}</p>
+                <p className="text-sm text-zinc-400">Disagreement Score: {typeof lmilCvRaw === "number" ? fmtNum(lmilCvRaw) : "N/A"}</p>
               </div>
               <div className="grid gap-2">
                 <a className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" href={data.downloads?.analysis_pdf}><Download size={14} />Analysis PDF</a>

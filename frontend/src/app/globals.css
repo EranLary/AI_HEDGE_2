@@ -203,6 +203,20 @@ html[data-theme="light"] .hib-target-down {
   color: #b91c1c !important;
 }
 
+.hib-current-price {
+  color: #fbbf24 !important;
+}
+html[data-theme="light"] .hib-current-price {
+  color: #b45309 !important;
+}
+
+.hib-conviction-accent {
+  color: #67e8f9 !important;
+}
+html[data-theme="light"] .hib-conviction-accent {
+  color: #0e7490 !important;
+}
+
 /* Chart readability */
 .hib-chart .recharts-cartesian-grid line {
   stroke: rgba(100, 116, 139, 0.35) !important;

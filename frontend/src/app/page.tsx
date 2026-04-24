@@ -177,8 +177,11 @@ export default function Home() {
         </div>
 
         <div className="mb-8 text-center">
-          <h1 className="font-display text-5xl tracking-tight text-zinc-100 sm:text-6xl">Hedge in a Box</h1>
-          <p className="mt-3 text-sm uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboards</p>
+          <h1 className="font-display text-4xl tracking-tight text-zinc-100 sm:text-5xl">
+            A hedge fund in a box. Powered by AI. Ready in 30 minutes.
+          </h1>
+          <p className="mt-3 text-sm italic tracking-[0.08em] text-zinc-300">From raw data to investment-grade insight.</p>
+          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-zinc-500">Run Full Valuation + Build Dashboards</p>
         </div>
 
         <form
@@ -217,13 +220,18 @@ export default function Home() {
                 LLM Calls: {llmDone}/{llmTotal || "?"}
               </p>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-black/40">
+            <div className="mb-2 flex items-end justify-between">
+              <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Run Progress</p>
+              <p className="text-2xl font-semibold text-emerald-300">{llmPct.toFixed(1)}%</p>
+            </div>
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-black/40">
+              <div className="absolute inset-y-0 left-0 w-full animate-pulse bg-gradient-to-r from-emerald-500/5 via-transparent to-emerald-500/5" />
               <div
-                className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-300 to-emerald-400 transition-all duration-500"
                 style={{ width: `${Math.max(0, Math.min(100, llmPct))}%` }}
               />
             </div>
-            <p className="mt-2 text-xs text-zinc-400">Estimated completion by LLM calls: {llmPct.toFixed(1)}%</p>
+            <p className="mt-2 text-xs text-zinc-400">Estimated completion by LLM calls</p>
 
             <div className="mt-3 max-h-40 overflow-auto rounded-lg border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">
               {(progress.length ? progress : ["Preparing run..."]).map((line, idx) => (

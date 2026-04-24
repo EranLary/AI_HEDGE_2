@@ -456,13 +456,13 @@ def _deterministic_red_flags(*, f_score_text: str, price_cv: Any, lmil: Any) -> 
 
     cv = _safe_float(price_cv)
     if cv is not None and cv > 0.6:
-        flags.append("High cross-model valuation dispersion (CV) indicates low agreement between methods.")
+        flags.append("High cross-model disagreement score indicates low agreement between methods.")
 
     if isinstance(lmil, (list, tuple)) and len(lmil) >= 2:
         lmil_mean = _safe_float(lmil[0])
         lmil_cv = _safe_float(lmil[1])
         if lmil_cv is not None and abs(lmil_cv) > 1.25:
-            flags.append("Investment-vote volatility is elevated (LMIL CV), signaling fragile conviction.")
+            flags.append("Investment-vote disagreement score is elevated (LMIL), signaling fragile conviction.")
         if lmil_mean is not None and lmil_mean < 0:
             flags.append("Average model portfolio vote is net short (negative LMIL mean).")
 
@@ -948,6 +948,7 @@ def build_dashboard_payload(
     analysis_text: str,
     sec_short_text: str,
     artifacts: Dict[str, str],
+    analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     enable_llm_extractions: bool = True,
 ) -> Dict[str, Any]:
@@ -1077,6 +1078,7 @@ def build_dashboard_payload(
     return {
         "dashboard_version": "v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_duration_minutes": analysis_duration_minutes,
         "ticker": ticker,
         "header": {
             "company_name": _first_non_empty(info.get("shortName"), info.get("longName"), ticker),

@@ -35,7 +35,10 @@ export default function RootLayout({
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-carbon text-zinc-100">
         <ThemeInit />
         <ActiveRunIndicator />
-        {children}
+        <main className="flex-1">{children}</main>
+        <footer className="border-t border-white/10 bg-black/35 px-4 py-2 text-center text-[11px] text-zinc-400 sm:px-8">
+          AI-generated. For informational purposes only. Not investment advice. No guarantee of accuracy or results.
+        </footer>
       </body>
     </html>
   );

@@ -3518,7 +3518,7 @@ Rules:
 12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
-instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized operating profitability margin, its REPRESENTATIVE normalized annual net financing result, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
+instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
 
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3544,7 +3544,7 @@ Definitions:
   It must be expressed as a numeric decimal ratio (for example 0.20 for 20% annual growth).
   It should reflect sustainable growth, excluding temporary rebounds, one-off contracts, or unrealistic TAM assumptions.
   It can also be negative if you believe the revenue will decline over the years.
-- "operating_profitability_margin" represents the NORMALIZED, sustainable operating income margin (operating income / revenue),
+- "operating_profitability_margin" represents the NORMALIZED, sustainable EBIT margin (operating income / revenue),
   expressed as a numeric decimal ratio (for example 0.18 for 18%).
   Exclude temporary cost cuts, peak-cycle margins, accounting distortions, or unusually high incentive adjustments.
 - "net_financing_result" represents the expected normalized annual financing result in absolute U.S. dollars.
@@ -5206,7 +5206,8 @@ def run_valuations(
     "Warren Buffett",
     "Aswath Damodaran",
     "Bill Ackman",
-    "Cathie Wood"
+    "Cathie Wood",
+    "Peter Thiel",
     ]
 
     price_currency = variables_dict.get("price_currency", 1)

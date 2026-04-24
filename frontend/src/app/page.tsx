@@ -7,7 +7,7 @@ import { Loader2, Search } from "lucide-react";
 import type { ReportListItem } from "@/lib/dashboard-types";
 import { upsertActiveRun } from "@/lib/active-runs";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { getProgressStep, getProgressStepNumber, RUN_PROGRESS_STEPS } from "@/lib/run-progress";
+import { getProgressStep } from "@/lib/run-progress";
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -159,7 +159,6 @@ export default function Home() {
   const showProgress = isRunning || status === "completed" || status === "failed";
   const progressPct = Math.max(0, Math.min(100, llmPct));
   const progressStep = getProgressStep(progressPct);
-  const progressStepNo = getProgressStepNumber(progressPct);
 
   return (
     <div className="hib-shell min-h-screen px-4 py-8 sm:px-8">
@@ -213,10 +212,6 @@ export default function Home() {
 
         {showProgress ? (
           <section className="mt-5 w-full rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <p className="uppercase tracking-[0.14em] text-zinc-400">Status: {status}</p>
-              <p className="text-zinc-300">Step {progressStepNo}/{RUN_PROGRESS_STEPS.length}</p>
-            </div>
             <div className="mb-2 flex items-end justify-between">
               <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">{progressStep}</p>
               <p className="text-2xl font-semibold text-emerald-300">{progressPct.toFixed(1)}%</p>
@@ -228,15 +223,15 @@ export default function Home() {
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            <p className="mt-2 text-xs text-zinc-400">Progress updates adapt automatically every 10%.</p>
-
-            <div className="mt-3 max-h-40 overflow-auto rounded-lg border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">
-              {(progress.length ? progress : ["Preparing run..."]).map((line, idx) => (
-                <p key={`${idx}-${line.slice(0, 18)}`} className="mb-1 last:mb-0">
-                  {line}
-                </p>
-              ))}
-            </div>
+            {progress.length ? (
+              <div className="mt-3 max-h-40 overflow-auto rounded-lg border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">
+                {progress.map((line, idx) => (
+                  <p key={`${idx}-${line.slice(0, 18)}`} className="mb-1 last:mb-0">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

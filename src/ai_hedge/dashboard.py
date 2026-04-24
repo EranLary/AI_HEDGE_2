@@ -1205,14 +1205,41 @@ def build_dashboard_payload(
             structural_direction = "down"
 
     mean_investment = _safe_float(prices.get("LMIL Mean Investment"))
-    action = "HOLD / NEUTRAL"
-    position_size_pct = 0.0
-    if mean_investment is not None:
-        position_size_pct = (mean_investment / 100000.0) * 100.0
-        if mean_investment > 10000:
-            action = "LONG"
-        elif mean_investment < -10000:
-            action = "SHORT"
+    position_size_pct = (mean_investment / 100000.0) * 100.0 if mean_investment is not None else 0.0
+    target_return_pct: Optional[float] = None
+    if (
+        consensus_price is not None
+        and current_price is not None
+        and abs(current_price) > 1e-9
+    ):
+        target_return_pct = ((consensus_price - current_price) / current_price) * 100.0
+
+    if target_return_pct is not None:
+        combined_score = (0.5 * position_size_pct) + (0.5 * target_return_pct)
+    else:
+        combined_score = position_size_pct
+
+    cv_values: List[float] = []
+    if confidence_cv is not None:
+        cv_values.append(abs(float(confidence_cv)))
+    if isinstance(lmil, (list, tuple)) and len(lmil) >= 2:
+        lmil_cv = _safe_float(lmil[1])
+        if lmil_cv is not None:
+            cv_values.append(abs(float(lmil_cv)))
+    overall_cv = (sum(cv_values) / len(cv_values)) if cv_values else 0.0
+    confidence_factor = 1.0 / (1.0 + (overall_cv ** 1.3))
+    adjusted_score = combined_score * confidence_factor
+
+    if adjusted_score >= 15:
+        action = "Strong Buy"
+    elif adjusted_score >= 7:
+        action = "Buy"
+    elif adjusted_score > -7:
+        action = "Hold"
+    elif adjusted_score > -15:
+        action = "Sell"
+    else:
+        action = "Strong Sell"
 
     return {
         "dashboard_version": "v2",
@@ -1281,8 +1308,13 @@ def build_dashboard_payload(
         "decision_card": {
             "action": action,
             "position_size_pct_of_notional": position_size_pct,
+            "target_return_pct": target_return_pct,
+            "combined_score": combined_score,
+            "overall_cv": overall_cv,
+            "confidence_factor": confidence_factor,
+            "adjusted_score": adjusted_score,
             "mean_investment_amount": mean_investment,
-            "rationale": "Signal is derived from cross-model investment votes and LMIL dispersion.",
+            "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling.",
         },
         "artifacts": artifacts,
     }

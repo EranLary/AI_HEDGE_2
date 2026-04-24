@@ -488,11 +488,41 @@ function prettyMetricName(raw: string): string {
 
 function getDecisionSignal(pct?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof pct === "number" && Number.isFinite(pct) ? pct : 0;
-  if (v <= -10) return { label: "Strong Sell", tone: "negative" };
-  if (v < -1) return { label: "Sell", tone: "negative" };
-  if (v < 1) return { label: "Hold", tone: "neutral" };
-  if (v < 10) return { label: "Buy", tone: "positive" };
+  if (v <= -15) return { label: "Strong Sell", tone: "negative" };
+  if (v < -5) return { label: "Sell", tone: "negative" };
+  if (v < 5) return { label: "Hold", tone: "neutral" };
+  if (v < 15) return { label: "Buy", tone: "positive" };
   return { label: "Strong Buy", tone: "positive" };
+}
+
+function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
+  const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
+  if (v <= -15) return { label: "Strong Sell", tone: "negative" };
+  if (v < -7) return { label: "Sell", tone: "negative" };
+  if (v < 7) return { label: "Hold", tone: "neutral" };
+  if (v < 15) return { label: "Buy", tone: "positive" };
+  return { label: "Strong Buy", tone: "positive" };
+}
+
+function investmentAmountToPct(investmentAmount?: number | null): number | null {
+  if (typeof investmentAmount !== "number" || !Number.isFinite(investmentAmount)) return null;
+  return (investmentAmount / NOTIONAL_BASE_USD) * 100;
+}
+
+function combinedDecisionScore(investmentAmount?: number | null, targetReturnPct?: number | null): number | null {
+  const investmentScore = investmentAmountToPct(investmentAmount);
+  const hasInvestment = typeof investmentScore === "number" && Number.isFinite(investmentScore);
+  const hasTargetReturn = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
+  if (!hasInvestment && !hasTargetReturn) return null;
+  if (hasInvestment && hasTargetReturn) return (0.5 * Number(investmentScore)) + (0.5 * Number(targetReturnPct));
+  return hasInvestment ? Number(investmentScore) : Number(targetReturnPct);
+}
+
+function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number | null): number | null {
+  if (typeof baseScore !== "number" || !Number.isFinite(baseScore)) return null;
+  const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
+  const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
+  return baseScore * confidenceFactor;
 }
 
 function ChartHoverTooltip({
@@ -820,6 +850,7 @@ export function HedgeDashboard() {
         target,
         investment: b.investment_amount,
         changePct,
+        combinedScore: combinedDecisionScore(b.investment_amount, changePct),
       };
     });
     return rows.sort((a, b) => {
@@ -1021,7 +1052,9 @@ export function HedgeDashboard() {
 
   const bullProbability = assumptionsByNorm.get(normalizeMetricLabel("Bull Probability"))?.mean ?? null;
   const bearProbability = assumptionsByNorm.get(normalizeMetricLabel("Bear Probability"))?.mean ?? null;
-  const decisionSignal = getDecisionSignal(data?.decision_card?.position_size_pct_of_notional);
+  const finalCombinedScore = combinedDecisionScore(data?.decision_card?.mean_investment_amount, consensusChangePct);
+  const finalAdjustedScore = confidenceAdjustedScore(finalCombinedScore, overallDisagreement);
+  const decisionSignal = getFinalDecisionSignal(finalAdjustedScore);
   const decisionToneClass =
     decisionSignal.tone === "positive" ? "hib-target-up" : decisionSignal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
 
@@ -1327,10 +1360,19 @@ export function HedgeDashboard() {
                               <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
                             </span>
                           </th>
+                          <th className="px-3 py-2 text-right font-medium">Decision</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {targetTableRows.map((row) => (
+                        {targetTableRows.map((row) => {
+                          const rowDecision = getDecisionSignal(row.combinedScore);
+                          const rowDecisionToneClass =
+                            rowDecision.tone === "positive"
+                              ? "hib-target-up"
+                              : rowDecision.tone === "negative"
+                                ? "hib-target-down"
+                                : "text-zinc-200";
+                          return (
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
                             <td className="px-3 py-2 font-medium text-zinc-200">{row.name}</td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
@@ -1340,8 +1382,10 @@ export function HedgeDashboard() {
                               {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>{fmtNotionalPct(row.investment)}</td>
+                            <td className={`px-3 py-2 text-right font-semibold ${rowDecisionToneClass}`}>{rowDecision.label}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

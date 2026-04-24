@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 import { listActiveRuns, removeActiveRun, type ClientActiveRun, upsertActiveRun } from "@/lib/active-runs";
-import { getProgressStep, getProgressStepNumber, RUN_PROGRESS_STEPS } from "@/lib/run-progress";
+import { getProgressStep } from "@/lib/run-progress";
 
 type RunStatusApi = {
   job_id: string;
@@ -131,7 +131,6 @@ export function ActiveRunIndicator() {
   const topRun = activeRuns[0];
   const topPct = safePct(topRun?.llm_progress_pct);
   const topStep = getProgressStep(topPct);
-  const topStepNo = getProgressStepNumber(topPct);
 
   return (
     <>
@@ -148,8 +147,8 @@ export function ActiveRunIndicator() {
               {activeRuns.length > 1 ? <span className="hib-active-run-text">(+{activeRuns.length - 1} more)</span> : null}
             </div>
               <div className="mt-1 flex items-center justify-between gap-3">
-                <span className="hib-active-run-text text-[11px] uppercase tracking-[0.12em]">
-                  Step {topStepNo}/{RUN_PROGRESS_STEPS.length}: {topStep}
+                <span className="hib-active-run-text text-[11px] tracking-[0.08em]">
+                  {topStep}
                 </span>
                 <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-300 transition-all duration-500" style={{ width: `${topPct}%` }} />

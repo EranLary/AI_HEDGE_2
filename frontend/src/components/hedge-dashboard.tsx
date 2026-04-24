@@ -80,37 +80,11 @@ const ASSUMPTION_MONEY_LABELS = new Set([
   "predicted fcf (next year)",
 ]);
 
-function normalizeCurrencyCode(code: string): string {
-  const c = String(code || "").trim().toUpperCase();
-  if (!c) return "USD";
-  if (c === "ILA") return "ILS";
-  if (c === "GBX" || c === "GBPX") return "GBP";
-  if (c === "ZAC") return "ZAR";
-  return c;
-}
-
-function currencySymbol(code: string): string {
-  const normalized = normalizeCurrencyCode(code);
-  try {
-    const parts = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: normalized,
-      currencyDisplay: "narrowSymbol",
-    }).formatToParts(0);
-    const symbolPart = parts.find((p) => p.type === "currency")?.value;
-    return symbolPart || normalized;
-  } catch {
-    return normalized === "USD" ? "$" : normalized;
-  }
-}
-
 function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
-  const header = data?.header || {};
-  const displayCurrency = normalizeCurrencyCode(String(header.display_currency || header.currency || "USD"));
-  const isIsraeli = Boolean(header.is_israeli) || displayCurrency === "ILS" || String(data?.ticker || "").toUpperCase().endsWith(".TA");
+  const isIsraeli = String(data?.ticker || "").toUpperCase().endsWith(".TA");
   return {
-    code: displayCurrency || "USD",
-    symbol: currencySymbol(displayCurrency || "USD"),
+    code: isIsraeli ? "ILS" : "USD",
+    symbol: isIsraeli ? "₪" : "$",
     isIsraeli,
     // Dashboard numeric values are already emitted in display scale.
     // Do not apply an extra multiplier in the UI.
@@ -131,7 +105,7 @@ function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "pri
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: normalizeCurrencyCode(ctx.code),
+      currency: ctx.code,
       maximumFractionDigits: 2,
     }).format(display);
   } catch {
@@ -139,9 +113,21 @@ function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "pri
   }
 }
 
+function fmtPlainCompact(v: number | null | undefined): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(2)}M`;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(v);
+}
+
 function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const display = toDisplayAmount(v, ctx, kind);
+  if (kind === "financial") {
+    return fmtPlainCompact(display);
+  }
   const abs = Math.abs(display);
   const sign = display < 0 ? "-" : "";
   if (abs >= 1_000_000_000) return `${sign}${ctx.symbol}${(abs / 1_000_000_000).toFixed(2)}B`;
@@ -149,7 +135,7 @@ function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kin
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: normalizeCurrencyCode(ctx.code),
+      currency: ctx.code,
       maximumFractionDigits: 2,
     }).format(display);
   } catch {

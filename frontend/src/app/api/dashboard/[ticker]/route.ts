@@ -74,7 +74,119 @@ function normalizePayload(
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
   };
 
-  return merged;
+  const scale = inferLegacyModelTargetScale(merged);
+  return applyLegacyModelTargetScale(merged, scale);
+}
+
+function asFinite(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function inferLegacyModelTargetScale(payload: DashboardPayload): number {
+  const displayCurrency = String(payload.header?.display_currency || payload.header?.currency || "").toUpperCase();
+  const originalPriceCurrency = String(payload.header?.original_price_currency || "").toUpperCase();
+  const isNonUsd =
+    displayCurrency !== "USD" ||
+    (originalPriceCurrency && originalPriceCurrency !== "USD");
+  const fxFromHeader = asFinite(payload.header?.price_currency_to_usd);
+
+  // Do not alter plain USD dashboards here.
+  if (!isNonUsd) {
+    return 1;
+  }
+
+  const consensusMean = asFinite(payload.valuation_hub?.consensus?.mean_target_price);
+  if (consensusMean === null || Math.abs(consensusMean) < 1e-9) {
+    return 1;
+  }
+
+  const targets = (payload.valuation_hub?.method_blocks || [])
+    .map((row) => asFinite(row?.target_price))
+    .filter((v): v is number => v !== null && Math.abs(v) > 1e-9)
+    .map((v) => Math.abs(v));
+
+  if (!targets.length) {
+    return 1;
+  }
+
+  const mean = targets.reduce((sum, value) => sum + value, 0) / targets.length;
+  if (!Number.isFinite(mean) || mean <= 0) {
+    return 1;
+  }
+
+  const ratio = Math.abs(consensusMean) / mean;
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return 1;
+  }
+
+  // Already aligned: do nothing.
+  if (ratio >= 0.8 && ratio <= 1.25) {
+    return 1;
+  }
+
+  // Deterministic path when FX metadata is present:
+  // apply only if mismatch is close to the expected local-scale factor.
+  if (typeof fxFromHeader === "number" && fxFromHeader > 0) {
+    const closeness = ratio / fxFromHeader;
+    if (closeness >= 0.7 && closeness <= 1.3) {
+      return fxFromHeader;
+    }
+    return 1;
+  }
+
+  // Legacy fallback for old non-USD payloads without FX metadata:
+  // scale only for clear raw-USD-to-local mismatch.
+  return ratio >= 5 ? ratio : 1;
+}
+
+function applyLegacyModelTargetScale(payload: DashboardPayload, scale: number): DashboardPayload {
+  if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 1e-9) {
+    return payload;
+  }
+
+  const currentPrice = asFinite(payload.valuation_hub?.consensus?.current_price);
+  const scaleValue = (value: number | null | undefined): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value * scale : null;
+
+  const methodBlocks = (payload.valuation_hub?.method_blocks || []).map((block) => {
+    const scaledTarget = scaleValue(block.target_price);
+    const upside =
+      typeof scaledTarget === "number" &&
+      typeof currentPrice === "number" &&
+      Math.abs(currentPrice) > 1e-9
+        ? ((scaledTarget - currentPrice) / currentPrice) * 100
+        : null;
+    return {
+      ...block,
+      target_price: scaledTarget,
+      upside_pct: upside,
+    };
+  });
+
+  const methodTabs = (payload.valuation_hub?.method_tabs || []).map((tab) => ({
+    ...tab,
+    target_price: scaleValue(tab.target_price),
+    outputs: (tab.outputs || []).map((output) => ({
+      ...output,
+      target_price: scaleValue(output.target_price),
+    })),
+  }));
+
+  const dreamTeam = (payload.dream_team || []).map((entry) => ({
+    ...entry,
+    target_price: scaleValue(entry.target_price),
+  }));
+
+  return {
+    ...payload,
+    valuation_hub: {
+      ...payload.valuation_hub,
+      method_blocks: methodBlocks,
+      method_tabs: methodTabs,
+    },
+    dream_team: dreamTeam,
+  };
 }
 
 function parseMoney(text: string): number | null {

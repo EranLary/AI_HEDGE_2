@@ -23,8 +23,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
 type CurrencyContext = {
-  code: "USD" | "ILS";
-  symbol: "$" | "₪";
+  code: string;
+  symbol: string;
   isIsraeli: boolean;
   priceUsdToDisplay: number;
   financialUsdToDisplay: number;
@@ -80,31 +80,42 @@ const ASSUMPTION_MONEY_LABELS = new Set([
   "predicted fcf (next year)",
 ]);
 
+function normalizeCurrencyCode(code: string): string {
+  const c = String(code || "").trim().toUpperCase();
+  if (!c) return "USD";
+  if (c === "ILA") return "ILS";
+  if (c === "GBX" || c === "GBPX") return "GBP";
+  if (c === "ZAC") return "ZAR";
+  return c;
+}
+
+function currencySymbol(code: string): string {
+  const normalized = normalizeCurrencyCode(code);
+  try {
+    const parts = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalized,
+      currencyDisplay: "narrowSymbol",
+    }).formatToParts(0);
+    const symbolPart = parts.find((p) => p.type === "currency")?.value;
+    return symbolPart || normalized;
+  } catch {
+    return normalized === "USD" ? "$" : normalized;
+  }
+}
+
 function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
   const header = data?.header || {};
-  const displayCurrency = String(header.display_currency || header.currency || "USD").toUpperCase();
+  const displayCurrency = normalizeCurrencyCode(String(header.display_currency || header.currency || "USD"));
   const isIsraeli = Boolean(header.is_israeli) || displayCurrency === "ILS" || String(data?.ticker || "").toUpperCase().endsWith(".TA");
-  const priceUsdToDisplay = typeof header.price_usd_to_display === "number" && Number.isFinite(header.price_usd_to_display) && header.price_usd_to_display > 0
-    ? header.price_usd_to_display
-    : 1;
-  const financialUsdToDisplay = typeof header.financial_usd_to_display === "number" && Number.isFinite(header.financial_usd_to_display) && header.financial_usd_to_display > 0
-    ? header.financial_usd_to_display
-    : priceUsdToDisplay;
-  if (!isIsraeli) {
-    return {
-      code: "USD",
-      symbol: "$",
-      isIsraeli: false,
-      priceUsdToDisplay: 1,
-      financialUsdToDisplay: 1,
-    };
-  }
   return {
-    code: "ILS",
-    symbol: "₪",
-    isIsraeli: true,
-    priceUsdToDisplay,
-    financialUsdToDisplay,
+    code: displayCurrency || "USD",
+    symbol: currencySymbol(displayCurrency || "USD"),
+    isIsraeli,
+    // Dashboard numeric values are already emitted in display scale.
+    // Do not apply an extra multiplier in the UI.
+    priceUsdToDisplay: 1,
+    financialUsdToDisplay: 1,
   };
 }
 
@@ -117,11 +128,15 @@ function toDisplayAmount(v: number, ctx: CurrencyContext, kind: "price" | "finan
 function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const display = toDisplayAmount(v, ctx, kind);
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: ctx.code,
-    maximumFractionDigits: 2,
-  }).format(display);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizeCurrencyCode(ctx.code),
+      maximumFractionDigits: 2,
+    }).format(display);
+  } catch {
+    return `${ctx.symbol}${display.toFixed(2)}`;
+  }
 }
 
 function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
@@ -131,7 +146,15 @@ function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kin
   const sign = display < 0 ? "-" : "";
   if (abs >= 1_000_000_000) return `${sign}${ctx.symbol}${(abs / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${sign}${ctx.symbol}${(abs / 1_000_000).toFixed(2)}M`;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: ctx.code, maximumFractionDigits: 2 }).format(display);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizeCurrencyCode(ctx.code),
+      maximumFractionDigits: 2,
+    }).format(display);
+  } catch {
+    return `${sign}${ctx.symbol}${abs.toFixed(2)}`;
+  }
 }
 
 function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext): string {
@@ -528,6 +551,7 @@ export function HedgeDashboard() {
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
   const [livePerformance, setLivePerformance] = useState<DashboardPayload["header"]["price_performance_pct"] | null>(null);
+  const [livePerformanceKey, setLivePerformanceKey] = useState("");
   const [currentLineTooltip, setCurrentLineTooltip] = useState<{ visible: boolean; x: number; y: number }>({
     visible: false,
     x: 0,
@@ -628,6 +652,7 @@ export function HedgeDashboard() {
   useEffect(() => {
     if (!selectedTicker) return;
     let cancelled = false;
+    const perfKey = `${selectedTicker}::${currentReportId || "latest"}`;
     fetch(`/api/performance/${encodeURIComponent(selectedTicker)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
@@ -635,10 +660,16 @@ export function HedgeDashboard() {
         const returns = json?.returns_pct;
         if (returns && typeof returns === "object") {
           setLivePerformance(returns);
+        } else {
+          setLivePerformance(null);
         }
+        setLivePerformanceKey(perfKey);
       })
       .catch(() => {
-        if (!cancelled) setLivePerformance(null);
+        if (!cancelled) {
+          setLivePerformance(null);
+          setLivePerformanceKey(perfKey);
+        }
       });
     return () => {
       cancelled = true;
@@ -829,6 +860,8 @@ export function HedgeDashboard() {
     typeof data?.analysis_duration_minutes === "number" && Number.isFinite(data.analysis_duration_minutes)
       ? `${data.analysis_duration_minutes.toFixed(1)} min`
       : "N/A";
+  const performanceKey = `${selectedTicker}::${currentReportId || "latest"}`;
+  const performanceLoading = livePerformanceKey !== performanceKey;
   const performanceRows = livePerformance || data?.header?.price_performance_pct || {};
 
   const assumptionsModelRows = useMemo(() => {
@@ -1143,11 +1176,17 @@ export function HedgeDashboard() {
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-black/35 p-2">
-                    <p className="text-zinc-500">Price ({reportDateIso})</p>
+                    <p className="text-zinc-500">
+                      <span>Price</span>
+                      <span className="block sm:ml-1 sm:inline">({reportDateIso})</span>
+                    </p>
                     <p>{fmtMoney(data.header.current_price, currencyContext, "price")}</p>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-black/35 p-2">
-                    <p className="text-zinc-500">Market Cap ({reportDateIso})</p>
+                    <p className="text-zinc-500">
+                      <span>Market Cap</span>
+                      <span className="block sm:ml-1 sm:inline">({reportDateIso})</span>
+                    </p>
                     <p>{fmtMarketCap(data.header.market_cap, currencyContext)}</p>
                   </div>
                 </div>
@@ -1159,9 +1198,16 @@ export function HedgeDashboard() {
                       return (
                         <div key={key} className="hib-perf-cell rounded-md px-2 py-1.5">
                           <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
-                          <span className={`mt-1 block text-sm font-semibold ${toneClassFromSign(value)}`}>
-                            {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
-                          </span>
+                          {performanceLoading ? (
+                            <span className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400">
+                              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-zinc-500 border-t-transparent" />
+                              Loading
+                            </span>
+                          ) : (
+                            <span className={`mt-1 block text-sm font-semibold ${toneClassFromSign(value)}`}>
+                              {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
+                            </span>
+                          )}
                         </div>
                       );
                     })}
@@ -1287,8 +1333,10 @@ export function HedgeDashboard() {
                           <th className="px-3 py-2 text-right font-medium">Target Price</th>
                           <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
                           <th className="px-3 py-2 text-right font-medium">
-                            Investment %
-                            <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
+                            <span dir="ltr" className="inline-flex items-center gap-1">
+                              <span>Investment %</span>
+                              <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
+                            </span>
                           </th>
                         </tr>
                       </thead>
@@ -1431,12 +1479,16 @@ export function HedgeDashboard() {
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Decision</p>
                 <p className={`text-4xl font-bold ${decisionToneClass}`}>{decisionSignal.label}</p>
-                <p className={`mt-2 text-xl font-semibold ${consensusChangeClass}`}>
-                  Mean Target Price: {fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}{" "}
-                  {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
+                <p className="mt-2 text-xl font-semibold text-zinc-100">
+                  <span>Mean Target Price: </span>
+                  <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
+                  <span className={consensusChangeClass}>
+                    {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
+                  </span>
                 </p>
-                <p className={`text-lg font-semibold ${decisionToneClass}`}>
-                  Mean Investment Decision: {fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}
+                <p className="text-lg font-semibold text-zinc-100">
+                  <span>Mean Investment Decision: </span>
+                  <span className={decisionToneClass}>{fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}</span>
                 </p>
                 <p className="hib-neutral-metric text-sm">
                   Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}

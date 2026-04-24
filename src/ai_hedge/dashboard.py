@@ -793,35 +793,32 @@ def _resolve_model_price_multiplier(
     price_currency_to_usd: float,
     is_foreign: bool,
 ) -> float:
+    # Deterministic path: convert model-level USD targets back to local trading scale
+    # with the same multiplier used by the pricing pipeline.
     multiplier = _safe_float(price_currency_to_usd) or 1.0
-    if not is_foreign or multiplier <= 0 or abs(multiplier - 1.0) < 1e-9:
+    if not is_foreign:
         return 1.0
+    if multiplier > 0 and abs(multiplier - 1.0) > 1e-9:
+        return multiplier
 
+    # Legacy fallback when FX metadata is missing: infer the scale from consensus
+    # (already in local scale) vs raw per-model targets (USD scale).
     target_values: List[float] = []
     for raw in aggregate_targets.values():
         v = _safe_float(raw)
         if v is None or abs(v) < 1e-9:
             continue
         target_values.append(abs(v))
-
     if not target_values:
-        return multiplier
-
-    target_values.sort()
-    median_target = target_values[len(target_values) // 2]
-    if median_target <= 0:
-        return multiplier
-
+        return 1.0
     c = abs(consensus_price) if consensus_price is not None else None
     if c is None or c <= 0:
-        return multiplier
-
-    ratio = c / median_target
-    if 0.5 <= ratio <= 2.0:
         return 1.0
-    if 0.5 <= (ratio / multiplier) <= 2.0:
-        return multiplier
-    return multiplier
+    mean_target = float(sum(target_values) / len(target_values))
+    if mean_target <= 0:
+        return 1.0
+    inferred = c / mean_target
+    return inferred if inferred > 0 else 1.0
 
 
 def _build_method_tab(
@@ -942,36 +939,29 @@ def _currency_context(ticker: str, info: Mapping[str, Any]) -> Dict[str, Any]:
         or original_price_currency in {"ILS", "ILA"}
         or original_financial_currency in {"ILS", "ILA"}
     )
-    if not is_israeli:
-        return {
-            "display_currency": "USD",
-            "is_israeli": False,
-            "original_price_currency": original_price_currency,
-            "original_financial_currency": original_financial_currency,
-            "price_currency_to_usd": price_currency_to_usd,
-            "financial_currency_to_usd": financial_currency_to_usd,
-            "price_usd_to_display": 1.0,
-            "financial_usd_to_display": 1.0,
-            "price_unit_note": None,
-        }
-
-    price_usd_to_display = price_currency_to_usd
-    if original_price_currency == "ILA":
-        price_usd_to_display = price_currency_to_usd / 100.0
-
-    financial_usd_to_display = financial_currency_to_usd
-    if original_financial_currency == "ILA":
-        financial_usd_to_display = financial_currency_to_usd / 100.0
+    display_currency = {
+        "ILA": "ILS",  # agorot display as ILS symbol while keeping local trading scale values
+        "GBP": "GBP",
+        "GBX": "GBP",  # pence aliases -> GBP symbol
+        "GBPX": "GBP",
+        "ZAC": "ZAR",  # cents -> rand symbol
+    }.get(original_price_currency, original_price_currency or "USD")
+    if not display_currency:
+        display_currency = "USD"
+    is_foreign = str(display_currency).upper() != "USD"
 
     return {
-        "display_currency": "ILS",
-        "is_israeli": True,
+        "display_currency": str(display_currency).upper(),
+        "is_israeli": bool(is_israeli),
+        "is_foreign": bool(is_foreign),
         "original_price_currency": original_price_currency,
         "original_financial_currency": original_financial_currency,
         "price_currency_to_usd": price_currency_to_usd,
         "financial_currency_to_usd": financial_currency_to_usd,
-        "price_usd_to_display": price_usd_to_display,
-        "financial_usd_to_display": financial_usd_to_display,
+        # Dashboard numeric values are already emitted in local display scale.
+        # Keep display multipliers at 1 to avoid UI double-conversion.
+        "price_usd_to_display": 1.0,
+        "financial_usd_to_display": 1.0,
         "price_unit_note": "agorot" if original_price_currency == "ILA" else None,
     }
 

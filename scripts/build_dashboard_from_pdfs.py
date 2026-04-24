@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from pypdf import PdfReader
+import yfinance as yf
 
 
 METHOD_ORDER = [
@@ -32,6 +33,62 @@ METHOD_NAME_ALIASES = {
     "lary's logic": "Lary's Logic",
     "larys logic": "Lary's Logic",
 }
+
+
+def _safe_latest_close(symbol: str) -> Optional[float]:
+    try:
+        hist = yf.Ticker(symbol).history(period="1mo")
+    except Exception:
+        return None
+    if hist is None or getattr(hist, "empty", True):
+        return None
+    try:
+        close = hist["Close"].dropna()
+    except Exception:
+        return None
+    if close.empty:
+        return None
+    value = _to_float(close.iloc[-1])
+    if value is None or value <= 0:
+        return None
+    return float(value)
+
+
+def _resolve_price_currency_context(ticker: str, analysis_text: str = "") -> Dict[str, Any]:
+    ticker_u = str(ticker or "").strip().upper()
+    if not ticker_u.endswith(".TA"):
+        return {
+            "currency": "USD",
+            "original_price_currency": "USD",
+            "original_financial_currency": "USD",
+            "price_currency_to_USD": 1.0,
+            "financial_currency_to_USD": 1.0,
+        }
+
+    parsed_rate = None
+    m = re.search(r"Currency\s*:\s*([0-9]+(?:\.[0-9]+)?)", str(analysis_text or ""), re.IGNORECASE)
+    if m:
+        parsed_rate = _to_float(m.group(1))
+
+    usd_per_ils = None
+    if isinstance(parsed_rate, (int, float)) and parsed_rate > 0:
+        # In legacy STRS artifacts this is typically ILS-per-USD (e.g. 2.9828).
+        # If it arrives in agorot scale, normalize back to ILS-per-USD.
+        usd_per_ils = float(parsed_rate / 100.0) if parsed_rate > 20 else float(parsed_rate)
+
+    if usd_per_ils is None:
+        usd_per_ils = _safe_latest_close("ILS=X")
+    if usd_per_ils is None:
+        usd_per_ils = 3.5
+
+    # ILA (agorot) multiplier: USD -> agorot equals USD/ILS * 100
+    return {
+        "currency": "USD",
+        "original_price_currency": "ILA",
+        "original_financial_currency": "ILS",
+        "price_currency_to_USD": float(usd_per_ils * 100.0),
+        "financial_currency_to_USD": float(usd_per_ils),
+    }
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -601,10 +658,16 @@ def build_from_pdfs(
     prices_text = _extract_text_from_pdf(prices_pdf)
 
     explain_payload = parse_prices_explain_text(ticker, prices_text)
+    currency_ctx = _resolve_price_currency_context(ticker, analysis_text=analysis_text)
+    price_multiplier = _to_float(currency_ctx.get("price_currency_to_USD")) or 1.0
     current_price = explain_payload.get("current_price")
     all_targets = explain_payload.get("all_targets", [])
     target_mean = float(np.mean(all_targets)) if all_targets else None
     target_std = float(np.std(all_targets)) if all_targets else None
+    if isinstance(target_mean, (int, float)) and price_multiplier > 0 and str(ticker).upper().endswith(".TA"):
+        target_mean = float(target_mean) * float(price_multiplier)
+    if isinstance(target_std, (int, float)) and price_multiplier > 0 and str(ticker).upper().endswith(".TA"):
+        target_std = float(target_std) * float(price_multiplier)
     cv = None
     if isinstance(current_price, (int, float)) and isinstance(target_mean, (int, float)):
         denom = (float(current_price) + float(target_mean)) / 2.0
@@ -633,7 +696,12 @@ def build_from_pdfs(
         "f_score": _parse_f_score_text(analysis_text),
     }
     info_dict = {
-        "info": {"shortName": ticker, "longName": ticker, "currency": "USD"},
+        "info": {
+            "shortName": ticker,
+            "longName": ticker,
+            "currency": "USD",
+            **currency_ctx,
+        },
         "change": 0,
     }
     financial_dict = {

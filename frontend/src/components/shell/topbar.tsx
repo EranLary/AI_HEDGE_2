@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Download, FileText, Menu, Radar, Users } from "lucide-react";
+import { BarChart3, CandlestickChart, Download, FileText, Menu, Radar, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,6 +16,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Radar },
+  { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
   { slug: "artifacts", label: "Artifacts", icon: Download },
 ];

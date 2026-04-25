@@ -157,6 +157,112 @@ def _fmt_number(value: Any, decimals: int = 4) -> str:
     return f"{num:.{decimals}f}"
 
 
+def _fmt_signed_pct(value: Any, decimals: int = 2) -> str:
+    try:
+        num = float(value)
+    except Exception:
+        return "N/A"
+    if abs(num) < 1e-9:
+        return f"{0:.{decimals}f}%"
+    return f"{num:+.{decimals}f}%"
+
+
+def _currency_symbol(currency_code: Any) -> str:
+    code = str(currency_code or "").strip().upper()
+    if code == "ILS":
+        return "₪"
+    if code == "USD":
+        return "$"
+    if code:
+        return f"{code} "
+    return "$"
+
+
+def _fmt_price(value: Any, currency_code: Any) -> str:
+    try:
+        num = float(value)
+    except Exception:
+        return "N/A"
+    symbol = _currency_symbol(currency_code)
+    if symbol.endswith(" "):
+        return f"{num:,.2f} {symbol.strip()}"
+    return f"{symbol}{num:,.2f}"
+
+
+def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> str:
+    if not isinstance(dashboard_payload, dict):
+        return ""
+
+    header = dashboard_payload.get("header") or {}
+    valuation_hub = dashboard_payload.get("valuation_hub") or {}
+    consensus = valuation_hub.get("consensus") or {}
+    decision_card = dashboard_payload.get("decision_card") or {}
+    currency_code = header.get("display_currency") or header.get("currency") or "USD"
+
+    current_price = _first_float(consensus.get("current_price"))
+    mean_target_price = _first_float(consensus.get("mean_target_price"))
+
+    target_change_pct = _first_float(decision_card.get("target_return_pct"))
+    if (
+        target_change_pct is None
+        and current_price is not None
+        and mean_target_price is not None
+        and abs(current_price) > 1e-9
+    ):
+        target_change_pct = ((mean_target_price - current_price) / current_price) * 100.0
+
+    investment_pct = _first_float(decision_card.get("position_size_pct_of_notional"))
+
+    disagreement_score = _first_float(decision_card.get("overall_cv"))
+    if disagreement_score is None:
+        cv_vals: List[float] = []
+        price_cv = _first_float(consensus.get("cv"))
+        if price_cv is not None:
+            cv_vals.append(abs(price_cv))
+        lmil = consensus.get("lmil")
+        if isinstance(lmil, (list, tuple)) and len(lmil) >= 2:
+            lmil_cv = _first_float(lmil[1])
+            if lmil_cv is not None:
+                cv_vals.append(abs(lmil_cv))
+        if cv_vals:
+            disagreement_score = sum(cv_vals) / len(cv_vals)
+
+    lines = [
+        "## Dashboard Signal Snapshot",
+        f"- Mean Target Price: {_fmt_price(mean_target_price, currency_code)}",
+        f"- Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
+        f"- Investment Sizing (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Disagreement Score: {_fmt_number(disagreement_score, decimals=4)}",
+    ]
+    return "\n".join(lines).strip()
+
+
+def _upsert_dashboard_signal_snapshot_section(text: str, snapshot_section: str) -> str:
+    body = str(text or "").strip()
+    snap = str(snapshot_section or "").strip()
+    if not snap:
+        return body
+    marker = "## Dashboard Signal Snapshot"
+    if marker in body:
+        body = body.split(marker, 1)[0].rstrip()
+    if body:
+        return f"{body}\n\n---\n\n{snap}\n"
+    return f"{snap}\n"
+
+
+def _upsert_markdown_block(text: str, marker: str, block: str) -> str:
+    body = str(text or "").strip()
+    marker_txt = str(marker or "").strip()
+    block_txt = str(block or "").strip()
+    if not marker_txt or not block_txt:
+        return body
+    if marker_txt in body:
+        body = body.split(marker_txt, 1)[0].rstrip()
+    if body:
+        return f"{body}\n\n---\n\n{block_txt}\n"
+    return f"{block_txt}\n"
+
+
 def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
     if not isinstance(final_dict, dict):
         return None
@@ -642,6 +748,75 @@ def run_ticker_valuation(
         except Exception as explain_pdf_err:
             notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
 
+    technical_analysis_payload: Dict[str, Any] = {}
+    technical_analysis_markdown = ""
+    technical_analysis_json = ""
+    try:
+        from .technical_analysis import (
+            run_full_analysis as run_technical_analysis,
+            technical_analysis_to_markdown,
+        )
+
+        technical_model = str(os.getenv("TECHNICAL_ANALYSIS_MODEL", "deepseek-chat") or "deepseek-chat").strip() or "deepseek-chat"
+        technical_run = run_technical_analysis(
+            ticker=ticker,
+            api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+            model=technical_model,
+            temperature=0.1,
+        )
+        technical_analysis_payload = {
+            "status": "success",
+            "generated_at": technical_run.get("created_at"),
+            "model": technical_run.get("model", technical_model),
+            "analysis": technical_run.get("analysis", {}),
+        }
+        technical_analysis_markdown = technical_analysis_to_markdown(
+            technical_analysis_payload.get("analysis", {})
+        )
+        technical_analysis_json_path = out_dir / f"{ticker}_technical_analysis.json"
+        technical_analysis_json_path.write_text(
+            json.dumps(technical_analysis_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        technical_analysis_json = str(technical_analysis_json_path.resolve())
+    except Exception as technical_err:
+        technical_analysis_payload = {
+            "status": "error",
+            "error": str(technical_err),
+        }
+        notes.append(f"Technical analysis generation failed: {technical_err}")
+    _append_progress(progress_file, "Finished Technical Analysis")
+
+    try:
+        if analysis_src.exists():
+            base_analysis_text = analysis_src.read_text(encoding="utf-8")
+        elif analysis_dst.exists():
+            base_analysis_text = analysis_dst.read_text(encoding="utf-8")
+        else:
+            base_analysis_text = regular_text
+
+        merged_analysis_text = str(base_analysis_text or "").strip()
+        if prices_explain_txt.exists():
+            prices_section_text = prices_explain_txt.read_text(encoding="utf-8")
+            if str(prices_section_text or "").strip():
+                merged_analysis_text = _upsert_markdown_block(
+                    merged_analysis_text,
+                    f"# {ticker} Prices Explain",
+                    prices_section_text,
+                )
+        if str(technical_analysis_markdown or "").strip():
+            merged_analysis_text = _upsert_markdown_block(
+                merged_analysis_text,
+                "## Technical Analysis",
+                technical_analysis_markdown,
+            )
+        if merged_analysis_text.strip():
+            analysis_src.write_text(merged_analysis_text + "\n", encoding="utf-8")
+            analysis_dst.write_text(merged_analysis_text + "\n", encoding="utf-8")
+            regular_text = merged_analysis_text.strip()
+    except Exception as analysis_merge_err:
+        notes.append(f"Full analysis text merge failed: {analysis_merge_err}")
+
     try:
         analysis_duration_minutes = round((time.perf_counter() - run_started) / 60.0, 2)
         dashboard_payload = build_dashboard_payload(
@@ -654,6 +829,7 @@ def run_ticker_valuation(
             analysis_text=regular_text,
             sec_short_text=sec_short_text,
             qualitative_sections=qualitative_sections,
+            technical_analysis=technical_analysis_payload,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
             artifacts={
@@ -662,9 +838,27 @@ def run_ticker_valuation(
                 "revenue_plot": str((out_dir / f"{ticker}_revenue_valuation.png").resolve()),
                 "net_income_plot": str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
                 "prices_explain_txt": str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
+                "technical_analysis_json": technical_analysis_json,
             },
         )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
+        try:
+            snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)
+            if snapshot_text:
+                if analysis_src.exists():
+                    base_analysis_text = analysis_src.read_text(encoding="utf-8")
+                elif analysis_dst.exists():
+                    base_analysis_text = analysis_dst.read_text(encoding="utf-8")
+                else:
+                    base_analysis_text = regular_text
+
+                enriched_text = _upsert_dashboard_signal_snapshot_section(base_analysis_text, snapshot_text)
+                if enriched_text.strip():
+                    analysis_src.write_text(enriched_text, encoding="utf-8")
+                    analysis_dst.write_text(enriched_text, encoding="utf-8")
+                    regular_text = enriched_text.strip()
+        except Exception as signal_snapshot_err:
+            notes.append(f"Dashboard signal snapshot append failed: {signal_snapshot_err}")
     except Exception as dashboard_err:
         notes.append(f"Dashboard JSON generation failed: {dashboard_err}")
 
@@ -677,11 +871,15 @@ def run_ticker_valuation(
 
             merged_pdf_source = out_dir / f"{ticker}_analysis_pdf_source.txt"
             merged_parts: List[str] = []
+            analysis_text_for_pdf = ""
             if analysis_src.exists():
-                merged_parts.append(analysis_src.read_text(encoding="utf-8"))
+                analysis_text_for_pdf = analysis_src.read_text(encoding="utf-8")
+                merged_parts.append(analysis_text_for_pdf)
             elif analysis_dst.exists():
-                merged_parts.append(analysis_dst.read_text(encoding="utf-8"))
-            if prices_explain_txt.exists():
+                analysis_text_for_pdf = analysis_dst.read_text(encoding="utf-8")
+                merged_parts.append(analysis_text_for_pdf)
+            analysis_has_prices_section = f"# {ticker} Prices Explain" in analysis_text_for_pdf
+            if prices_explain_txt.exists() and not analysis_has_prices_section:
                 merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
 
             merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()

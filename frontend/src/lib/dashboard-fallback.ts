@@ -85,6 +85,11 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       mean_investment_amount: null,
       rationale: "Run valuation to produce a portfolio signal.",
     },
+    technical_analysis: {
+      status: "unavailable",
+      analysis: {},
+      error: "Technical analysis is not available for this report yet.",
+    },
     artifacts: {},
     downloads: {
       analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,

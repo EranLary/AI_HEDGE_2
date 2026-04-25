@@ -16,7 +16,20 @@ export type DashboardReportEntry = {
 };
 
 export function outputsRoot(): string {
-  return path.resolve(process.cwd(), "..", "outputs");
+  const direct = path.resolve(process.cwd(), "outputs");
+  const parent = path.resolve(process.cwd(), "..", "outputs");
+
+  const directOk = fs.existsSync(direct);
+  const parentOk = fs.existsSync(parent);
+
+  if (directOk && !parentOk) return direct;
+  if (!directOk && parentOk) return parent;
+  if (directOk && parentOk) {
+    // Prefer nearer root when both exist to avoid reading a sibling project by mistake.
+    return direct;
+  }
+  // Fallback for fresh envs where outputs is not created yet.
+  return parent;
 }
 
 function safeStat(filePath: string): fs.Stats | null {

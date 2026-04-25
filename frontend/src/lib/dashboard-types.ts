@@ -171,6 +171,57 @@ export type DashboardPayload = {
     adjusted_score?: number | null;
     rationale: string;
   };
+  technical_analysis?: {
+    status?: "success" | "error" | "unavailable" | string;
+    generated_at?: string;
+    model?: string;
+    error?: string;
+    analysis?: {
+      ticker?: string;
+      analysis_date?: string;
+      step_by_step_analysis?: Array<{
+        step?: number;
+        title?: string;
+        bullets?: string[];
+      }>;
+      key_points?: string[];
+      bullish_points?: string[];
+      bearish_points?: string[];
+      contradictions_or_divergences?: string[];
+      volume_insights?: string[];
+      momentum_insights?: string[];
+      risk_signals?: string[];
+      target_price_levels?: {
+        support_levels?: Array<{ price?: number; reason?: string; confidence?: string }>;
+        resistance_levels?: Array<{ price?: number; reason?: string; confidence?: string }>;
+        bullish_targets?: Array<{ price?: number; reason?: string; timeframe?: string; confidence?: string }>;
+        bearish_targets?: Array<{ price?: number; reason?: string; timeframe?: string; confidence?: string }>;
+      };
+      scenario_analysis?: {
+        bullish_case?: {
+          summary?: string;
+          conditions?: string[];
+          target_zone?: { low?: number; high?: number };
+        };
+        base_case?: {
+          summary?: string;
+          conditions?: string[];
+          target_zone?: { low?: number; high?: number };
+        };
+        bearish_case?: {
+          summary?: string;
+          conditions?: string[];
+          target_zone?: { low?: number; high?: number };
+        };
+      };
+      what_to_watch_next?: string[];
+      confidence_score?: number;
+      bullish_probability?: number;
+      bearish_probability?: number;
+      final_decision?: "bullish" | "bearish" | "neutral" | string;
+      confidence_explanation?: string;
+    };
+  };
   artifacts: {
     analysis_txt?: string;
     prices_plot?: string;
@@ -180,6 +231,7 @@ export type DashboardPayload = {
     analysis_pdf?: string;
     prices_explain_pdf?: string;
     dashboard_json?: string;
+    technical_analysis_json?: string;
   };
   downloads?: {
     analysis_pdf: string;

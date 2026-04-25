@@ -5,6 +5,19 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReportListItem } from "@/lib/dashboard-types";
 
+function fmtDateTimeNoSeconds(value: string): string {
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "N/A";
+  return dt.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function DashboardIndexPage() {
   return (
     <Suspense fallback={<DashboardIndexFallback />}>
@@ -84,7 +97,7 @@ function DashboardIndexInner() {
                 >
                   <span className="font-semibold text-zinc-100">{r.ticker}</span>
                   <span className="text-xs text-zinc-400">
-                    {new Date(r.generated_at || r.updated_at).toLocaleString()}
+                    {fmtDateTimeNoSeconds(String(r.generated_at || r.updated_at || ""))}
                   </span>
                 </Link>
               </li>

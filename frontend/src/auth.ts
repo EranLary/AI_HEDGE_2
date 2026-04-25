@@ -1,6 +1,7 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Google from "next-auth/providers/google";
 
+import { shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import { upsertUserOnSignIn } from "@/lib/users-db";
 
 declare module "next-auth" {
@@ -26,6 +27,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/auth/signin",
   },
   callbacks: {
+    authorized({ auth, request }) {
+      const hostname = request?.nextUrl?.hostname || "";
+      if (shouldBypassAuthForHostname(hostname)) return true;
+
+      const pathname = request?.nextUrl?.pathname || "";
+      const isPublic = pathname.startsWith("/auth/") || pathname.startsWith("/api/auth/");
+      if (isPublic) return true;
+
+      return Boolean(auth?.user);
+    },
     async signIn({ user, account, profile }) {
       if (account?.provider !== "google") return false;
       const sub = (profile?.sub as string | undefined) ?? account.providerAccountId;

@@ -7,7 +7,6 @@ import {
   BarChart3,
   Download,
   FileText,
-  Flag,
   ListChecks,
   Radar,
   Users,
@@ -27,39 +26,12 @@ const DASHBOARD_SECTIONS: SectionItem[] = [
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Radar },
   { slug: "assumptions", label: "Assumptions", icon: ListChecks },
-  { slug: "flags", label: "Flags & Risks", icon: Flag },
   { slug: "dream-team", label: "Dream Team", icon: Users },
   { slug: "artifacts", label: "Artifacts", icon: Download },
 ];
 
-function decisionLabel(pct?: number | null): { label: string; tone: "pos" | "neg" | "neu" } {
-  const v = typeof pct === "number" && Number.isFinite(pct) ? pct : 0;
-  if (v <= -10) return { label: "Strong Sell", tone: "neg" };
-  if (v < -1) return { label: "Sell", tone: "neg" };
-  if (v < 1) return { label: "Hold", tone: "neu" };
-  if (v < 10) return { label: "Buy", tone: "pos" };
-  return { label: "Strong Buy", tone: "pos" };
-}
-
-function fmtPrice(v: number | null | undefined, ticker: string): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
-  const isIsraeli = String(ticker || "").toUpperCase().endsWith(".TA");
-  const code = isIsraeli ? "ILS" : "USD";
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: code,
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    return `${isIsraeli ? "₪" : "$"}${v.toFixed(2)}`;
-  }
-}
-
 type WorkspaceSummary = {
   companyName?: string;
-  currentPrice?: number | null;
-  positionPct?: number | null;
 };
 
 type TickerWorkspaceProps = {
@@ -82,8 +54,6 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
         if (cancelled || !j) return;
         setSummary({
           companyName: j.header?.company_name,
-          currentPrice: j.header?.current_price,
-          positionPct: j.decision_card?.position_size_pct_of_notional,
         });
       })
       .catch(() => {
@@ -93,14 +63,6 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
       cancelled = true;
     };
   }, [upper]);
-
-  const decision = decisionLabel(summary?.positionPct);
-  const decisionCls =
-    decision.tone === "pos"
-      ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
-      : decision.tone === "neg"
-      ? "border-red-400/50 bg-red-500/15 text-red-100"
-      : "border-white/20 bg-white/5 text-zinc-200";
 
   if (collapsed) {
     return (
@@ -114,7 +76,7 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
               key={item.slug}
               href={href}
               onClick={onNavigate}
-              title={`${upper} — ${item.label}`}
+              title={`${upper} - ${item.label}`}
               className={`hib-sidebar-item flex items-center justify-center rounded-lg px-2 py-2 text-sm ${
                 active ? "hib-sidebar-item-active" : ""
               }`}
@@ -135,12 +97,6 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
         {summary?.companyName ? (
           <p className="truncate text-[10px] text-zinc-400">{summary.companyName}</p>
         ) : null}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="hib-current-price text-sm font-semibold">{fmtPrice(summary?.currentPrice, upper)}</span>
-          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${decisionCls}`}>
-            {decision.label}
-          </span>
-        </div>
       </header>
       <nav className="space-y-0.5">
         {DASHBOARD_SECTIONS.map((item) => {

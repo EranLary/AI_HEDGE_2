@@ -298,6 +298,68 @@ def _extract_reason_sections(value: Any, prefix: str = "") -> List[Tuple[str, st
     return out
 
 
+def _normalize_lookup_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _extract_alias_from_nested(value: Any, normalized_aliases: List[str]) -> str:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_norm = _normalize_lookup_key(str(key))
+            if any(alias in key_norm or key_norm in alias for alias in normalized_aliases):
+                txt = _as_readable_text(nested)
+                if txt:
+                    return txt
+            nested_txt = _extract_alias_from_nested(nested, normalized_aliases)
+            if nested_txt:
+                return nested_txt
+        return ""
+    if isinstance(value, list):
+        for nested in value:
+            nested_txt = _extract_alias_from_nested(nested, normalized_aliases)
+            if nested_txt:
+                return nested_txt
+        return ""
+    return ""
+
+
+def _extract_reason_by_alias(raw_json: Any, aliases: List[str]) -> str:
+    if not isinstance(raw_json, dict) or not raw_json:
+        return ""
+    normalized_aliases = [_normalize_lookup_key(alias) for alias in aliases if str(alias or "").strip()]
+    normalized_aliases = [alias for alias in normalized_aliases if alias]
+    if not normalized_aliases:
+        return ""
+
+    # 1) Exact normalized top-level key match.
+    for key, value in raw_json.items():
+        if _normalize_lookup_key(str(key)) in normalized_aliases:
+            txt = _as_readable_text(value)
+            if txt:
+                return txt
+
+    # 2) Partial top-level key match for slight naming drift.
+    for key, value in raw_json.items():
+        key_norm = _normalize_lookup_key(str(key))
+        if any(alias in key_norm or key_norm in alias for alias in normalized_aliases):
+            txt = _as_readable_text(value)
+            if txt:
+                return txt
+
+    # 3) Recursive reason-section path match.
+    for path, text in _extract_reason_sections(raw_json):
+        path_norm = _normalize_lookup_key(path)
+        if any(alias in path_norm or path_norm in alias for alias in normalized_aliases):
+            txt = _as_readable_text(text)
+            if txt:
+                return txt
+    # 4) Full recursive nested alias search (handles nested step_by_step / rationale variants).
+    nested_txt = _extract_alias_from_nested(raw_json, normalized_aliases)
+    if nested_txt:
+        return nested_txt
+    return ""
+
+
 def _extract_numeric_values(value: Any, prefix: str = "") -> List[Tuple[str, float]]:
     out: List[Tuple[str, float]] = []
     if isinstance(value, dict):
@@ -1189,9 +1251,18 @@ def build_dashboard_payload(
                 "target_price": _scale_price_value(item.get("target_price"), target_multiplier),
                 "target_market_cap": _safe_float(raw_json.get("target_market_cap")),
                 "investment_amount": _safe_float(item.get("investment_amount")),
-                "step_by_step_analysis": _first_non_empty(raw_json.get("step_by_step_analysis")),
-                "target_market_cap_rationale": _first_non_empty(raw_json.get("target_market_cap_rationale")),
-                "investment_rationale": _first_non_empty(raw_json.get("investment_rationale")),
+                "step_by_step_analysis": _extract_reason_by_alias(
+                    raw_json,
+                    ["step_by_step_analysis", "step_by_step", "step_analysis", "analysis_step_by_step"],
+                ),
+                "target_market_cap_rationale": _extract_reason_by_alias(
+                    raw_json,
+                    ["target_market_cap_rationale", "targetmarketcaprationale", "market_cap_rationale", "marketcaprationale"],
+                ),
+                "investment_rationale": _first_non_empty(
+                    _extract_reason_by_alias(raw_json, ["investment_rationale", "investmentreason", "allocation_rationale"]),
+                    _first_non_empty(raw_json.get("investment_rationale")),
+                ),
             }
         )
 

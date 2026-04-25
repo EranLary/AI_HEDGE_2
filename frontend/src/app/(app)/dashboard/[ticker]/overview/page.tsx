@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowRight, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { useDashboardPayload } from "@/lib/use-dashboard-payload";
+import type { DashboardPayload } from "@/lib/dashboard-types";
 import { DashboardError, DashboardSkeleton, ReportChipRow } from "@/components/dashboard-chrome";
 import {
   buildCurrencyContext,
@@ -20,12 +21,27 @@ function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
 }
 
-function decisionSignal(pct?: number | null) {
-  const v = typeof pct === "number" && Number.isFinite(pct) ? pct : 0;
-  if (v <= -10) return { label: "Strong Sell", tone: "negative" as const };
-  if (v < -1) return { label: "Sell", tone: "negative" as const };
-  if (v < 1) return { label: "Hold", tone: "neutral" as const };
-  if (v < 10) return { label: "Buy", tone: "positive" as const };
+function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+  const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
+  const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
+  if (!hasInvestment && !hasTarget) return null;
+  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
+}
+
+function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number | null): number | null {
+  if (typeof baseScore !== "number" || !Number.isFinite(baseScore)) return null;
+  const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
+  const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
+  return baseScore * confidenceFactor;
+}
+
+function decisionSignal(adjustedScore?: number | null) {
+  const v = typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0;
+  if (v <= -15) return { label: "Strong Sell", tone: "negative" as const };
+  if (v < -7) return { label: "Sell", tone: "negative" as const };
+  if (v < 7) return { label: "Hold", tone: "neutral" as const };
+  if (v < 15) return { label: "Buy", tone: "positive" as const };
   return { label: "Strong Buy", tone: "positive" as const };
 }
 
@@ -39,6 +55,35 @@ export default function DashboardOverviewPage({
   const search = useSearchParams();
   const reportId = search?.get("report") || undefined;
   const { data, loading, error, reportsForTicker, resolvedReportId } = useDashboardPayload(upper, reportId);
+  const [livePerformance, setLivePerformance] = useState<DashboardPayload["header"]["price_performance_pct"] | null>(null);
+  const [livePerformanceKey, setLivePerformanceKey] = useState("");
+
+  useEffect(() => {
+    if (!upper) return;
+    let cancelled = false;
+    const perfKey = `${upper}::${resolvedReportId || "latest"}`;
+    fetch(`/api/performance/${encodeURIComponent(upper)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        const returns = json?.returns_pct;
+        if (returns && typeof returns === "object") {
+          setLivePerformance(returns);
+        } else {
+          setLivePerformance(null);
+        }
+        setLivePerformanceKey(perfKey);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLivePerformance(null);
+          setLivePerformanceKey(perfKey);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [upper, resolvedReportId]);
 
   if (loading && !data) return <DashboardSkeleton />;
   if (!data) return <DashboardError error={error || "No data"} ticker={upper} />;
@@ -51,19 +96,54 @@ export default function DashboardOverviewPage({
     typeof current === "number" && typeof mean === "number" && Math.abs(current) > 1e-9
       ? ((mean - current) / current) * 100
       : null;
-  const signal = decisionSignal(data.decision_card?.position_size_pct_of_notional);
-  const toneClass =
-    signal.tone === "positive" ? "hib-target-up" : signal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
+  const positionPct =
+    typeof data.decision_card?.position_size_pct_of_notional === "number" && Number.isFinite(data.decision_card.position_size_pct_of_notional)
+      ? Number(data.decision_card.position_size_pct_of_notional)
+      : null;
   const changeClass =
     typeof changePct === "number" && Math.abs(changePct) > 1e-9
       ? changePct > 0
         ? "hib-target-up"
         : "hib-target-down"
       : "text-zinc-200";
+  const generatedDateRaw = data.generated_at || data.report_mtime || "";
+  const generatedDate = new Date(String(generatedDateRaw || ""));
+  const generatedDateLabel =
+    Number.isFinite(generatedDate.getTime())
+      ? `${generatedDate.getFullYear()}-${String(generatedDate.getMonth() + 1).padStart(2, "0")}-${String(generatedDate.getDate()).padStart(2, "0")}`
+      : "N/A";
+  const targetDisagreement =
+    typeof consensus?.cv === "number" && Number.isFinite(consensus.cv) ? Math.abs(Number(consensus.cv)) : null;
+  const investmentDisagreement =
+    Array.isArray(consensus?.lmil) && typeof consensus?.lmil?.[1] === "number" && Number.isFinite(consensus.lmil[1])
+      ? Math.abs(Number(consensus.lmil[1]))
+      : null;
+  const disagreementParts = [targetDisagreement, investmentDisagreement].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
+  const disagreementScore =
+    typeof data.decision_card?.overall_cv === "number" && Number.isFinite(data.decision_card.overall_cv)
+      ? Math.abs(Number(data.decision_card.overall_cv))
+      : disagreementParts.length > 0
+        ? disagreementParts.reduce((sum, v) => sum + v, 0) / disagreementParts.length
+        : null;
+  const finalCombinedScore =
+    typeof data.decision_card?.combined_score === "number" && Number.isFinite(data.decision_card.combined_score)
+      ? Number(data.decision_card.combined_score)
+      : combinedDecisionScore(positionPct, changePct);
+  const finalAdjustedScore =
+    typeof data.decision_card?.adjusted_score === "number" && Number.isFinite(data.decision_card.adjusted_score)
+      ? Number(data.decision_card.adjusted_score)
+      : confidenceAdjustedScore(finalCombinedScore, disagreementScore);
+  const signal = decisionSignal(finalAdjustedScore);
+  const toneClass =
+    signal.tone === "positive" ? "hib-target-up" : signal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
+  const performanceKey = `${upper}::${resolvedReportId || "latest"}`;
+  const performanceLoading = livePerformanceKey !== performanceKey;
+  const performanceRows = livePerformance || data?.header?.price_performance_pct || {};
 
   const flags = (data.red_flag_shield || []).filter(Boolean);
   const teaserFlags = flags.slice(0, 3);
-  const shift = data.analysis_matrix?.structural_shift;
 
   const execMarkdown = (data.analysis_matrix?.executive_summary_markdown || "").trim();
 
@@ -89,9 +169,9 @@ export default function DashboardOverviewPage({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Current Price</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Price ({generatedDateLabel})</p>
             <p className="hib-current-price mt-1 text-2xl font-bold">{fmtMoney(current, ctx, "price")}</p>
             <p className="mt-1 text-xs text-zinc-500">Market cap {fmtMarketCap(data.header.market_cap, ctx)}</p>
           </div>
@@ -111,23 +191,39 @@ export default function DashboardOverviewPage({
             </p>
             <p className="mt-1 text-xs text-zinc-500">of notional</p>
           </div>
+          <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Disagreement Score</p>
+            <p className="hib-neutral-metric mt-1 text-2xl font-bold">
+              {typeof disagreementScore === "number" && Number.isFinite(disagreementScore)
+                ? disagreementScore.toFixed(3)
+                : "N/A"}
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-3">
+          <p className="text-zinc-500">Price Performance</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4 xl:grid-cols-8">
+            {(["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const).map((key) => {
+              const value = performanceRows?.[key];
+              return (
+                <div key={key} className="hib-perf-cell rounded-md px-2 py-1.5">
+                  <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
+                  {performanceLoading ? (
+                    <span className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400">
+                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-zinc-500 border-t-transparent" />
+                      Loading
+                    </span>
+                  ) : (
+                    <span className={`mt-1 block text-sm font-semibold ${typeof value === "number" && Number.isFinite(value) && Math.abs(value) > 1e-9 ? (value > 0 ? "hib-target-up" : "hib-target-down") : "text-zinc-200"}`}>
+                      {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {shift?.triggered ? (
-          <div
-            className={`mt-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-              shift.direction === "up"
-                ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
-                : "border-red-400/40 bg-red-500/10 text-red-100"
-            }`}
-          >
-            {shift.direction === "up" ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            <span className="font-semibold uppercase tracking-[0.14em]">Structural shift ({shift.direction})</span>
-            <span className="opacity-85">
-              52-week change {typeof shift.change_pct_52w === "number" ? fmtPct(shift.change_pct_52w) : "N/A"}
-            </span>
-          </div>
-        ) : null}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">

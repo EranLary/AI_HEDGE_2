@@ -164,6 +164,11 @@ export type DashboardPayload = {
     action: string;
     position_size_pct_of_notional: number;
     mean_investment_amount: number | null;
+    target_return_pct?: number | null;
+    combined_score?: number | null;
+    overall_cv?: number | null;
+    confidence_factor?: number | null;
+    adjusted_score?: number | null;
     rationale: string;
   };
   artifacts: {

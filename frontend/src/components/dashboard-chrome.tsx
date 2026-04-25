@@ -4,6 +4,19 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReportListItem } from "@/lib/dashboard-types";
 
+function fmtDateTimeNoSeconds(value: string): string {
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "N/A";
+  return dt.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export function DashboardSkeleton({ message }: { message?: string }) {
   return (
     <div>
@@ -53,7 +66,7 @@ export function ReportChipRow({
                   : "hib-tab-inactive border-white/15 bg-white/5 text-zinc-300"
               }`}
             >
-              {new Date(report.generated_at || report.updated_at).toLocaleString()}
+              {fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}
             </button>
           );
         })}

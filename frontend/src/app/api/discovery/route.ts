@@ -11,15 +11,40 @@ function safeNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function safeNumOrNull(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function avgNums(values: number[]): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function decisionFromReturn(returnPct: number): { label: "Buy" | "Sell" | "Hold"; tone: "buy" | "sell" | "hold" } {
-  if (returnPct > 5) return { label: "Buy", tone: "buy" };
-  if (returnPct < -5) return { label: "Sell", tone: "sell" };
-  return { label: "Hold", tone: "hold" };
+function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+  const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
+  const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
+  if (!hasInvestment && !hasTarget) return null;
+  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
+}
+
+function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number | null): number | null {
+  if (typeof baseScore !== "number" || !Number.isFinite(baseScore)) return null;
+  const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
+  const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
+  return baseScore * confidenceFactor;
+}
+
+function decisionFromAdjustedScore(adjustedScore: number): {
+  label: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell";
+  tone: "buy" | "sell" | "hold";
+} {
+  if (adjustedScore >= 15) return { label: "Strong Buy", tone: "buy" };
+  if (adjustedScore >= 7) return { label: "Buy", tone: "buy" };
+  if (adjustedScore > -7) return { label: "Hold", tone: "hold" };
+  if (adjustedScore > -15) return { label: "Sell", tone: "sell" };
+  return { label: "Strong Sell", tone: "sell" };
 }
 
 async function loadDashboards(): Promise<
@@ -83,7 +108,18 @@ export async function GET() {
       (v) => Number.isFinite(v) && v > 0,
     );
     const confidenceCv = cvParts.length ? avgNums(cvParts) : Number.POSITIVE_INFINITY;
-    const decision = decisionFromReturn(returnPct);
+    const positionPct = safeNumOrNull(payload.decision_card?.position_size_pct_of_notional);
+    const combinedScore =
+      safeNumOrNull(payload.decision_card?.combined_score) ?? combinedDecisionScore(positionPct, returnPct);
+    const overallCv =
+      safeNumOrNull(payload.decision_card?.overall_cv) ??
+      (Number.isFinite(confidenceCv) ? confidenceCv : null);
+    const adjustedScore =
+      safeNumOrNull(payload.decision_card?.adjusted_score) ??
+      confidenceAdjustedScore(combinedScore, overallCv);
+    const decision = decisionFromAdjustedScore(
+      typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0,
+    );
 
     rows.push({
       ticker,

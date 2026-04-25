@@ -217,6 +217,26 @@ html[data-theme="light"] .hib-conviction-accent {
   color: #0e7490 !important;
 }
 
+/* Main valuation metrics: prevent overlap on long localized price strings */
+.hib-metric-value {
+  font-size: clamp(1.35rem, 3.4vw, 2.35rem);
+  line-height: 1.05;
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+.hib-metric-subvalue {
+  font-size: clamp(1.2rem, 3vw, 2rem);
+  line-height: 1.05;
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  letter-spacing: -0.012em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Chart readability */
 .hib-chart .recharts-cartesian-grid line {
   stroke: rgba(100, 116, 139, 0.35) !important;

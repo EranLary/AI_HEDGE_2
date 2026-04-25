@@ -13,7 +13,6 @@ const SECTION_LABELS: Record<string, string> = {
   valuation: "Valuation",
   scenarios: "Bull vs Bear",
   assumptions: "Assumptions",
-  flags: "Flags & Risks",
   "dream-team": "Dream Team",
   artifacts: "Artifacts",
 };

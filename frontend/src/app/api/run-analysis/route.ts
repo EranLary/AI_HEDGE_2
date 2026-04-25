@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
+import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import {
   TICKER_RE,
   type RunStatusPayload,
@@ -28,8 +29,10 @@ function writeStatus(filePath: string, payload: RunStatusPayload): void {
 }
 
 export async function POST(req: Request) {
+  const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
   const session = await auth();
-  if (!session?.user?.id) {
+  const userId = session?.user?.id || (bypassAuth ? "local-dev" : "");
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -60,7 +63,7 @@ export async function POST(req: Request) {
     finished_at: null,
     output_dir: jobDir,
     progress_file: progressFile,
-    user_id: session.user.id,
+    user_id: userId,
     attributed: false,
     llm_total_estimated: 30,
     llm_completed: 0,

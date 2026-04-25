@@ -25,6 +25,8 @@ export default function DashboardDreamTeamPage({
   const ctx = buildCurrencyContext(data);
   const team = data.dream_team || [];
   const currentPrice = data.valuation_hub.consensus?.current_price;
+  const dreamTab = (data.valuation_hub.method_tabs || []).find((tab) => tab.name === "Dream Team");
+  const dreamOutputs = dreamTab?.outputs || [];
 
   return (
     <div>
@@ -34,7 +36,7 @@ export default function DashboardDreamTeamPage({
         <h1 className="font-display text-2xl text-zinc-100 inline-flex items-center gap-2">
           <Users size={18} className="text-emerald-300" /> Dream Team
         </h1>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{upper} — investor personas</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{upper} - investor personas</p>
       </header>
 
       {team.length ? (
@@ -60,15 +62,33 @@ export default function DashboardDreamTeamPage({
                   ? "hib-target-up"
                   : "hib-target-down"
                 : "text-zinc-200";
-            const analysisParagraphs = [
-              String(member.step_by_step_analysis || "").trim(),
-              String(member.target_market_cap_rationale || "").trim(),
-              String(member.investment_rationale || "").trim(),
-            ].filter(Boolean);
+
+            const outputByPersona = dreamOutputs.find(
+              (output) => String(output.persona || "").trim() === String(member.persona || "").trim(),
+            );
+            const outputByIndex = dreamOutputs[idx];
+            const outputForMember = outputByPersona || outputByIndex;
+            const outputSections = Array.isArray(outputForMember?.reason_sections) ? outputForMember.reason_sections : [];
+            const sectionText = (needle: string) =>
+              String(
+                outputSections.find((section) => String(section.label || "").toLowerCase().includes(needle))?.text || "",
+              ).trim();
+
+            const stepText = String(member.step_by_step_analysis || "").trim() || sectionText("step by step");
+            const marketCapText =
+              String(member.target_market_cap_rationale || "").trim() || sectionText("target market cap rationale");
+            const investmentText = String(member.investment_rationale || "").trim() || sectionText("investment rationale");
+
+            const analysisParagraphs = [stepText, marketCapText, investmentText].filter(Boolean);
+            const fallbackParagraphs =
+              analysisParagraphs.length > 0
+                ? analysisParagraphs
+                : outputSections.map((section) => String(section.text || "").trim()).filter(Boolean);
+
             return (
               <article key={`${member.persona}-${idx}`} className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Persona</p>
-                <h2 className="mt-0.5 text-lg font-semibold text-zinc-100">{member.persona || `Persona ${idx + 1}`}</h2>
+                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">AI Persona</p>
+                <h2 className="mt-0.5 text-lg font-semibold text-zinc-100">{member.persona || `AI Persona ${idx + 1}`}</h2>
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-white/10 bg-black/30 p-2">
                     <dt className="text-zinc-500">Target Price</dt>
@@ -90,11 +110,11 @@ export default function DashboardDreamTeamPage({
                     </dd>
                   </div>
                 </dl>
-                {analysisParagraphs.length ? (
+                {fallbackParagraphs.length ? (
                   <details className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3 text-xs" open>
                     <summary className="cursor-pointer text-[10px] uppercase tracking-[0.18em] text-zinc-400">Analysis</summary>
                     <div className="mt-2 space-y-3 text-zinc-200">
-                      {analysisParagraphs.map((paragraph, pIdx) => (
+                      {fallbackParagraphs.map((paragraph, pIdx) => (
                         <p key={`${member.persona}-${idx}-p-${pIdx}`} className="whitespace-pre-line">
                           {paragraph}
                         </p>

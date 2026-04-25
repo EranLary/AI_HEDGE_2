@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
+import { shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  if (shouldBypassAuthForHostname(req.nextUrl.hostname)) {
+    return NextResponse.next();
+  }
 
   const isPublic =
     pathname.startsWith("/auth/") ||

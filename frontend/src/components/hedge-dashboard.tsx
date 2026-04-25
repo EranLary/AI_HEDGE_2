@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Gauge } from "lucide-react";
 import {
   Bar,
@@ -274,6 +274,62 @@ function Tab({ active, onClick, label }: { active: boolean; onClick: () => void;
   );
 }
 
+function AutoFitMetric({
+  text,
+  className,
+  maxPx,
+  minPx,
+}: {
+  text: string;
+  className?: string;
+  maxPx: number;
+  minPx: number;
+}) {
+  const ref = useRef<HTMLParagraphElement | null>(null);
+
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!el.clientWidth) return;
+
+    let size = maxPx;
+    el.style.fontSize = `${size}px`;
+    el.style.whiteSpace = "nowrap";
+
+    while (size > minPx && el.scrollWidth > el.clientWidth + 1) {
+      size -= 1;
+      el.style.fontSize = `${size}px`;
+    }
+
+    while (size < maxPx) {
+      const next = size + 1;
+      el.style.fontSize = `${next}px`;
+      if (el.scrollWidth <= el.clientWidth + 1) {
+        size = next;
+      } else {
+        el.style.fontSize = `${size}px`;
+        break;
+      }
+    }
+  }, [maxPx, minPx]);
+
+  useEffect(() => {
+    fit();
+    const el = ref.current;
+    if (!el) return;
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fit, text]);
+
+  return (
+    <p ref={ref} className={className}>
+      {text}
+    </p>
+  );
+}
+
 function MarkdownBlock({ text }: { text: string }) {
   const cleaned = stripBrokenMarkdownArtifacts(String(text || ""))
     .replace(/\u200b/g, "")
@@ -457,6 +513,19 @@ function reportTimestamp(report: ReportListItem): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function fmtDateTimeNoSeconds(value: string): string {
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "N/A";
+  return dt.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function normalizeMetricLabel(raw: string): string {
   return String(raw || "")
     .toLowerCase()
@@ -494,15 +563,6 @@ function prettyMetricName(raw: string): string {
       return token.charAt(0).toUpperCase() + token.slice(1);
     })
     .join(" ");
-}
-
-function getDecisionSignal(pct?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
-  const v = typeof pct === "number" && Number.isFinite(pct) ? pct : 0;
-  if (v <= -15) return { label: "Strong Sell", tone: "negative" };
-  if (v < -5) return { label: "Sell", tone: "negative" };
-  if (v < 5) return { label: "Hold", tone: "neutral" };
-  if (v < 15) return { label: "Buy", tone: "positive" };
-  return { label: "Strong Buy", tone: "positive" };
 }
 
 function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
@@ -594,8 +654,6 @@ export function HedgeDashboard({
   const [valuationTab, setValuationTab] = useState("overview");
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
-  const [livePerformance, setLivePerformance] = useState<DashboardPayload["header"]["price_performance_pct"] | null>(null);
-  const [livePerformanceKey, setLivePerformanceKey] = useState("");
   const [currentLineTooltip, setCurrentLineTooltip] = useState<{ visible: boolean; x: number; y: number }>({
     visible: false,
     x: 0,
@@ -719,33 +777,6 @@ export function HedgeDashboard({
       .finally(() => setLoading(false));
   }, [selectedTicker, currentReportId]);
 
-  useEffect(() => {
-    if (!selectedTicker) return;
-    let cancelled = false;
-    const perfKey = `${selectedTicker}::${currentReportId || "latest"}`;
-    fetch(`/api/performance/${encodeURIComponent(selectedTicker)}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (cancelled) return;
-        const returns = json?.returns_pct;
-        if (returns && typeof returns === "object") {
-          setLivePerformance(returns);
-        } else {
-          setLivePerformance(null);
-        }
-        setLivePerformanceKey(perfKey);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLivePerformance(null);
-          setLivePerformanceKey(perfKey);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedTicker, currentReportId]);
-
   const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
   const consensus = data?.valuation_hub?.consensus;
   const methodTabs = useMemo(
@@ -827,6 +858,10 @@ export function HedgeDashboard({
   const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
   const consensusChangeClass = toneClassFromSign(consensusChangePct);
+  const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
+  const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
+  const consensusChangeText = typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A";
+  const consensusCvText = typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A";
   const overallDisagreement =
     [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
       ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
@@ -921,7 +956,7 @@ export function HedgeDashboard({
     [];
   const reportDateText =
     data?.generated_at || data?.report_mtime
-      ? new Date(String(data?.generated_at || data?.report_mtime)).toLocaleString()
+      ? fmtDateTimeNoSeconds(String(data?.generated_at || data?.report_mtime))
       : "N/A";
   const reportDateIso =
     data?.generated_at || data?.report_mtime
@@ -931,10 +966,6 @@ export function HedgeDashboard({
     typeof data?.analysis_duration_minutes === "number" && Number.isFinite(data.analysis_duration_minutes)
       ? `${data.analysis_duration_minutes.toFixed(1)} min`
       : "N/A";
-  const performanceKey = `${selectedTicker}::${currentReportId || "latest"}`;
-  const performanceLoading = livePerformanceKey !== performanceKey;
-  const performanceRows = livePerformance || data?.header?.price_performance_pct || {};
-
   const assumptionsModelRows = useMemo(() => {
     const sourceRows = data?.valuation_hub.all_values?.metric_means || [];
     const rows: typeof sourceRows = [];
@@ -1103,8 +1134,14 @@ export function HedgeDashboard({
 
   const bullProbability = assumptionsByNorm.get(normalizeMetricLabel("Bull Probability"))?.mean ?? null;
   const bearProbability = assumptionsByNorm.get(normalizeMetricLabel("Bear Probability"))?.mean ?? null;
-  const finalCombinedScore = combinedDecisionScore(data?.decision_card?.mean_investment_amount, consensusChangePct);
-  const finalAdjustedScore = confidenceAdjustedScore(finalCombinedScore, overallDisagreement);
+  const finalCombinedScore =
+    typeof data?.decision_card?.combined_score === "number" && Number.isFinite(data.decision_card.combined_score)
+      ? Number(data.decision_card.combined_score)
+      : combinedDecisionScore(data?.decision_card?.mean_investment_amount, consensusChangePct);
+  const finalAdjustedScore =
+    typeof data?.decision_card?.adjusted_score === "number" && Number.isFinite(data.decision_card.adjusted_score)
+      ? Number(data.decision_card.adjusted_score)
+      : confidenceAdjustedScore(finalCombinedScore, overallDisagreement);
   const decisionSignal = getFinalDecisionSignal(finalAdjustedScore);
   const decisionToneClass =
     decisionSignal.tone === "positive" ? "hib-target-up" : decisionSignal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
@@ -1228,7 +1265,7 @@ export function HedgeDashboard({
                         : "hib-tab-inactive border-white/15 bg-white/5 text-zinc-300"
                     }`}
                   >
-                    {new Date(report.generated_at || report.updated_at).toLocaleString()}
+                    {fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}
                   </button>
                 );
               })}
@@ -1263,29 +1300,6 @@ export function HedgeDashboard({
                       <span className="block sm:ml-1 sm:inline">({reportDateIso})</span>
                     </p>
                     <p>{fmtMarketCap(data.header.market_cap, currencyContext)}</p>
-                  </div>
-                </div>
-                <div className="mt-3 rounded-lg border border-white/10 bg-black/35 p-2">
-                  <p className="text-zinc-500">Price Performance</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4 xl:grid-cols-8">
-                    {(["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const).map((key) => {
-                      const value = performanceRows?.[key];
-                      return (
-                        <div key={key} className="hib-perf-cell rounded-md px-2 py-1.5">
-                          <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
-                          {performanceLoading ? (
-                            <span className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400">
-                              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-zinc-500 border-t-transparent" />
-                              Loading
-                            </span>
-                          ) : (
-                            <span className={`mt-1 block text-sm font-semibold ${toneClassFromSign(value)}`}>
-                              {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               </article>
@@ -1370,26 +1384,42 @@ export function HedgeDashboard({
                 </div>
                 <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Target Price</p>
-                      <p className={`mt-1 text-5xl font-bold leading-none ${consensusMeanClass}`}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</p>
+                      <AutoFitMetric
+                        text={consensusMeanText}
+                        maxPx={42}
+                        minPx={16}
+                        className={`hib-metric-value mt-1 font-bold leading-tight ${consensusMeanClass}`}
+                      />
                     </div>
-                    <div>
+                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Price ({reportDateIso})</p>
-                      <p className="hib-current-price mt-1 text-4xl font-bold leading-none">{fmtMoneyCompact(consensus?.current_price, currencyContext, "price")}</p>
+                      <AutoFitMetric
+                        text={consensusCurrentText}
+                        maxPx={42}
+                        minPx={16}
+                        className="hib-metric-value hib-current-price mt-1 font-bold leading-tight"
+                      />
                     </div>
-                    <div>
+                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Change (%)</p>
-                      <p className={`mt-1 text-4xl font-bold leading-none ${consensusChangeClass}`}>
-                        {typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"}
-                      </p>
+                      <AutoFitMetric
+                        text={consensusChangeText}
+                        maxPx={32}
+                        minPx={14}
+                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${consensusChangeClass}`}
+                      />
                     </div>
-                    <div>
+                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Target Disagreement Score</p>
-                      <p className="mt-1 text-4xl font-bold leading-none text-zinc-100">
-                        {typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A"}
-                      </p>
+                      <AutoFitMetric
+                        text={consensusCvText}
+                        maxPx={32}
+                        minPx={14}
+                        className="hib-metric-subvalue mt-1 font-bold leading-tight text-zinc-100"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1420,7 +1450,8 @@ export function HedgeDashboard({
                       </thead>
                       <tbody>
                         {targetTableRows.map((row) => {
-                          const rowDecision = getDecisionSignal(row.combinedScore);
+                          const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                          const rowDecision = getFinalDecisionSignal(rowAdjustedScore);
                           const rowDecisionToneClass =
                             rowDecision.tone === "positive"
                               ? "hib-target-up"

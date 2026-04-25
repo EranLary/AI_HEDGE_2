@@ -3733,7 +3733,7 @@ def extract_revenue_ev_sales_range_json(text: str) -> Dict[str, Any]:
     }
 
 def extract_target_market_cap_json(text: str) -> Dict[str, Any]:
-    # Extract JSON block from text
+    # Extract JSON block from text (best effort)
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         return {}
@@ -3741,7 +3741,12 @@ def extract_target_market_cap_json(text: str) -> Dict[str, Any]:
     json_str = match.group(0)
 
     # Parse JSON
-    data = json.loads(json_str)
+    try:
+        data = json.loads(json_str)
+    except Exception:
+        data = _extract_raw_json_dict(text)
+    if not isinstance(data, dict) or not data:
+        return {}
 
     # Basic validation of required keys
     required_keys = ["target_market_cap"]
@@ -3752,10 +3757,23 @@ def extract_target_market_cap_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    step_by_step_analysis = str(data.get("step_by_step_analysis") or "").strip()
+    target_market_cap_rationale = str(data.get("target_market_cap_rationale") or "").strip()
+
+    if not target_market_cap_rationale:
+        for key, value in data.items():
+            key_l = str(key or "").lower()
+            if "rationale" in key_l and "target" in key_l and "market" in key_l and "cap" in key_l:
+                candidate = str(value or "").strip()
+                if candidate:
+                    target_market_cap_rationale = candidate
+                    break
 
     # Return structured data
     return {
         "target_market_cap": float(data["target_market_cap"]),
+        "step_by_step_analysis": step_by_step_analysis,
+        "target_market_cap_rationale": target_market_cap_rationale,
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
     }

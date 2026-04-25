@@ -7,6 +7,19 @@ import { Gem, Radar, ShieldAlert } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
+function fmtDateTimeNoSeconds(value: string): string {
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "N/A";
+  return dt.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 type DiscoveryPayload = {
   generated_at: string;
   window_hours: number | null;
@@ -78,7 +91,7 @@ function SectionCard({
                 )}
                 <div>
                   <p className="text-zinc-500">Updated</p>
-                  <p className="text-zinc-200">{new Date(row.updated_at).toLocaleString()}</p>
+                  <p className="text-zinc-200">{fmtDateTimeNoSeconds(String(row.updated_at || ""))}</p>
                 </div>
               </div>
             </div>
@@ -134,7 +147,7 @@ export default function DiscoveryPage() {
         ) : (
           <>
             <p className="mb-4 text-sm text-zinc-400">
-              Scanned {data.count} latest dashboards (one per ticker). Generated at {new Date(data.generated_at).toLocaleString()}.
+              Scanned {data.count} latest dashboards (one per ticker). Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
             </p>
             <div className="grid gap-4 md:grid-cols-3">
               <SectionCard

@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import sys
 import json
 import time
 from dataclasses import dataclass
@@ -704,6 +705,12 @@ def run_ticker_valuation(
                 pdf_dst = str(target_pdf.resolve())
             if html_src.exists():
                 shutil.move(str(html_src), target_html)
+
+    try:
+        from ai_hedge.db.writer import write_run_to_db
+        write_run_to_db(out_dir.resolve(), source=run_source)
+    except Exception as _db_exc:  # noqa: BLE001
+        print(f"[runner] DB write skipped: {_db_exc}", file=sys.stderr)
 
     artifacts = RunArtifacts(
         ticker=ticker,

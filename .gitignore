@@ -18,6 +18,9 @@ frontend/out/
 outputs/
 logs/
 .tmp/
+fly_snapshot/
+pulled/
+.yfinance_cache/
 *.log
 analysis.txt
 *.pdf

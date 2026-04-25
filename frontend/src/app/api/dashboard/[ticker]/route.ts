@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { createFallbackDashboard } from "@/lib/dashboard-fallback";
 import { DashboardPayload } from "@/lib/dashboard-types";
+import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import {
   findLatestByFileName,
   readJson,
@@ -368,6 +369,25 @@ export async function GET(
   }
   const url = new URL(req.url);
   const requestedReportId = String(url.searchParams.get("report") || "").trim();
+
+  // DB-first: try Neon. Falls through to filesystem on miss / error.
+  try {
+    const dbRow = requestedReportId
+      ? await fetchReportById(requestedReportId)
+      : await fetchLatestReport(ticker);
+    if (dbRow && dbRow.dashboard) {
+      const generated = new Date(dbRow.generated_at).toISOString();
+      return NextResponse.json(
+        normalizePayload(ticker, dbRow.dashboard as DashboardPayload, {
+          reportId: dbRow.id,
+          reportFile: undefined,
+          reportMtime: generated,
+        }),
+      );
+    }
+  } catch (err) {
+    console.warn(`[dashboard] DB read failed for ${ticker}:`, err);
+  }
 
   let dashboardPath = "";
   let dashboardMtime = 0;

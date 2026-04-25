@@ -3,6 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { DashboardPayload, DiscoveryRow } from "@/lib/dashboard-types";
+import { listDashboardsForDiscovery } from "@/lib/reports-db";
 import { listDashboardFiles, readJson } from "@/lib/server-outputs";
 
 function safeNum(v: unknown): number {
@@ -21,18 +22,48 @@ function decisionFromReturn(returnPct: number): { label: "Buy" | "Sell" | "Hold"
   return { label: "Hold", tone: "hold" };
 }
 
+async function loadDashboards(): Promise<
+  Array<{ ticker: string; payload: DashboardPayload; updatedAt: string; sourceLabel: string }>
+> {
+  try {
+    const dbRows = await listDashboardsForDiscovery();
+    if (dbRows.length) {
+      return dbRows.map((r) => ({
+        ticker: String(r.ticker).toUpperCase(),
+        payload: r.dashboard as DashboardPayload,
+        updatedAt: new Date(r.generated_at).toISOString(),
+        sourceLabel: r.ticker,
+      }));
+    }
+  } catch (err) {
+    console.warn("[discovery] DB read failed:", err);
+  }
+  const files = listDashboardFiles().sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return files
+    .map((item) => {
+      const payload = readJson<DashboardPayload>(item.path);
+      if (!payload) return null;
+      return {
+        ticker: String(payload.ticker || "").toUpperCase(),
+        payload,
+        updatedAt: new Date(item.mtimeMs).toISOString(),
+        sourceLabel: item.path,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+}
+
 export async function GET() {
-  const files = listDashboardFiles()
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const items = await loadDashboards();
 
   const rows: DiscoveryRow[] = [];
   const seenTickers = new Set<string>();
-  for (const item of files) {
-    const payload = readJson<DashboardPayload>(item.path);
+  for (const item of items) {
+    const payload = item.payload;
     if (!payload) {
       continue;
     }
-    const ticker = String(payload.ticker || "").toUpperCase();
+    const ticker = item.ticker;
     if (!ticker || seenTickers.has(ticker)) {
       continue;
     }
@@ -56,7 +87,7 @@ export async function GET() {
 
     rows.push({
       ticker,
-      company_name: payload.header?.company_name || ticker || path.basename(item.path),
+      company_name: payload.header?.company_name || ticker || path.basename(item.sourceLabel),
       margin_safety_pct: returnPct,
       overvaluation_pct: overvaluation,
       dispersion: confidenceCv,
@@ -64,7 +95,7 @@ export async function GET() {
       confidence_cv: confidenceCv,
       decision_label: decision.label,
       decision_tone: decision.tone,
-      updated_at: new Date(item.mtimeMs).toISOString(),
+      updated_at: item.updatedAt,
     });
     seenTickers.add(ticker);
   }

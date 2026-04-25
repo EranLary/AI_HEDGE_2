@@ -1,9 +1,35 @@
+import fs from "node:fs";
+
 import { NextResponse } from "next/server";
 
-import { readProgressLines, readRunStatus } from "@/lib/site-runner";
+import { attributeReportToUser } from "@/lib/reports-db";
+import {
+  readProgressLines,
+  readRunStatus,
+  runStatusFile,
+  type RunStatusPayload,
+} from "@/lib/site-runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function attributeIfNeeded(status: RunStatusPayload): Promise<void> {
+  if (status.status !== "completed") return;
+  if (status.attributed) return;
+  if (!status.user_id) return;
+  const ok = await attributeReportToUser({
+    ticker: status.ticker,
+    jobId: status.job_id,
+    userId: status.user_id,
+  });
+  if (!ok) return;
+  try {
+    const next: RunStatusPayload = { ...status, attributed: true };
+    fs.writeFileSync(runStatusFile(status.job_id), JSON.stringify(next, null, 2), "utf-8");
+  } catch {
+    // best-effort flag write; the SQL guard makes the UPDATE itself idempotent
+  }
+}
 
 export async function GET(
   _: Request,
@@ -19,6 +45,8 @@ export async function GET(
   if (!status) {
     return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
+
+  await attributeIfNeeded(status);
 
   const progress = readProgressLines(status.progress_file || "", 80);
   const llmTotal = typeof status.llm_total_estimated === "number" ? status.llm_total_estimated : 0;

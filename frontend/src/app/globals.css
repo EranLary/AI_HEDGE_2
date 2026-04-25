@@ -583,6 +583,132 @@ html[data-theme="light"] .hib-content {
   color: #111827;
 }
 
+/* Landing / sign-in surface */
+.hib-landing {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(16, 185, 129, 0.18), transparent 45%),
+    radial-gradient(circle at 82% 12%, rgba(239, 68, 68, 0.12), transparent 45%),
+    radial-gradient(circle at 50% 110%, rgba(56, 189, 248, 0.10), transparent 50%),
+    #050608;
+  color: #f5f7fa;
+}
+.hib-landing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at 50% 40%, black 30%, transparent 75%);
+  pointer-events: none;
+  z-index: 0;
+}
+html[data-theme="light"] .hib-landing {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(16, 185, 129, 0.14), transparent 45%),
+    radial-gradient(circle at 82% 12%, rgba(239, 68, 68, 0.08), transparent 45%),
+    radial-gradient(circle at 50% 110%, rgba(56, 189, 248, 0.08), transparent 50%),
+    #f7fafc;
+  color: #111827;
+}
+html[data-theme="light"] .hib-landing::before {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+}
+
+.hib-landing-brand { color: #f5f7fa; }
+.hib-landing-mark { color: #34d399; }
+html[data-theme="light"] .hib-landing-brand { color: #0f172a; }
+
+.hib-landing-meta { color: rgba(226, 232, 240, 0.62); }
+html[data-theme="light"] .hib-landing-meta { color: #475569; }
+
+.hib-landing-sub { color: rgba(226, 232, 240, 0.78); }
+html[data-theme="light"] .hib-landing-sub { color: #334155; }
+
+.hib-landing-eyebrow {
+  background-color: rgba(16, 185, 129, 0.10);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #a7f3d0;
+}
+.hib-landing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #34d399;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.85);
+}
+html[data-theme="light"] .hib-landing-eyebrow {
+  background-color: rgba(16, 185, 129, 0.10);
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #14532d;
+}
+
+.hib-landing-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 14, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 30px 80px -40px rgba(16, 185, 129, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(8px);
+}
+html[data-theme="light"] .hib-landing-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.96));
+  border-color: rgba(148, 163, 184, 0.35);
+  box-shadow:
+    0 30px 80px -40px rgba(16, 185, 129, 0.30),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  color: #0f172a;
+}
+
+.hib-landing-rec {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #a7f3d0;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+}
+
+.hib-landing-bar {
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.95), rgba(16, 185, 129, 0.55));
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.35);
+}
+
+.hib-landing-feature {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+html[data-theme="light"] .hib-landing-feature {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #0f172a;
+}
+
+.hib-landing-error {
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+}
+html[data-theme="light"] .hib-landing-error {
+  background-color: rgba(254, 226, 226, 0.85);
+  border-color: rgba(220, 38, 38, 0.55);
+  color: #7f1d1d;
+}
+
+.hib-google-btn {
+  background-color: #ffffff;
+  color: #1f1f1f;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 40px -20px rgba(16, 185, 129, 0.55);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+.hib-google-btn:hover {
+  background-color: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 22px 50px -20px rgba(16, 185, 129, 0.70);
+}
+.hib-google-btn:active { transform: translateY(0); }
+
 /* Flag / scenario / artifact surface tokens (reused in new routed pages) */
 .hib-flag-card {
   border-color: rgba(239, 68, 68, 0.35) !important;

@@ -1,5 +1,16 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- 0. Users: one row per signed-in Google account.
+CREATE TABLE IF NOT EXISTS users (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    google_sub    text NOT NULL UNIQUE,
+    email         text NOT NULL UNIQUE,
+    name          text,
+    image_url     text,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    last_login_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- 1. Dimension: one row per ticker the system has touched.
 CREATE TABLE IF NOT EXISTS tickers (
     symbol            text PRIMARY KEY,
@@ -16,7 +27,7 @@ CREATE TABLE IF NOT EXISTS tickers (
 CREATE TABLE IF NOT EXISTS reports (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     ticker              text NOT NULL REFERENCES tickers(symbol),
-    user_id             uuid,                          -- nullable; FK added in auth PR
+    user_id             uuid REFERENCES users(id) ON DELETE SET NULL,
 
     generated_at        timestamptz NOT NULL,
     dashboard_version   text NOT NULL,

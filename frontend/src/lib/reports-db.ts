@@ -133,6 +133,25 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
   return rows;
 }
 
+export async function attributeReportToUser(opts: {
+  ticker: string;
+  jobId: string;
+  userId: string;
+}): Promise<boolean> {
+  const sql = getSql();
+  if (!sql) return false;
+  const rows = (await sql`
+    UPDATE reports
+       SET user_id = ${opts.userId}::uuid
+     WHERE ticker = ${opts.ticker}
+       AND source = 'site'
+       AND source_run_id = ${opts.jobId}
+       AND user_id IS NULL
+     RETURNING id;
+  `) as Array<{ id: string }>;
+  return rows.length > 0;
+}
+
 /** Every report row, ordered by generated_at desc — for the /api/reports list. */
 export async function listAllReports(): Promise<DbReportSummary[]> {
   const sql = getSql();

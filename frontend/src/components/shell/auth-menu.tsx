@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LogIn, UserCircle2, UserPlus } from "lucide-react";
-import { useToast } from "@/components/shell/toast";
+import Image from "next/image";
+import { LogIn, LogOut, UserCircle2 } from "lucide-react";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 export function AuthMenu() {
+  const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const { push } = useToast();
 
   useEffect(() => {
     if (!open) return;
@@ -30,6 +31,26 @@ export function AuthMenu() {
     };
   }, [open]);
 
+  if (status === "loading") {
+    return <div className="hib-auth-btn h-9 w-9 rounded-lg opacity-40" aria-hidden />;
+  }
+
+  if (!session?.user) {
+    return (
+      <button
+        type="button"
+        onClick={() => signIn("google", { callbackUrl: window.location.pathname + window.location.search })}
+        className="hib-auth-btn inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs uppercase tracking-[0.12em]"
+      >
+        <LogIn size={14} />
+        <span className="hidden sm:inline">Sign in</span>
+      </button>
+    );
+  }
+
+  const { name, email, image } = session.user;
+  const display = name || email || "Account";
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -37,43 +58,42 @@ export function AuthMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="hib-auth-btn inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs uppercase tracking-[0.12em]"
+        className="hib-auth-btn inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs uppercase tracking-[0.12em]"
       >
-        <UserCircle2 size={14} />
-        <span className="hidden sm:inline">Sign in</span>
+        {image ? (
+          <Image
+            src={image}
+            alt=""
+            width={24}
+            height={24}
+            className="h-6 w-6 rounded-full"
+            unoptimized
+          />
+        ) : (
+          <UserCircle2 size={20} />
+        )}
+        <span className="hidden sm:inline max-w-[10rem] truncate normal-case tracking-normal">
+          {display}
+        </span>
       </button>
       {open ? (
         <div className="hib-auth-menu absolute right-0 top-full z-50 mt-2 w-64 rounded-xl p-2 shadow-xl">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              push("Sign-in coming soon", "info");
-            }}
-            className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm"
-          >
-            <LogIn size={14} />
-            <span>Sign in</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              push("Accounts coming soon", "info");
-            }}
-            className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm"
-          >
-            <UserPlus size={14} />
-            <span>Create account</span>
-          </button>
+          <div className="px-3 py-2 text-xs">
+            <div className="truncate font-medium text-zinc-100">{name || "Signed in"}</div>
+            {email ? <div className="truncate text-zinc-400">{email}</div> : null}
+          </div>
           <div className="my-1 border-t border-white/10" />
-          <div className="px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-500">Account</div>
-          <div aria-disabled className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm opacity-40" style={{ cursor: "not-allowed" }}>
-            <span>Profile</span>
-          </div>
-          <div aria-disabled className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm opacity-40" style={{ cursor: "not-allowed" }}>
-            <span>Settings</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              signOut({ callbackUrl: "/" });
+            }}
+            className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm"
+          >
+            <LogOut size={14} />
+            <span>Sign out</span>
+          </button>
         </div>
       ) : null}
     </div>

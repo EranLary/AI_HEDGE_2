@@ -12,6 +12,8 @@ export type RunStatusPayload = {
   finished_at?: string | null;
   output_dir: string;
   progress_file: string;
+  user_id?: string | null;
+  attributed?: boolean;
   llm_total_estimated?: number;
   llm_completed?: number;
   llm_progress_pct?: number;

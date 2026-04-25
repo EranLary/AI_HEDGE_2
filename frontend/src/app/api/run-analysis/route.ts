@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 
 import { NextResponse } from "next/server";
 
+import { auth } from "@/auth";
 import {
   TICKER_RE,
   type RunStatusPayload,
@@ -27,6 +28,11 @@ function writeStatus(filePath: string, payload: RunStatusPayload): void {
 }
 
 export async function POST(req: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: { ticker?: string } = {};
   try {
     body = (await req.json()) as { ticker?: string };
@@ -54,6 +60,8 @@ export async function POST(req: Request) {
     finished_at: null,
     output_dir: jobDir,
     progress_file: progressFile,
+    user_id: session.user.id,
+    attributed: false,
     llm_total_estimated: 30,
     llm_completed: 0,
     llm_progress_pct: 0,

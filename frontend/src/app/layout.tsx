@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
-import { AppShell } from "@/components/shell/app-shell";
+import { AuthSessionProvider } from "@/components/auth/session-provider";
 import { ThemeInit } from "@/components/theme-init";
 import "./globals.css";
 
@@ -34,7 +34,7 @@ export default function RootLayout({
     >
       <body suppressHydrationWarning className="min-h-full bg-carbon text-zinc-100">
         <ThemeInit />
-        <AppShell>{children}</AppShell>
+        <AuthSessionProvider>{children}</AuthSessionProvider>
       </body>
     </html>
   );

@@ -1,5 +1,7 @@
 import { getSql } from "@/lib/db";
 
+export type ReportVisibility = "public" | "private" | "unlisted";
+
 export interface DbReportSummary {
   id: string;
   ticker: string;
@@ -12,6 +14,7 @@ export interface DbReportSummary {
   mean_target_price: number | null;
   source: string;
   source_run_id: string | null;
+  visibility: ReportVisibility;
 }
 
 export interface DbReportFull extends DbReportSummary {
@@ -46,6 +49,7 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
            r.source, r.source_run_id,
+           r.visibility,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -75,6 +79,7 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
            r.source, r.source_run_id,
+           r.visibility,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -117,18 +122,20 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT DISTINCT ON (ticker)
-           id::text AS id, ticker, generated_at,
-           company_name,
-           current_price::float8 AS current_price,
-           market_cap::float8    AS market_cap,
-           currency,
-           recommendation,
-           mean_target_price::float8 AS mean_target_price,
-           source, source_run_id
-      FROM reports
-     WHERE deleted_at IS NULL
-     ORDER BY ticker, generated_at DESC;
+    SELECT DISTINCT ON (r.ticker)
+           r.id::text AS id, r.ticker, r.generated_at,
+           r.company_name,
+           r.current_price::float8 AS current_price,
+           r.market_cap::float8    AS market_cap,
+           r.currency,
+           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           r.mean_target_price::float8 AS mean_target_price,
+           r.source, r.source_run_id,
+           r.visibility
+      FROM reports r
+      LEFT JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.deleted_at IS NULL
+     ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return rows;
 }
@@ -157,19 +164,153 @@ export async function listAllReports(): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT id::text AS id, ticker, generated_at,
-           company_name,
-           current_price::float8 AS current_price,
-           market_cap::float8    AS market_cap,
-           currency,
-           recommendation,
-           mean_target_price::float8 AS mean_target_price,
-           source, source_run_id
-      FROM reports
-     WHERE deleted_at IS NULL
-     ORDER BY generated_at DESC;
+    SELECT r.id::text AS id, r.ticker, r.generated_at,
+           r.company_name,
+           r.current_price::float8 AS current_price,
+           r.market_cap::float8    AS market_cap,
+           r.currency,
+           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           r.mean_target_price::float8 AS mean_target_price,
+           r.source, r.source_run_id,
+           r.visibility
+      FROM reports r
+      LEFT JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.deleted_at IS NULL
+     ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return rows;
+}
+
+/** Reports owned by a specific user, regardless of visibility. */
+export async function listUserReports(userId: string): Promise<DbReportSummary[]> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT r.id::text AS id, r.ticker, r.generated_at,
+           r.company_name,
+           r.current_price::float8 AS current_price,
+           r.market_cap::float8    AS market_cap,
+           r.currency,
+           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           r.mean_target_price::float8 AS mean_target_price,
+           r.source, r.source_run_id,
+           r.visibility
+      FROM reports r
+      LEFT JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.user_id = ${userId}::uuid
+       AND r.deleted_at IS NULL
+     ORDER BY r.generated_at DESC;
+  `) as unknown as DbReportSummary[];
+  return rows;
+}
+
+/** Public reports authored by anyone other than the optional excluded user. */
+export async function listCommunityReports(excludeUserId?: string): Promise<DbReportSummary[]> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = excludeUserId
+    ? ((await sql`
+        SELECT r.id::text AS id, r.ticker, r.generated_at,
+               r.company_name,
+               r.current_price::float8 AS current_price,
+               r.market_cap::float8    AS market_cap,
+               r.currency,
+               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+               r.mean_target_price::float8 AS mean_target_price,
+               r.source, r.source_run_id,
+               r.visibility
+          FROM reports r
+          LEFT JOIN report_artifacts a ON a.report_id = r.id
+         WHERE r.visibility = 'public'
+           AND r.deleted_at IS NULL
+           AND (r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
+         ORDER BY r.generated_at DESC;
+      `) as unknown as DbReportSummary[])
+    : ((await sql`
+        SELECT r.id::text AS id, r.ticker, r.generated_at,
+               r.company_name,
+               r.current_price::float8 AS current_price,
+               r.market_cap::float8    AS market_cap,
+               r.currency,
+               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+               r.mean_target_price::float8 AS mean_target_price,
+               r.source, r.source_run_id,
+               r.visibility
+          FROM reports r
+          LEFT JOIN report_artifacts a ON a.report_id = r.id
+         WHERE r.visibility = 'public'
+           AND r.deleted_at IS NULL
+         ORDER BY r.generated_at DESC;
+      `) as unknown as DbReportSummary[]);
+  return rows;
+}
+
+export interface PagedCommunityReports {
+  rows: DbReportSummary[];
+  hasMore: boolean;
+}
+
+/**
+ * Paginated public reports. Filters by ticker/company name when `query` is set.
+ * Returns `limit` rows plus a `hasMore` flag (computed by over-fetching one row).
+ */
+export async function listCommunityReportsPaged(opts: {
+  excludeUserId?: string;
+  query?: string;
+  limit: number;
+  offset: number;
+}): Promise<PagedCommunityReports> {
+  const sql = getSql();
+  if (!sql) return { rows: [], hasMore: false };
+  const limit = Math.max(1, Math.min(100, Math.floor(opts.limit)));
+  const offset = Math.max(0, Math.floor(opts.offset));
+  const fetchN = limit + 1;
+  const q = String(opts.query || "").trim();
+  const like = q ? `%${q}%` : "";
+  const excludeUserId = opts.excludeUserId || "";
+
+  const rows = (await sql`
+    SELECT r.id::text AS id, r.ticker, r.generated_at,
+           r.company_name,
+           r.current_price::float8 AS current_price,
+           r.market_cap::float8    AS market_cap,
+           r.currency,
+           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           r.mean_target_price::float8 AS mean_target_price,
+           r.source, r.source_run_id,
+           r.visibility
+      FROM reports r
+      LEFT JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.visibility = 'public'
+       AND r.deleted_at IS NULL
+       AND (${excludeUserId} = '' OR r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
+       AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
+     ORDER BY r.generated_at DESC
+     LIMIT ${fetchN}
+    OFFSET ${offset};
+  `) as unknown as DbReportSummary[];
+
+  const hasMore = rows.length > limit;
+  return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
+}
+
+/** Owner-scoped visibility update. Returns true if the row was updated. */
+export async function setReportVisibility(opts: {
+  reportId: string;
+  userId: string;
+  visibility: ReportVisibility;
+}): Promise<boolean> {
+  const sql = getSql();
+  if (!sql) return false;
+  const rows = (await sql`
+    UPDATE reports
+       SET visibility = ${opts.visibility}
+     WHERE id = ${opts.reportId}::uuid
+       AND user_id = ${opts.userId}::uuid
+       AND deleted_at IS NULL
+     RETURNING id;
+  `) as Array<{ id: string }>;
+  return rows.length > 0;
 }
 
 /**

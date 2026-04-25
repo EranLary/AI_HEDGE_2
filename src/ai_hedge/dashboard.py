@@ -1334,7 +1334,7 @@ def build_dashboard_payload(
             "price_performance_pct": price_performance_pct,
             "f_score_text": str(variables_dict.get("f_score", "") or ""),
         },
-        "red_flag_shield": [],
+        "red_flag_shield": _as_str_list(qualitative.get("bear_case_reasons"), max_items=5),
         "analysis_matrix": {
             "executive_summary_markdown": qualitative.get("executive_summary_markdown", ""),
             "bull_case_reasons": qualitative.get("bull_case_reasons", []),

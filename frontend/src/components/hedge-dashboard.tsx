@@ -2,18 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Gauge } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -330,7 +319,7 @@ function AutoFitMetric({
   );
 }
 
-function MarkdownBlock({ text }: { text: string }) {
+export function MarkdownBlock({ text }: { text: string }) {
   const cleaned = stripBrokenMarkdownArtifacts(String(text || ""))
     .replace(/\u200b/g, "")
     .trim();
@@ -441,7 +430,7 @@ function InfoTip({ text }: { text: string }) {
   );
 }
 
-function prettyReasonLabel(label: string): string {
+export function prettyReasonLabel(label: string): string {
   const raw = String(label || "").trim();
   if (!raw) return "Rationale";
   const leaf = raw.split(".").pop() || raw;
@@ -497,7 +486,7 @@ function prettyReasonLabel(label: string): string {
     .join(" ");
 }
 
-function normalizeReasonText(text: string): string {
+export function normalizeReasonText(text: string): string {
   const src = stripBrokenMarkdownArtifacts(String(text || "")).replace(/\r\n/g, "\n").trim();
   if (!src) return "";
   const mergedLines = src.replace(/([^\n])\n(?!\n)/g, "$1 ");
@@ -595,38 +584,6 @@ function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number |
   return baseScore * confidenceFactor;
 }
 
-function ChartHoverTooltip({
-  active,
-  payload,
-  currencyContext,
-}: {
-  active?: boolean;
-  payload?: Array<{ payload?: { name?: string; target?: number } }>;
-  currencyContext: CurrencyContext;
-}) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0]?.payload;
-  if (!row || !row.name) return null;
-  return (
-    <div className="hib-chart-tooltip rounded-lg border border-white/15 bg-zinc-950/95 px-3 py-2 shadow-xl">
-      <p className="text-xs font-semibold tracking-[0.08em] text-zinc-100">{row.name}</p>
-      <p className="text-sm font-medium text-zinc-200">{fmtMoney(row.target, currencyContext, "price")}</p>
-    </div>
-  );
-}
-
-type ChartHoverState = {
-  chartX?: number;
-  chartY?: number;
-  offset?: {
-    top?: number;
-    left?: number;
-    width?: number;
-    height?: number;
-  };
-  yAxisMap?: Record<string, { scale?: (value: number) => number }>;
-};
-
 export function HedgeDashboard({
   tickerOverride,
   reportIdOverride,
@@ -654,12 +611,6 @@ export function HedgeDashboard({
   const [valuationTab, setValuationTab] = useState("overview");
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
-  const [currentLineTooltip, setCurrentLineTooltip] = useState<{ visible: boolean; x: number; y: number }>({
-    visible: false,
-    x: 0,
-    y: 0,
-  });
-  const chartWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const tickerFromProp = String(tickerOverride || "").trim().toUpperCase();
@@ -797,39 +748,6 @@ export function HedgeDashboard({
     }
     return map;
   }, [methodTabs]);
-  const chartData = useMemo(() => {
-    const blocks = data?.valuation_hub?.method_blocks || [];
-    const currentPrice =
-      typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
-        ? Number(consensus.current_price)
-        : null;
-    const rows = blocks
-      .filter((b) => typeof b.target_price === "number" && Number.isFinite(Number(b.target_price)))
-      .map((b) => ({
-        name: b.name,
-        target: Number(b.target_price),
-        aboveCurrent: typeof currentPrice === "number" ? Number(b.target_price) >= currentPrice : true,
-        performer: methodPerformerByName.get(b.name) || "Model Aggregate",
-        investment: b.investment_amount,
-      }));
-    if (rows.length) return rows;
-    return [
-      {
-        name: "Mean",
-        target: Number(consensus?.mean_target_price || 0),
-        aboveCurrent: true,
-        performer: "Consensus",
-        investment: null,
-      },
-      {
-        name: "Current",
-        target: Number(consensus?.current_price || 0),
-        aboveCurrent: true,
-        performer: "Market",
-        investment: null,
-      },
-    ];
-  }, [consensus, data?.valuation_hub?.method_blocks, methodPerformerByName]);
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
   const selectedOutput = activeMethod
     ? activeMethod.outputs.find((o) => (o.persona || `Output ${o.output_id}`) === outputTab[activeMethod.name]) || activeMethod.outputs[0]
@@ -866,57 +784,6 @@ export function HedgeDashboard({
     [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
       ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
       : null;
-  const chartScale = useMemo(() => {
-    const values = chartData
-      .map((x) => Number(x.target))
-      .filter((x) => Number.isFinite(x));
-    if (typeof consensusCurrent === "number") {
-      values.push(consensusCurrent);
-    }
-    if (!values.length) {
-      return {
-        min: 0,
-        max: 1,
-        ticks: [0, 0.25, 0.5, 0.75, 1],
-        currentEpsilon: 0.001,
-      };
-    }
-    let min = Math.min(...values);
-    let max = Math.max(...values);
-    if (Math.abs(max - min) < 1e-9) {
-      const pad = Math.max(Math.abs(max) * 0.1, 1);
-      min -= pad;
-      max += pad;
-    }
-    const span = max - min;
-    const margin = Math.max(span * 0.08, Math.max(Math.abs(max), Math.abs(min), 1) * 0.03);
-    min -= margin;
-    max += margin;
-
-    const ticks: number[] = [];
-    const steps = 4;
-    for (let i = 0; i <= steps; i += 1) {
-      ticks.push(min + ((max - min) * i) / steps);
-    }
-    if (typeof consensusCurrent === "number") {
-      ticks.push(consensusCurrent);
-    }
-    const uniqueTicks = Array.from(
-      new Set(
-        ticks
-          .map((t) => Number(t.toFixed(6)))
-          .filter((t) => Number.isFinite(t)),
-      ),
-    ).sort((a, b) => a - b);
-
-    return {
-      min,
-      max,
-      ticks: uniqueTicks,
-      currentEpsilon: Math.max((max - min) * 0.002, 1e-6),
-    };
-  }, [chartData, consensusCurrent]);
-
   const targetTableRows = useMemo(() => {
     const currentPrice =
       typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
@@ -1146,63 +1013,6 @@ export function HedgeDashboard({
   const decisionToneClass =
     decisionSignal.tone === "positive" ? "hib-target-up" : decisionSignal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
 
-  const hideCurrentLineTooltip = () => {
-    setCurrentLineTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
-  };
-
-  const handleChartMouseMove = (state: unknown) => {
-    const hoverState: ChartHoverState | undefined =
-      state && typeof state === "object" ? (state as ChartHoverState) : undefined;
-    if (typeof consensusCurrent !== "number" || !Number.isFinite(consensusCurrent) || !chartWrapRef.current) {
-      hideCurrentLineTooltip();
-      return;
-    }
-    const chartX = Number(hoverState?.chartX);
-    const chartY = Number(hoverState?.chartY);
-    const offset = hoverState?.offset;
-    if (!Number.isFinite(chartX) || !Number.isFinite(chartY) || !offset) {
-      hideCurrentLineTooltip();
-      return;
-    }
-
-    const yAxisMap = hoverState?.yAxisMap;
-    const axisKey = yAxisMap ? Object.keys(yAxisMap)[0] : undefined;
-    const axisState = axisKey && yAxisMap ? yAxisMap[axisKey] : undefined;
-    const scaleFn = axisState?.scale ?? null;
-    let lineY: number;
-    if (typeof scaleFn === "function") {
-      const scaled = scaleFn(consensusCurrent);
-      lineY = Number(scaled);
-    } else {
-      const span = chartScale.max - chartScale.min;
-      if (!Number.isFinite(span) || Math.abs(span) < 1e-9) {
-        hideCurrentLineTooltip();
-        return;
-      }
-      const ratio = (chartScale.max - consensusCurrent) / span;
-      lineY = Number(offset.top) + ratio * Number(offset.height || 0);
-    }
-
-    if (!Number.isFinite(lineY)) {
-      hideCurrentLineTooltip();
-      return;
-    }
-
-    const nearLine = Math.abs(chartY - lineY) <= 8;
-    const insidePlot = chartX >= Number(offset.left) && chartX <= Number(offset.left) + Number(offset.width || 0);
-    if (!nearLine || !insidePlot) {
-      hideCurrentLineTooltip();
-      return;
-    }
-
-    const rect = chartWrapRef.current.getBoundingClientRect();
-    const tipW = 220;
-    const tipH = 32;
-    const x = Math.max(10, Math.min(chartX + 12, rect.width - tipW - 10));
-    const y = Math.max(8, Math.min(lineY - 28, rect.height - tipH - 8));
-    setCurrentLineTooltip({ visible: true, x, y });
-  };
-
   return (
     <div className={hideNavHeader ? "min-h-full" : "hib-shell min-h-screen"}>
       <div className="mx-auto w-full max-w-[1500px] px-4 pb-12 pt-6 sm:px-8">
@@ -1317,72 +1127,7 @@ export function HedgeDashboard({
 
             {mainTab === "valuation" ? (
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-zinc-200">
-                  <span className="inline-flex items-center gap-2">
-                    <Gauge size={14} /> Target Price by Model
-                  </span>
-                  <InfoTip text="This chart compares each valuation model's target price against the report-date market price line." />
-                </div>
-                <div ref={chartWrapRef} className="hib-chart relative h-96">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} onMouseMove={handleChartMouseMove} onMouseLeave={hideCurrentLineTooltip}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#29303a" />
-                      <XAxis dataKey="name" tick={false} axisLine={false} tickLine={false} />
-                      <YAxis
-                        width={140}
-                        domain={[chartScale.min, chartScale.max]}
-                        ticks={chartScale.ticks}
-                        tickFormatter={(v) => {
-                          const value = Number(v);
-                          const label = fmtMoney(value, currencyContext, "price");
-                          if (
-                            typeof consensusCurrent === "number" &&
-                            Math.abs(value - consensusCurrent) <= chartScale.currentEpsilon
-                          ) {
-                            return `${label} Current`;
-                          }
-                          return label;
-                        }}
-                      />
-                      {Number(consensus?.current_price || 0) > 0 ? (
-                        <ReferenceLine
-                          y={Number(consensus?.current_price || 0)}
-                          stroke="#f59e0b"
-                          strokeWidth={2.5}
-                          strokeDasharray="6 4"
-                        />
-                      ) : null}
-                      <Bar
-                        dataKey="target"
-                        radius={[6, 6, 0, 0]}
-                        isAnimationActive
-                        activeBar={false}
-                      >
-                        {chartData.map((entry) => (
-                          <Cell
-                            key={`target-${entry.name}`}
-                            fill={entry.aboveCurrent ? "#22c55e" : "#ef4444"}
-                            style={{ cursor: "pointer" }}
-                          />
-                        ))}
-                      </Bar>
-                      <Tooltip
-                        cursor={false}
-                        content={<ChartHoverTooltip currencyContext={currencyContext} />}
-                        wrapperStyle={{ outline: "none" }}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                  {currentLineTooltip.visible ? (
-                    <div
-                      className="hib-line-tooltip pointer-events-none absolute z-20 rounded-md border px-2 py-1 text-[11px] shadow-lg"
-                      style={{ left: `${currentLineTooltip.x}px`, top: `${currentLineTooltip.y}px` }}
-                    >
-                      Current Price: {fmtMoney(consensusCurrent, currencyContext, "price")}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
+                <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
                   <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">

@@ -463,8 +463,24 @@ html[data-theme="light"] .hib-bear-prob-value {
 }
 
 * {
-  scrollbar-width: thin;
-  scrollbar-color: #3f4854 #0b0f14;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* ---------- Dream Team gallery ---------- */
+.dream-team-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.dream-team-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* ---------- App shell: sidebar, topbar, auth menu ---------- */

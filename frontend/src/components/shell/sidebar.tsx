@@ -4,18 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   Compass,
+  FileText,
+  Plus,
   Sparkles,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { TickerCombobox } from "@/components/shell/ticker-combobox";
 import { ActiveRunsPanel } from "@/components/shell/active-runs-panel";
-import { TickerWorkspace } from "@/components/shell/ticker-workspace";
-import { useTickerContext } from "@/components/shell/ticker-context";
+import { useNewRunModal } from "@/components/shell/new-run-context";
 
 type NavItem = {
   href: string;
@@ -24,7 +24,7 @@ type NavItem = {
 };
 
 const GLOBAL_NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboards", icon: BarChart3 },
+  { href: "/reports", label: "Reports", icon: FileText },
   { href: "/discovery", label: "Discovery", icon: Compass },
 ];
 
@@ -37,10 +37,15 @@ type SidebarProps = {
 
 export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname() || "/";
-  const { activeTicker } = useTickerContext();
+  const { open: openNewRun } = useNewRunModal();
   const closeIfMobile = mobile ? onMobileClose : undefined;
 
   const collapsedDesktop = collapsed && !mobile;
+
+  const handleNewAnalysis = () => {
+    closeIfMobile?.();
+    openNewRun();
+  };
 
   return (
     <aside
@@ -79,6 +84,22 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {/* Primary CTA: + New Analysis */}
+        <div className="mb-4 px-1">
+          <button
+            type="button"
+            onClick={handleNewAnalysis}
+            aria-label="Start a new analysis"
+            title="Start a new analysis"
+            className={`hib-run-btn flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 ${
+              collapsedDesktop ? "h-9 w-9 justify-center px-0" : "w-full justify-center"
+            }`}
+          >
+            <Plus size={14} />
+            {!collapsedDesktop ? <span>New Analysis</span> : null}
+          </button>
+        </div>
+
         {/* Ticker picker */}
         <div className="mb-4 px-1">
           {!collapsedDesktop ? (
@@ -86,17 +107,6 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
           ) : null}
           <TickerCombobox collapsed={collapsedDesktop} onCollapsedClick={onToggle} />
         </div>
-
-        {/* Ticker workspace card (only when a ticker is active) */}
-        {activeTicker ? (
-          <div className="mb-4 px-1">
-            <TickerWorkspace
-              ticker={activeTicker}
-              collapsed={collapsedDesktop}
-              onNavigate={closeIfMobile}
-            />
-          </div>
-        ) : null}
 
         {/* Global nav */}
         <div className="mb-4">

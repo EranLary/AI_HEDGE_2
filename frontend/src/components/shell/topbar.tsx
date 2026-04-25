@@ -1,21 +1,24 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
-import { Menu, Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { BarChart3, Download, FileText, Menu, Radar, Users } from "lucide-react";
+import type { ComponentType } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
-import { useNewRunModal } from "@/components/shell/new-run-context";
 
-const SECTION_LABELS: Record<string, string> = {
-  overview: "Overview",
-  valuation: "Valuation",
-  scenarios: "Bull vs Bear",
-  assumptions: "Assumptions",
-  "dream-team": "Dream Team",
-  artifacts: "Artifacts",
-};
+type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
+
+const SECTIONS: SectionItem[] = [
+  { slug: "overview", label: "Overview", icon: FileText },
+  { slug: "valuation", label: "Valuation", icon: BarChart3 },
+  { slug: "scenarios", label: "Bull vs Bear", icon: Radar },
+  { slug: "dream-team", label: "Dream Team", icon: Users },
+  { slug: "artifacts", label: "Artifacts", icon: Download },
+];
 
 type TopbarProps = {
   onMobileMenu?: () => void;
@@ -23,13 +26,10 @@ type TopbarProps = {
 
 export function Topbar({ onMobileMenu }: TopbarProps) {
   const { activeTicker, activeSection } = useTickerContext();
-  const { open: openNewRun } = useNewRunModal();
-
-  const sectionLabel = activeSection ? SECTION_LABELS[activeSection] || activeSection : null;
 
   return (
-    <header className="hib-topbar sticky top-0 z-30 flex items-center justify-between gap-3 px-3 py-2 sm:px-6">
-      <div className="flex items-center gap-2 min-w-0">
+    <header className="hib-topbar sticky top-0 z-30 flex items-center gap-3 px-3 py-2 sm:px-6">
+      <div className="flex shrink-0 items-center gap-2">
         {onMobileMenu ? (
           <button
             type="button"
@@ -40,39 +40,83 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
             <Menu size={16} />
           </button>
         ) : null}
-        <nav className="hib-breadcrumb flex items-center gap-1.5 truncate text-xs uppercase tracking-[0.14em]">
-          <Link href="/" className="hover:text-zinc-100">
+        {activeTicker ? (
+          <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" />}>
+            <TickerBadgeWithReport activeTicker={activeTicker} />
+          </Suspense>
+        ) : (
+          <Link href="/" className="hib-breadcrumb text-xs uppercase tracking-[0.14em] hover:text-zinc-100">
             Home
           </Link>
-          {activeTicker ? (
-            <>
-              <span>/</span>
-              <Link href={`/dashboard/${encodeURIComponent(activeTicker)}/overview`} className="hover:text-zinc-100">
-                <strong>{activeTicker}</strong>
-              </Link>
-            </>
-          ) : null}
-          {sectionLabel ? (
-            <>
-              <span>/</span>
-              <strong>{sectionLabel}</strong>
-            </>
-          ) : null}
-        </nav>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={openNewRun}
-          className="hib-run-btn inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30"
-          aria-label="Start a new analysis run"
-        >
-          <Plus size={14} />
-          <span className="hidden sm:inline">New Run</span>
-        </button>
+
+      {activeTicker ? (
+        <Suspense fallback={<div className="min-w-0 flex-1" />}>
+          <SectionPills activeTicker={activeTicker} activeSection={activeSection} />
+        </Suspense>
+      ) : (
+        <div className="min-w-0 flex-1" />
+      )}
+
+      <div className="flex shrink-0 items-center gap-2">
         <ThemeToggle />
         <AuthMenu />
       </div>
     </header>
+  );
+}
+
+function TickerBadge({ activeTicker, suffix }: { activeTicker: string; suffix: string }) {
+  return (
+    <Link
+      href={`/dashboard/${encodeURIComponent(activeTicker)}/overview${suffix}`}
+      className="hib-breadcrumb inline-flex items-center rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+    >
+      <strong>{activeTicker}</strong>
+    </Link>
+  );
+}
+
+function TickerBadgeWithReport({ activeTicker }: { activeTicker: string }) {
+  const search = useSearchParams();
+  const reportParam = search?.get("report");
+  const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
+  return <TickerBadge activeTicker={activeTicker} suffix={suffix} />;
+}
+
+function SectionPills({
+  activeTicker,
+  activeSection,
+}: {
+  activeTicker: string;
+  activeSection: string | null;
+}) {
+  const search = useSearchParams();
+  const reportParam = search?.get("report");
+  const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
+
+  return (
+    <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 sm:gap-2">
+      {SECTIONS.map((s) => {
+        const active = activeSection === s.slug;
+        const href = `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}${suffix}`;
+        const Icon = s.icon;
+        return (
+          <Link
+            key={s.slug}
+            href={href}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+              active
+                ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
+                : "border-white/15 bg-white/5 text-zinc-300 hover:border-white/30 hover:text-zinc-100"
+            }`}
+          >
+            <Icon size={12} />
+            <span>{s.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

@@ -5208,6 +5208,7 @@ def run_valuations(
     "Bill Ackman",
     "Cathie Wood",
     "Peter Thiel",
+    "Howard Marks",
     ]
 
     price_currency = variables_dict.get("price_currency", 1)

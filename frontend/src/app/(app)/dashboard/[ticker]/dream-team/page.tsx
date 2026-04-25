@@ -6,7 +6,7 @@ import { Users } from "lucide-react";
 
 import { useDashboardPayload } from "@/lib/use-dashboard-payload";
 import { DashboardError, DashboardSkeleton, ReportChipRow } from "@/components/dashboard-chrome";
-import { buildCurrencyContext, fmtMarketCap, fmtMoney, fmtMoneyCompact } from "@/components/hedge-dashboard";
+import { buildCurrencyContext, fmtMarketCap, fmtMoney } from "@/components/hedge-dashboard";
 
 export default function DashboardDreamTeamPage({
   params,
@@ -44,12 +44,27 @@ export default function DashboardDreamTeamPage({
               typeof currentPrice === "number" && typeof member.target_price === "number" && Math.abs(currentPrice) > 1e-9
                 ? ((Number(member.target_price) - currentPrice) / currentPrice) * 100
                 : null;
+            const allocationPct =
+              typeof member.investment_amount === "number" && Number.isFinite(member.investment_amount)
+                ? (member.investment_amount / 100000) * 100
+                : null;
             const tone =
               typeof changePct === "number" && Math.abs(changePct) > 1e-9
                 ? changePct > 0
                   ? "hib-target-up"
                   : "hib-target-down"
                 : "text-zinc-200";
+            const allocationTone =
+              typeof allocationPct === "number" && Math.abs(allocationPct) > 1e-9
+                ? allocationPct > 0
+                  ? "hib-target-up"
+                  : "hib-target-down"
+                : "text-zinc-200";
+            const analysisParagraphs = [
+              String(member.step_by_step_analysis || "").trim(),
+              String(member.target_market_cap_rationale || "").trim(),
+              String(member.investment_rationale || "").trim(),
+            ].filter(Boolean);
             return (
               <article key={`${member.persona}-${idx}`} className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Persona</p>
@@ -67,14 +82,24 @@ export default function DashboardDreamTeamPage({
                     <dd className="mt-0.5 text-base font-semibold text-zinc-100">{fmtMarketCap(member.target_market_cap, ctx)}</dd>
                   </div>
                   <div className="col-span-2 rounded-lg border border-white/10 bg-black/30 p-2">
-                    <dt className="text-zinc-500">Investment Amount</dt>
-                    <dd className="mt-0.5 text-base font-semibold text-zinc-100">{fmtMoneyCompact(member.investment_amount, ctx, "financial")}</dd>
+                    <dt className="text-zinc-500">Investment Allocation</dt>
+                    <dd className={`mt-0.5 text-base font-semibold ${allocationTone}`}>
+                      {typeof allocationPct === "number"
+                        ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%`
+                        : "N/A"}
+                    </dd>
                   </div>
                 </dl>
-                {member.investment_rationale ? (
+                {analysisParagraphs.length ? (
                   <details className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3 text-xs" open>
-                    <summary className="cursor-pointer text-[10px] uppercase tracking-[0.18em] text-zinc-400">Rationale</summary>
-                    <p className="mt-2 whitespace-pre-line text-zinc-200">{member.investment_rationale}</p>
+                    <summary className="cursor-pointer text-[10px] uppercase tracking-[0.18em] text-zinc-400">Analysis</summary>
+                    <div className="mt-2 space-y-3 text-zinc-200">
+                      {analysisParagraphs.map((paragraph, pIdx) => (
+                        <p key={`${member.persona}-${idx}-p-${pIdx}`} className="whitespace-pre-line">
+                          {paragraph}
+                        </p>
+                      ))}
+                    </div>
                   </details>
                 ) : null}
               </article>

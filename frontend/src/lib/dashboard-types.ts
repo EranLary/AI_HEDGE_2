@@ -149,7 +149,9 @@ export type DashboardPayload = {
     target_price: number | null;
     target_market_cap: number | null;
     investment_amount: number | null;
-    investment_rationale: string;
+    step_by_step_analysis?: string;
+    target_market_cap_rationale?: string;
+    investment_rationale?: string;
   }>;
   forecast_forensic_matrix: {
     current_revenue: number | null;

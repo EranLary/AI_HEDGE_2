@@ -1189,10 +1189,9 @@ def build_dashboard_payload(
                 "target_price": _scale_price_value(item.get("target_price"), target_multiplier),
                 "target_market_cap": _safe_float(raw_json.get("target_market_cap")),
                 "investment_amount": _safe_float(item.get("investment_amount")),
-                "investment_rationale": _first_non_empty(
-                    raw_json.get("investment_rationale"),
-                    raw_json.get("target_market_cap_rationale"),
-                ),
+                "step_by_step_analysis": _first_non_empty(raw_json.get("step_by_step_analysis")),
+                "target_market_cap_rationale": _first_non_empty(raw_json.get("target_market_cap_rationale")),
+                "investment_rationale": _first_non_empty(raw_json.get("investment_rationale")),
             }
         )
 

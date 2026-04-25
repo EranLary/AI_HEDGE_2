@@ -1139,6 +1139,7 @@ def build_dashboard_payload(
     analysis_text: str,
     sec_short_text: str,
     artifacts: Dict[str, str],
+    technical_analysis: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     enable_llm_extractions: bool = True,
@@ -1386,6 +1387,7 @@ def build_dashboard_payload(
             "mean_investment_amount": mean_investment,
             "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling.",
         },
+        "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "artifacts": artifacts,
     }
 

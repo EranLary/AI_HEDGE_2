@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3,
+  CandlestickChart,
   Download,
   FileText,
   ListChecks,
-  Radar,
+  Swords,
   Users,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -24,10 +25,10 @@ type SectionItem = {
 const DASHBOARD_SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
-  { slug: "scenarios", label: "Bull vs Bear", icon: Radar },
+  { slug: "scenarios", label: "Bull vs Bear", icon: Swords },
   { slug: "assumptions", label: "Assumptions", icon: ListChecks },
+  { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
-  { slug: "artifacts", label: "Artifacts", icon: Download },
 ];
 
 type WorkspaceSummary = {
@@ -44,6 +45,7 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
   const pathname = usePathname() || "/";
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const upper = ticker.toUpperCase();
+  const downloadHref = `/api/artifacts/${encodeURIComponent(upper)}/analysis-pdf`;
 
   useEffect(() => {
     if (!upper) return;
@@ -66,26 +68,36 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
 
   if (collapsed) {
     return (
-      <nav className="space-y-1">
-        {DASHBOARD_SECTIONS.map((item) => {
-          const href = `/dashboard/${encodeURIComponent(upper)}/${item.slug}`;
-          const active = pathname === href || pathname.startsWith(`${href}/`);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.slug}
-              href={href}
-              onClick={onNavigate}
-              title={`${upper} - ${item.label}`}
-              className={`hib-sidebar-item flex items-center justify-center rounded-lg px-2 py-2 text-sm ${
-                active ? "hib-sidebar-item-active" : ""
-              }`}
-            >
-              <Icon size={14} />
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="space-y-1">
+        <nav className="space-y-1">
+          {DASHBOARD_SECTIONS.map((item) => {
+            const href = `/dashboard/${encodeURIComponent(upper)}/${item.slug}`;
+            const active = pathname === href || pathname.startsWith(`${href}/`);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.slug}
+                href={href}
+                onClick={onNavigate}
+                title={`${upper} - ${item.label}`}
+                className={`hib-sidebar-item flex items-center justify-center rounded-lg px-2 py-2 text-sm ${
+                  active ? "hib-sidebar-item-active" : ""
+                }`}
+              >
+                <Icon size={14} />
+              </Link>
+            );
+          })}
+        </nav>
+        <a
+          href={downloadHref}
+          onClick={onNavigate}
+          title={`${upper} - Analysis PDF`}
+          className="hib-sidebar-item flex items-center justify-center rounded-lg px-2 py-2 text-sm"
+        >
+          <Download size={14} />
+        </a>
+      </div>
     );
   }
 
@@ -118,6 +130,16 @@ export function TickerWorkspace({ ticker, collapsed = false, onNavigate }: Ticke
           );
         })}
       </nav>
+      <div className="mt-2">
+        <a
+          href={downloadHref}
+          onClick={onNavigate}
+          className="hib-sidebar-item flex items-center gap-3 rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-100 hover:bg-emerald-500/20"
+        >
+          <Download size={14} />
+          <span className="truncate">Analysis PDF</span>
+        </a>
+      </div>
     </section>
   );
 }

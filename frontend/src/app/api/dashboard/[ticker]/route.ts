@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { NextResponse } from "next/server";
 
@@ -11,6 +12,83 @@ import {
   readUtf8,
   resolveDashboardReportPath,
 } from "@/lib/server-outputs";
+
+function hasUsableTechnicalAnalysis(payload: DashboardPayload): boolean {
+  const technical = payload.technical_analysis;
+  if (!technical || typeof technical !== "object") return false;
+  if (String(technical.status || "").toLowerCase() !== "success") return false;
+  const analysis = technical.analysis;
+  if (!analysis || typeof analysis !== "object") return false;
+  const stepCount = Array.isArray(analysis.step_by_step_analysis) ? analysis.step_by_step_analysis.length : 0;
+  const keyPointCount = Array.isArray(analysis.key_points) ? analysis.key_points.length : 0;
+  return stepCount > 0 || keyPointCount > 0;
+}
+
+function normalizeTechnicalAnalysisPayload(raw: unknown, ticker: string): DashboardPayload["technical_analysis"] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const src = raw as Record<string, unknown>;
+  const analysis = (src.analysis && typeof src.analysis === "object" ? src.analysis : src) as Record<string, unknown>;
+  const stepCount = Array.isArray(analysis.step_by_step_analysis) ? analysis.step_by_step_analysis.length : 0;
+  const keyPointCount = Array.isArray(analysis.key_points) ? analysis.key_points.length : 0;
+  if (stepCount === 0 && keyPointCount === 0) return null;
+  return {
+    status: String(src.status || "success"),
+    generated_at: typeof src.generated_at === "string" ? src.generated_at : undefined,
+    model: typeof src.model === "string" ? src.model : undefined,
+    analysis: {
+      ...(analysis as NonNullable<NonNullable<DashboardPayload["technical_analysis"]>["analysis"]>),
+      ticker: String(analysis.ticker || ticker).toUpperCase(),
+    },
+  };
+}
+
+function hydrateTechnicalAnalysis(
+  payload: DashboardPayload,
+  ticker: string,
+  reportMeta?: { reportId?: string; reportFile?: string; reportMtime?: string },
+): DashboardPayload {
+  if (hasUsableTechnicalAnalysis(payload)) return payload;
+
+  const tk = ticker.toUpperCase();
+  const candidates: string[] = [];
+
+  const artifactJson = payload.artifacts?.technical_analysis_json;
+  if (typeof artifactJson === "string" && artifactJson.trim()) {
+    candidates.push(artifactJson.trim());
+  }
+
+  if (reportMeta?.reportFile) {
+    candidates.push(path.join(path.dirname(reportMeta.reportFile), `${tk}_technical_analysis.json`));
+  }
+
+  const latestTechnical = findLatestByFileName(`${tk}_technical_analysis.json`);
+  if (latestTechnical?.path) {
+    candidates.push(latestTechnical.path);
+  }
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const candidatePath = String(candidate || "").trim();
+    if (!candidatePath || seen.has(candidatePath)) continue;
+    seen.add(candidatePath);
+    if (!fs.existsSync(candidatePath)) continue;
+
+    const parsed = readJson<unknown>(candidatePath);
+    const normalized = normalizeTechnicalAnalysisPayload(parsed, tk);
+    if (!normalized) continue;
+
+    return {
+      ...payload,
+      technical_analysis: normalized,
+      artifacts: {
+        ...(payload.artifacts || {}),
+        technical_analysis_json: candidatePath,
+      },
+    };
+  }
+
+  return payload;
+}
 
 function normalizePayload(
   ticker: string,
@@ -75,8 +153,9 @@ function normalizePayload(
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
   };
 
-  const scale = inferLegacyModelTargetScale(merged);
-  return applyLegacyModelTargetScale(merged, scale);
+  const hydrated = hydrateTechnicalAnalysis(merged, tk, reportMeta);
+  const scale = inferLegacyModelTargetScale(hydrated);
+  return applyLegacyModelTargetScale(hydrated, scale);
 }
 
 function asFinite(value: unknown): number | null {

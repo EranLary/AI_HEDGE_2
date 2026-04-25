@@ -262,33 +262,55 @@ export async function listCommunityReportsPaged(opts: {
 }): Promise<PagedCommunityReports> {
   const sql = getSql();
   if (!sql) return { rows: [], hasMore: false };
-  const limit = Math.max(1, Math.min(100, Math.floor(opts.limit)));
-  const offset = Math.max(0, Math.floor(opts.offset));
+  const rawLimit = Number(opts.limit);
+  const rawOffset = Number(opts.offset);
+  const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 16));
+  const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0);
   const fetchN = limit + 1;
   const q = String(opts.query || "").trim();
   const like = q ? `%${q}%` : "";
-  const excludeUserId = opts.excludeUserId || "";
+  const excludeUserId = opts.excludeUserId?.trim() || null;
 
-  const rows = (await sql`
-    SELECT r.id::text AS id, r.ticker, r.generated_at,
-           r.company_name,
-           r.current_price::float8 AS current_price,
-           r.market_cap::float8    AS market_cap,
-           r.currency,
-           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
-           r.mean_target_price::float8 AS mean_target_price,
-           r.source, r.source_run_id,
-           r.visibility
-      FROM reports r
-      LEFT JOIN report_artifacts a ON a.report_id = r.id
-     WHERE r.visibility = 'public'
-       AND r.deleted_at IS NULL
-       AND (${excludeUserId} = '' OR r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
-       AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
-     ORDER BY r.generated_at DESC
-     LIMIT ${fetchN}
-    OFFSET ${offset};
-  `) as unknown as DbReportSummary[];
+  const rows = (excludeUserId
+    ? ((await sql`
+        SELECT r.id::text AS id, r.ticker, r.generated_at,
+               r.company_name,
+               r.current_price::float8 AS current_price,
+               r.market_cap::float8    AS market_cap,
+               r.currency,
+               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+               r.mean_target_price::float8 AS mean_target_price,
+               r.source, r.source_run_id,
+               r.visibility
+          FROM reports r
+          LEFT JOIN report_artifacts a ON a.report_id = r.id
+         WHERE r.visibility = 'public'
+           AND r.deleted_at IS NULL
+           AND (r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
+           AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
+         ORDER BY r.generated_at DESC
+         LIMIT ${fetchN}
+        OFFSET ${offset};
+      `) as unknown as DbReportSummary[])
+    : ((await sql`
+        SELECT r.id::text AS id, r.ticker, r.generated_at,
+               r.company_name,
+               r.current_price::float8 AS current_price,
+               r.market_cap::float8    AS market_cap,
+               r.currency,
+               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+               r.mean_target_price::float8 AS mean_target_price,
+               r.source, r.source_run_id,
+               r.visibility
+          FROM reports r
+          LEFT JOIN report_artifacts a ON a.report_id = r.id
+         WHERE r.visibility = 'public'
+           AND r.deleted_at IS NULL
+           AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
+         ORDER BY r.generated_at DESC
+         LIMIT ${fetchN}
+        OFFSET ${offset};
+      `) as unknown as DbReportSummary[]));
 
   const hasMore = rows.length > limit;
   return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };

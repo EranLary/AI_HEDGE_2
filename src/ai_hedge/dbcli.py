@@ -349,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_push.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     p_push.add_argument(
         "--tag", default="cli",
-        help="source column value: cli | site | fly_backfill | bot",
+        help="source column value: cli | site | fly_backfill",
     )
     p_push.add_argument(
         "--origin-root", default=DEFAULT_FLY_REMOTE_PATH,

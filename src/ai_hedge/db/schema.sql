@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS reports (
     mean_target_price   numeric,
 
     visibility          text NOT NULL DEFAULT 'public',-- public | private | unlisted
-    source              text NOT NULL,                 -- fly_backfill | cli | site | bot
+    source              text NOT NULL,                 -- fly_backfill | cli | site
     source_run_id       text,
     origin_path         text,
 

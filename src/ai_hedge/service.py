@@ -12,7 +12,7 @@ TICKER_REGEX = re_compile(r"^[A-Z0-9\.\-]{1,10}$")
 
 
 def is_valid_ticker(ticker: str) -> bool:
-    """Validate ticker format for bot-facing requests."""
+    """Validate ticker format for API-facing requests."""
     return bool(TICKER_REGEX.fullmatch((ticker or "").strip().upper()))
 
 
@@ -724,7 +724,7 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
         finally:
             os.chdir(prev_cwd)
 
-        # Normalize artifacts to output_dir root as a stable bot contract.
+        # Normalize artifacts to output_dir root as a stable API contract.
         analysis_target = out_dir / f"{ticker_u}_lite_analysis.txt"
         pdf_target = out_dir / f"{ticker_u}_lite_analysis.pdf"
         chart_target = out_dir / f"{ticker_u}_lite_prices_valuation.png"

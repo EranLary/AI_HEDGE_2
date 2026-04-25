@@ -68,74 +68,26 @@ Open:
 - Dashboard: `http://127.0.0.1:3000`
 - Discovery: `http://127.0.0.1:3000/discovery`
 
-## Telegram Bot
-
-The Telegram bot provides a thin interface on top of the full analysis service.
-
-### Setup
-1. Add the bot token to `.env`:
-   ```powershell
-   TELEGRAM_BOT_TOKEN=your_token_here
-   ```
-2. Optional billing/free-access settings:
-   ```powershell
-   VALUATION_PRICE_STARS=50
-   SEC_PRICE_STARS=25
-   BOT_FREE_PASSWORD=your_secret_password
-   ```
-3. Install dependencies:
-   ```powershell
-   pip install -r requirements.txt
-   ```
-
-### Run
-```powershell
-py bot/telegram_bot.py
-```
-
-Send a plain ticker message like `NVDA`.
-Use `/start` (or tap `Start` from the keyboard) to choose mode (`Valuation` or `SEC`).
-
-Billing:
-- Valuation costs `50` Telegram Stars by default
-- SEC costs `25` Telegram Stars by default
-- If a valuation fails, the user gets one free valuation retry credit automatically
-- `/free <password>` grants exactly one free run credit (if `BOT_FREE_PASSWORD` is configured)
-- Sending the exact password as a normal chat message also grants one free run credit
-
-The bot will:
-1. Queue a job
-2. Run the selected mode in a background process
-3. Send completion message + chart + PDF (if generated)
-
-Job outputs are isolated by job id under:
-`outputs/<job_id>/`
-
 ## Easy Fly Deploy
 
 Use these scripts from project root:
 
 ```powershell
 .\deploy-site.ps1
-.\deploy-bot.ps1
 ```
 
 Windows cmd equivalents:
 
 ```cmd
 deploy-site.cmd
-deploy-bot.cmd
 ```
 
 Unified helper (all actions):
 
 ```powershell
 .\deploy_fly.ps1 site
-.\deploy_fly.ps1 bot
 .\deploy_fly.ps1 status-site
-.\deploy_fly.ps1 status-bot
 .\deploy_fly.ps1 logs-site
-.\deploy_fly.ps1 logs-bot
 ```
 
 Optional flags:
@@ -168,9 +120,8 @@ This repo includes `.github/workflows/deploy-fly.yml` for automatic deploys on p
 - `main`
 - `master`
 
-It deploys both apps:
-- `ai-hedge-telegram-bot` using `fly.toml`
+It deploys the site app:
 - `hedge-in-a-box-site` using `fly.site.toml`
 
 Required GitHub secret:
-- `FLY_API_TOKEN` (Fly API token with access to both apps)
+- `FLY_API_TOKEN` (Fly API token with access to the site app)

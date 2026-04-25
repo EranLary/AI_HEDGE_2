@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import { useSearchParams } from "next/navigation";
-import { Activity, AlertTriangle, CandlestickChart, Shield, TrendingUp } from "lucide-react";
+import { AlertTriangle, CandlestickChart, Shield } from "lucide-react";
 
 import { useDashboardPayload } from "@/lib/use-dashboard-payload";
 import { DashboardError, DashboardSkeleton, ReportChipRow } from "@/components/dashboard-chrome";
@@ -148,7 +148,7 @@ function ListPanel({ title, items }: { title: string; items: string[] }) {
       <ul className="mt-3 space-y-2 text-sm text-zinc-200">
         {items.map((item, idx) => (
           <li key={`${title}-${idx}`} className="flex items-start gap-2">
-            <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+            <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" />
             <span>{item}</span>
           </li>
         ))}
@@ -245,11 +245,6 @@ export default function DashboardTechnicalAnalysisPage({
   const bearishTargets = Array.isArray(targetLevels.bearish_targets) ? targetLevels.bearish_targets : [];
 
   const scenarios = analysis.scenario_analysis || {};
-  const confidence =
-    typeof analysis.confidence_score === "number" && Number.isFinite(analysis.confidence_score)
-      ? Math.max(0, Math.min(1, analysis.confidence_score))
-      : null;
-  const confidencePct = typeof confidence === "number" ? Math.round(confidence * 100) : null;
   const bullishProbability = asProbability(analysis.bullish_probability);
   const bearishProbability = asProbability(analysis.bearish_probability);
   const probabilityTotal =
@@ -268,12 +263,6 @@ export default function DashboardTechnicalAnalysisPage({
   const confidenceExplanation = String(analysis.confidence_explanation || "").trim();
   const decisionTone =
     finalDecision === "bullish" ? "hib-target-up" : finalDecision === "bearish" ? "hib-target-down" : "text-zinc-200";
-  const confidenceBarClass =
-    finalDecision === "bullish"
-      ? "bg-emerald-400"
-      : finalDecision === "bearish"
-        ? "bg-rose-400"
-        : "bg-zinc-400";
   const decisionLabel =
     finalDecision === "bullish" ? "Bullish" : finalDecision === "bearish" ? "Bearish" : finalDecision === "neutral" ? "Neutral" : "N/A";
 
@@ -294,20 +283,6 @@ export default function DashboardTechnicalAnalysisPage({
           </div>
         </div>
 
-        {confidencePct !== null ? (
-          <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-zinc-400">
-                <Activity size={12} />
-                Confidence Score
-              </p>
-              <p className="text-sm font-semibold text-zinc-100">{confidencePct}%</p>
-            </div>
-            <div className="h-2 rounded-full bg-zinc-800">
-              <div className={`h-2 rounded-full transition-all ${confidenceBarClass}`} style={{ width: `${confidencePct}%` }} />
-            </div>
-          </div>
-        ) : null}
       </header>
 
       {status !== "success" ? (
@@ -325,8 +300,7 @@ export default function DashboardTechnicalAnalysisPage({
               <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Probability Decision</h2>
               <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
                 <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Final Bias</p>
+                  <div className="flex items-center justify-end gap-2">
                     <p className={`text-sm font-semibold ${decisionTone}`}>{decisionLabel}</p>
                   </div>
                   {bullishPct !== null ? (
@@ -355,7 +329,7 @@ export default function DashboardTechnicalAnalysisPage({
 
                 {confidenceExplanation ? (
                   <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                    <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Confidence Explanation</p>
+                    <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Explanation</p>
                     <p className="mt-2 text-sm leading-relaxed text-zinc-200">{confidenceExplanation}</p>
                   </div>
                 ) : null}
@@ -422,14 +396,11 @@ export default function DashboardTechnicalAnalysisPage({
                   const bullets = asList(step?.bullets);
                   return (
                     <article key={`step-${idx}`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                      <p className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                        <TrendingUp size={14} className="text-emerald-300" />
-                        {title}
-                      </p>
+                      <p className="text-sm font-semibold text-zinc-100">{title}</p>
                       <ul className="mt-2 space-y-2 text-xs text-zinc-200">
                         {bullets.map((item, bIdx) => (
                           <li key={`step-${idx}-bullet-${bIdx}`} className="flex gap-2">
-                            <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                            <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" />
                             <span>{item}</span>
                           </li>
                         ))}

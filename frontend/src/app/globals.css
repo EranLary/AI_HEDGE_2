@@ -85,6 +85,12 @@ html[data-theme="light"] .bg-zinc-950\/80 {
 html[data-theme="light"] .bg-black\/35 {
   background-color: rgba(241, 245, 249, 0.85) !important;
 }
+html[data-theme="light"] .bg-black\/25 {
+  background-color: rgba(248, 250, 252, 0.94) !important;
+}
+html[data-theme="light"] .bg-black\/20 {
+  background-color: rgba(248, 250, 252, 0.97) !important;
+}
 html[data-theme="light"] .bg-black\/30 {
   background-color: rgba(248, 250, 252, 0.92) !important;
 }

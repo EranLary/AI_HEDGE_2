@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Gem, Radar, ShieldAlert } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
@@ -56,7 +55,7 @@ function SectionCard({
                   <p className="text-xs text-zinc-500">{row.company_name}</p>
                 </div>
                 <Link
-                  href={`/dashboard?ticker=${row.ticker}`}
+                  href={`/dashboard/${encodeURIComponent(row.ticker)}/overview`}
                   className="rounded-md border border-white/15 px-2 py-1 text-xs text-zinc-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/10"
                 >
                   Open
@@ -119,20 +118,11 @@ export default function DiscoveryPage() {
   }, []);
 
   return (
-    <div className="hib-shell min-h-screen px-4 py-6 text-zinc-100 sm:px-8">
-      <div className="mx-auto w-full max-w-[1400px]">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
-          <div>
-            <h1 className="font-display text-2xl">Market Discovery</h1>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">All Reports (Latest Per Ticker)</p>
-          </div>
-          <Link
-            href="/dashboard"
-            className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.18em] text-zinc-100 transition hover:border-emerald-400/50 hover:bg-emerald-500/10"
-          >
-            BACK TO DASHBOARDS
-          </Link>
-          <ThemeToggle />
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-6 text-zinc-100 sm:px-8">
+      <div>
+        <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
+          <h1 className="font-display text-2xl">Market Discovery</h1>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">All Reports (Latest Per Ticker)</p>
         </header>
 
         {loading || !data ? (

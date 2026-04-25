@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
-import { ActiveRunIndicator } from "@/components/active-run-indicator";
+import { AppShell } from "@/components/shell/app-shell";
 import { ThemeInit } from "@/components/theme-init";
 import "./globals.css";
 
@@ -32,13 +32,9 @@ export default function RootLayout({
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col bg-carbon text-zinc-100">
+      <body suppressHydrationWarning className="min-h-full bg-carbon text-zinc-100">
         <ThemeInit />
-        <ActiveRunIndicator />
-        <main className="flex-1">{children}</main>
-        <footer className="border-t border-white/10 bg-black/35 px-4 py-2 text-center text-[11px] text-zinc-400 sm:px-8">
-          AI-generated. For informational purposes only. Not investment advice. No guarantee of accuracy or results.
-        </footer>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

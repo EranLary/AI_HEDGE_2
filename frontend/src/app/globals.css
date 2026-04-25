@@ -446,3 +446,151 @@ html[data-theme="light"] .hib-bear-prob-value {
   scrollbar-width: thin;
   scrollbar-color: #3f4854 #0b0f14;
 }
+
+/* ---------- App shell: sidebar, topbar, auth menu ---------- */
+
+.hib-sidebar {
+  background-color: rgba(5, 8, 14, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+}
+html[data-theme="light"] .hib-sidebar {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.35) !important;
+  color: #1f2937 !important;
+}
+
+.hib-sidebar-item {
+  color: #cbd5e1;
+  border: 1px solid transparent;
+  background-color: transparent;
+}
+.hib-sidebar-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.hib-sidebar-item-active {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  color: #ecfdf5 !important;
+}
+html[data-theme="light"] .hib-sidebar-item {
+  color: #334155 !important;
+}
+html[data-theme="light"] .hib-sidebar-item:hover {
+  background-color: rgba(241, 245, 249, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.38) !important;
+}
+html[data-theme="light"] .hib-sidebar-item-active {
+  background-color: rgba(134, 239, 172, 0.5) !important;
+  border-color: rgba(22, 163, 74, 0.7) !important;
+  color: #14532d !important;
+}
+
+.hib-sidebar-heading {
+  color: #64748b;
+}
+html[data-theme="light"] .hib-sidebar-heading {
+  color: #64748b !important;
+}
+
+.hib-topbar {
+  background-color: rgba(5, 8, 14, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  backdrop-filter: blur(10px);
+}
+html[data-theme="light"] .hib-topbar {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+  border-bottom-color: rgba(148, 163, 184, 0.35) !important;
+  color: #1f2937 !important;
+}
+
+.hib-breadcrumb {
+  color: #94a3b8;
+}
+.hib-breadcrumb strong {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+html[data-theme="light"] .hib-breadcrumb {
+  color: #475569 !important;
+}
+html[data-theme="light"] .hib-breadcrumb strong {
+  color: #0f172a !important;
+}
+
+.hib-auth-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+}
+.hib-auth-btn:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #ecfdf5;
+}
+html[data-theme="light"] .hib-auth-btn {
+  border-color: rgba(148, 163, 184, 0.5) !important;
+  background-color: rgba(241, 245, 249, 0.95) !important;
+  color: #1f2937 !important;
+}
+html[data-theme="light"] .hib-auth-btn:hover {
+  border-color: rgba(22, 163, 74, 0.6) !important;
+  background-color: rgba(134, 239, 172, 0.45) !important;
+  color: #14532d !important;
+}
+
+.hib-auth-menu {
+  background-color: rgba(5, 8, 14, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e5e7eb;
+}
+html[data-theme="light"] .hib-auth-menu {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.45) !important;
+  color: #1f2937 !important;
+}
+
+.hib-auth-menu-item {
+  color: #e5e7eb;
+}
+.hib-auth-menu-item:hover {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #ecfdf5;
+}
+html[data-theme="light"] .hib-auth-menu-item {
+  color: #334155 !important;
+}
+html[data-theme="light"] .hib-auth-menu-item:hover {
+  background-color: rgba(134, 239, 172, 0.38) !important;
+  color: #14532d !important;
+}
+
+.hib-content {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.12), transparent 35%),
+    radial-gradient(circle at 85% 10%, rgba(239, 68, 68, 0.08), transparent 35%),
+    #050608;
+  color: #f5f7fa;
+  min-height: 100vh;
+}
+html[data-theme="light"] .hib-content {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.08), transparent 35%),
+    radial-gradient(circle at 85% 10%, rgba(239, 68, 68, 0.05), transparent 35%),
+    #f7fafc;
+  color: #111827;
+}
+
+/* Flag / scenario / artifact surface tokens (reused in new routed pages) */
+.hib-flag-card {
+  border-color: rgba(239, 68, 68, 0.35) !important;
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  color: #fee2e2 !important;
+}
+html[data-theme="light"] .hib-flag-card {
+  border-color: rgba(220, 38, 38, 0.55) !important;
+  background-color: rgba(254, 226, 226, 0.8) !important;
+  color: #7f1d1d !important;
+}

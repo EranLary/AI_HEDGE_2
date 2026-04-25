@@ -22,7 +22,17 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
-type CurrencyContext = {
+export type HedgeDashboardProps = {
+  tickerOverride?: string;
+  reportIdOverride?: string;
+  forceMainTab?: MainTab;
+  hideNavHeader?: boolean;
+  hideMainTabBar?: boolean;
+  hideDecisionFooter?: boolean;
+  onReportChange?: (reportId: string) => void;
+};
+
+export type CurrencyContext = {
   code: string;
   symbol: string;
   isIsraeli: boolean;
@@ -80,7 +90,7 @@ const ASSUMPTION_MONEY_LABELS = new Set([
   "predicted fcf (next year)",
 ]);
 
-function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
+export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
   const isIsraeli = String(data?.ticker || "").toUpperCase().endsWith(".TA");
   return {
     code: isIsraeli ? "ILS" : "USD",
@@ -99,7 +109,7 @@ function toDisplayAmount(v: number, ctx: CurrencyContext, kind: "price" | "finan
   return v * (Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1);
 }
 
-function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
+export function fmtMoney(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const display = toDisplayAmount(v, ctx, kind);
   try {
@@ -122,7 +132,7 @@ function fmtPlainCompact(v: number | null | undefined): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(v);
 }
 
-function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
+export function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kind: "price" | "financial" = "price"): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const display = toDisplayAmount(v, ctx, kind);
   if (kind === "financial") {
@@ -143,7 +153,7 @@ function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyContext, kin
   }
 }
 
-function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext): string {
+export function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   return fmtMoneyCompact(v, ctx, "financial");
 }
@@ -557,15 +567,30 @@ type ChartHoverState = {
   yAxisMap?: Record<string, { scale?: (value: number) => number }>;
 };
 
-export function HedgeDashboard() {
+export function HedgeDashboard({
+  tickerOverride,
+  reportIdOverride,
+  forceMainTab,
+  hideNavHeader = false,
+  hideMainTabBar = false,
+  hideDecisionFooter = false,
+  onReportChange,
+}: HedgeDashboardProps = {}) {
   const [reports, setReports] = useState<ReportListItem[]>([]);
   const [tickers, setTickers] = useState<string[]>([]);
-  const [selectedTicker, setSelectedTicker] = useState("");
-  const [selectedReportId, setSelectedReportId] = useState("");
+  const [selectedTicker, setSelectedTicker] = useState(() =>
+    String(tickerOverride || "").toUpperCase(),
+  );
+  const [selectedReportId, setSelectedReportId] = useState(() => String(reportIdOverride || ""));
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [mainTab, setMainTab] = useState<MainTab>("valuation");
+  const [internalMainTab, setInternalMainTab] = useState<MainTab>("valuation");
+  const mainTab: MainTab = forceMainTab ?? internalMainTab;
+  const setMainTab = (next: MainTab) => {
+    if (forceMainTab) return;
+    setInternalMainTab(next);
+  };
   const [valuationTab, setValuationTab] = useState("overview");
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
@@ -579,16 +604,20 @@ export function HedgeDashboard() {
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const tickerFromProp = String(tickerOverride || "").trim().toUpperCase();
+    const reportFromProp = String(reportIdOverride || "").trim();
     const tickerFromUrl =
-      typeof window !== "undefined"
+      tickerFromProp ||
+      (typeof window !== "undefined"
         ? String(new URLSearchParams(window.location.search).get("ticker") || "")
             .trim()
             .toUpperCase()
-        : "";
+        : "");
     const reportFromUrl =
-      typeof window !== "undefined"
+      reportFromProp ||
+      (typeof window !== "undefined"
         ? String(new URLSearchParams(window.location.search).get("report") || "").trim()
-        : "";
+        : "");
     Promise.all([
       fetch("/api/reports", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ reports: [] })),
       fetch("/api/tickers", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ tickers: [] })),
@@ -631,7 +660,23 @@ export function HedgeDashboard() {
         setSelectedTicker((prev) => prev || fallback);
         setError("Ticker/report list failed to load. Using fallback.");
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep selection in sync with route-driven props
+  useEffect(() => {
+    if (tickerOverride !== undefined) {
+      const next = String(tickerOverride || "").toUpperCase();
+      setSelectedTicker((prev) => (prev === next ? prev : next));
+      if (next) setLoading(true);
+    }
+  }, [tickerOverride]);
+
+  useEffect(() => {
+    if (reportIdOverride !== undefined) {
+      setSelectedReportId((prev) => (prev === reportIdOverride ? prev : String(reportIdOverride || "")));
+    }
+  }, [reportIdOverride]);
 
   const reportsForSelectedTicker = useMemo(
     () =>
@@ -646,6 +691,12 @@ export function HedgeDashboard() {
         ? selectedReportId
         : reportsForSelectedTicker[0].report_id
       : "";
+
+  useEffect(() => {
+    if (!onReportChange) return;
+    if (!currentReportId) return;
+    onReportChange(currentReportId);
+  }, [currentReportId, onReportChange]);
 
   useEffect(() => {
     if (!selectedTicker) return;
@@ -1116,42 +1167,44 @@ export function HedgeDashboard() {
   };
 
   return (
-    <div className="hib-shell min-h-screen">
+    <div className={hideNavHeader ? "min-h-full" : "hib-shell min-h-screen"}>
       <div className="mx-auto w-full max-w-[1500px] px-4 pb-12 pt-6 sm:px-8">
-        <header className="mb-6 grid gap-3 rounded-2xl border border-white/10 bg-black/35 p-4 sm:grid-cols-[1fr_auto_auto]">
-          <div>
-            <h1 className="font-display text-2xl text-zinc-100">DASHBOARDS</h1>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Institutional Dashboards</p>
-          </div>
-          <label htmlFor="dashboard-ticker-select" className="rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2">
-            <span className="mr-2 text-xs uppercase tracking-[0.16em] text-zinc-400">Ticker</span>
-            <select
-              id="dashboard-ticker-select"
-              value={selectedTicker}
-              onChange={(e) => {
-                setLoading(true);
-                setSelectedTicker(String(e.target.value || "").toUpperCase());
-                setSelectedReportId("");
-              }}
-              className="hib-select bg-transparent outline-none"
-            >
-              {(tickers.length ? tickers : [selectedTicker || "AAPL"]).map((tk) => (
-                <option key={tk} value={tk} className="hib-select-option">
-                  {tk}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-center gap-2">
-            <Link href="/" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
-              New Run
-            </Link>
-            <Link href="/discovery" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
-              Market Discovery
-            </Link>
-            <ThemeToggle />
-          </div>
-        </header>
+        {!hideNavHeader ? (
+          <header className="mb-6 grid gap-3 rounded-2xl border border-white/10 bg-black/35 p-4 sm:grid-cols-[1fr_auto_auto]">
+            <div>
+              <h1 className="font-display text-2xl text-zinc-100">DASHBOARDS</h1>
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Institutional Dashboards</p>
+            </div>
+            <label htmlFor="dashboard-ticker-select" className="rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2">
+              <span className="mr-2 text-xs uppercase tracking-[0.16em] text-zinc-400">Ticker</span>
+              <select
+                id="dashboard-ticker-select"
+                value={selectedTicker}
+                onChange={(e) => {
+                  setLoading(true);
+                  setSelectedTicker(String(e.target.value || "").toUpperCase());
+                  setSelectedReportId("");
+                }}
+                className="hib-select bg-transparent outline-none"
+              >
+                {(tickers.length ? tickers : [selectedTicker || "AAPL"]).map((tk) => (
+                  <option key={tk} value={tk} className="hib-select-option">
+                    {tk}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-center gap-2">
+              <Link href="/" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
+                New Run
+              </Link>
+              <Link href="/discovery" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
+                Market Discovery
+              </Link>
+              <ThemeToggle />
+            </div>
+          </header>
+        ) : null}
 
         {reportsForSelectedTicker.length > 1 ? (
           <section className="mb-4 rounded-xl border border-white/10 bg-zinc-950/70 p-3">
@@ -1238,13 +1291,15 @@ export function HedgeDashboard() {
               </article>
             </section>
 
-            <section className="mb-4 flex flex-wrap gap-2">
-              <Tab active={mainTab === "valuation"} onClick={() => setMainTab("valuation")} label="Valuation Engine" />
-              <Tab active={mainTab === "executive"} onClick={() => setMainTab("executive")} label="Executive Summary" />
-              <Tab active={mainTab === "bull"} onClick={() => setMainTab("bull")} label="Bull Case" />
-              <Tab active={mainTab === "bear"} onClick={() => setMainTab("bear")} label="Bear Case" />
-              <Tab active={mainTab === "values"} onClick={() => setMainTab("values")} label="Assumptions" />
-            </section>
+            {!hideMainTabBar ? (
+              <section className="mb-4 flex flex-wrap gap-2">
+                <Tab active={mainTab === "valuation"} onClick={() => setMainTab("valuation")} label="Valuation Engine" />
+                <Tab active={mainTab === "executive"} onClick={() => setMainTab("executive")} label="Executive Summary" />
+                <Tab active={mainTab === "bull"} onClick={() => setMainTab("bull")} label="Bull Case" />
+                <Tab active={mainTab === "bear"} onClick={() => setMainTab("bear")} label="Bear Case" />
+                <Tab active={mainTab === "values"} onClick={() => setMainTab("values")} label="Assumptions" />
+              </section>
+            ) : null}
 
             {mainTab === "valuation" ? (
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -1513,29 +1568,31 @@ export function HedgeDashboard() {
               </section>
             ) : null}
 
-            <section className="grid gap-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4 lg:grid-cols-[1fr_auto]">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Decision</p>
-                <p className={`text-4xl font-bold ${decisionToneClass}`}>{decisionSignal.label}</p>
-                <p className="mt-2 text-xl font-semibold text-zinc-100">
-                  <span>Mean Target Price: </span>
-                  <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
-                  <span className={consensusChangeClass}>
-                    {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
-                  </span>
-                </p>
-                <p className="text-lg font-semibold text-zinc-100">
-                  <span>Mean Investment Decision: </span>
-                  <span className={decisionToneClass}>{fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}</span>
-                </p>
-                <p className="hib-neutral-metric text-sm">
-                  Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <a className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" href={data.downloads?.analysis_pdf}><Download size={14} />Analysis PDF</a>
-              </div>
-            </section>
+            {!hideDecisionFooter ? (
+              <section className="grid gap-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4 lg:grid-cols-[1fr_auto]">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Decision</p>
+                  <p className={`text-4xl font-bold ${decisionToneClass}`}>{decisionSignal.label}</p>
+                  <p className="mt-2 text-xl font-semibold text-zinc-100">
+                    <span>Mean Target Price: </span>
+                    <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
+                    <span className={consensusChangeClass}>
+                      {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
+                    </span>
+                  </p>
+                  <p className="text-lg font-semibold text-zinc-100">
+                    <span>Mean Investment Decision: </span>
+                    <span className={decisionToneClass}>{fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}</span>
+                  </p>
+                  <p className="hib-neutral-metric text-sm">
+                    Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <a className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" href={data.downloads?.analysis_pdf}><Download size={14} />Analysis PDF</a>
+                </div>
+              </section>
+            ) : null}
           </>
         )}
       </div>

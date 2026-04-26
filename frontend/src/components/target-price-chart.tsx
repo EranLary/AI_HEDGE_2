@@ -16,6 +16,9 @@ import {
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
+import { useThemeTokens } from "@/lib/theme-tokens";
+
+const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear"] as const;
 
 type ChartHoverState = {
   chartX?: number;
@@ -46,6 +49,7 @@ function ChartHoverTooltip({
 
 export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
+  const tokens = useThemeTokens(CHART_TOKENS);
   const consensus = data?.valuation_hub?.consensus;
   const consensusCurrent =
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
@@ -175,7 +179,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       <div ref={wrapRef} className="hib-chart relative h-96">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} onMouseMove={handleMouseMove} onMouseLeave={hide}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#29303a" />
+            <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
             <XAxis dataKey="name" tick={false} axisLine={false} tickLine={false} />
             <YAxis
               width={140}
@@ -196,7 +200,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             {Number(consensus?.current_price || 0) > 0 ? (
               <ReferenceLine
                 y={Number(consensus?.current_price || 0)}
-                stroke="#f59e0b"
+                stroke={tokens["--chart-current"]}
                 strokeWidth={2.5}
                 strokeDasharray="6 4"
               />
@@ -205,7 +209,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               {chartData.map((entry) => (
                 <Cell
                   key={`target-${entry.name}`}
-                  fill={entry.aboveCurrent ? "#22c55e" : "#ef4444"}
+                  fill={entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
                   style={{ cursor: "pointer" }}
                 />
               ))}

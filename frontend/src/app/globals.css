@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
+/*
+ * Brand color tokens — dark defaults under :root, light under html[data-theme="light"].
+ * Documentation, contrast targets, and rules: frontend/BRAND_COLORS.md.
+ * Do not introduce hex / rgb / hsl literals in .tsx / .ts — add a token here first.
+ */
 :root {
+  /* Legacy aliases (kept for backward compat with components that read them directly). */
   --background: #050608;
   --foreground: #f5f7fa;
   --carbon: #050608;
@@ -8,6 +14,138 @@
   --emerald: #10b981;
   --danger: #ef4444;
   --slate: #9ca3af;
+
+  /* Surfaces */
+  --surface: #050608;
+  --surface-elevated: #0b0f14;
+  --surface-overlay: rgba(11, 15, 20, 0.92);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Text */
+  --text-primary: #f5f7fa;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-disabled: #64748b;
+  --text-on-accent: #04140d;
+
+  /* Accents and status */
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --info: #60a5fa;
+  /* --danger reused from legacy */
+
+  /* Recommendation / signal tones */
+  --signal-buy: #22c55e;
+  --signal-strong: #22c55e;
+  --signal-hold: #9ca3af;
+  --signal-sell: #ef4444;
+  --signal-underperform: #f97316;
+
+  /* Charts */
+  --chart-grid: #29303a;
+  --chart-axis: #94a3b8;
+  --chart-bull: #22c55e;
+  --chart-bear: #ef4444;
+  --chart-current: #f59e0b;
+  --chart-series-1: #10b981;
+  --chart-series-2: #60a5fa;
+  --chart-series-3: #f59e0b;
+  --chart-series-4: #e879f9;
+  --chart-series-5: #34d399;
+  --chart-series-6: #fb923c;
+
+  /* Persona accents (Dream Team gallery) — see frontend/src/components/dream-team/persona-themes.ts */
+  --persona-fallback-accent: #34d399;
+  --persona-fallback-accent-soft: rgba(52, 211, 153, 0.18);
+  --persona-buffett-accent: #fbbf24;
+  --persona-buffett-accent-soft: rgba(251, 191, 36, 0.18);
+  --persona-damodaran-accent: #60a5fa;
+  --persona-damodaran-accent-soft: rgba(96, 165, 250, 0.18);
+  --persona-ackman-accent: #fb923c;
+  --persona-ackman-accent-soft: rgba(251, 146, 60, 0.18);
+  --persona-wood-accent: #e879f9;
+  --persona-wood-accent-soft: rgba(232, 121, 249, 0.18);
+  --persona-munger-accent: #f59e0b;
+  --persona-munger-accent-soft: rgba(245, 158, 11, 0.18);
+  --persona-lynch-accent: #22d3ee;
+  --persona-lynch-accent-soft: rgba(34, 211, 238, 0.18);
+  --persona-marks-accent: #5eead4;
+  --persona-marks-accent-soft: rgba(94, 234, 212, 0.18);
+  --persona-dalio-accent: #38bdf8;
+  --persona-dalio-accent-soft: rgba(56, 189, 248, 0.18);
+  --persona-druckenmiller-accent: #fb7185;
+  --persona-druckenmiller-accent-soft: rgba(251, 113, 133, 0.18);
+}
+
+/* Light-mode token overrides — see BRAND_COLORS.md for contrast pairings. */
+html[data-theme="light"] {
+  --background: #f7fafc;
+  --foreground: #111827;
+  --carbon: #f7fafc;
+  --carbon-soft: #ffffff;
+
+  --surface: #f7fafc;
+  --surface-elevated: #ffffff;
+  --surface-overlay: rgba(255, 255, 255, 0.96);
+
+  --border-subtle: rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.22);
+
+  --text-primary: #111827;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+  --text-disabled: #94a3b8;
+
+  --accent: #059669;
+  --accent-hover: #047857;
+  --success: #047857;
+  --warning: #b45309;
+  --info: #1d4ed8;
+  --danger: #b91c1c;
+
+  --signal-buy: #15803d;
+  --signal-strong: #166534;
+  --signal-hold: #475569;
+  --signal-sell: #b91c1c;
+  --signal-underperform: #c2410c;
+
+  --chart-grid: #e2e8f0;
+  --chart-axis: #475569;
+  --chart-bull: #15803d;
+  --chart-bear: #b91c1c;
+  --chart-current: #b45309;
+  --chart-series-1: #047857;
+  --chart-series-2: #1d4ed8;
+  --chart-series-3: #b45309;
+  --chart-series-4: #a21caf;
+  --chart-series-5: #047857;
+  --chart-series-6: #c2410c;
+
+  --persona-fallback-accent: #047857;
+  --persona-fallback-accent-soft: rgba(4, 120, 87, 0.18);
+  --persona-buffett-accent: #b45309;
+  --persona-buffett-accent-soft: rgba(180, 83, 9, 0.18);
+  --persona-damodaran-accent: #1d4ed8;
+  --persona-damodaran-accent-soft: rgba(29, 78, 216, 0.18);
+  --persona-ackman-accent: #c2410c;
+  --persona-ackman-accent-soft: rgba(194, 65, 12, 0.18);
+  --persona-wood-accent: #a21caf;
+  --persona-wood-accent-soft: rgba(162, 28, 175, 0.18);
+  --persona-munger-accent: #b45309;
+  --persona-munger-accent-soft: rgba(180, 83, 9, 0.18);
+  --persona-lynch-accent: #0e7490;
+  --persona-lynch-accent-soft: rgba(14, 116, 144, 0.18);
+  --persona-marks-accent: #0f766e;
+  --persona-marks-accent-soft: rgba(15, 118, 110, 0.18);
+  --persona-dalio-accent: #0369a1;
+  --persona-dalio-accent-soft: rgba(3, 105, 161, 0.18);
+  --persona-druckenmiller-accent: #be123c;
+  --persona-druckenmiller-accent-soft: rgba(190, 18, 60, 0.18);
 }
 
 @theme inline {
@@ -17,6 +155,21 @@
   --color-carbon-soft: var(--carbon-soft);
   --color-emerald: var(--emerald);
   --color-danger: var(--danger);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+  --color-text-on-accent: var(--text-on-accent);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --font-sans: var(--font-space-grotesk);
   --font-mono: var(--font-ibm-plex-mono);
 }

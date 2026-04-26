@@ -80,7 +80,7 @@ export function NewRunModal() {
         </button>
         <header className="mb-4">
           <h2 className="font-display text-lg text-zinc-100">Run a new analysis</h2>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-zinc-500">~30 minutes. Track progress in the sidebar.</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[color:var(--text-muted)]">~30 minutes. Track progress in the sidebar.</p>
         </header>
         <form onSubmit={onSubmit} className="space-y-3">
           <input
@@ -100,14 +100,14 @@ export function NewRunModal() {
               type="button"
               onClick={close}
               disabled={submitting}
-              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="hib-run-btn inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-5 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="hib-run-btn inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-5 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
               {submitting ? "Starting..." : "Run"}

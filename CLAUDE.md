@@ -69,6 +69,7 @@ Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, or unified `deplo
 - Don't edit `legacy_port.py` prompts/parsers unless intentionally changing model behavior — it mirrors the notebook.
 - Frontend reads artifacts directly from disk under `outputs/` — keep JSON schema in `dashboard.py` in sync with the frontend loaders in `frontend/src/`.
 - `outputs/`, `logs/`, `.env` are gitignored. Don't commit generated artifacts.
+- **Frontend theming.** The Next.js app supports light + dark via `html[data-theme]`. Color tokens, contrast rules, and the do/don't list live in [frontend/BRAND_COLORS.md](frontend/BRAND_COLORS.md). Read it before adding any color, chart, or theme-sensitive component. Do not introduce hex/rgb literals in `.tsx`/`.ts` — add a token to [frontend/src/app/globals.css](frontend/src/app/globals.css) first and reference it via `var(--token)` or a Tailwind utility.
 
 ## Don't
 

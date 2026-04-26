@@ -138,7 +138,7 @@ export function PersonaGallery({
       </div>
 
       <div className="relative -mx-4 flex items-stretch sm:mx-0 sm:gap-5">
-        <NavButton direction="prev" onClick={prev} accent={activeTheme.accent} />
+        <NavButton direction="prev" onClick={prev} accent={activeTheme.accent} accentSoft={activeTheme.accentSoft} />
 
         <div
           className="relative flex-1"
@@ -177,7 +177,7 @@ export function PersonaGallery({
           </AnimatePresence>
         </div>
 
-        <NavButton direction="next" onClick={next} accent={activeTheme.accent} />
+        <NavButton direction="next" onClick={next} accent={activeTheme.accent} accentSoft={activeTheme.accentSoft} />
       </div>
 
     </div>
@@ -188,10 +188,12 @@ function NavButton({
   direction,
   onClick,
   accent,
+  accentSoft,
 }: {
   direction: "prev" | "next";
   onClick: () => void;
   accent: string;
+  accentSoft: string;
 }) {
   const Icon = direction === "prev" ? ChevronLeft : ChevronRight;
   return (
@@ -207,7 +209,7 @@ function NavButton({
     >
       <span
         className="pointer-events-none absolute inset-0 rounded-full opacity-0 transition-opacity hover:opacity-100"
-        style={{ background: `radial-gradient(closest-side, ${accent}33, transparent 70%)` }}
+        style={{ background: `radial-gradient(closest-side, ${accentSoft}, transparent 70%)` }}
         aria-hidden
       />
       <Icon size={22} strokeWidth={1.6} />

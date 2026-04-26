@@ -69,12 +69,12 @@ export function NewRunModal() {
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center px-4 pt-24 sm:pt-32" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={close} aria-hidden />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/50">
+      <div className="hib-modal-surface relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/50">
         <button
           type="button"
           onClick={close}
           aria-label="Close"
-          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+          className="hib-modal-close absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
         >
           <X size={14} />
         </button>
@@ -90,7 +90,7 @@ export function NewRunModal() {
             placeholder="Ticker (e.g., NVDA)"
             maxLength={10}
             disabled={submitting}
-            className="w-full rounded-xl border border-white/15 bg-black/35 px-4 py-3 text-lg uppercase tracking-[0.08em] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-400/60"
+            className="hib-modal-input w-full rounded-xl border border-white/15 bg-black/35 px-4 py-3 text-lg uppercase tracking-[0.08em] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-400/60"
           />
           {error ? (
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</p>

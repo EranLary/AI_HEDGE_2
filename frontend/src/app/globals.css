@@ -63,6 +63,9 @@ html[data-theme="light"] .hib-markdown {
 html[data-theme="light"] .text-zinc-100 {
   color: #111827 !important;
 }
+html[data-theme="light"] .text-zinc-50 {
+  color: #111827 !important;
+}
 html[data-theme="light"] .text-zinc-200 {
   color: #1f2937 !important;
 }
@@ -74,6 +77,18 @@ html[data-theme="light"] .text-zinc-400 {
 }
 html[data-theme="light"] .text-zinc-500 {
   color: #64748b !important;
+}
+html[data-theme="light"] .text-white {
+  color: #111827 !important;
+}
+html[data-theme="light"] .text-emerald-100 {
+  color: #14532d !important;
+}
+html[data-theme="light"] .text-emerald-50 {
+  color: #14532d !important;
+}
+html[data-theme="light"] .text-red-50 {
+  color: #7f1d1d !important;
 }
 
 html[data-theme="light"] .bg-zinc-950\/70 {
@@ -379,6 +394,9 @@ html[data-theme="light"] .hib-active-run-banner {
   background-color: rgba(15, 23, 42, 0.9) !important;
   color: #e2e8f0 !important;
 }
+html[data-theme="light"] .hib-active-run-banner .text-white {
+  color: #e2e8f0 !important;
+}
 html[data-theme="light"] .hib-active-run-text {
   color: rgba(226, 232, 240, 0.94) !important;
 }
@@ -607,6 +625,30 @@ html[data-theme="light"] .hib-auth-menu-item {
 html[data-theme="light"] .hib-auth-menu-item:hover {
   background-color: rgba(134, 239, 172, 0.38) !important;
   color: #14532d !important;
+}
+
+.hib-modal-surface {
+  color: #e5e7eb;
+}
+html[data-theme="light"] .hib-modal-surface {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.45) !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .hib-modal-input {
+  background-color: rgba(241, 245, 249, 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.5) !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .hib-modal-input::placeholder {
+  color: #64748b !important;
+}
+html[data-theme="light"] .hib-modal-close {
+  color: #475569 !important;
+}
+html[data-theme="light"] .hib-modal-close:hover {
+  color: #0f172a !important;
+  background-color: rgba(241, 245, 249, 0.95) !important;
 }
 
 .hib-content {

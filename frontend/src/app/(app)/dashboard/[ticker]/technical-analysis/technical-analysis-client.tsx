@@ -261,6 +261,12 @@ export function TechnicalAnalysisClient({
   const confidenceExplanation = String(analysis.confidence_explanation || "").trim();
   const decisionTone =
     finalDecision === "bullish" ? "hib-target-up" : finalDecision === "bearish" ? "hib-target-down" : "text-zinc-200";
+  const decisionBoxTone =
+    finalDecision === "bullish"
+      ? "border-emerald-400/35 bg-emerald-500/6"
+      : finalDecision === "bearish"
+        ? "border-red-400/35 bg-red-500/6"
+        : "border-white/10 bg-zinc-950/70";
   const decisionLabel =
     finalDecision === "bullish" ? "Bullish" : finalDecision === "bearish" ? "Bearish" : finalDecision === "neutral" ? "Neutral" : "N/A";
 
@@ -294,10 +300,10 @@ export function TechnicalAnalysisClient({
       ) : (
         <div className="space-y-5">
           {(bullishPct !== null || bearishPct !== null || decisionLabel !== "N/A" || confidenceExplanation) ? (
-            <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+            <section className={`rounded-2xl border p-4 ${decisionBoxTone}`}>
               <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Probability Decision</h2>
               <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-                <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+                <div className={`rounded-xl border p-3 ${decisionBoxTone}`}>
                   <div className="flex items-center justify-end gap-2">
                     <p className={`text-sm font-semibold ${decisionTone}`}>{decisionLabel}</p>
                   </div>
@@ -326,7 +332,7 @@ export function TechnicalAnalysisClient({
                 </div>
 
                 {confidenceExplanation ? (
-                  <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+                  <div className={`rounded-xl border p-3 ${decisionBoxTone}`}>
                     <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Explanation</p>
                     <p className="mt-2 text-sm leading-relaxed text-zinc-200">{confidenceExplanation}</p>
                   </div>

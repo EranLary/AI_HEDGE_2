@@ -18,7 +18,7 @@ function resolveTab(raw: string | undefined, signedIn: boolean): ReportsTabKey {
     if (raw === "mine" && !signedIn) return "community";
     return raw;
   }
-  return signedIn ? "mine" : "community";
+  return "community";
 }
 
 function filterByQuery(rows: DbReportSummary[], query: string): DbReportSummary[] {
@@ -145,7 +145,7 @@ function EmptyState({
     if (!signedIn) {
       return (
         <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
-          <p className="text-sm text-zinc-300">Sign in to see reports you've generated.</p>
+          <p className="text-sm text-zinc-300">Sign in to see reports you&apos;ve generated.</p>
           <a
             href="/auth/signin"
             className="mt-3 inline-block rounded-lg border border-emerald-400/60 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 hover:bg-emerald-500/25"
@@ -157,7 +157,7 @@ function EmptyState({
     }
     return (
       <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
-        <p className="text-sm text-zinc-300">You haven't analyzed any tickers yet.</p>
+        <p className="text-sm text-zinc-300">You haven&apos;t analyzed any tickers yet.</p>
         <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
           Use <span className="text-emerald-200">+ New Analysis</span> in the sidebar to start.
         </p>

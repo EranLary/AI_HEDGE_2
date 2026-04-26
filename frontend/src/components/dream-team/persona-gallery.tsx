@@ -9,7 +9,7 @@ import type { CurrencyContext } from "@/components/hedge-dashboard";
 import type { ReportListItem } from "@/lib/dashboard-types";
 
 import { PersonaCard, type PersonaCardData } from "./persona-card";
-import { getPersonaTheme } from "./persona-themes";
+import { getPersonaTheme, INVESTORS_ORDERED } from "./persona-themes";
 
 type DreamTeamMember = {
   persona: string;
@@ -50,8 +50,20 @@ export function PersonaGallery({
   const [direction, setDirection] = useState(0);
 
   const merged: PersonaCardData[] = useMemo(
-    () =>
-      personas.map((member, idx) => {
+    () => {
+      const rankFor = (name: string): number => {
+        const idx = (INVESTORS_ORDERED as readonly string[]).indexOf(name);
+        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+      };
+      const ordered = personas
+        .filter((member) => String(member.persona || "").trim() !== "Peter Thiel")
+        .slice()
+        .sort((a, b) => {
+          const aRank = rankFor(String(a.persona || "").trim());
+          const bRank = rankFor(String(b.persona || "").trim());
+          return aRank - bRank;
+        });
+      return ordered.map((member, idx) => {
         const byName = dreamOutputs.find(
           (o) => String(o.persona || "").trim() === String(member.persona || "").trim(),
         );
@@ -59,7 +71,8 @@ export function PersonaGallery({
         const source = byName || fallback;
         const sections = Array.isArray(source?.reason_sections) ? source!.reason_sections : [];
         return { ...member, reason_sections: sections };
-      }),
+      });
+    },
     [personas, dreamOutputs],
   );
 
@@ -119,6 +132,9 @@ export function PersonaGallery({
 
       <div className="mb-3 flex items-center justify-end">
         <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
+      </div>
+      <div className="mb-3 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+        Disclaimer: Dream Team views are AI PERSONA simulations for research workflow support, not real investor quotes or advice.
       </div>
 
       <div className="relative -mx-4 flex items-stretch sm:mx-0 sm:gap-5">
@@ -202,7 +218,7 @@ function NavButton({
 function fmtReportLabel(report: ReportListItem): string {
   const ts = new Date(report.generated_at || report.updated_at || "");
   if (!Number.isFinite(ts.getTime())) return report.report_id.slice(0, 8);
-  return ts.toLocaleString(undefined, {
+  return ts.toLocaleString("en-US", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",

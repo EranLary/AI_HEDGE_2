@@ -70,9 +70,14 @@ export function PersonaCard({
         <div className="flex items-center gap-4">
           <PersonaAvatar name={member.persona} size={64} />
           <div className="min-w-0 flex-1">
-            <h2 className="truncate font-display text-2xl leading-tight text-zinc-50 sm:text-[26px]">
-              {member.persona}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="truncate font-display text-2xl leading-tight text-zinc-100 sm:text-[26px]">
+                {member.persona}
+              </h2>
+              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
+                AI Persona
+              </span>
+            </div>
             <p
               className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.22em]"
               style={{ color: theme.accent }}

@@ -1,11 +1,11 @@
 "use client";
 
 const RTF = typeof Intl !== "undefined" && "RelativeTimeFormat" in Intl
-  ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+  ? new Intl.RelativeTimeFormat("en-US", { numeric: "auto" })
   : null;
 
 const ABSOLUTE_FMT = typeof Intl !== "undefined"
-  ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" })
+  ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" })
   : null;
 
 const ABSOLUTE_CUTOFF_MS = 30 * 24 * 60 * 60 * 1000;

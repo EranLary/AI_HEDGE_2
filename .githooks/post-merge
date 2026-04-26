@@ -1,0 +1,9 @@
+#!/bin/sh
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$repo_root" ]; then
+  exit 0
+fi
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo_root/scripts/sync_dashboards_on_pull.ps1" >/dev/null 2>&1 || true
+exit 0

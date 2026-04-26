@@ -5223,10 +5223,13 @@ def run_valuations(
     dream_valuation_team = [
     "Warren Buffett",
     "Aswath Damodaran",
+    "Charlie Munger",
+    "Peter Lynch",
+    "Howard Marks",
     "Bill Ackman",
     "Cathie Wood",
-    "Peter Thiel",
-    "Howard Marks",
+    "Ray Dalio",
+    "Stanley Druckenmiller",
     ]
 
     price_currency = variables_dict.get("price_currency", 1)

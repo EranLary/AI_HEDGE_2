@@ -7,6 +7,24 @@ export type PersonaTheme = {
   gradientTo: string;
 };
 
+export const INVESTORS_ORDERED = [
+  "Warren Buffett",
+  "Aswath Damodaran",
+  "Charlie Munger",
+  "Peter Lynch",
+  "Howard Marks",
+  "Bill Ackman",
+  "Cathie Wood",
+  "Ray Dalio",
+  "Stanley Druckenmiller",
+] as const;
+
+export const OVERVIEW_FEATURED_PERSONAS = [
+  "Warren Buffett",
+  "Cathie Wood",
+  "Bill Ackman",
+] as const;
+
 const FALLBACK: PersonaTheme = {
   role: "AI Persona",
   tagline: "Synthetic perspective",
@@ -27,7 +45,7 @@ const THEMES: Record<string, PersonaTheme> = {
   },
   "Aswath Damodaran": {
     role: "Valuation Academic",
-    tagline: "Story to numbers — disciplined DCF, intrinsic worth.",
+    tagline: "Story to numbers - disciplined DCF, intrinsic worth.",
     accent: "#60a5fa",
     accentSoft: "rgba(96, 165, 250, 0.18)",
     gradientFrom: "#1e3a8a",
@@ -49,21 +67,45 @@ const THEMES: Record<string, PersonaTheme> = {
     gradientFrom: "#701a75",
     gradientTo: "#1e1b4b",
   },
-  "Peter Thiel": {
-    role: "Contrarian Strategist",
-    tagline: "Monopoly economics, secrets, optionality on the future.",
-    accent: "#f87171",
-    accentSoft: "rgba(248, 113, 113, 0.18)",
-    gradientFrom: "#7f1d1d",
+  "Charlie Munger": {
+    role: "Mental Models",
+    tagline: "Multidisciplinary filters, quality bias, and clear thinking.",
+    accent: "#f59e0b",
+    accentSoft: "rgba(245, 158, 11, 0.18)",
+    gradientFrom: "#78350f",
     gradientTo: "#1c1917",
+  },
+  "Peter Lynch": {
+    role: "Growth-at-Reasonable-Price",
+    tagline: "Know what you own, scale winners, keep valuation discipline.",
+    accent: "#22d3ee",
+    accentSoft: "rgba(34, 211, 238, 0.18)",
+    gradientFrom: "#164e63",
+    gradientTo: "#082f49",
   },
   "Howard Marks": {
     role: "Cycles & Risk",
-    tagline: "Second-level thinking — what is priced, what is missed.",
+    tagline: "Second-level thinking - what is priced, what is missed.",
     accent: "#5eead4",
     accentSoft: "rgba(94, 234, 212, 0.18)",
     gradientFrom: "#134e4a",
     gradientTo: "#042f2e",
+  },
+  "Ray Dalio": {
+    role: "Macro & Regimes",
+    tagline: "Balance through cycles, probabilities, and diversification.",
+    accent: "#38bdf8",
+    accentSoft: "rgba(56, 189, 248, 0.18)",
+    gradientFrom: "#075985",
+    gradientTo: "#0c4a6e",
+  },
+  "Stanley Druckenmiller": {
+    role: "Risk-Adjusted Conviction",
+    tagline: "Aggressive when odds align, fast when thesis breaks.",
+    accent: "#fb7185",
+    accentSoft: "rgba(251, 113, 133, 0.18)",
+    gradientFrom: "#881337",
+    gradientTo: "#4c0519",
   },
 };
 

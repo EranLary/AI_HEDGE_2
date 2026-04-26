@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, CandlestickChart, Download, FileText, Menu, Radar, Users } from "lucide-react";
+import { BarChart3, CandlestickChart, Download, FileText, Menu, Scale, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -15,10 +15,9 @@ type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: n
 const SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
-  { slug: "scenarios", label: "Bull vs Bear", icon: Radar },
+  { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
-  { slug: "artifacts", label: "Artifacts", icon: Download },
 ];
 
 type TopbarProps = {
@@ -118,6 +117,13 @@ function SectionPills({
           </Link>
         );
       })}
+      <a
+        href={`/api/artifacts/${encodeURIComponent(activeTicker)}/analysis-pdf`}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/30 hover:text-zinc-100"
+      >
+        <Download size={12} />
+        <span>PDF</span>
+      </a>
     </nav>
   );
 }

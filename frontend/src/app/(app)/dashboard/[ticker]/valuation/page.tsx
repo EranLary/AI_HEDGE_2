@@ -1,8 +1,10 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HedgeDashboard } from "@/components/hedge-dashboard";
+import { TargetPriceChart } from "@/components/target-price-chart";
+import type { DashboardPayload } from "@/lib/dashboard-types";
 
 type View = "methods" | "assumptions";
 
@@ -16,6 +18,24 @@ export default function DashboardValuationPage({
   const reportId = search?.get("report") || undefined;
   const upper = decodeURIComponent(ticker).toUpperCase();
   const [view, setView] = useState<View>("methods");
+  const [payload, setPayload] = useState<DashboardPayload | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const qs = reportId ? `?report=${encodeURIComponent(reportId)}` : "";
+    fetch(`/api/dashboard/${encodeURIComponent(upper)}${qs}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        setPayload((json || null) as DashboardPayload | null);
+      })
+      .catch(() => {
+        setPayload(null);
+      });
+    return () => controller.abort();
+  }, [upper, reportId]);
 
   return (
     <div>
@@ -47,6 +67,8 @@ export default function DashboardValuationPage({
           </button>
         </nav>
       </header>
+
+      <TargetPriceChart data={payload} />
 
       <HedgeDashboard
         tickerOverride={upper}

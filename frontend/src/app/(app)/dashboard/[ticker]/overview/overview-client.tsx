@@ -129,8 +129,9 @@ export function OverviewClient({
   const sortedDreamTeam = (data.dream_team || [])
     .slice()
     .sort((a, b) => {
-      const ai = INVESTORS_ORDERED.indexOf(String(a.persona || "").trim());
-      const bi = INVESTORS_ORDERED.indexOf(String(b.persona || "").trim());
+      const order = INVESTORS_ORDERED as readonly string[];
+      const ai = order.indexOf(String(a.persona || "").trim());
+      const bi = order.indexOf(String(b.persona || "").trim());
       const aRank = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
       const bRank = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
       return aRank - bRank;
@@ -141,7 +142,8 @@ export function OverviewClient({
   const featured = OVERVIEW_FEATURED_PERSONAS.map((name) => featuredMap.get(name)).filter(
     (entry): entry is NonNullable<typeof entry> => Boolean(entry),
   );
-  const fallback = sortedDreamTeam.filter((entry) => !OVERVIEW_FEATURED_PERSONAS.includes(String(entry.persona || "").trim()));
+  const featuredOrder = OVERVIEW_FEATURED_PERSONAS as readonly string[];
+  const fallback = sortedDreamTeam.filter((entry) => !featuredOrder.includes(String(entry.persona || "").trim()));
   const dreamTeam = [...featured, ...fallback].slice(0, 3);
   const sliceWords = (text: string | undefined, n: number): string => {
     const words = String(text || "").trim().split(/\s+/).filter(Boolean);

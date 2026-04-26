@@ -18,6 +18,13 @@ export class InvalidTickerError extends Error {
   }
 }
 
+export class TickerNotFoundError extends Error {
+  constructor(ticker: string, detail?: string) {
+    super(detail || `Ticker '${ticker}' not found on Yahoo Finance.`);
+    this.name = "TickerNotFoundError";
+  }
+}
+
 /** Single source of truth for starting an analysis run. Validates the ticker,
  *  POSTs to /api/run-analysis, seeds the active-runs store, and returns the
  *  job_id so callers can do per-call follow-up if needed. */
@@ -33,6 +40,9 @@ export async function submitNewRun(rawTicker: string): Promise<SubmitNewRunResul
     body: JSON.stringify({ ticker }),
   });
   const json = (await res.json().catch(() => ({}))) as { job_id?: string; error?: string; status?: string };
+  if (res.status === 422) {
+    throw new TickerNotFoundError(ticker, json.error);
+  }
   if (!res.ok || !json.job_id) {
     throw new Error(json.error || `Failed to start analysis (${res.status}).`);
   }

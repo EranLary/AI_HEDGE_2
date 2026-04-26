@@ -15,6 +15,7 @@ import {
   runStatusFile,
   siteRunsRoot,
 } from "@/lib/site-runner";
+import { yahooValidate } from "@/lib/yahoo-lookup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,23 @@ export async function POST(req: Request) {
   const ticker = String(body.ticker || "").trim().toUpperCase();
   if (!TICKER_RE.test(ticker)) {
     return NextResponse.json({ error: "Invalid ticker format." }, { status: 400 });
+  }
+
+  // Pre-flight: confirm Yahoo can resolve the ticker before spawning Python.
+  // On Yahoo outage / timeout we proceed (preserves existing behavior so we
+  // don't fully block runs when Yahoo is down — yfinance retries internally).
+  const validation = await yahooValidate(ticker);
+  if (!validation.ok) {
+    const isTransient = validation.error.includes("timed out") || validation.error.includes("failed (");
+    if (!isTransient) {
+      return NextResponse.json({ error: validation.error }, { status: 422 });
+    }
+    console.warn(`[run-analysis] Yahoo validation transient failure for ${ticker}: ${validation.error}`);
+  } else if (validation.instrumentType === "ETF") {
+    return NextResponse.json(
+      { error: `ETF analysis isn't supported yet (${ticker} is an ETF on ${validation.exchange}). Try a single-issuer equity.` },
+      { status: 422 },
+    );
   }
 
   const jobId = `${ticker}_${Date.now()}_${randomUUID().slice(0, 8)}`;

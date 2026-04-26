@@ -949,6 +949,30 @@ html[data-theme="light"] .hib-landing-error {
 }
 .hib-google-btn:active { transform: translateY(0); }
 
+/* Ticker search chips: ETF is a vivid filled badge, exchange is a neutral outline */
+.hib-chip-etf {
+  border-color: transparent;
+  background-color: #b45309;
+  color: #fef3c7;
+  font-weight: 600;
+}
+html[data-theme="light"] .hib-chip-etf {
+  border-color: transparent !important;
+  background-color: #d97706 !important;
+  color: #fff7ed !important;
+}
+
+.hib-chip-exchange {
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.04);
+  color: #d4d4d8;
+}
+html[data-theme="light"] .hib-chip-exchange {
+  border-color: rgba(148, 163, 184, 0.45) !important;
+  background-color: rgba(248, 250, 252, 0.95) !important;
+  color: #334155 !important;
+}
+
 /* Dream Team disclaimer banner: readable in both themes */
 .hib-disclaimer-amber {
   border-color: rgba(251, 191, 36, 0.45) !important;

@@ -97,6 +97,9 @@ html[data-theme="light"] .bg-zinc-950\/70 {
 html[data-theme="light"] .bg-zinc-950\/80 {
   background-color: rgba(255, 255, 255, 0.94) !important;
 }
+html[data-theme="light"] .bg-zinc-950\/95 {
+  background-color: rgba(255, 255, 255, 0.97) !important;
+}
 html[data-theme="light"] .bg-black\/35 {
   background-color: rgba(241, 245, 249, 0.85) !important;
 }
@@ -792,6 +795,18 @@ html[data-theme="light"] .hib-landing-error {
   box-shadow: 0 22px 50px -20px rgba(16, 185, 129, 0.70);
 }
 .hib-google-btn:active { transform: translateY(0); }
+
+/* Dream Team disclaimer banner: readable in both themes */
+.hib-disclaimer-amber {
+  border-color: rgba(251, 191, 36, 0.45) !important;
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  color: #fde68a !important;
+}
+html[data-theme="light"] .hib-disclaimer-amber {
+  border-color: rgba(180, 83, 9, 0.55) !important;
+  background-color: rgba(254, 243, 199, 0.95) !important;
+  color: #78350f !important;
+}
 
 /* Flag / scenario / artifact surface tokens (reused in new routed pages) */
 .hib-flag-card {

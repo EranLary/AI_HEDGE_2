@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { use, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { HedgeDashboard } from "@/components/hedge-dashboard";
 import { TargetPriceChart } from "@/components/target-price-chart";
 import type { DashboardPayload } from "@/lib/dashboard-types";
@@ -14,6 +14,7 @@ export default function DashboardValuationPage({
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
+  const router = useRouter();
   const search = useSearchParams();
   const reportId = search?.get("report") || undefined;
   const upper = decodeURIComponent(ticker).toUpperCase();
@@ -36,6 +37,16 @@ export default function DashboardValuationPage({
       });
     return () => controller.abort();
   }, [upper, reportId]);
+
+  const handleReportChange = useCallback(
+    (nextReportId: string) => {
+      if (!nextReportId || nextReportId === reportId) return;
+      const next = new URLSearchParams(search?.toString() || "");
+      next.set("report", nextReportId);
+      router.replace(`?${next.toString()}`, { scroll: false });
+    },
+    [reportId, router, search],
+  );
 
   return (
     <div>
@@ -68,8 +79,6 @@ export default function DashboardValuationPage({
         </nav>
       </header>
 
-      <TargetPriceChart data={payload} />
-
       <HedgeDashboard
         tickerOverride={upper}
         reportIdOverride={reportId}
@@ -77,6 +86,8 @@ export default function DashboardValuationPage({
         hideNavHeader
         hideMainTabBar
         hideDecisionFooter
+        onReportChange={handleReportChange}
+        postHeaderSlot={<TargetPriceChart data={payload} />}
       />
     </div>
   );

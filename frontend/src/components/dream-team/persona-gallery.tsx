@@ -133,7 +133,7 @@ export function PersonaGallery({
       <div className="mb-3 flex items-center justify-end">
         <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
       </div>
-      <div className="mb-3 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+      <div className="hib-disclaimer-amber mb-3 rounded-xl border px-3 py-2 text-xs">
         Disclaimer: Dream Team views are AI PERSONA simulations for research workflow support, not real investor quotes or advice.
       </div>
 

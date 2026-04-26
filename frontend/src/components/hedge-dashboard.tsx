@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,6 +19,7 @@ export type HedgeDashboardProps = {
   hideMainTabBar?: boolean;
   hideDecisionFooter?: boolean;
   onReportChange?: (reportId: string) => void;
+  postHeaderSlot?: ReactNode;
 };
 
 export type CurrencyContext = {
@@ -592,6 +593,7 @@ export function HedgeDashboard({
   hideMainTabBar = false,
   hideDecisionFooter = false,
   onReportChange,
+  postHeaderSlot,
 }: HedgeDashboardProps = {}) {
   const [reports, setReports] = useState<ReportListItem[]>([]);
   const [tickers, setTickers] = useState<string[]>([]);
@@ -1114,6 +1116,8 @@ export function HedgeDashboard({
                 </div>
               </article>
             </section>
+
+            {postHeaderSlot}
 
             {!hideMainTabBar ? (
               <section className="mb-4 flex flex-wrap gap-2">

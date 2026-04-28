@@ -1332,12 +1332,16 @@ export function HedgeDashboard({
                           <div className="mb-2 flex flex-wrap gap-2">{activeMethod.outputs.map((o) => { const key = o.persona || `Output ${o.output_id}`; return <Tab key={key} active={(outputTab[activeMethod.name] || (activeMethod.outputs[0].persona || `Output ${activeMethod.outputs[0].output_id}`)) === key} onClick={() => setOutputTab((p) => ({ ...p, [activeMethod.name]: key }))} label={key} />; })}</div>
                           {selectedOutput ? (
                             <>
-                              <p className="text-sm text-zinc-400">
-                                Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
-                                <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>{" "}
-                                | Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>{" "}
-                                <span className="text-zinc-300">({selectedOutputInvestmentVerdict})</span>
-                              </p>
+                              <div className="space-y-1 text-sm text-zinc-400">
+                                <p>
+                                  Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
+                                  <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>
+                                </p>
+                                <p>
+                                  Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>{" "}
+                                  <span className="text-zinc-300">({selectedOutputInvestmentVerdict})</span>
+                                </p>
+                              </div>
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
                                 {selectedOutput.reason_sections.length ? (
                                   selectedOutput.reason_sections.map((r) => (

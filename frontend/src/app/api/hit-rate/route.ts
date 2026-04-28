@@ -172,20 +172,29 @@ export async function GET() {
             investment_amount: toNumOrNull(block.investment_amount),
           }));
 
-    for (const modelRow of modelRows) {
-      const modelKey = modelRow.name;
+    const applyModelPrediction = (modelKey: string, targetPrice: number | null, investmentAmount: number | null) => {
       if (!byModelMap.has(modelKey)) {
         byModelMap.set(modelKey, createMetricSet());
       }
       const modelMetric = byModelMap.get(modelKey)!;
 
-      const targetDirection = targetDirectionWithFloor(modelRow.target_price, reportPrice);
-      const allocationDirection = allocationDirectionFromAmount(modelRow.investment_amount);
+      const targetDirection = targetDirectionWithFloor(targetPrice, reportPrice);
+      const allocationDirection = allocationDirectionFromAmount(investmentAmount);
 
       applyPrediction(modelMetric, "target", targetDirection, actualDirection);
       applyPrediction(modelMetric, "allocation", allocationDirection, actualDirection);
       applyPrediction(overview, "target", targetDirection, actualDirection);
       applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+    };
+
+    for (const modelRow of modelRows) {
+      applyModelPrediction(modelRow.name, modelRow.target_price, modelRow.investment_amount);
+    }
+
+    const overallMeanTarget = toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
+    const overallMeanInvestment = toNumOrNull(payload.decision_card?.mean_investment_amount);
+    if (overallMeanTarget !== null || overallMeanInvestment !== null) {
+      applyModelPrediction("Overall", overallMeanTarget, overallMeanInvestment);
     }
 
     for (const tab of methodTabs) {

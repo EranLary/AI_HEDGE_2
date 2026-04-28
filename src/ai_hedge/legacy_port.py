@@ -5246,6 +5246,7 @@ def run_valuations(
     "Aswath Damodaran",
     "Charlie Munger",
     "Peter Lynch",
+    "Peter Thiel",
     "Howard Marks",
     "Bill Ackman",
     "Cathie Wood",

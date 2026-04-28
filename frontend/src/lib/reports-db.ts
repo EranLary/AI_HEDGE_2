@@ -355,3 +355,22 @@ export async function listDashboardsForDiscovery(): Promise<
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
   return rows;
 }
+
+/**
+ * Full historical dashboard payloads (no DISTINCT) for site-level analytics
+ * pages like Hit Rate.
+ */
+export async function listAllDashboardsForHitRate(): Promise<
+  { ticker: string; generated_at: string; dashboard: unknown }[]
+> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT r.ticker, r.generated_at, a.dashboard
+      FROM reports r
+      JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.deleted_at IS NULL
+     ORDER BY r.generated_at DESC;
+  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
+  return rows;
+}

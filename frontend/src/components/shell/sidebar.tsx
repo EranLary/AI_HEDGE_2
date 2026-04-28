@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Compass,
   FileText,
+  Target,
   Plus,
   Sparkles,
 } from "lucide-react";
@@ -26,6 +27,7 @@ type NavItem = {
 const GLOBAL_NAV: NavItem[] = [
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/discovery", label: "Discovery", icon: Compass },
+  { href: "/hit-rate", label: "Hit Rate", icon: Target },
 ];
 
 type SidebarProps = {

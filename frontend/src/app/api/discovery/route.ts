@@ -108,7 +108,10 @@ export async function GET() {
       (v) => Number.isFinite(v) && v > 0,
     );
     const confidenceCv = cvParts.length ? avgNums(cvParts) : Number.POSITIVE_INFINITY;
-    const positionPct = safeNumOrNull(payload.decision_card?.position_size_pct_of_notional);
+    const meanInvestmentAmount = safeNumOrNull(payload.decision_card?.mean_investment_amount);
+    const positionPct =
+      safeNumOrNull(payload.decision_card?.position_size_pct_of_notional) ??
+      (typeof meanInvestmentAmount === "number" ? (meanInvestmentAmount / 100000) * 100 : null);
     const combinedScore =
       safeNumOrNull(payload.decision_card?.combined_score) ?? combinedDecisionScore(positionPct, returnPct);
     const overallCv =
@@ -128,6 +131,7 @@ export async function GET() {
       overvaluation_pct: overvaluation,
       dispersion: confidenceCv,
       return_pct: returnPct,
+      investment_allocation_pct: positionPct,
       confidence_cv: confidenceCv,
       decision_label: decision.label,
       decision_tone: decision.tone,
@@ -139,16 +143,26 @@ export async function GET() {
   const topUndervalued = [...rows]
     .filter((row) => row.return_pct > 0)
     .sort((a, b) => b.return_pct - a.return_pct)
-    .slice(0, 10);
+    .slice(0, 20);
 
   const topOvervalued = [...rows]
     .filter((row) => row.return_pct < 0)
     .sort((a, b) => a.return_pct - b.return_pct)
-    .slice(0, 10);
+    .slice(0, 20);
 
   const topConviction = [...rows]
     .sort((a, b) => a.confidence_cv - b.confidence_cv)
-    .slice(0, 10);
+    .slice(0, 20);
+
+  const topHighestAllocation = [...rows]
+    .filter((row) => typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct))
+    .sort((a, b) => Number(b.investment_allocation_pct) - Number(a.investment_allocation_pct))
+    .slice(0, 20);
+
+  const topLowestAllocation = [...rows]
+    .filter((row) => typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct))
+    .sort((a, b) => Number(a.investment_allocation_pct) - Number(b.investment_allocation_pct))
+    .slice(0, 20);
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
@@ -157,6 +171,8 @@ export async function GET() {
     top_undervalued: topUndervalued,
     top_overvalued: topOvervalued,
     top_conviction: topConviction,
+    top_highest_allocation: topHighestAllocation,
+    top_lowest_allocation: topLowestAllocation,
     // Backward-compatible aliases.
     top_gems: topUndervalued,
     bubbles: topOvervalued,

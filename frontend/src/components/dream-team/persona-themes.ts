@@ -12,6 +12,7 @@ export const INVESTORS_ORDERED = [
   "Aswath Damodaran",
   "Charlie Munger",
   "Peter Lynch",
+  "Peter Thiel",
   "Howard Marks",
   "Bill Ackman",
   "Cathie Wood",
@@ -82,6 +83,14 @@ const THEMES: Record<string, PersonaTheme> = {
     accentSoft: "rgba(34, 211, 238, 0.18)",
     gradientFrom: "#164e63",
     gradientTo: "#082f49",
+  },
+  "Peter Thiel": {
+    role: "Contrarian Strategist",
+    tagline: "Look for secrets, asymmetric bets, and monopoly-scale upside.",
+    accent: "#a78bfa",
+    accentSoft: "rgba(167, 139, 250, 0.18)",
+    gradientFrom: "#4c1d95",
+    gradientTo: "#1f1147",
   },
   "Howard Marks": {
     role: "Cycles & Risk",

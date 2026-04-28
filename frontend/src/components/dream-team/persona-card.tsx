@@ -24,16 +24,37 @@ export function PersonaCard({
   member,
   ctx,
   currentPrice,
+  liveCurrentPrice,
   index,
   total,
 }: {
   member: PersonaCardData;
   ctx: CurrencyContext;
   currentPrice: number | null | undefined;
+  liveCurrentPrice: number | null | undefined;
   index: number;
   total: number;
 }) {
   const theme = getPersonaTheme(member.persona);
+
+  const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    if (Math.abs(value) < 1e-9) return 0;
+    return value > 0 ? 1 : -1;
+  };
+  const targetDirectionWithFloor = (target?: number | null, reportPrice?: number | null): -1 | 0 | 1 | null => {
+    if (typeof reportPrice !== "number" || !Number.isFinite(reportPrice)) return null;
+    const effectiveTarget =
+      typeof target === "number" && Number.isFinite(target)
+        ? (target < 0 ? 0 : target)
+        : 0;
+    return directionOf(effectiveTarget - reportPrice);
+  };
+  const verdictMark = (predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "✔" | "✖" | "-" => {
+    if (predicted === null || actual === null) return "-";
+    if (predicted === 0 || actual === 0) return "-";
+    return predicted === actual ? "✔" : "✖";
+  };
 
   const changePct =
     typeof currentPrice === "number" && typeof member.target_price === "number" && Math.abs(currentPrice) > 1e-9
@@ -56,6 +77,13 @@ export function PersonaCard({
         ? "hib-target-up"
         : "hib-target-down"
       : "text-zinc-200";
+  const actualDirection = directionOf(
+    typeof liveCurrentPrice === "number" && typeof currentPrice === "number"
+      ? liveCurrentPrice - currentPrice
+      : null,
+  );
+  const targetVerdict = verdictMark(targetDirectionWithFloor(member.target_price, currentPrice), actualDirection);
+  const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
 
@@ -90,7 +118,9 @@ export function PersonaCard({
 
         <dl className="mt-4 grid grid-cols-3 gap-3 sm:gap-6">
           <div className="min-w-0 leading-tight">
-            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">Target</dt>
+            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">
+              Target <span className="text-zinc-300">({targetVerdict})</span>
+            </dt>
             <dd className={`mt-0.5 truncate font-mono text-sm font-semibold ${priceTone}`}>
               {fmtMoney(member.target_price, ctx, "price")}
             </dd>
@@ -105,7 +135,9 @@ export function PersonaCard({
             </dd>
           </div>
           <div className="min-w-0 leading-tight">
-            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">Allocation</dt>
+            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">
+              Allocation <span className="text-zinc-300">({allocationVerdict})</span>
+            </dt>
             <dd className={`mt-0.5 truncate font-mono text-sm font-semibold ${allocationTone}`}>
               {typeof allocationPct === "number"
                 ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%`

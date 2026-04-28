@@ -1178,14 +1178,26 @@ def deepseek_simple_text(
         print("------------------------------------------------")
         print(prompt)
 
+    normalized_model = str(model or "").strip().lower()
+    model_name = str(model or "").strip()
+    # Keep legacy call sites stable while targeting explicit V4 models.
+    if normalized_model == "deepseek-chat":
+        model_name = "deepseek-v4-flash"
+    elif normalized_model == "deepseek-reasoner":
+        model_name = "deepseek-v4-pro"
+
     payload = {
-        "model": model,
+        "model": model_name,
         "temperature": temperature,
         "messages": [
             {"role": "system", "content": "Answer clearly and concisely."},
             {"role": "user", "content": prompt},
         ],
     }
+    # Preserve reasoner behavior by explicitly enabling thinking mode.
+    if normalized_model == "deepseek-reasoner":
+        payload["thinking"] = {"type": "enabled"}
+        payload["reasoning_effort"] = "high"
 
     session = _get_session(
         total_retries=max_retries,
@@ -2982,6 +2994,7 @@ def reset_file_if_not_empty(file_path: str = "analysis.txt") -> None:
 
 def generate_first_text(ticker, variables_dict, file_path: str = "analysis.txt"):
     title = f"# {ticker} - Analysis file"
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Write title as a real Markdown H1 (no "header: value" formatting)
     append_text_to_file(
@@ -2992,7 +3005,15 @@ def generate_first_text(ticker, variables_dict, file_path: str = "analysis.txt")
         add_timestamp=False
     )
 
-    # Add one blank line after title for readability
+    # Add generation datetime directly under the title.
+    append_text_to_file(
+        text=generated_at,
+        header=None,
+        file_path=file_path,
+        two_rows_n=False
+    )
+
+    # Add one blank line after header metadata for readability.
     append_text_to_file(
         text="",
         header=None,

@@ -1,6 +1,6 @@
 import { DashboardError } from "@/components/dashboard-chrome";
 import { LivePerformanceIsland } from "@/components/overview/live-performance";
-import { loadTickerData } from "@/lib/dashboard-server";
+import { getLivePerformance, loadTickerData } from "@/lib/dashboard-server";
 
 import { OverviewClient } from "./overview-client";
 
@@ -27,6 +27,7 @@ export default async function DashboardOverviewPage({
   if (!data) {
     return <DashboardError error="No data" ticker={upper} />;
   }
+  const live = await getLivePerformance(upper).catch(() => null);
 
   return (
     <OverviewClient
@@ -34,6 +35,7 @@ export default async function DashboardOverviewPage({
       data={data}
       reportsForTicker={reportsForTicker}
       resolvedReportId={resolvedReportId}
+      liveCurrentPrice={typeof live?.current_price === "number" ? live.current_price : null}
       livePerformanceSlot={
         <LivePerformanceIsland
           ticker={upper}

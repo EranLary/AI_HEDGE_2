@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Gem, Radar, ShieldAlert } from "lucide-react";
+import { Gem, Radar, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
@@ -27,6 +27,8 @@ type DiscoveryPayload = {
   top_undervalued: DiscoveryRow[];
   top_overvalued: DiscoveryRow[];
   top_conviction: DiscoveryRow[];
+  top_highest_allocation: DiscoveryRow[];
+  top_lowest_allocation: DiscoveryRow[];
 };
 
 function fmtPct(value: number): string {
@@ -50,17 +52,41 @@ function SectionCard({
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
-  metricLabel: "return" | "disagreement";
+  metricLabel: "return" | "disagreement" | "allocation";
 }) {
+  const [topN, setTopN] = useState<10 | 20>(10);
+  const shownRows = rows.slice(0, topN);
+  const canShow20 = rows.length > 10;
+
   return (
     <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h2 className="text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+        </div>
+        {canShow20 ? (
+          <div className="inline-flex rounded-md border border-white/15 bg-white/5 p-0.5 text-[10px] uppercase tracking-[0.12em]">
+            <button
+              type="button"
+              onClick={() => setTopN(10)}
+              className={`rounded px-2 py-1 transition ${topN === 10 ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"}`}
+            >
+              Top 10
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopN(20)}
+              className={`rounded px-2 py-1 transition ${topN === 20 ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"}`}
+            >
+              Top 20
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="space-y-2">
-            {rows.length ? (
-              rows.map((row, idx) => (
+            {shownRows.length ? (
+              shownRows.map((row, idx) => (
             <div key={`${title}-${row.ticker}-${row.updated_at}-${idx}`} className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -80,6 +106,15 @@ function SectionCard({
                     <p className="text-zinc-500">Return</p>
                     <p className={accent}>{fmtPct(row.return_pct)}</p>
                   </div>
+                ) : metricLabel === "allocation" ? (
+                  <div>
+                    <p className="text-zinc-500">Allocation</p>
+                    <p className={accent}>
+                      {typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct)
+                        ? fmtPct(row.investment_allocation_pct)
+                        : "N/A"}
+                    </p>
+                  </div>
                 ) : (
                   <div>
                     <p className="text-zinc-500">Disagreement Score</p>
@@ -97,7 +132,7 @@ function SectionCard({
             </div>
           ))
         ) : (
-          <p className="text-sm text-zinc-500">No runs in the selected 24-hour window.</p>
+          <p className="text-sm text-zinc-500">No rows available.</p>
         )}
       </div>
     </article>
@@ -149,7 +184,7 @@ export default function DiscoveryPage() {
             <p className="mb-4 text-sm text-zinc-400">
               Scanned {data.count} latest dashboards (one per ticker). Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
             </p>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <SectionCard
                 title="Most Undervalued"
                 icon={<Gem size={16} className="text-emerald-400" />}
@@ -170,6 +205,20 @@ export default function DiscoveryPage() {
                 rows={data.top_conviction}
                 accent="hib-conviction-accent"
                 metricLabel="disagreement"
+              />
+              <SectionCard
+                title="Highest Allocation"
+                icon={<TrendingUp size={16} className="text-emerald-400" />}
+                rows={data.top_highest_allocation}
+                accent="text-emerald-300"
+                metricLabel="allocation"
+              />
+              <SectionCard
+                title="Lowest Allocation"
+                icon={<TrendingDown size={16} className="text-red-400" />}
+                rows={data.top_lowest_allocation}
+                accent="text-red-300"
+                metricLabel="allocation"
               />
             </div>
           </>

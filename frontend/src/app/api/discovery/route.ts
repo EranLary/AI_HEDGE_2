@@ -155,12 +155,22 @@ export async function GET() {
     .slice(0, 20);
 
   const topHighestAllocation = [...rows]
-    .filter((row) => typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct))
+    .filter(
+      (row) =>
+        typeof row.investment_allocation_pct === "number" &&
+        Number.isFinite(row.investment_allocation_pct) &&
+        Number(row.investment_allocation_pct) > 0,
+    )
     .sort((a, b) => Number(b.investment_allocation_pct) - Number(a.investment_allocation_pct))
     .slice(0, 20);
 
   const topLowestAllocation = [...rows]
-    .filter((row) => typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct))
+    .filter(
+      (row) =>
+        typeof row.investment_allocation_pct === "number" &&
+        Number.isFinite(row.investment_allocation_pct) &&
+        Number(row.investment_allocation_pct) < 0,
+    )
     .sort((a, b) => Number(a.investment_allocation_pct) - Number(b.investment_allocation_pct))
     .slice(0, 20);
 

@@ -6,13 +6,13 @@ import {
   allocationDirectionFromAmount,
   targetDirectionWithFloor,
   verdictFromDirections,
-} from "@/lib/hit-rate-utils";
+} from "./hit-rate-utils";
 
 test("verdict: match and mismatch", () => {
-  assert.equal(verdictFromDirections(1, 1), "✔");
-  assert.equal(verdictFromDirections(-1, -1), "✔");
-  assert.equal(verdictFromDirections(1, -1), "✖");
-  assert.equal(verdictFromDirections(-1, 1), "✖");
+  assert.equal(verdictFromDirections(1, 1), "hit");
+  assert.equal(verdictFromDirections(-1, -1), "hit");
+  assert.equal(verdictFromDirections(1, -1), "miss");
+  assert.equal(verdictFromDirections(-1, 1), "miss");
 });
 
 test("verdict: neutral actual or predicted yields '-'", () => {
@@ -36,4 +36,3 @@ test("actual direction from live vs report price", () => {
   assert.equal(actualDirectionFromPrices(8, 10), -1);
   assert.equal(actualDirectionFromPrices(10, 10), 0);
 });
-

@@ -1,5 +1,5 @@
 export type Direction = -1 | 0 | 1 | null;
-export type Verdict = "✔" | "✖" | "-";
+export type Verdict = "hit" | "miss" | "-";
 
 export const NOTIONAL_BASE_USD = 100_000;
 
@@ -51,7 +51,7 @@ export function allocationDirectionFromAmount(investmentAmount: number | null | 
 export function verdictFromDirections(predicted: Direction, actual: Direction): Verdict {
   if (predicted === null || actual === null) return "-";
   if (predicted === 0 || actual === 0) return "-";
-  return predicted === actual ? "✔" : "✖";
+  return predicted === actual ? "hit" : "miss";
 }
 
 export function createAccumulator(): HitRateAccumulator {
@@ -59,11 +59,11 @@ export function createAccumulator(): HitRateAccumulator {
 }
 
 export function applyVerdict(acc: HitRateAccumulator, verdict: Verdict): void {
-  if (verdict === "✔") {
+  if (verdict === "hit") {
     acc.hits += 1;
     return;
   }
-  if (verdict === "✖") {
+  if (verdict === "miss") {
     acc.misses += 1;
     return;
   }
@@ -88,4 +88,3 @@ export function finalizeAccumulator(acc: HitRateAccumulator): HitRateCounts {
     hit_rate_pct: considered > 0 ? (acc.hits / considered) * 100 : null,
   };
 }
-

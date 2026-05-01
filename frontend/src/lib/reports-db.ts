@@ -159,6 +159,38 @@ export async function attributeReportToUser(opts: {
   return rows.length > 0;
 }
 
+export async function findReportIdBySourceRunId(opts: {
+  jobId: string;
+  ticker?: string;
+  source?: string;
+}): Promise<string | null> {
+  const sql = getSql();
+  if (!sql) return null;
+  const source = String(opts.source || "site");
+  const ticker = String(opts.ticker || "").trim().toUpperCase();
+  const rows = ticker
+    ? ((await sql`
+        SELECT id::text AS id
+          FROM reports
+         WHERE source = ${source}
+           AND source_run_id = ${opts.jobId}
+           AND ticker = ${ticker}
+           AND deleted_at IS NULL
+         ORDER BY generated_at DESC
+         LIMIT 1;
+      `) as Array<{ id: string }>)
+    : ((await sql`
+        SELECT id::text AS id
+          FROM reports
+         WHERE source = ${source}
+           AND source_run_id = ${opts.jobId}
+           AND deleted_at IS NULL
+         ORDER BY generated_at DESC
+         LIMIT 1;
+      `) as Array<{ id: string }>);
+  return rows[0]?.id || null;
+}
+
 /** Every report row, ordered by generated_at desc — for the /api/reports list. */
 export async function listAllReports(): Promise<DbReportSummary[]> {
   const sql = getSql();

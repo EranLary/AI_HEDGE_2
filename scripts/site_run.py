@@ -20,6 +20,13 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _job_id_from_status(existing_status: Dict[str, Any], output_dir: str) -> str:
+    from_status = str(existing_status.get("job_id", "") or "").strip()
+    if from_status:
+        return from_status
+    return Path(output_dir).name
+
+
 def _estimate_total_llm_calls() -> int:
     raw = str(os.getenv("SITE_RUN_LLM_TOTAL_ESTIMATE", "30") or "30").strip()
     try:
@@ -55,8 +62,9 @@ def main() -> int:
         except Exception:
             existing_status = {}
 
+    job_id = _job_id_from_status(existing_status, output_dir)
     running_payload: Dict[str, Any] = {
-        "job_id": str(existing_status.get("job_id", "") or ""),
+        "job_id": job_id,
         "ticker": ticker,
         "status": "running",
         "created_at": str(existing_status.get("created_at", _utc_now())),
@@ -70,6 +78,8 @@ def main() -> int:
         "llm_calls_note": "Estimated total calls for one full valuation + dashboard extraction run.",
         "result": None,
         "error": "",
+        "report_id": None,
+        "persistence_error": "",
     }
     _write_json(status_file, running_payload)
 
@@ -109,6 +119,55 @@ def main() -> int:
             run_source="site",
         )
 
+        # Ensure DB persistence before marking run as completed.
+        report_id = None
+        persistence_error = ""
+        try:
+            from ai_hedge.db.writer import (
+                find_report_id_by_source_run_id,
+                write_run_to_db,
+            )
+
+            report_id = find_report_id_by_source_run_id(
+                source_run_id=job_id,
+                source="site",
+                ticker=ticker,
+            )
+            if not report_id:
+                write_run_to_db(
+                    Path(output_dir).resolve() / ticker,
+                    source="site",
+                    max_attempts=5,
+                    retry_backoff_seconds=2.0,
+                )
+                report_id = find_report_id_by_source_run_id(
+                    source_run_id=job_id,
+                    source="site",
+                    ticker=ticker,
+                )
+            if not report_id:
+                persistence_error = (
+                    "Run artifacts were generated but DB report persistence failed. "
+                    "No reports row found for source_run_id."
+                )
+        except Exception as persist_exc:  # noqa: BLE001
+            persistence_error = f"DB persistence verification failed: {persist_exc}"
+
+        if not report_id:
+            failed_payload = {
+                **running_payload,
+                "status": "failed",
+                "finished_at": _utc_now(),
+                "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
+                "llm_progress_pct": 100.0,
+                "result": result,
+                "error": persistence_error or "DB persistence failed.",
+                "persistence_error": persistence_error or "DB persistence failed.",
+            }
+            _write_json(status_file, failed_payload)
+            legacy_port.deepseek_simple_text = original_deepseek
+            return 1
+
         completed_payload = {
             **running_payload,
             "status": "completed",
@@ -116,6 +175,7 @@ def main() -> int:
             "result": result,
             "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
             "llm_progress_pct": 100.0,
+            "report_id": report_id,
         }
         _write_json(status_file, completed_payload)
         legacy_port.deepseek_simple_text = original_deepseek

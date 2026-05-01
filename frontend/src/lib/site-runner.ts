@@ -19,6 +19,8 @@ export type RunStatusPayload = {
   llm_progress_pct?: number;
   llm_calls_note?: string;
   result?: Record<string, unknown> | null;
+  report_id?: string | null;
+  persistence_error?: string;
   error?: string;
   traceback?: string;
 };

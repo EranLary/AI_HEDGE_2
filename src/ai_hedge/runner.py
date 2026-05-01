@@ -906,7 +906,12 @@ def run_ticker_valuation(
 
     try:
         from ai_hedge.db.writer import write_run_to_db
-        write_run_to_db(out_dir.resolve(), source=run_source)
+        write_run_to_db(
+            out_dir.resolve(),
+            source=run_source,
+            max_attempts=3,
+            retry_backoff_seconds=1.5,
+        )
     except Exception as _db_exc:  # noqa: BLE001
         print(f"[runner] DB write skipped: {_db_exc}", file=sys.stderr)
 

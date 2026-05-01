@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 import { NextResponse } from "next/server";
 
-import { attributeReportToUser } from "@/lib/reports-db";
+import { attributeReportToUser, findReportIdBySourceRunId } from "@/lib/reports-db";
 import {
   readProgressLines,
   readRunStatus,
@@ -13,22 +13,57 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function attributeIfNeeded(status: RunStatusPayload): Promise<void> {
-  if (status.status !== "completed") return;
-  if (status.attributed) return;
-  if (!status.user_id) return;
-  const ok = await attributeReportToUser({
-    ticker: status.ticker,
-    jobId: status.job_id,
-    userId: status.user_id,
-  });
-  if (!ok) return;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function writeStatusSafe(status: RunStatusPayload): void {
   try {
-    const next: RunStatusPayload = { ...status, attributed: true };
-    fs.writeFileSync(runStatusFile(status.job_id), JSON.stringify(next, null, 2), "utf-8");
+    fs.writeFileSync(runStatusFile(status.job_id), JSON.stringify(status, null, 2), "utf-8");
   } catch {
-    // best-effort flag write; the SQL guard makes the UPDATE itself idempotent
+    // best effort
   }
+}
+
+async function hydrateReportIdIfMissing(status: RunStatusPayload): Promise<RunStatusPayload> {
+  if (status.status !== "completed") return status;
+  if (typeof status.report_id === "string" && status.report_id.trim()) return status;
+  const reportId = await findReportIdBySourceRunId({
+    jobId: status.job_id,
+    ticker: status.ticker,
+    source: "site",
+  });
+  if (!reportId) return status;
+  const next: RunStatusPayload = { ...status, report_id: reportId };
+  writeStatusSafe(next);
+  return next;
+}
+
+async function attributeCompletedIfNeeded(status: RunStatusPayload): Promise<RunStatusPayload> {
+  if (status.status !== "completed") return status;
+  if (status.attributed) return status;
+  if (!status.user_id || !UUID_RE.test(String(status.user_id))) return status;
+
+  let ok = false;
+  try {
+    ok = await attributeReportToUser({
+      ticker: status.ticker,
+      jobId: status.job_id,
+      userId: status.user_id,
+    });
+  } catch {
+    ok = false;
+  }
+  if (!ok) return status;
+
+  const next: RunStatusPayload = { ...status, attributed: true };
+  writeStatusSafe(next);
+  return next;
+}
+
+async function reconcileCompletedStatus(status: RunStatusPayload): Promise<RunStatusPayload> {
+  if (status.status !== "completed") return status;
+  const withReportId = await hydrateReportIdIfMissing(status);
+  const withAttribution = await attributeCompletedIfNeeded(withReportId);
+  return withAttribution;
 }
 
 export async function GET(
@@ -46,19 +81,19 @@ export async function GET(
     return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
 
-  await attributeIfNeeded(status);
+  const updatedStatus = await reconcileCompletedStatus(status);
 
-  const progress = readProgressLines(status.progress_file || "", 80);
-  const llmTotal = typeof status.llm_total_estimated === "number" ? status.llm_total_estimated : 0;
-  const llmDone = typeof status.llm_completed === "number" ? status.llm_completed : 0;
+  const progress = readProgressLines(updatedStatus.progress_file || "", 80);
+  const llmTotal = typeof updatedStatus.llm_total_estimated === "number" ? updatedStatus.llm_total_estimated : 0;
+  const llmDone = typeof updatedStatus.llm_completed === "number" ? updatedStatus.llm_completed : 0;
   const llmPct =
-    typeof status.llm_progress_pct === "number"
-      ? status.llm_progress_pct
+    typeof updatedStatus.llm_progress_pct === "number"
+      ? updatedStatus.llm_progress_pct
       : llmTotal > 0
         ? Math.min(100, Number(((llmDone / llmTotal) * 100).toFixed(2)))
         : 0;
   return NextResponse.json({
-    ...status,
+    ...updatedStatus,
     llm_total_estimated: llmTotal,
     llm_completed: llmDone,
     llm_progress_pct: llmPct,

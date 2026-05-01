@@ -70,6 +70,8 @@ export async function POST(req: Request) {
     llm_progress_pct: 0,
     llm_calls_note: "Estimated total calls for one full valuation + dashboard extraction run.",
     result: null,
+    report_id: null,
+    persistence_error: "",
     error: "",
   };
 
@@ -115,6 +117,8 @@ export async function POST(req: Request) {
       status: "failed",
       started_at: startedAt,
       finished_at: nowIso(),
+      report_id: null,
+      persistence_error: "Run process failed to spawn.",
       error: `Failed to spawn process: ${String(err)}`,
     };
     writeStatus(statusFile, failedStatus);

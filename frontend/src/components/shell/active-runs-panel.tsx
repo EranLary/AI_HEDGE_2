@@ -36,7 +36,7 @@ export function ActiveRunsPanel({ collapsed = false }: { collapsed?: boolean }) 
           return (
             <li key={run.job_id}>
               <Link
-                href={`/dashboard/${encodeURIComponent(run.ticker)}/overview`}
+                href={`/dashboard/${encodeURIComponent(run.ticker)}/summary`}
                 className="block rounded-md px-2 py-1 text-xs text-emerald-50 hover:bg-emerald-500/12"
               >
                 <div className="flex items-center justify-between gap-2">

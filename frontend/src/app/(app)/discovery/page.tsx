@@ -94,7 +94,7 @@ function SectionCard({
                   <p className="text-xs text-zinc-500">{row.company_name}</p>
                 </div>
                 <Link
-                  href={`/dashboard/${encodeURIComponent(row.ticker)}/overview`}
+                  href={`/dashboard/${encodeURIComponent(row.ticker)}/summary`}
                   className="rounded-md border border-white/15 px-2 py-1 text-xs text-zinc-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/10"
                 >
                   Open

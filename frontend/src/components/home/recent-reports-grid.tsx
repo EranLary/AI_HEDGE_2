@@ -32,7 +32,7 @@ export function RecentReportsGrid({ reports }: { reports: ReportListItem[] }) {
         {recent.map((r) => (
           <li key={r.report_id}>
             <Link
-              href={`/dashboard/${encodeURIComponent(r.ticker)}/overview?report=${encodeURIComponent(r.report_id)}`}
+              href={`/dashboard/${encodeURIComponent(r.ticker)}/summary?report=${encodeURIComponent(r.report_id)}`}
               className="block rounded-xl border border-white/10 bg-zinc-950/70 px-4 py-3 transition hover:border-emerald-400/50 hover:bg-emerald-500/5"
             >
               <div className="flex items-center justify-between gap-3">

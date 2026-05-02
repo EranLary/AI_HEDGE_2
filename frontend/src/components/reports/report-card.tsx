@@ -22,7 +22,7 @@ function recommendationTone(rec: string | null): { label: string; cls: string } 
 }
 
 export function ReportCard({ report }: { report: DbReportSummary }) {
-  const href = `/dashboard/${encodeURIComponent(report.ticker)}/overview?report=${encodeURIComponent(report.id)}`;
+  const href = `/dashboard/${encodeURIComponent(report.ticker)}/summary?report=${encodeURIComponent(report.id)}`;
   const rec = recommendationTone(report.recommendation);
   const company = report.company_name || report.ticker;
 

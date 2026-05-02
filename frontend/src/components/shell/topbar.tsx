@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, CandlestickChart, Download, FileText, Menu, Scale, Users } from "lucide-react";
+import { BarChart3, CandlestickChart, Download, FileText, Menu, Scale, ScrollText, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -14,7 +14,7 @@ type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: n
 
 const SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
-  { slug: "summary", label: "Summary", icon: FileText },
+  { slug: "summary", label: "Summary", icon: ScrollText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
@@ -71,7 +71,7 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
 function TickerBadge({ activeTicker, suffix }: { activeTicker: string; suffix: string }) {
   return (
     <Link
-      href={`/dashboard/${encodeURIComponent(activeTicker)}/overview${suffix}`}
+      href={`/dashboard/${encodeURIComponent(activeTicker)}/summary${suffix}`}
       className="hib-breadcrumb inline-flex items-center rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
     >
       <strong>{activeTicker}</strong>

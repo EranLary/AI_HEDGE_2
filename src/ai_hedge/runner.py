@@ -575,8 +575,33 @@ def run_ticker_valuation(
 
     text = legacy.load_text_from_file("analysis.txt")
     regular_text = str(text or "").strip()
-    sec_short_text = ""
     notes: List[str] = []
+
+    # SEC pre-decision Q&A: generate SEC-focused diligence questions from initial
+    # analysis + all reports, then answer from SEC filing text.
+    try:
+        from .service import build_sec_question_answer_text
+
+        sec_qna_out = build_sec_question_answer_text(
+            ticker=ticker,
+            analysis_text=regular_text,
+            files_dict=files_dict,
+            financial_dict=financial_dict,
+        )
+        sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
+        sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
+        if sec_qna_out.get("status") == "success" and sec_qna_text:
+            legacy.append_text_to_file(
+                text=sec_qna_text,
+                header="SEC Pre-Decision Questions & Answers",
+            )
+            print(f"SEC pre-decision Q&A generated successfully for {ticker}")
+        elif sec_qna_errors:
+            notes.extend(sec_qna_errors[:3])
+    except Exception as sec_qna_exc:
+        notes.append(f"SEC pre-decision Q&A generation failed: {sec_qna_exc}")
+
+    sec_short_text = ""
     sec_fallback_used = False
     sec_fallback_message = ""
     try:

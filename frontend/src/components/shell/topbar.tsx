@@ -14,6 +14,7 @@ type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: n
 
 const SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
+  { slug: "summary", label: "Summary", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },

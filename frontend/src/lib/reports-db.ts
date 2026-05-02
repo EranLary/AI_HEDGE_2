@@ -406,3 +406,19 @@ export async function listAllDashboardsForHitRate(): Promise<
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
   return rows;
 }
+
+export async function listDashboardsForTicker(ticker: string): Promise<
+  { ticker: string; generated_at: string; dashboard: unknown }[]
+> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT r.ticker, r.generated_at, a.dashboard
+      FROM reports r
+      JOIN report_artifacts a ON a.report_id = r.id
+     WHERE r.deleted_at IS NULL
+       AND r.ticker = ${String(ticker || "").toUpperCase()}
+     ORDER BY r.generated_at DESC;
+  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
+  return rows;
+}

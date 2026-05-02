@@ -186,6 +186,16 @@ export function OverviewClient({
   return (
     <div>
       <ReportChipRow ticker={upper} reports={reportsForTicker} currentReportId={resolvedReportId} />
+      {reportsForTicker.length > 1 ? (
+        <div className="mb-4">
+          <Link
+            href={`/dashboard/${encodeURIComponent(upper)}/summary`}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/30 hover:text-zinc-100"
+          >
+            Open Overall Summary <ArrowRight size={12} />
+          </Link>
+        </div>
+      ) : null}
 
       {resolvedReportId ? (
         <div className="mb-3 flex justify-end">

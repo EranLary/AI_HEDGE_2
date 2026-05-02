@@ -3,8 +3,14 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { DashboardPayload, DiscoveryRow } from "@/lib/dashboard-types";
-import { listDashboardsForDiscovery } from "@/lib/reports-db";
+import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardFiles, readJson } from "@/lib/server-outputs";
+import {
+  computeTickerSummaryAggregation,
+  filterReportsByWindow,
+  type SummarySourceReport,
+} from "@/lib/ticker-summary-aggregate";
 
 function safeNum(v: unknown): number {
   const n = Number(v);
@@ -47,11 +53,24 @@ function decisionFromAdjustedScore(adjustedScore: number): {
   return { label: "Strong Sell", tone: "sell" };
 }
 
+function reportMs(value: string): number {
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function meanCurrentPriceInWindow(reports: SummarySourceReport[]): number | null {
+  const values = reports
+    .map((report) => safeNumOrNull(report.payload.valuation_hub?.consensus?.current_price))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (!values.length) return null;
+  return avgNums(values);
+}
+
 async function loadDashboards(): Promise<
   Array<{ ticker: string; payload: DashboardPayload; updatedAt: string; sourceLabel: string }>
 > {
   try {
-    const dbRows = await listDashboardsForDiscovery();
+    const dbRows = await listAllDashboardsForHitRate();
     if (dbRows.length) {
       return dbRows.map((r) => ({
         ticker: String(r.ticker).toUpperCase(),
@@ -82,51 +101,61 @@ export async function GET() {
   const items = await loadDashboards();
 
   const rows: DiscoveryRow[] = [];
-  const seenTickers = new Set<string>();
+  const byTicker = new Map<string, SummarySourceReport[]>();
   for (const item of items) {
-    const payload = item.payload;
-    if (!payload) {
-      continue;
+    const ticker = String(item.ticker || "").toUpperCase();
+    if (!ticker) continue;
+    if (!byTicker.has(ticker)) {
+      byTicker.set(ticker, []);
     }
-    const ticker = item.ticker;
-    if (!ticker || seenTickers.has(ticker)) {
-      continue;
-    }
+    byTicker.get(ticker)!.push({
+      ticker,
+      generatedAt: item.updatedAt,
+      payload: item.payload,
+    });
+  }
 
-    const current = safeNum(payload.valuation_hub?.consensus?.current_price);
-    const mean = safeNum(payload.valuation_hub?.consensus?.mean_target_price);
-    if (!current || !mean) {
-      continue;
-    }
-    const returnPct = ((mean - current) / current) * 100;
-    const overvaluation = ((current - mean) / current) * 100;
-    const priceCvRaw = safeNum(payload.valuation_hub?.consensus?.cv);
-    const investmentCvRaw = Array.isArray(payload.valuation_hub?.consensus?.lmil)
-      ? safeNum(payload.valuation_hub?.consensus?.lmil?.[1])
-      : 0;
-    const cvParts = [Math.abs(priceCvRaw), Math.abs(investmentCvRaw)].filter(
-      (v) => Number.isFinite(v) && v > 0,
-    );
-    const confidenceCv = cvParts.length ? avgNums(cvParts) : Number.POSITIVE_INFINITY;
-    const meanInvestmentAmount = safeNumOrNull(payload.decision_card?.mean_investment_amount);
+  const tickers = Array.from(byTicker.keys());
+  const livePriceMap = await getLiveCurrentPricesBatch(tickers);
+
+  for (const ticker of tickers) {
+    const sourceReports = byTicker.get(ticker) || [];
+    const windowReports = filterReportsByWindow(sourceReports, "3m");
+    if (!windowReports.length) continue;
+
+    const summary = computeTickerSummaryAggregation(sourceReports, "3m");
+    const meanTarget = safeNum(summary.overview.mean_target_price);
+    const liveCurrent = safeNumOrNull(livePriceMap[ticker]);
+    const fallbackCurrent = meanCurrentPriceInWindow(windowReports);
+    const current = typeof liveCurrent === "number" && liveCurrent > 0 ? liveCurrent : fallbackCurrent;
+    if (!current || !meanTarget) continue;
+
+    const returnPct = ((meanTarget - current) / current) * 100;
+    const overvaluation = ((current - meanTarget) / current) * 100;
+    const confidenceCv =
+      typeof summary.overview.mean_disagreement_score === "number" && Number.isFinite(summary.overview.mean_disagreement_score)
+        ? Math.abs(summary.overview.mean_disagreement_score)
+        : Number.POSITIVE_INFINITY;
     const positionPct =
-      safeNumOrNull(payload.decision_card?.position_size_pct_of_notional) ??
-      (typeof meanInvestmentAmount === "number" ? (meanInvestmentAmount / 100000) * 100 : null);
-    const combinedScore =
-      safeNumOrNull(payload.decision_card?.combined_score) ?? combinedDecisionScore(positionPct, returnPct);
-    const overallCv =
-      safeNumOrNull(payload.decision_card?.overall_cv) ??
-      (Number.isFinite(confidenceCv) ? confidenceCv : null);
-    const adjustedScore =
-      safeNumOrNull(payload.decision_card?.adjusted_score) ??
-      confidenceAdjustedScore(combinedScore, overallCv);
+      typeof summary.overview.mean_allocation_pct === "number" && Number.isFinite(summary.overview.mean_allocation_pct)
+        ? summary.overview.mean_allocation_pct
+        : null;
+    const combinedScore = combinedDecisionScore(positionPct, returnPct);
+    const adjustedScore = confidenceAdjustedScore(combinedScore, Number.isFinite(confidenceCv) ? confidenceCv : null);
     const decision = decisionFromAdjustedScore(
       typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0,
     );
 
+    const latestWindowReport = windowReports
+      .slice()
+      .sort((a, b) => reportMs(b.generatedAt) - reportMs(a.generatedAt))[0];
+
     rows.push({
       ticker,
-      company_name: payload.header?.company_name || ticker || path.basename(item.sourceLabel),
+      company_name:
+        latestWindowReport?.payload?.header?.company_name ||
+        ticker ||
+        path.basename(String(ticker)),
       margin_safety_pct: returnPct,
       overvaluation_pct: overvaluation,
       dispersion: confidenceCv,
@@ -135,9 +164,8 @@ export async function GET() {
       confidence_cv: confidenceCv,
       decision_label: decision.label,
       decision_tone: decision.tone,
-      updated_at: item.updatedAt,
+      updated_at: latestWindowReport?.generatedAt || new Date().toISOString(),
     });
-    seenTickers.add(ticker);
   }
 
   const topUndervalued = [...rows]
@@ -176,7 +204,8 @@ export async function GET() {
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
-    window_hours: null,
+    window: "3m",
+    window_hours: 24 * 90,
     count: rows.length,
     top_undervalued: topUndervalued,
     top_overvalued: topOvervalued,

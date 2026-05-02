@@ -101,6 +101,13 @@ function toneClassFromTarget(target: number | null | undefined, liveCurrent: num
   return target > liveCurrent ? "hib-target-up" : "hib-target-down";
 }
 
+function compareRowsByMeanTargetDesc(a: MeanRow, b: MeanRow): number {
+  const av = typeof a.mean_target_price === "number" && Number.isFinite(a.mean_target_price) ? a.mean_target_price : Number.NEGATIVE_INFINITY;
+  const bv = typeof b.mean_target_price === "number" && Number.isFinite(b.mean_target_price) ? b.mean_target_price : Number.NEGATIVE_INFINITY;
+  if (bv !== av) return bv - av;
+  return a.label.localeCompare(b.label);
+}
+
 function MeanTable({
   title,
   rows,
@@ -113,8 +120,26 @@ function MeanTable({
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+            <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
+              {fmtMoney(row.mean_target_price)}
+            </p>
+            <p className={`mt-1 text-sm font-semibold ${toneClassFromSign(row.mean_allocation_pct)}`}>
+              {fmtPct(row.mean_allocation_pct)}
+            </p>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-400">
+              <span>Target N {row.target_samples}</span>
+              <span>Allocation N {row.allocation_samples}</span>
+            </div>
+          </article>
+        ))}
+        {!rows.length ? <p className="text-sm text-zinc-500">No rows available.</p> : null}
+      </div>
       <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="hidden w-full min-w-[760px] text-sm sm:table">
           <thead className="border-b border-white/10 text-zinc-400">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
@@ -156,8 +181,18 @@ function AssumptionsTable({ rows }: { rows: AssumptionRow[] }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">Assumptions Mean Values</h2>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+            <p className="mt-1 text-lg font-bold text-zinc-100">{fmtNum(row.mean_value)}</p>
+            <p className="mt-1 text-xs text-zinc-400">N {row.samples}</p>
+          </article>
+        ))}
+        {!rows.length ? <p className="text-sm text-zinc-500">No assumptions available.</p> : null}
+      </div>
       <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className="hidden w-full min-w-[560px] text-sm sm:table">
           <thead className="border-b border-white/10 text-zinc-400">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Assumption</th>
@@ -240,6 +275,14 @@ export default function DashboardSummaryPage({
     Math.abs(data.overview.live_current_price) > 1e-9
       ? ((data.overview.mean_target_price - data.overview.live_current_price) / data.overview.live_current_price) * 100
       : null;
+  const modelRowsSorted = useMemo(
+    () => (data?.by_model || []).slice().sort(compareRowsByMeanTargetDesc),
+    [data?.by_model],
+  );
+  const valuatorRowsSorted = useMemo(
+    () => (data?.by_valuator || []).slice().sort(compareRowsByMeanTargetDesc),
+    [data?.by_valuator],
+  );
 
   return (
     <div className="space-y-4">
@@ -324,12 +367,12 @@ export default function DashboardSummaryPage({
 
           <MeanTable
             title="By Model Mean Target + Mean Allocation"
-            rows={data.by_model}
+            rows={modelRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
           />
           <MeanTable
             title="By Valuator Mean Target + Mean Allocation"
-            rows={data.by_valuator}
+            rows={valuatorRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
           />
           <AssumptionsTable rows={data.assumptions} />

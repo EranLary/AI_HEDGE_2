@@ -269,8 +269,30 @@ export function OverviewClient({
             Open full valuation <ArrowRight size={12} />
           </Link>
         </div>
+        <div className="space-y-2 sm:hidden">
+          {targetRows.map((row) => {
+            const changePctRow =
+              typeof current === "number" && typeof row.target_price === "number" && Math.abs(current) > 1e-9
+                ? ((Number(row.target_price) - current) / current) * 100
+                : null;
+            const tone =
+              typeof changePctRow === "number" && Math.abs(changePctRow) > 1e-9
+                ? changePctRow > 0
+                  ? "hib-target-up"
+                  : "hib-target-down"
+                : "text-zinc-200";
+            return (
+              <article key={`${row.name}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.name}</p>
+                <p className="mt-1 text-xl font-bold text-zinc-100">{fmtMoneyCompact(row.target_price, ctx, "price")}</p>
+                <p className={`mt-1 text-sm font-semibold ${tone}`}>{fmtPct(changePctRow)}</p>
+              </article>
+            );
+          })}
+          {!targetRows.length ? <p className="text-sm text-zinc-500">No models yielded a target.</p> : null}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
-          <table className="w-full min-w-[560px] text-xs">
+          <table className="hidden w-full min-w-[560px] text-xs sm:table">
             <thead className="border-b border-white/10 text-zinc-400">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold uppercase tracking-[0.14em]">Method</th>

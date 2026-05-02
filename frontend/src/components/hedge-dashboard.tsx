@@ -1245,8 +1245,37 @@ export function HedgeDashboard({
                     <div className="mb-2 px-1 text-xs text-zinc-400">
                       Price table
                     </div>
+                    <div className="space-y-2 sm:hidden">
+                      {targetTableRows.map((row) => {
+                        const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                        const rowDecision = getFinalDecisionSignal(rowAdjustedScore);
+                        const rowDecisionToneClass =
+                          rowDecision.tone === "positive"
+                            ? "hib-target-up"
+                            : rowDecision.tone === "negative"
+                              ? "hib-target-down"
+                              : "text-zinc-200";
+                        return (
+                          <article key={`${row.name}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.name}</p>
+                            <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
+                              {fmtTargetOrFloor(row.target, currencyContext)}
+                            </p>
+                            <div className="mt-1 flex items-center justify-between gap-2 text-sm">
+                              <span className={`font-semibold ${toneClassFromSign(row.changePct)}`}>
+                                {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
+                              </span>
+                              <span className={`font-semibold ${toneClassFromSign(row.investment)}`}>
+                                {fmtNotionalPct(row.investment)}
+                              </span>
+                            </div>
+                            <p className={`mt-1 text-xs font-semibold ${rowDecisionToneClass}`}>{rowDecision.label}</p>
+                          </article>
+                        );
+                      })}
+                    </div>
                     <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="hidden w-full min-w-[640px] text-sm sm:table">
                       <thead className="border-b border-white/10 text-zinc-400">
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Model Name</th>

@@ -114,8 +114,24 @@ function HitRateTable({
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+            <p className="mt-1 text-xl font-bold text-zinc-100">Combined {fmtHitRate(row.combined.hit_rate_pct)}</p>
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
+              <span className="text-zinc-300">Alloc {fmtHitRate(row.allocations.hit_rate_pct)}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
+              <CountsPills metric={row.combined} />
+            </div>
+          </article>
+        ))}
+        {!rows.length ? <p className="text-sm text-zinc-500">No rows available.</p> : null}
+      </div>
       <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-        <table className="w-full min-w-[1080px] text-sm">
+        <table className="hidden w-full min-w-[1080px] text-sm sm:table">
           <thead className="border-b border-white/10 text-zinc-400">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
@@ -235,4 +251,3 @@ export default function HitRatePage() {
     </div>
   );
 }
-

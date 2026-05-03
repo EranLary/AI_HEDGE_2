@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+from uuid import uuid4
 from unittest.mock import patch
 
 from ai_hedge import maya_reports
@@ -104,6 +108,29 @@ def test_empty_results_are_safe():
     ):
         out = maya_reports.fetch_latest_maya_reports("STRS.TA")
     assert out == {}
+
+
+def test_unresolved_ta_company_id_is_recorded():
+    unresolved_path = Path("tests") / f"_tmp_maya_unresolved_{uuid4().hex}.json"
+    env = {"MAYA_UNRESOLVED_TICKERS_PATH": str(unresolved_path)}
+    try:
+        with patch.dict(os.environ, env, clear=False), patch(
+            "ai_hedge.maya_reports._resolve_company_id", return_value=None
+        ):
+            out = maya_reports.fetch_latest_maya_reports("MISS.TA")
+
+        assert out == {}
+        payload = json.loads(unresolved_path.read_text(encoding="utf-8"))
+        assert "MISS.TA" in payload
+        row = payload["MISS.TA"]
+        assert row["last_reason"] == "company_id_not_found"
+        assert int(row["count"]) >= 1
+        assert row["first_seen_at"]
+        assert row["last_seen_at"]
+        assert isinstance(row["terms"], list)
+    finally:
+        if unresolved_path.exists():
+            unresolved_path.unlink()
 
 
 def test_sec_payload_contract_accepts_maya_dict():

@@ -4,7 +4,7 @@ import io
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -113,6 +113,13 @@ def _override_config_path() -> Path:
     return _repo_root() / "config" / "maya_company_overrides.json"
 
 
+def _unresolved_company_log_path() -> Path:
+    env_path = str(os.getenv("MAYA_UNRESOLVED_TICKERS_PATH", "")).strip()
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+    return _repo_root() / "config" / "maya_unresolved_company_ids.json"
+
+
 def _load_company_overrides() -> Dict[str, int]:
     path = _override_config_path()
     if not path.exists():
@@ -133,6 +140,43 @@ def _load_company_overrides() -> Dict[str, int]:
         if key and val > 0:
             out[key] = val
     return out
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _record_unresolved_company_id(ticker: str) -> None:
+    ticker_u = _normalize_ticker(ticker)
+    if not ticker_u or not ticker_u.endswith(".TA"):
+        return
+
+    path = _unresolved_company_log_path()
+    try:
+        existing: Dict[str, Any] = {}
+        if path.exists():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                existing = raw
+
+        prev = existing.get(ticker_u, {}) if isinstance(existing.get(ticker_u, {}), dict) else {}
+        now = _utc_now_iso()
+        count = int(prev.get("count", 0) or 0) + 1
+        terms = _collect_ticker_terms(ticker_u)
+
+        existing[ticker_u] = {
+            "count": count,
+            "first_seen_at": str(prev.get("first_seen_at", "") or now),
+            "last_seen_at": now,
+            "last_reason": "company_id_not_found",
+            "terms": terms[:8],
+        }
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        # Best effort only; fetch flow should never fail on logging.
+        return
 
 
 def _safe_request_json(
@@ -616,6 +660,7 @@ def fetch_latest_maya_reports(ticker: str) -> Dict[str, Dict[str, Any]]:
 
     company_id = _resolve_company_id(ticker_u, session)
     if not company_id:
+        _record_unresolved_company_id(ticker_u)
         return {}
 
     annual_primary = _pick_latest_annual(session, company_id=company_id, lang="he")

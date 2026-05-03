@@ -123,6 +123,61 @@ def _format_sec_sources(files_dict: Optional[Dict[str, object]]) -> str:
     return ", ".join(entries)
 
 
+def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
+    explicit = str(raw.get("source", "") or "").strip().upper()
+    if explicit in {"SEC", "MAYA"}:
+        return explicit
+    if str(form_type or "").strip().upper().startswith("MAYA"):
+        return "MAYA"
+    return "SEC"
+
+
+def _build_sec_sources_footer(files_dict: Optional[Dict[str, object]]) -> str:
+    if not _has_filing_text(files_dict):
+        return ""
+
+    sources: List[str] = []
+    annual_date = ""
+    quarterly_date = ""
+
+    if isinstance(files_dict, dict):
+        for form_type, raw in files_dict.items():
+            if not isinstance(raw, dict):
+                continue
+            if not str(raw.get("text", "") or "").strip():
+                continue
+
+            source = _filing_source_label(str(form_type or ""), raw)
+            if source not in sources:
+                sources.append(source)
+
+            date = str(raw.get("date", "") or "").strip()
+            form_u = str(form_type or "").strip().upper()
+            title_u = str(raw.get("title", "") or "").strip().upper()
+
+            if not annual_date:
+                if "MAYA ANNUAL" in form_u or "10-K" in form_u or "20-F" in form_u or "ANNUAL" in title_u:
+                    annual_date = date
+
+            if not quarterly_date:
+                if "MAYA QUARTERLY" in form_u or "10-Q" in form_u or "6-K" in form_u or "QUARTER" in title_u or "Q1" in title_u or "Q2" in title_u or "Q3" in title_u or "Q4" in title_u:
+                    quarterly_date = date
+
+    if not sources:
+        return ""
+
+    source_label = ", ".join(sources)
+    annual_out = annual_date or "Not available"
+    quarterly_out = quarterly_date or "Not available"
+    lines = [
+        "## SEC Section Sources",
+        f"- Source: {source_label}",
+        f"- Annual report date: {annual_out}",
+        f"- Quarterly report date: {quarterly_out}",
+    ]
+    return "\n".join(lines).strip()
+
+
 def _has_filing_text(files_dict: Optional[Dict[str, object]]) -> bool:
     if not isinstance(files_dict, dict):
         return False
@@ -931,6 +986,9 @@ def run_ticker_valuation(
                 merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
 
             merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
+            sources_footer = _build_sec_sources_footer(files_dict)
+            if sources_footer:
+                merged_text = f"{merged_text}\n\n---\n\n{sources_footer}".strip()
             if merged_text:
                 merged_pdf_source.write_text(merged_text + "\n", encoding="utf-8")
                 convert_text_to_pdf(merged_pdf_source, target_pdf, target_html)

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { attributeReportToUser, findReportIdBySourceRunId } from "@/lib/reports-db";
 import {
+  reconcileStaleRunsAfterRestart,
   readProgressLines,
   readRunStatus,
   runStatusFile,
@@ -70,6 +71,8 @@ export async function GET(
   _: Request,
   context: { params: Promise<{ jobId: string }> },
 ) {
+  reconcileStaleRunsAfterRestart();
+
   const { jobId } = await context.params;
   const cleanJobId = String(jobId || "").trim();
   if (!cleanJobId) {

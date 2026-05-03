@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import {
+  reconcileStaleRunsAfterRestart,
   TICKER_RE,
   type RunStatusPayload,
   repoRoot,
@@ -29,6 +30,8 @@ function writeStatus(filePath: string, payload: RunStatusPayload): void {
 }
 
 export async function POST(req: Request) {
+  reconcileStaleRunsAfterRestart();
+
   const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
   const session = await auth();
   const userId = session?.user?.id || (bypassAuth ? "local-dev" : "");

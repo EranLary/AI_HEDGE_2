@@ -123,6 +123,17 @@ def _format_sec_sources(files_dict: Optional[Dict[str, object]]) -> str:
     return ", ".join(entries)
 
 
+def _has_filing_text(files_dict: Optional[Dict[str, object]]) -> bool:
+    if not isinstance(files_dict, dict):
+        return False
+    for raw in files_dict.values():
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("text", "") or "").strip():
+            return True
+    return False
+
+
 def _merge_unique_lines(base: List[str], extra: List[str], limit: int = 12) -> List[str]:
     out: List[str] = []
     seen = set()
@@ -577,87 +588,99 @@ def run_ticker_valuation(
     regular_text = str(text or "").strip()
     notes: List[str] = []
 
-    # SEC pre-decision Q&A: generate SEC-focused diligence questions from initial
-    # analysis + all reports, then answer from SEC filing text.
-    try:
-        from .service import build_sec_question_answer_text
+    # SEC/MAYA pre-decision Q&A: run only when filing text exists.
+    if _has_filing_text(files_dict):
+        try:
+            from .service import build_sec_question_answer_text
 
-        sec_qna_out = build_sec_question_answer_text(
-            ticker=ticker,
-            analysis_text=regular_text,
-            files_dict=files_dict,
-            financial_dict=financial_dict,
-        )
-        sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
-        sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
-        if sec_qna_out.get("status") == "success" and sec_qna_text:
-            legacy.append_text_to_file(
-                text=sec_qna_text,
-                header="SEC Pre-Decision Questions & Answers",
+            sec_qna_out = build_sec_question_answer_text(
+                ticker=ticker,
+                analysis_text=regular_text,
+                files_dict=files_dict,
+                financial_dict=financial_dict,
             )
-            print(f"SEC pre-decision Q&A generated successfully for {ticker}")
-        elif sec_qna_errors:
-            notes.extend(sec_qna_errors[:3])
-    except Exception as sec_qna_exc:
-        notes.append(f"SEC pre-decision Q&A generation failed: {sec_qna_exc}")
+            sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
+            sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
+            if sec_qna_out.get("status") == "success" and sec_qna_text:
+                legacy.append_text_to_file(
+                    text=sec_qna_text,
+                    header="SEC Pre-Decision Questions & Answers",
+                )
+                print(f"SEC pre-decision Q&A generated successfully for {ticker}")
+            elif sec_qna_errors:
+                notes.extend(sec_qna_errors[:3])
+        except Exception as sec_qna_exc:
+            notes.append(f"SEC pre-decision Q&A generation failed: {sec_qna_exc}")
 
     sec_short_text = ""
     sec_fallback_used = False
     sec_fallback_message = ""
-    try:
-        from .service import build_sec_short_analysis_text
-
-        sec_out = build_sec_short_analysis_text(
-            ticker=ticker,
-            info_dict=info_dict,
-            files_dict=files_dict,
-            financial_dict=financial_dict,
-        )
-
-        sec_errors = [str(e) for e in sec_out.get("errors", [])]
-        sec_candidate = str(sec_out.get("text", "")).strip()
-        if sec_out.get("status") == "success" and sec_candidate:
-            sec_short_text = sec_candidate
-            legacy.append_text_to_file(
-                text=sec_short_text,
-                header="SEC Short Analysis Context",
-            )
-            print(f"SEC short analysis generated successfully for {ticker}")
-            
-            if sec_errors:
-                legacy.append_text_to_file(
-                    text="\n".join(sec_errors[:3]),
-                    header="SEC Short Analysis Notes",
-                )
-                notes.extend(sec_errors[:3])
-        else:
-            warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
-            legacy.append_text_to_file(
-                text=warn,
-                header="SEC Short Analysis Context (Warning)",
-            )
-            sec_fallback_used = True
-            sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
-            notes.append(
-                "SEC short analysis failed or was empty. "
-                "Valuation fallback applied: using regular analysis text for the combined pass."
-            )
-            if sec_errors:
-                notes.extend(sec_errors[:3])
-    except Exception as sec_exc:
-        warn_text = f"SEC short analysis generation failed: {sec_exc}"
+    if not _has_filing_text(files_dict):
         legacy.append_text_to_file(
-            text=warn_text,
+            text="No filing text available in files_dict (SEC/MAYA). Continuing with regular analysis only.",
             header="SEC Short Analysis Context (Warning)",
         )
-        print(f"Warning: SEC short analysis generation failed for {ticker}.")
         sec_fallback_used = True
-        sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
+        sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
         notes.append(
-            "SEC short analysis generation raised an exception. "
+            "No filing text available. "
             "Valuation fallback applied: using regular analysis text for the combined pass."
         )
-        notes.append(warn_text)
+    else:
+        try:
+            from .service import build_sec_short_analysis_text
+
+            sec_out = build_sec_short_analysis_text(
+                ticker=ticker,
+                info_dict=info_dict,
+                files_dict=files_dict,
+                financial_dict=financial_dict,
+            )
+
+            sec_errors = [str(e) for e in sec_out.get("errors", [])]
+            sec_candidate = str(sec_out.get("text", "")).strip()
+            if sec_out.get("status") == "success" and sec_candidate:
+                sec_short_text = sec_candidate
+                legacy.append_text_to_file(
+                    text=sec_short_text,
+                    header="SEC Short Analysis Context",
+                )
+                print(f"SEC short analysis generated successfully for {ticker}")
+
+                if sec_errors:
+                    legacy.append_text_to_file(
+                        text="\n".join(sec_errors[:3]),
+                        header="SEC Short Analysis Notes",
+                    )
+                    notes.extend(sec_errors[:3])
+            else:
+                warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
+                legacy.append_text_to_file(
+                    text=warn,
+                    header="SEC Short Analysis Context (Warning)",
+                )
+                sec_fallback_used = True
+                sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
+                notes.append(
+                    "SEC short analysis failed or was empty. "
+                    "Valuation fallback applied: using regular analysis text for the combined pass."
+                )
+                if sec_errors:
+                    notes.extend(sec_errors[:3])
+        except Exception as sec_exc:
+            warn_text = f"SEC short analysis generation failed: {sec_exc}"
+            legacy.append_text_to_file(
+                text=warn_text,
+                header="SEC Short Analysis Context (Warning)",
+            )
+            print(f"Warning: SEC short analysis generation failed for {ticker}.")
+            sec_fallback_used = True
+            sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
+            notes.append(
+                "SEC short analysis generation raised an exception. "
+                "Valuation fallback applied: using regular analysis text for the combined pass."
+            )
+            notes.append(warn_text)
     sec_sources = _format_sec_sources(files_dict)
     _append_progress(
         progress_file,

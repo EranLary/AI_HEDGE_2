@@ -829,7 +829,7 @@ def get_largest_6k_in_range(json_data, months_back=3, ref_date_str=None):
 
     return None
 
-def latest_filing_full_text(ticker: str) -> dict:
+def _latest_filing_full_text_sec(ticker: str) -> dict:
     """
     Retrieves the full text and extracted tables of the latest filings for a given ticker.
 
@@ -942,6 +942,28 @@ def latest_filing_full_text(ticker: str) -> dict:
                         "date": None
                     }
         return files_dict
+
+
+def latest_filing_full_text(ticker: str) -> dict:
+    """
+    Routing wrapper:
+    - `.TA` tickers -> MAYA financial reports (annual + quarterly when available)
+    - non-`.TA` tickers -> existing SEC downloader
+    """
+    ticker_u = str(ticker or "").strip().upper()
+    if ticker_u.endswith(".TA"):
+        try:
+            from .maya_reports import fetch_latest_maya_reports
+
+            maya_files = fetch_latest_maya_reports(ticker_u)
+            if isinstance(maya_files, dict):
+                return maya_files
+            return {}
+        except Exception as maya_exc:
+            print(f"MAYA fetch error for {ticker_u}: {maya_exc}")
+            return {}
+
+    return _latest_filing_full_text_sec(ticker_u)
 
 import yfinance as yf
 import pandas as pd

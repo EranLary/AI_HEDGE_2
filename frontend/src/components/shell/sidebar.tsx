@@ -69,7 +69,7 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
           {!collapsedDesktop ? (
             <span className="font-display text-sm leading-tight">
               <span className="block text-zinc-100">Hedge</span>
-              <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">in a box</span>
+              <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">preview test</span>
             </span>
           ) : null}
         </Link>

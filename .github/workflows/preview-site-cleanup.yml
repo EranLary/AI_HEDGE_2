@@ -1,0 +1,75 @@
+name: Site Preview Stale Cleanup
+
+# Safety net: destroy preview apps that the PR-close hook missed (e.g. closed
+# while CI was down, or PR sat open for weeks). Apps older than MAX_AGE_DAYS
+# get nuked regardless of PR state.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: 'Override max age (days)'
+        required: false
+        default: '14'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MAX_AGE_DAYS: ${{ github.event.inputs.max_age_days || '14' }}
+    steps:
+      - name: Install flyctl
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then echo "::error::No Fly token found"; exit 1; fi
+          echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Destroy stale preview apps
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          set -u
+          cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
+          echo "Cutoff: $(date -u -d "@$cutoff") (apps older than this will be destroyed)"
+
+          mapfile -t names < <(flyctl apps list --json \
+            | jq -r '.[] | (.Name // .name) | select(test("^pr-[0-9]+-hedge-in-a-box-site$"))')
+
+          if [ "${#names[@]}" -eq 0 ]; then
+            echo "No preview apps found."
+            exit 0
+          fi
+
+          for name in "${names[@]}"; do
+            created=$(flyctl machines list -a "$name" --json 2>/dev/null \
+              | jq -r 'sort_by(.created_at) | .[0].created_at // empty')
+
+            if [ -z "$created" ]; then
+              echo "$name: no machines — destroying empty app."
+              flyctl apps destroy "$name" --yes || true
+              continue
+            fi
+
+            created_ts=$(date -u -d "$created" +%s 2>/dev/null || echo 0)
+            if [ "$created_ts" -gt 0 ] && [ "$created_ts" -lt "$cutoff" ]; then
+              echo "$name: created $created — destroying (stale)."
+              flyctl apps destroy "$name" --yes || true
+            else
+              echo "$name: created $created — keeping."
+            fi
+          done

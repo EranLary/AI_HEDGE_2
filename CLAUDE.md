@@ -62,6 +62,8 @@ Outputs land in `outputs/<TICKER>/` (CLI) or `outputs/<job_id>/` (bot).
 
 Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, or unified `deploy_fly.ps1 {site|bot|status-*|logs-*}`. GitHub Actions at [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml) auto-deploys both apps on push to `main`/`master` (needs `FLY_API_TOKEN` secret).
 
+**Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). Machines auto-stop when idle. The app + volume are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes preview apps older than 14 days.
+
 ## Conventions
 
 - Python target is 3.11+ (Docker uses 3.12-slim).

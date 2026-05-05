@@ -136,13 +136,41 @@ jobs:
           fi
 
       - name: Deploy preview
+        id: deploy
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
         run: |
           flyctl deploy --remote-only \
             --config fly.preview.toml \
             --app "${{ env.PREVIEW_APP }}" \
-            --ha=false
+            --ha=false \
+            --wait-timeout 5m
+
+      - name: Diagnostics on deploy failure
+        if: failure() && steps.deploy.conclusion == 'failure'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          set +e
+          echo '::group::flyctl status'
+          flyctl status --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::flyctl machines list'
+          flyctl machines list --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::flyctl machines list (json)'
+          flyctl machines list --app "${{ env.PREVIEW_APP }}" --json
+          echo '::endgroup::'
+
+          echo '::group::flyctl volumes list'
+          flyctl volumes list --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::recent logs (30s tail)'
+          timeout 30 flyctl logs --app "${{ env.PREVIEW_APP }}" || true
+          echo '::endgroup::'
 
       - name: Sticky comment with preview URL
         uses: marocchino/sticky-pull-request-comment@v2

@@ -153,3 +153,56 @@ def test_sec_payload_contract_accepts_maya_dict():
     assert "MAYA Quarterly Report" in bundle
     assert "דוח תקופתי ושנתי" in bundle
     assert notes == []
+
+def test_download_prefers_pdf_over_html_for_maya_full_report():
+    detail = {
+        "attachments": [
+            {"fileType": "htm", "url": "rhtm/1/H1.htm", "translated": False},
+            {"fileType": "pdf1", "url": "rpdf/1/P1.pdf", "translated": False},
+        ]
+    }
+    with patch("ai_hedge.maya_reports._safe_request_bytes", return_value=b"%PDF fake"), patch(
+        "ai_hedge.maya_reports._extract_text_from_pdf_bytes", return_value="FULL PDF REPORT"
+    ), patch("ai_hedge.maya_reports._safe_request_text", return_value="HTML SHELL"):
+        text, url = maya_reports._download_report_text(session=object(), detail=detail)
+
+    assert text == "FULL PDF REPORT"
+    assert url.endswith("/rpdf/1/P1.pdf")
+
+
+def test_sec_payload_quarterly_not_truncated_and_annual_gets_remaining_budget():
+    annual_text = "A" * 400_000
+    quarter_text = "Q" * 300_000
+    files_dict = {
+        "MAYA Annual Report": {"text": annual_text, "date": "2026-03-01", "title": "annual"},
+        "MAYA Quarterly Report": {"text": quarter_text, "date": "2026-05-01", "title": "quarter"},
+    }
+
+    bundle, notes = _build_sec_text_payload(files_dict)
+
+    annual_header = "## Filing: MAYA Annual Report | Date: 2026-03-01\n"
+    quarter_header = "## Filing: MAYA Quarterly Report | Date: 2026-05-01\n"
+    assert annual_header in bundle
+    assert quarter_header in bundle
+
+    quarter_block = bundle.split(quarter_header, 1)[1].split("\n\n## Filing: MAYA Annual Report | Date: 2026-03-01\n", 1)[0]
+    annual_block = bundle.split(annual_header, 1)[1]
+
+    # Quarterly is never truncated.
+    assert len(quarter_block) == len(quarter_text)
+    # Annual gets the remainder: 500k - quarterly chars.
+    assert len(annual_block) == 200_000
+    assert notes == []
+
+
+def test_sec_payload_annual_is_500k_when_no_quarterly_exists():
+    annual_text = "A" * 700_000
+    files_dict = {
+        "MAYA Annual Report": {"text": annual_text, "date": "2026-03-01", "title": "annual"},
+    }
+    bundle, notes = _build_sec_text_payload(files_dict)
+    annual_header = "## Filing: MAYA Annual Report | Date: 2026-03-01\n"
+    assert annual_header in bundle
+    annual_block = bundle.split(annual_header, 1)[1]
+    assert len(annual_block) == 500_000
+    assert notes == []

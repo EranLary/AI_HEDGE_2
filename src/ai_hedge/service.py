@@ -237,10 +237,21 @@ def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[st
     Returns:
         (combined_text, notes)
     """
+    def _classify_filing_kind(form_type: str, raw: Dict[str, Any]) -> str:
+        form_u = str(form_type or "").strip().upper()
+        title_u = str(raw.get("title", "") or "").strip().upper()
+        joined = f"{form_u} {title_u}"
+
+        if any(k in joined for k in ("10-K", "20-F", "MAYA ANNUAL", "ANNUAL")):
+            return "annual"
+        if any(k in joined for k in ("10-Q", "6-K", "MAYA QUARTERLY", "QUARTER", "Q1", "Q2", "Q3", "Q4")):
+            return "quarterly"
+        return "other"
+
     notes: List[str] = []
     chunks: List[str] = []
-    total_budget = 300_000
-    used = 0
+    total_budget = 500_000
+    entries: List[Tuple[str, Dict[str, Any], str, str, str]] = []
 
     for form_type, raw in (files_dict or {}).items():
         if not isinstance(raw, dict):
@@ -248,27 +259,46 @@ def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[st
         text = str(raw.get("text") or "")
         if not text.strip():
             continue
-
         date = str(raw.get("date") or "")
+        kind = _classify_filing_kind(str(form_type or ""), raw)
+        entries.append((str(form_type), raw, text, date, kind))
+
+    quarterly_entries = [e for e in entries if e[4] == "quarterly"]
+    annual_entries = [e for e in entries if e[4] == "annual"]
+    other_entries = [e for e in entries if e[4] == "other"]
+
+    # Requested policy:
+    # - Quarterly should not be truncated.
+    # - Annual budget is (500k - quarterly_chars).
+    # - If no quarterly exists, annual budget is full 500k.
+    quarterly_text_chars = sum(len(e[2]) for e in quarterly_entries)
+    annual_budget = max(0, total_budget - quarterly_text_chars) if quarterly_entries else total_budget
+    annual_budget_left = annual_budget
+
+    def _append_block(form_type: str, date: str, text: str) -> None:
         header = f"## Filing: {form_type} | Date: {date}".strip()
+        chunks.append(f"{header}\n{text}")
 
-        remaining = total_budget - used
-        if remaining <= 0:
-            notes.append("SEC filing text truncated due to overall prompt size limit.")
+    for form_type, _raw, text, date, _kind in quarterly_entries:
+        _append_block(form_type, date, text)
+
+    for form_type, _raw, text, date, _kind in annual_entries:
+        if annual_budget_left <= 0:
+            clipped = ""
+        else:
+            clipped = _truncate_text(text, annual_budget_left)
+            annual_budget_left -= len(clipped)
+        _append_block(form_type, date, clipped)
+
+    # Keep other filings only as best effort within the remaining annual budget.
+    for form_type, _raw, text, date, _kind in other_entries:
+        if annual_budget_left <= 0:
             break
-
-        per_filing_budget = min(150_000, remaining)
-        clipped = _truncate_text(text, per_filing_budget)
-        # if len(text) > len(clipped):
-        #     notes.append(f"{form_type}: filing text truncated to {per_filing_budget} chars.")
-
-        block = f"{header}\n{clipped}"
-        chunks.append(block)
-        used += len(block)
+        clipped = _truncate_text(text, annual_budget_left)
+        annual_budget_left -= len(clipped)
+        _append_block(form_type, date, clipped)
 
     return "\n\n".join(chunks), notes
-
-
 def _sec_style_instruction(short_mode: bool) -> str:
     if short_mode:
         return (
@@ -570,14 +600,7 @@ def _format_sec_qna_markdown(questions: List[str], answers_payload: Dict[str, An
     rows: List[Dict[str, Any]] = answer_rows if isinstance(answer_rows, list) else []
     lines: List[str] = [
         "## SEC Pre-Decision Q&A",
-        "",
-        "### Questions to verify in formal SEC filings",
     ]
-    if questions:
-        for idx, question in enumerate(questions, start=1):
-            lines.append(f"{idx}. {question}")
-    else:
-        lines.append("No SEC-specific questions were generated.")
 
     lines.extend(["", "### Answers from SEC filings"])
     if not rows:

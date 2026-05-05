@@ -588,11 +588,14 @@ def _attachment_candidates(detail: Dict[str, Any]) -> List[Dict[str, Any]]:
         file_type = str(att.get("fileType", "") or "").lower()
         translated = bool(att.get("translated", False))
         order = 100
-        if file_type.startswith("htm"):
+        # Prefer official full filing documents first.
+        # In MAYA, `pdf1` is typically the full report while `htm` can be a
+        # cover/shell page that points to the report.
+        if file_type.startswith("pdf"):
             order = 1
-        elif file_type.startswith("txt"):
+        elif file_type.startswith("htm"):
             order = 2
-        elif file_type.startswith("pdf"):
+        elif file_type.startswith("txt"):
             order = 3
         return (order, 1 if translated else 0)
 

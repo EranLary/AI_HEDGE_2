@@ -64,6 +64,25 @@ Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, or unified `deplo
 
 **Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). Machines auto-stop when idle. The app + volume are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes preview apps older than 14 days.
 
+## Workflow (PR-first, no direct pushes to main)
+
+**Hard rule: never commit or push directly to `main`/`master`.** Every change — including agent-driven changes — goes through a pull request. A merge to `main` triggers a prod deploy via [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml); we don't want that surface lit up by ad-hoc pushes.
+
+The flow:
+
+1. Branch off `main`: `git checkout main && git pull && git checkout -b <type>/<short-desc>` (e.g. `feat/discovery-filters`, `fix/sec-pagination`).
+2. Commit changes on that branch.
+3. Push: `git push -u origin <branch>`.
+4. Open a PR: `gh pr create --title "..." --body "..."`. Use the PR template; fill in the preview URL line if applicable.
+5. For **frontend / `Dockerfile.site` / `fly.site.toml`** PRs, the preview workflow auto-deploys `pr-<N>-hedge-in-a-box-site.fly.dev` and posts a sticky comment with the URL. **Verify the change on the preview** before requesting review.
+6. Merge via squash (keeps `main` history linear). Closing the PR tears down the preview.
+
+**Backend-only PRs** (Python under [src/](src/), [bot/](bot/)) do not get a preview environment. Verify locally — `python run.py --ticker AAPL` for valuation changes, `py bot/telegram_bot.py` against a staging Telegram bot for bot changes. State this in the PR's "Test plan" so the reviewer knows what coverage to expect.
+
+**Branch hygiene — start every task from a clean `main`.** Before making any code change, check the current branch (`git branch --show-current`) and working-tree state (`git status`). If you're sitting on a feature branch from a prior task, do **not** pile the new work onto it — that branch belongs to a different PR and mixing changes will pollute its diff. Always `git checkout main && git pull` and branch off fresh, unless the user explicitly asks you to amend or extend a specific existing PR.
+
+**Exceptions to the no-direct-push rule** are explicit, narrow, and human-authorized: a destructive `main` recovery, a CI-fix that unbreaks the deploy pipeline. Agents must not infer the exception themselves — ask the user first.
+
 ## Conventions
 
 - Python target is 3.11+ (Docker uses 3.12-slim).

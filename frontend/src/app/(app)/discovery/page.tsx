@@ -213,7 +213,7 @@ export default function DiscoveryPage() {
           </div>
         ) : (
           <>
-            <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-4">
+            <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Discovery Lens</p>
@@ -279,25 +279,18 @@ export default function DiscoveryPage() {
                 metricLabel="return"
               />
               <SectionCard
-                title="Most Overvalued"
-                icon={<ShieldAlert size={16} className="text-red-400" />}
-                rows={data.top_overvalued}
-                accent="text-red-300"
-                metricLabel="return"
-              />
-              <SectionCard
-                title="Top Conviction"
-                icon={<Radar size={16} className="hib-conviction-accent" />}
-                rows={data.top_conviction}
-                accent="hib-conviction-accent"
-                metricLabel="disagreement"
-              />
-              <SectionCard
                 title="Highest Allocation"
                 icon={<TrendingUp size={16} className="text-emerald-400" />}
                 rows={data.top_highest_allocation}
                 accent="text-emerald-300"
                 metricLabel="allocation"
+              />
+              <SectionCard
+                title="Most Overvalued"
+                icon={<ShieldAlert size={16} className="text-red-400" />}
+                rows={data.top_overvalued}
+                accent="text-red-300"
+                metricLabel="return"
               />
               <SectionCard
                 title="Lowest Allocation"
@@ -306,6 +299,15 @@ export default function DiscoveryPage() {
                 accent="text-red-300"
                 metricLabel="allocation"
               />
+              {lensType === "overall" ? (
+                <SectionCard
+                  title="Top Conviction"
+                  icon={<Radar size={16} className="hib-conviction-accent" />}
+                  rows={data.top_conviction}
+                  accent="hib-conviction-accent"
+                  metricLabel="disagreement"
+                />
+              ) : null}
             </div>
           </>
         )}

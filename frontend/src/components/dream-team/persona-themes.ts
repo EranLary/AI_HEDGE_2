@@ -78,10 +78,8 @@ const THEMES: Record<string, PersonaTheme> = {
   "Peter Thiel": {
     role: "Contrarian Strategist",
     tagline: "Look for secrets, asymmetric bets, and monopoly-scale upside.",
-    accent: "#a78bfa",
-    accentSoft: "rgba(167, 139, 250, 0.18)",
-    gradientFrom: "#4c1d95",
-    gradientTo: "#1f1147",
+    accent: "var(--persona-thiel-accent)",
+    accentSoft: "var(--persona-thiel-accent-soft)",
   },
   "Howard Marks": {
     role: "Cycles & Risk",

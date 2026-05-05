@@ -7,6 +7,28 @@ import { Gem, Radar, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react"
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
+type DiscoveryLensType = "overall" | "model" | "valuator";
+
+type DiscoveryPayload = {
+  generated_at: string;
+  lens: {
+    type: DiscoveryLensType;
+    key: string | null;
+    label: string;
+  };
+  lens_options: {
+    models: string[];
+    valuators: string[];
+  };
+  window_hours: number | null;
+  count: number;
+  top_undervalued: DiscoveryRow[];
+  top_overvalued: DiscoveryRow[];
+  top_conviction: DiscoveryRow[];
+  top_highest_allocation: DiscoveryRow[];
+  top_lowest_allocation: DiscoveryRow[];
+};
+
 function fmtDateTimeNoSeconds(value: string): string {
   const dt = new Date(value);
   if (!Number.isFinite(dt.getTime())) return "N/A";
@@ -19,17 +41,6 @@ function fmtDateTimeNoSeconds(value: string): string {
     hour12: false,
   });
 }
-
-type DiscoveryPayload = {
-  generated_at: string;
-  window_hours: number | null;
-  count: number;
-  top_undervalued: DiscoveryRow[];
-  top_overvalued: DiscoveryRow[];
-  top_conviction: DiscoveryRow[];
-  top_highest_allocation: DiscoveryRow[];
-  top_lowest_allocation: DiscoveryRow[];
-};
 
 function fmtPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -85,8 +96,8 @@ function SectionCard({
         ) : null}
       </div>
       <div className="space-y-2">
-            {shownRows.length ? (
-              shownRows.map((row, idx) => (
+        {shownRows.length ? (
+          shownRows.map((row, idx) => (
             <div key={`${title}-${row.ticker}-${row.updated_at}-${idx}`} className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -142,13 +153,20 @@ function SectionCard({
 export default function DiscoveryPage() {
   const [data, setData] = useState<DiscoveryPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lensType, setLensType] = useState<DiscoveryLensType>("overall");
+  const [lensKey, setLensKey] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       try {
-        const res = await fetch("/api/discovery", { cache: "no-store" });
+        const params = new URLSearchParams();
+        params.set("lens_type", lensType);
+        if (lensType !== "overall" && lensKey.trim()) {
+          params.set("lens_key", lensKey.trim());
+        }
+        const res = await fetch(`/api/discovery?${params.toString()}`, { cache: "no-store" });
         const json = (await res.json()) as DiscoveryPayload;
         if (!cancelled) {
           setData(json);
@@ -163,7 +181,21 @@ export default function DiscoveryPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [lensType, lensKey]);
+
+  const modelOptions = data?.lens_options.models || [];
+  const valuatorOptions = data?.lens_options.valuators || [];
+  const selectedOptions = lensType === "model" ? modelOptions : lensType === "valuator" ? valuatorOptions : [];
+
+  const onLensTypeChange = (next: DiscoveryLensType) => {
+    setLensType(next);
+    if (next === "overall") {
+      setLensKey("");
+      return;
+    }
+    const pool = next === "model" ? modelOptions : valuatorOptions;
+    setLensKey(pool[0] || "");
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6 text-zinc-100 sm:px-8">
@@ -181,8 +213,62 @@ export default function DiscoveryPage() {
           </div>
         ) : (
           <>
+            <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Discovery Lens</p>
+                  <p className="text-sm font-semibold text-zinc-100">{data.lens.label}</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:items-end">
+                  <div className="inline-flex rounded-xl border border-white/15 bg-white/5 p-1 text-xs uppercase tracking-[0.12em]">
+                    <button
+                      type="button"
+                      onClick={() => onLensTypeChange("overall")}
+                      className={`rounded-lg px-3 py-1.5 transition ${
+                        lensType === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      }`}
+                    >
+                      Overall
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLensTypeChange("model")}
+                      className={`rounded-lg px-3 py-1.5 transition ${
+                        lensType === "model" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      } disabled:cursor-not-allowed disabled:opacity-45`}
+                      disabled={!modelOptions.length}
+                    >
+                      Model
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLensTypeChange("valuator")}
+                      className={`rounded-lg px-3 py-1.5 transition ${
+                        lensType === "valuator" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      } disabled:cursor-not-allowed disabled:opacity-45`}
+                      disabled={!valuatorOptions.length}
+                    >
+                      Valuator
+                    </button>
+                  </div>
+                  {lensType !== "overall" ? (
+                    <select
+                      value={lensKey}
+                      onChange={(e) => setLensKey(String(e.target.value || ""))}
+                      className="w-full min-w-[260px] rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-400/60 sm:w-auto"
+                    >
+                      {selectedOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
+              </div>
+            </section>
             <p className="mb-4 text-sm text-zinc-400">
-              Scanned {data.count} latest dashboards (one per ticker). Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
+              Scanned {data.count} tickers for this lens. Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
             </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <SectionCard

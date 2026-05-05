@@ -76,6 +76,8 @@
   --persona-lynch-accent-soft: rgba(34, 211, 238, 0.18);
   --persona-marks-accent: #5eead4;
   --persona-marks-accent-soft: rgba(94, 234, 212, 0.18);
+  --persona-thiel-accent: #a78bfa;
+  --persona-thiel-accent-soft: rgba(167, 139, 250, 0.18);
   --persona-dalio-accent: #38bdf8;
   --persona-dalio-accent-soft: rgba(56, 189, 248, 0.18);
   --persona-druckenmiller-accent: #fb7185;
@@ -142,6 +144,8 @@ html[data-theme="light"] {
   --persona-lynch-accent-soft: rgba(14, 116, 144, 0.18);
   --persona-marks-accent: #0f766e;
   --persona-marks-accent-soft: rgba(15, 118, 110, 0.18);
+  --persona-thiel-accent: #6d28d9;
+  --persona-thiel-accent-soft: rgba(109, 40, 217, 0.18);
   --persona-dalio-accent: #0369a1;
   --persona-dalio-accent-soft: rgba(3, 105, 161, 0.18);
   --persona-druckenmiller-accent: #be123c;

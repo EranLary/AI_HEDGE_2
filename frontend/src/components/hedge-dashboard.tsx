@@ -578,10 +578,10 @@ function prettyMetricName(raw: string): string {
 
 function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
-  if (v <= -15) return { label: "Strong Sell", tone: "negative" };
-  if (v < -7) return { label: "Sell", tone: "negative" };
-  if (v < 7) return { label: "Hold", tone: "neutral" };
-  if (v < 15) return { label: "Buy", tone: "positive" };
+  if (v <= -20) return { label: "Strong Sell", tone: "negative" };
+  if (v < -5) return { label: "Sell", tone: "negative" };
+  if (v < 5) return { label: "Hold", tone: "neutral" };
+  if (v < 20) return { label: "Buy", tone: "positive" };
   return { label: "Strong Buy", tone: "positive" };
 }
 

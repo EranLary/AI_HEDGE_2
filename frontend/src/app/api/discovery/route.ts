@@ -12,6 +12,22 @@ import {
   type SummarySourceReport,
 } from "@/lib/ticker-summary-aggregate";
 
+type DiscoveryLensType = "overall" | "model" | "valuator";
+
+type LensSelection = {
+  type: DiscoveryLensType;
+  key: string | null;
+  label: string;
+};
+
+type PreparedTicker = {
+  ticker: string;
+  summary: ReturnType<typeof computeTickerSummaryAggregation>;
+  current: number;
+  latestUpdatedAt: string;
+  companyName: string;
+};
+
 function safeNum(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -46,10 +62,10 @@ function decisionFromAdjustedScore(adjustedScore: number): {
   label: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell";
   tone: "buy" | "sell" | "hold";
 } {
-  if (adjustedScore >= 15) return { label: "Strong Buy", tone: "buy" };
-  if (adjustedScore >= 7) return { label: "Buy", tone: "buy" };
-  if (adjustedScore > -7) return { label: "Hold", tone: "hold" };
-  if (adjustedScore > -15) return { label: "Sell", tone: "sell" };
+  if (adjustedScore >= 20) return { label: "Strong Buy", tone: "buy" };
+  if (adjustedScore >= 5) return { label: "Buy", tone: "buy" };
+  if (adjustedScore > -5) return { label: "Hold", tone: "hold" };
+  if (adjustedScore > -20) return { label: "Sell", tone: "sell" };
   return { label: "Strong Sell", tone: "sell" };
 }
 
@@ -64,6 +80,70 @@ function meanCurrentPriceInWindow(reports: SummarySourceReport[]): number | null
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
   if (!values.length) return null;
   return avgNums(values);
+}
+
+function normalizeLensType(value: string | null | undefined): DiscoveryLensType {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "model") return "model";
+  if (raw === "valuator") return "valuator";
+  return "overall";
+}
+
+function cleanLensKey(value: string | null | undefined): string | null {
+  const key = String(value || "").trim();
+  return key ? key : null;
+}
+
+function resolveLensSelection(
+  lensType: DiscoveryLensType,
+  lensKey: string | null,
+  models: string[],
+  valuators: string[],
+): LensSelection {
+  if (lensType === "model") {
+    if (lensKey && models.includes(lensKey)) {
+      return { type: "model", key: lensKey, label: `Model: ${lensKey}` };
+    }
+    const fallback = models[0] || null;
+    if (fallback) return { type: "model", key: fallback, label: `Model: ${fallback}` };
+    return { type: "overall", key: null, label: "Overall" };
+  }
+  if (lensType === "valuator") {
+    if (lensKey && valuators.includes(lensKey)) {
+      return { type: "valuator", key: lensKey, label: `Valuator: ${lensKey}` };
+    }
+    const fallback = valuators[0] || null;
+    if (fallback) return { type: "valuator", key: fallback, label: `Valuator: ${fallback}` };
+    return { type: "overall", key: null, label: "Overall" };
+  }
+  return { type: "overall", key: null, label: "Overall" };
+}
+
+function resolveLensMetricsForTicker(
+  prepared: PreparedTicker,
+  lens: LensSelection,
+): { target: number | null; allocation: number | null } | null {
+  const summary = prepared.summary;
+  if (lens.type === "overall") {
+    return {
+      target: safeNumOrNull(summary.overview.mean_target_price),
+      allocation:
+        typeof summary.overview.mean_allocation_pct === "number" && Number.isFinite(summary.overview.mean_allocation_pct)
+          ? summary.overview.mean_allocation_pct
+          : null,
+    };
+  }
+  if (!lens.key) return null;
+  const pool = lens.type === "model" ? summary.by_model : summary.by_valuator;
+  const row = pool.find((entry) => String(entry.label || "").trim() === lens.key);
+  if (!row) return null;
+  return {
+    target: safeNumOrNull(row.mean_target_price),
+    allocation:
+      typeof row.mean_allocation_pct === "number" && Number.isFinite(row.mean_allocation_pct)
+        ? row.mean_allocation_pct
+        : null,
+  };
 }
 
 async function loadDashboards(): Promise<
@@ -97,7 +177,10 @@ async function loadDashboards(): Promise<
     .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const requestedLensType = normalizeLensType(url.searchParams.get("lens_type"));
+  const requestedLensKey = cleanLensKey(url.searchParams.get("lens_key"));
   const items = await loadDashboards();
 
   const rows: DiscoveryRow[] = [];
@@ -117,6 +200,9 @@ export async function GET() {
 
   const tickers = Array.from(byTicker.keys());
   const livePriceMap = await getLiveCurrentPricesBatch(tickers);
+  const availableModelsSet = new Set<string>();
+  const availableValuatorsSet = new Set<string>();
+  const preparedTickers: PreparedTicker[] = [];
 
   for (const ticker of tickers) {
     const sourceReports = byTicker.get(ticker) || [];
@@ -124,38 +210,73 @@ export async function GET() {
     if (!windowReports.length) continue;
 
     const summary = computeTickerSummaryAggregation(sourceReports, "3m");
-    const meanTarget = safeNum(summary.overview.mean_target_price);
     const liveCurrent = safeNumOrNull(livePriceMap[ticker]);
     const fallbackCurrent = meanCurrentPriceInWindow(windowReports);
     const current = typeof liveCurrent === "number" && liveCurrent > 0 ? liveCurrent : fallbackCurrent;
-    if (!current || !meanTarget) continue;
-
-    const returnPct = ((meanTarget - current) / current) * 100;
-    const overvaluation = ((current - meanTarget) / current) * 100;
-    const confidenceCv =
-      typeof summary.overview.mean_disagreement_score === "number" && Number.isFinite(summary.overview.mean_disagreement_score)
-        ? Math.abs(summary.overview.mean_disagreement_score)
-        : Number.POSITIVE_INFINITY;
-    const positionPct =
-      typeof summary.overview.mean_allocation_pct === "number" && Number.isFinite(summary.overview.mean_allocation_pct)
-        ? summary.overview.mean_allocation_pct
-        : null;
-    const combinedScore = combinedDecisionScore(positionPct, returnPct);
-    const adjustedScore = confidenceAdjustedScore(combinedScore, Number.isFinite(confidenceCv) ? confidenceCv : null);
-    const decision = decisionFromAdjustedScore(
-      typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0,
-    );
-
     const latestWindowReport = windowReports
       .slice()
       .sort((a, b) => reportMs(b.generatedAt) - reportMs(a.generatedAt))[0];
 
-    rows.push({
+    for (const row of summary.by_model) {
+      const label = String(row.label || "").trim();
+      if (label && label.toLowerCase() !== "overall") {
+        availableModelsSet.add(label);
+      }
+    }
+    for (const row of summary.by_valuator) {
+      const label = String(row.label || "").trim();
+      if (label) availableValuatorsSet.add(label);
+    }
+
+    if (!current) continue;
+    preparedTickers.push({
       ticker,
-      company_name:
+      summary,
+      current,
+      latestUpdatedAt: latestWindowReport?.generatedAt || new Date().toISOString(),
+      companyName:
         latestWindowReport?.payload?.header?.company_name ||
         ticker ||
         path.basename(String(ticker)),
+    });
+  }
+
+  const availableModels = Array.from(availableModelsSet).sort((a, b) => a.localeCompare(b));
+  const availableValuators = Array.from(availableValuatorsSet).sort((a, b) => a.localeCompare(b));
+  const lens = resolveLensSelection(requestedLensType, requestedLensKey, availableModels, availableValuators);
+
+  for (const prepared of preparedTickers) {
+    const metrics = resolveLensMetricsForTicker(prepared, lens);
+    if (!metrics) continue;
+    const meanTarget = safeNum(metrics.target);
+    if (!meanTarget) continue;
+
+    const returnPct = ((meanTarget - prepared.current) / prepared.current) * 100;
+    const overvaluation = ((prepared.current - meanTarget) / prepared.current) * 100;
+    const confidenceCv =
+      typeof prepared.summary.overview.mean_disagreement_score === "number" &&
+      Number.isFinite(prepared.summary.overview.mean_disagreement_score)
+        ? Math.abs(prepared.summary.overview.mean_disagreement_score)
+        : Number.POSITIVE_INFINITY;
+    const positionPct = metrics.allocation;
+    const combinedScore = combinedDecisionScore(positionPct, returnPct);
+    const misalignedSignal =
+      typeof positionPct === "number" &&
+      Number.isFinite(positionPct) &&
+      typeof returnPct === "number" &&
+      Number.isFinite(returnPct) &&
+      Math.abs(positionPct) > 1e-9 &&
+      Math.abs(returnPct) > 1e-9 &&
+      (positionPct * returnPct) < 0;
+    const penalizedCv = Number.isFinite(confidenceCv) ? (misalignedSignal ? confidenceCv * 1.5 : confidenceCv) : null;
+    const adjustedScore = confidenceAdjustedScore(combinedScore, penalizedCv);
+    const decision = decisionFromAdjustedScore(
+      typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0,
+    );
+
+    rows.push({
+      ticker: prepared.ticker,
+      company_name: prepared.companyName,
       margin_safety_pct: returnPct,
       overvaluation_pct: overvaluation,
       dispersion: confidenceCv,
@@ -164,7 +285,7 @@ export async function GET() {
       confidence_cv: confidenceCv,
       decision_label: decision.label,
       decision_tone: decision.tone,
-      updated_at: latestWindowReport?.generatedAt || new Date().toISOString(),
+      updated_at: prepared.latestUpdatedAt,
     });
   }
 
@@ -204,6 +325,11 @@ export async function GET() {
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
+    lens,
+    lens_options: {
+      models: availableModels,
+      valuators: availableValuators,
+    },
     window: "3m",
     window_hours: 24 * 90,
     count: rows.length,

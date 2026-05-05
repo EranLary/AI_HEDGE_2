@@ -49,10 +49,10 @@ function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number |
 
 function decisionSignal(adjustedScore?: number | null) {
   const v = typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0;
-  if (v <= -15) return { label: "Strong Sell", tone: "negative" as const };
-  if (v < -7) return { label: "Sell", tone: "negative" as const };
-  if (v < 7) return { label: "Hold", tone: "neutral" as const };
-  if (v < 15) return { label: "Buy", tone: "positive" as const };
+  if (v <= -20) return { label: "Strong Sell", tone: "negative" as const };
+  if (v < -5) return { label: "Sell", tone: "negative" as const };
+  if (v < 5) return { label: "Hold", tone: "neutral" as const };
+  if (v < 20) return { label: "Buy", tone: "positive" as const };
   return { label: "Strong Buy", tone: "positive" as const };
 }
 

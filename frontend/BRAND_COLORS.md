@@ -98,6 +98,7 @@ Used by [`persona-themes.ts`](src/components/dream-team/persona-themes.ts). Each
 | Charlie Munger | `--persona-munger-*` | `#f59e0b` | `#b45309` |
 | Peter Lynch | `--persona-lynch-*` | `#22d3ee` | `#0e7490` |
 | Howard Marks | `--persona-marks-*` | `#5eead4` | `#0f766e` |
+| Peter Thiel | `--persona-thiel-*` | `#a78bfa` | `#6d28d9` |
 | Ray Dalio | `--persona-dalio-*` | `#38bdf8` | `#0369a1` |
 | Stanley Druckenmiller | `--persona-druckenmiller-*` | `#fb7185` | `#be123c` |
 | (fallback) | `--persona-fallback-*` | `#34d399` | `#047857` |

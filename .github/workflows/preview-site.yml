@@ -5,6 +5,8 @@ on:
     types: [opened, reopened, synchronize, closed]
     paths:
       - 'frontend/**'
+      - 'src/**'
+      - 'requirements.txt'
       - 'Dockerfile.site'
       - 'fly.site.toml'
       - '.github/workflows/preview-site.yml'

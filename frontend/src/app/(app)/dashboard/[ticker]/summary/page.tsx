@@ -101,6 +101,12 @@ function toneClassFromTarget(target: number | null | undefined, liveCurrent: num
   return target > liveCurrent ? "hib-target-up" : "hib-target-down";
 }
 
+function targetChangePct(target: number | null | undefined, liveCurrent: number | null | undefined): number | null {
+  if (typeof target !== "number" || !Number.isFinite(target)) return null;
+  if (typeof liveCurrent !== "number" || !Number.isFinite(liveCurrent) || Math.abs(liveCurrent) <= 1e-9) return null;
+  return ((target - liveCurrent) / liveCurrent) * 100.0;
+}
+
 function compareRowsByMeanTargetDesc(a: MeanRow, b: MeanRow): number {
   const av = typeof a.mean_target_price === "number" && Number.isFinite(a.mean_target_price) ? a.mean_target_price : Number.NEGATIVE_INFINITY;
   const bv = typeof b.mean_target_price === "number" && Number.isFinite(b.mean_target_price) ? b.mean_target_price : Number.NEGATIVE_INFINITY;
@@ -121,21 +127,25 @@ function MeanTable({
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
       <div className="space-y-2 sm:hidden">
-        {rows.map((row) => (
-          <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
-            <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
-              {fmtMoney(row.mean_target_price)}
-            </p>
-            <p className={`mt-1 text-sm font-semibold ${toneClassFromSign(row.mean_allocation_pct)}`}>
-              {fmtPct(row.mean_allocation_pct)}
-            </p>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-400">
-              <span>Target N {row.target_samples}</span>
-              <span>Allocation N {row.allocation_samples}</span>
-            </div>
-          </article>
-        ))}
+        {rows.map((row) => {
+          const changePct = targetChangePct(row.mean_target_price, liveCurrentPrice);
+          return (
+            <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+              <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
+                {fmtMoney(row.mean_target_price)}
+              </p>
+              <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(changePct)}`}>
+                Change vs Live: ({fmtPct(changePct)})
+              </p>
+              <p className="mt-2 text-[11px] text-zinc-400">Target N {row.target_samples}</p>
+              <p className={`mt-2 text-sm font-semibold ${toneClassFromSign(row.mean_allocation_pct)}`}>
+                {fmtPct(row.mean_allocation_pct)}
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-400">Allocation N {row.allocation_samples}</p>
+            </article>
+          );
+        })}
         {!rows.length ? <p className="text-sm text-zinc-500">No rows available.</p> : null}
       </div>
       <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">

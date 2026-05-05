@@ -1304,16 +1304,24 @@ def build_dashboard_payload(
         if lmil_cv is not None:
             cv_values.append(abs(float(lmil_cv)))
     overall_cv = (sum(cv_values) / len(cv_values)) if cv_values else 0.0
+    misaligned_signal = (
+        target_return_pct is not None
+        and abs(position_size_pct) > 1e-9
+        and abs(target_return_pct) > 1e-9
+        and (position_size_pct * target_return_pct) < 0
+    )
+    if misaligned_signal:
+        overall_cv *= 1.5
     confidence_factor = 1.0 / (1.0 + (overall_cv ** 1.3))
     adjusted_score = combined_score * confidence_factor
 
-    if adjusted_score >= 15:
+    if adjusted_score >= 20:
         action = "Strong Buy"
-    elif adjusted_score >= 7:
+    elif adjusted_score >= 5:
         action = "Buy"
-    elif adjusted_score > -7:
+    elif adjusted_score > -5:
         action = "Hold"
-    elif adjusted_score > -15:
+    elif adjusted_score > -20:
         action = "Sell"
     else:
         action = "Strong Sell"
@@ -1391,7 +1399,7 @@ def build_dashboard_payload(
             "confidence_factor": confidence_factor,
             "adjusted_score": adjusted_score,
             "mean_investment_amount": mean_investment,
-            "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling.",
+            "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "artifacts": artifacts,

@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
+import { canonicalMethodName } from "@/lib/method-names";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
@@ -52,13 +53,13 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
-  DCF: "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
-  "Net Income & P/E": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
-  "Revenue & EV/S": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
+  "Intrinsic DCF": "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
+  "Earnings Multiple": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
+  "Revenue Multiple": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
   "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",
-  "BBB Target": "This framework forces a full scenario map: Bull, Base, and Bear cases with explicit probabilities. It helps separate upside story from downside risk and gives a weighted target grounded in all three paths.",
-  "BBB NI & P/E": "This is the scenario version of earnings-based valuation: each Bull/Base/Bear case gets its own net income and P/E assumptions. The final target reflects both business outcomes and changing market sentiment across scenarios.",
-  "Lary's Logic": "Lary's Logic is a pragmatic synthesis model that blends growth, profitability, and financing realism into one decision-friendly output. It is designed to stay intuitive while still stress-testing the assumptions that usually break valuation models.",
+  "Target Scenario": "This framework forces a full scenario map: Bull, Base, and Bear cases with explicit probabilities. It helps separate upside story from downside risk and gives a weighted target grounded in all three paths.",
+  "Earnings Scenario": "This is the scenario version of earnings-based valuation: each Bull/Base/Bear case gets its own net income and P/E assumptions. The final target reflects both business outcomes and changing market sentiment across scenarios.",
+  "Composite Logic": "Composite Logic is a pragmatic synthesis model that blends growth, profitability, and financing realism into one decision-friendly output. It is designed to stay intuitive while still stress-testing the assumptions that usually break valuation models.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -227,7 +228,12 @@ function formatAssumptionValue(label: string, value: number | null | undefined, 
 }
 
 function modelExplanation(modelName: string): string {
-  return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision.";
+  const canonical = canonicalMethodName(modelName);
+  return (
+    MODEL_EXPLANATIONS[canonical] ||
+    MODEL_EXPLANATIONS[String(modelName || "").trim()] ||
+    "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision."
+  );
 }
 
 function stripBrokenMarkdownArtifacts(text: string): string {

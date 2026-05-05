@@ -125,14 +125,21 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
         run: |
+          args=()
           if [ -z "$DEEPSEEK_API_KEY" ]; then
             echo "::warning::DEEPSEEK_API_KEY secret not set — preview will be missing it."
           else
-            flyctl secrets set \
-              DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-              --app "${{ env.PREVIEW_APP }}" \
-              --stage
+            args+=("DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY")
+          fi
+          if [ -z "$DATABASE_URL_UNPOOLED" ]; then
+            echo "::warning::DATABASE_URL_UNPOOLED secret not set — preview will run without DB."
+          else
+            args+=("DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED")
+          fi
+          if [ "${#args[@]}" -gt 0 ]; then
+            flyctl secrets set "${args[@]}" --app "${{ env.PREVIEW_APP }}" --stage
           fi
 
       - name: Deploy preview

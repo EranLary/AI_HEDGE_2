@@ -70,7 +70,7 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
 function TickerBadge({ activeTicker, suffix }: { activeTicker: string; suffix: string }) {
   return (
     <Link
-      href={`/dashboard/${encodeURIComponent(activeTicker)}/overview${suffix}`}
+      href={`/dashboard/${encodeURIComponent(activeTicker)}/summary${suffix}`}
       className="hib-breadcrumb inline-flex items-center rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
     >
       <strong>{activeTicker}</strong>

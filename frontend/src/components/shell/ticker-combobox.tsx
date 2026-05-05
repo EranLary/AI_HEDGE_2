@@ -99,7 +99,7 @@ export function TickerCombobox({ collapsed = false, onCollapsedClick }: Combobox
     if (!t) return;
     setOpen(false);
     setQuery("");
-    router.push(`/dashboard/${encodeURIComponent(t)}/overview`);
+    router.push(`/dashboard/${encodeURIComponent(t)}/summary`);
   }
 
   if (collapsed) {

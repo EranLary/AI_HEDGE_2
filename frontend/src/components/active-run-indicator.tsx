@@ -107,7 +107,7 @@ export function ActiveRunIndicator() {
                   </span>
                 </div>
                 <Link
-                  href={`/dashboard/${encodeURIComponent(toast.ticker)}/overview`}
+                  href={`/dashboard/${encodeURIComponent(toast.ticker)}/summary`}
                   className="rounded border border-white/30 px-2 py-0.5 text-xs"
                 >
                   Open

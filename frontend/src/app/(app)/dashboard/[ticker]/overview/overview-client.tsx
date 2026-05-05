@@ -12,13 +12,24 @@ import { VisibilityToggle } from "@/components/reports/visibility-toggle";
 import {
   buildCurrencyContext,
   fmtMoney,
-  fmtMarketCap,
   fmtMoneyCompact,
 } from "@/components/hedge-dashboard";
 import { INVESTORS_ORDERED, OVERVIEW_FEATURED_PERSONAS } from "@/components/dream-team/persona-themes";
 
 function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
+}
+
+function directionOf(v?: number | null): -1 | 0 | 1 | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  if (Math.abs(v) <= 1e-9) return 0;
+  return v > 0 ? 1 : -1;
+}
+
+function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "✔" | "✖" | "-" {
+  if (predicted === null || actual === null) return "-";
+  if (predicted === 0 || actual === 0) return "-";
+  return predicted === actual ? "✔" : "✖";
 }
 
 function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
@@ -50,6 +61,7 @@ export type OverviewClientProps = {
   data: DashboardPayload;
   reportsForTicker: ReportListItem[];
   resolvedReportId: string;
+  liveCurrentPrice: number | null;
   livePerformanceSlot: ReactNode;
 };
 
@@ -58,6 +70,7 @@ export function OverviewClient({
   data,
   reportsForTicker,
   resolvedReportId,
+  liveCurrentPrice,
   livePerformanceSlot,
 }: OverviewClientProps) {
   const upper = ticker;
@@ -79,6 +92,25 @@ export function OverviewClient({
         ? "hib-target-up"
         : "hib-target-down"
       : "text-zinc-200";
+  const liveDeltaPct =
+    typeof liveCurrentPrice === "number" && typeof current === "number" && Math.abs(current) > 1e-9
+      ? ((liveCurrentPrice - current) / current) * 100
+      : null;
+  const liveToneClass =
+    typeof liveDeltaPct === "number" && Math.abs(liveDeltaPct) > 1e-9
+      ? liveDeltaPct > 0
+        ? "hib-target-up"
+        : "hib-target-down"
+      : "text-zinc-200";
+  const actualDirection = directionOf(
+    typeof liveCurrentPrice === "number" && typeof current === "number" ? liveCurrentPrice - current : null,
+  );
+  const targetDirection = directionOf(
+    typeof mean === "number" && typeof current === "number" ? mean - current : null,
+  );
+  const allocationDirection = directionOf(positionPct);
+  const meanTargetVerdict = verdictMark(targetDirection, actualDirection);
+  const investmentVerdict = verdictMark(allocationDirection, actualDirection);
   const generatedDateRaw = data.generated_at || data.report_mtime || "";
   const generatedDate = new Date(String(generatedDateRaw || ""));
   const generatedDateLabel =
@@ -154,6 +186,16 @@ export function OverviewClient({
   return (
     <div>
       <ReportChipRow ticker={upper} reports={reportsForTicker} currentReportId={resolvedReportId} />
+      {reportsForTicker.length > 1 ? (
+        <div className="mb-4">
+          <Link
+            href={`/dashboard/${encodeURIComponent(upper)}/summary`}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/30 hover:text-zinc-100"
+          >
+            Open Overall Summary <ArrowRight size={12} />
+          </Link>
+        </div>
+      ) : null}
 
       {resolvedReportId ? (
         <div className="mb-3 flex justify-end">
@@ -177,17 +219,26 @@ export function OverviewClient({
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Price ({generatedDateLabel})</p>
             <p className="hib-current-price mt-1 text-2xl font-bold">{fmtMoney(current, ctx, "price")}</p>
-            <p className="mt-1 text-xs text-zinc-500">Market cap {fmtMarketCap(data.header.market_cap, ctx)}</p>
+            <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-zinc-500">Current (Live)</p>
+            <p className={`mt-0.5 text-sm font-semibold ${liveToneClass}`}>
+              {typeof liveCurrentPrice === "number" && Number.isFinite(liveCurrentPrice)
+                ? `${fmtMoney(liveCurrentPrice, ctx, "price")} (${fmtPct(liveDeltaPct)})`
+                : "N/A"}
+            </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+              Mean Target <span className="text-zinc-300">({meanTargetVerdict})</span>
+            </p>
             <p className={`mt-1 text-2xl font-bold ${typeof mean === "number" && typeof current === "number" ? (mean > current ? "hib-target-up" : "hib-target-down") : "text-zinc-200"}`}>
               {fmtMoney(mean, ctx, "price")}
             </p>
             <p className={`mt-1 text-xs font-semibold ${changeClass}`}>{fmtPct(changePct)}</p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Investment Sizing</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+              Investment Sizing <span className="text-zinc-300">({investmentVerdict})</span>
+            </p>
             <p className={`mt-1 text-2xl font-bold ${positionToneClass}`}>
               {typeof data.decision_card?.position_size_pct_of_notional === "number"
                 ? `${data.decision_card.position_size_pct_of_notional.toFixed(2)}%`
@@ -218,8 +269,30 @@ export function OverviewClient({
             Open full valuation <ArrowRight size={12} />
           </Link>
         </div>
+        <div className="space-y-2 sm:hidden">
+          {targetRows.map((row) => {
+            const changePctRow =
+              typeof current === "number" && typeof row.target_price === "number" && Math.abs(current) > 1e-9
+                ? ((Number(row.target_price) - current) / current) * 100
+                : null;
+            const tone =
+              typeof changePctRow === "number" && Math.abs(changePctRow) > 1e-9
+                ? changePctRow > 0
+                  ? "hib-target-up"
+                  : "hib-target-down"
+                : "text-zinc-200";
+            return (
+              <article key={`${row.name}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.name}</p>
+                <p className="mt-1 text-xl font-bold text-zinc-100">{fmtMoneyCompact(row.target_price, ctx, "price")}</p>
+                <p className={`mt-1 text-sm font-semibold ${tone}`}>{fmtPct(changePctRow)}</p>
+              </article>
+            );
+          })}
+          {!targetRows.length ? <p className="text-sm text-zinc-500">No models yielded a target.</p> : null}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
-          <table className="w-full min-w-[560px] text-xs">
+          <table className="hidden w-full min-w-[560px] text-xs sm:table">
             <thead className="border-b border-white/10 text-zinc-400">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold uppercase tracking-[0.14em]">Method</th>

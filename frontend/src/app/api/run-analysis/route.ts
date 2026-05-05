@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import {
+  reconcileStaleRunsAfterRestart,
   TICKER_RE,
   type RunStatusPayload,
   repoRoot,
@@ -30,6 +31,8 @@ function writeStatus(filePath: string, payload: RunStatusPayload): void {
 }
 
 export async function POST(req: Request) {
+  reconcileStaleRunsAfterRestart();
+
   const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
   const session = await auth();
   const userId = session?.user?.id || (bypassAuth ? "local-dev" : "");
@@ -88,6 +91,8 @@ export async function POST(req: Request) {
     llm_progress_pct: 0,
     llm_calls_note: "Estimated total calls for one full valuation + dashboard extraction run.",
     result: null,
+    report_id: null,
+    persistence_error: "",
     error: "",
   };
 
@@ -133,6 +138,8 @@ export async function POST(req: Request) {
       status: "failed",
       started_at: startedAt,
       finished_at: nowIso(),
+      report_id: null,
+      persistence_error: "Run process failed to spawn.",
       error: `Failed to spawn process: ${String(err)}`,
     };
     writeStatus(statusFile, failedStatus);

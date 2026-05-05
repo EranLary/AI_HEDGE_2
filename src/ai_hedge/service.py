@@ -237,10 +237,21 @@ def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[st
     Returns:
         (combined_text, notes)
     """
+    def _classify_filing_kind(form_type: str, raw: Dict[str, Any]) -> str:
+        form_u = str(form_type or "").strip().upper()
+        title_u = str(raw.get("title", "") or "").strip().upper()
+        joined = f"{form_u} {title_u}"
+
+        if any(k in joined for k in ("10-K", "20-F", "MAYA ANNUAL", "ANNUAL")):
+            return "annual"
+        if any(k in joined for k in ("10-Q", "6-K", "MAYA QUARTERLY", "QUARTER", "Q1", "Q2", "Q3", "Q4")):
+            return "quarterly"
+        return "other"
+
     notes: List[str] = []
     chunks: List[str] = []
-    total_budget = 280_000
-    used = 0
+    total_budget = 500_000
+    entries: List[Tuple[str, Dict[str, Any], str, str, str]] = []
 
     for form_type, raw in (files_dict or {}).items():
         if not isinstance(raw, dict):
@@ -248,27 +259,46 @@ def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[st
         text = str(raw.get("text") or "")
         if not text.strip():
             continue
-
         date = str(raw.get("date") or "")
+        kind = _classify_filing_kind(str(form_type or ""), raw)
+        entries.append((str(form_type), raw, text, date, kind))
+
+    quarterly_entries = [e for e in entries if e[4] == "quarterly"]
+    annual_entries = [e for e in entries if e[4] == "annual"]
+    other_entries = [e for e in entries if e[4] == "other"]
+
+    # Requested policy:
+    # - Quarterly should not be truncated.
+    # - Annual budget is (500k - quarterly_chars).
+    # - If no quarterly exists, annual budget is full 500k.
+    quarterly_text_chars = sum(len(e[2]) for e in quarterly_entries)
+    annual_budget = max(0, total_budget - quarterly_text_chars) if quarterly_entries else total_budget
+    annual_budget_left = annual_budget
+
+    def _append_block(form_type: str, date: str, text: str) -> None:
         header = f"## Filing: {form_type} | Date: {date}".strip()
+        chunks.append(f"{header}\n{text}")
 
-        remaining = total_budget - used
-        if remaining <= 0:
-            notes.append("SEC filing text truncated due to overall prompt size limit.")
+    for form_type, _raw, text, date, _kind in quarterly_entries:
+        _append_block(form_type, date, text)
+
+    for form_type, _raw, text, date, _kind in annual_entries:
+        if annual_budget_left <= 0:
+            clipped = ""
+        else:
+            clipped = _truncate_text(text, annual_budget_left)
+            annual_budget_left -= len(clipped)
+        _append_block(form_type, date, clipped)
+
+    # Keep other filings only as best effort within the remaining annual budget.
+    for form_type, _raw, text, date, _kind in other_entries:
+        if annual_budget_left <= 0:
             break
-
-        per_filing_budget = min(120_000, remaining)
-        clipped = _truncate_text(text, per_filing_budget)
-        # if len(text) > len(clipped):
-        #     notes.append(f"{form_type}: filing text truncated to {per_filing_budget} chars.")
-
-        block = f"{header}\n{clipped}"
-        chunks.append(block)
-        used += len(block)
+        clipped = _truncate_text(text, annual_budget_left)
+        annual_budget_left -= len(clipped)
+        _append_block(form_type, date, clipped)
 
     return "\n\n".join(chunks), notes
-
-
 def _sec_style_instruction(short_mode: bool) -> str:
     if short_mode:
         return (
@@ -472,9 +502,9 @@ def _generate_sec_analysis_text(
         errors.append("No SEC filing text available in files_dict.")
         return "", errors
 
-    info_text = _truncate_text(json.dumps(info_dict.get("info", {}), ensure_ascii=False), 80_000)
+    info_text = _truncate_text(json.dumps(info_dict.get("info", {}), ensure_ascii=False), 120_000)
     reports_value = financial_dict.get("all_reports", financial_dict.get("All Reports", ""))
-    all_reports_text = _truncate_text(reports_value, 120_000)
+    all_reports_text = _truncate_text(reports_value, 160_000)
 
     prompt_part_1 = _build_sec_prompt(
         ticker=ticker,
@@ -522,6 +552,199 @@ def _generate_sec_analysis_text(
         errors.append(f"Failed to generate SEC analysis text: {exc}")
         errors.append(traceback.format_exc(limit=3))
         return "", errors
+
+
+def _parse_json_object_from_text(raw: str) -> Dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return {}
+    chunk = text[start : end + 1]
+    try:
+        parsed = json.loads(chunk)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _normalize_question_list(payload: Dict[str, Any]) -> List[str]:
+    raw_questions = payload.get("questions", [])
+    if not isinstance(raw_questions, list):
+        return []
+    out: List[str] = []
+    seen = set()
+    for item in raw_questions:
+        question = str(item or "").strip()
+        if not question:
+            continue
+        key = question.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(question)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _format_sec_qna_markdown(questions: List[str], answers_payload: Dict[str, Any]) -> str:
+    answer_rows = answers_payload.get("answers", [])
+    rows: List[Dict[str, Any]] = answer_rows if isinstance(answer_rows, list) else []
+    lines: List[str] = [
+        "## SEC Pre-Decision Q&A",
+    ]
+
+    lines.extend(["", "### Answers from SEC filings"])
+    if not rows:
+        lines.append("No SEC-based answers were generated.")
+        return "\n".join(lines).strip()
+
+    for idx, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        question = str(row.get("question", "") or "").strip()
+        answer = str(row.get("answer", "") or "").strip()
+        evidence = str(row.get("evidence", "") or "").strip()
+        filing_refs = row.get("filing_refs", [])
+        confidence = str(row.get("confidence", "") or "").strip()
+        refs_text = ", ".join(str(x).strip() for x in filing_refs if str(x).strip()) if isinstance(filing_refs, list) else ""
+
+        lines.append("")
+        lines.append(f"{idx}. **Q:** {question or 'N/A'}")
+        lines.append(f"   **A:** {answer or 'Not disclosed in the provided filings.'}")
+        if evidence:
+            lines.append(f"   **Evidence:** {evidence}")
+        if refs_text:
+            lines.append(f"   **Filing refs:** {refs_text}")
+        if confidence:
+            lines.append(f"   **Confidence:** {confidence}")
+
+    return "\n".join(lines).strip()
+
+
+def build_sec_question_answer_text(
+    *,
+    ticker: str,
+    analysis_text: str,
+    files_dict: Dict[str, Any],
+    financial_dict: Dict[str, Any],
+) -> Dict[str, object]:
+    """
+    Build SEC-focused questions from initial analysis + all reports, then answer them
+    using SEC filing text. Returns markdown-ready Q&A text.
+    """
+    ticker_u = (ticker or "").strip().upper()
+    errors: List[str] = []
+    out: Dict[str, object] = {
+        "status": "failed",
+        "ticker": ticker_u,
+        "text": "",
+        "questions": [],
+        "errors": errors,
+    }
+
+    if not is_valid_ticker(ticker_u):
+        errors.append("Invalid ticker format. Expected [A-Z0-9.-]{1,10}.")
+        return out
+
+    try:
+        _ensure_deepseek_api_key()
+        from . import legacy_port as legacy
+
+        sec_text_bundle, notes = _build_sec_text_payload(files_dict or {})
+        errors.extend(notes)
+        if not sec_text_bundle.strip():
+            errors.append("No SEC filing text available in files_dict.")
+            return out
+
+        analysis_slice = _truncate_text(analysis_text, 150_000)
+        reports_value = financial_dict.get("all_reports", financial_dict.get("All Reports", ""))
+        all_reports_text = _truncate_text(reports_value, 160_000)
+
+        questions_prompt = (
+            "You are preparing final investment decision diligence.\n"
+            "Given the first-pass analysis text and financial reports, list the most critical\n"
+            "questions/information to verify directly in formal SEC filings BEFORE final decision.\n"
+            "Focus on falsifiable, valuation-critical checks (earnings quality, cash conversion,\n"
+            "segment economics, contingent liabilities, dilution, covenant/legal risk, concentration risk).\n\n"
+            f"Ticker: {ticker_u}\n\n"
+            "Return ONLY valid JSON in this exact shape:\n"
+            "{\n"
+            '  "questions": ["...", "..."]\n'
+            "}\n"
+            "Constraints:\n"
+            "- 8 to 12 questions\n"
+            "- One question per item\n"
+            "- No markdown, no extra text.\n\n"
+            f"Initial analysis text:\n{analysis_slice}\n\n"
+            f"Financial reports (all_reports):\n{all_reports_text}\n"
+        )
+
+        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        raw_questions = legacy.deepseek_simple_text(
+            api_key=api_key,
+            prompt=questions_prompt,
+            model="deepseek-reasoner",
+            temperature=0.2,
+            short_answer=False,
+        )
+        questions_obj = _parse_json_object_from_text(raw_questions)
+        questions = _normalize_question_list(questions_obj)
+        if not questions:
+            errors.append("Failed to generate SEC verification questions.")
+            return out
+
+        questions_block = "\n".join(f"{idx}. {q}" for idx, q in enumerate(questions, start=1))
+        answers_prompt = (
+            "You are given SEC filing text and a diligence question list.\n"
+            "Answer each question strictly from the provided SEC text.\n"
+            'If unavailable, answer exactly: "Not disclosed in the provided filings."\n\n'
+            "Return ONLY valid JSON in this exact shape:\n"
+            "{\n"
+            '  "answers": [\n'
+            "    {\n"
+            '      "question": "...",\n'
+            '      "answer": "...",\n'
+            '      "evidence": "brief quote/paraphrase from filing text",\n'
+            '      "filing_refs": ["10-K 2024-02-10", "6-K 2025-11-04"],\n'
+            '      "confidence": "High|Medium|Low"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "No markdown, no extra keys, no prose outside JSON.\n\n"
+            f"Questions:\n{questions_block}\n\n"
+            f"SEC filings text:\n{sec_text_bundle}\n"
+        )
+
+        raw_answers = legacy.deepseek_simple_text(
+            api_key=api_key,
+            prompt=answers_prompt,
+            model="deepseek-reasoner",
+            temperature=0.15,
+            short_answer=False,
+        )
+        answers_obj = _parse_json_object_from_text(raw_answers)
+        qna_markdown = _format_sec_qna_markdown(questions, answers_obj)
+        if not qna_markdown:
+            errors.append("Failed to generate SEC Q&A markdown.")
+            return out
+
+        out["status"] = "success"
+        out["questions"] = questions
+        out["text"] = qna_markdown
+        return out
+    except Exception as exc:
+        errors.append(f"Unhandled SEC Q&A builder error: {exc}")
+        errors.append(traceback.format_exc(limit=3))
+        return out
 
 
 def build_sec_short_analysis_text(

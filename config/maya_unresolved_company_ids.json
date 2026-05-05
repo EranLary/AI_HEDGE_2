@@ -1,0 +1,11 @@
+{
+  "STRS.TA": {
+    "count": 1,
+    "first_seen_at": "2026-05-05T08:58:26.384692+00:00",
+    "last_seen_at": "2026-05-05T08:58:26.384692+00:00",
+    "last_reason": "company_id_not_found",
+    "terms": [
+      "STRS"
+    ]
+  }
+}

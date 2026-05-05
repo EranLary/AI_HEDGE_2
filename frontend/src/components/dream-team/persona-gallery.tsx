@@ -34,6 +34,7 @@ export function PersonaGallery({
   dreamOutputs,
   ctx,
   currentPrice,
+  liveCurrentPrice,
   ticker,
   reports,
   currentReportId,
@@ -42,6 +43,7 @@ export function PersonaGallery({
   dreamOutputs: DreamOutput[];
   ctx: CurrencyContext;
   currentPrice: number | null | undefined;
+  liveCurrentPrice: number | null | undefined;
   ticker: string;
   reports: ReportListItem[];
   currentReportId: string;
@@ -56,7 +58,6 @@ export function PersonaGallery({
         return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
       };
       const ordered = personas
-        .filter((member) => String(member.persona || "").trim() !== "Peter Thiel")
         .slice()
         .sort((a, b) => {
           const aRank = rankFor(String(a.persona || "").trim());
@@ -170,6 +171,7 @@ export function PersonaGallery({
                 member={active}
                 ctx={ctx}
                 currentPrice={currentPrice}
+                liveCurrentPrice={liveCurrentPrice}
                 index={activeIndex}
                 total={total}
               />

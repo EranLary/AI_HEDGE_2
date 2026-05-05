@@ -26,6 +26,7 @@ import { repoRoot } from "@/lib/site-runner";
 
 export type LivePerformance = {
   ticker: string;
+  current_price?: number | null;
   returns_pct: {
     "1D"?: number | null;
     "1W"?: number | null;
@@ -194,19 +195,99 @@ function runLiveReturnsScript(ticker: string): Promise<LivePerformance> {
   });
 }
 
+function runLivePricesBatchScript(tickers: string[]): Promise<Record<string, number | null>> {
+  return new Promise((resolve, reject) => {
+    const clean = Array.from(new Set(tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean)));
+    if (!clean.length) {
+      resolve({});
+      return;
+    }
+
+    const root = repoRoot();
+    const scriptPath = path.resolve(root, "scripts", "live_prices_batch.py");
+    const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
+    const workers = String(process.env.HIT_RATE_PRICE_WORKERS || "12");
+
+    const child = spawn(pythonExe, [scriptPath, "--tickers", clean.join(","), "--workers", workers], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        PYTHONPATH: path.resolve(root, "src"),
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (err) => {
+      reject(err);
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `live_prices_batch.py exited with ${code}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { prices?: Record<string, unknown> };
+        const out: Record<string, number | null> = {};
+        for (const ticker of clean) {
+          const raw = parsed?.prices?.[ticker];
+          const n = Number(raw);
+          out[ticker] = Number.isFinite(n) ? n : null;
+        }
+        resolve(out);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
 export const getLivePerformance = unstable_cache(
   async (ticker: string): Promise<LivePerformance> => {
     const tk = ticker.toUpperCase();
     try {
       const result = await runLiveReturnsScript(tk);
-      return { ticker: tk, returns_pct: result?.returns_pct || {} };
+      return {
+        ticker: tk,
+        current_price:
+          typeof result?.current_price === "number" && Number.isFinite(result.current_price)
+            ? Number(result.current_price)
+            : null,
+        returns_pct: result?.returns_pct || {},
+      };
     } catch {
-      return { ticker: tk, returns_pct: {} };
+      return { ticker: tk, current_price: null, returns_pct: {} };
     }
   },
   ["live-performance-v1"],
   { revalidate: 120 },
 );
+
+export async function getLiveCurrentPricesBatch(tickers: string[]): Promise<Record<string, number | null>> {
+  try {
+    return await runLivePricesBatchScript(tickers);
+  } catch {
+    const unique = Array.from(new Set(tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean)));
+    const pairs = await Promise.all(
+      unique.map(async (ticker) => {
+        const result = await getLivePerformance(ticker).catch(() => null);
+        const price =
+          typeof result?.current_price === "number" && Number.isFinite(result.current_price)
+            ? Number(result.current_price)
+            : null;
+        return [ticker, price] as const;
+      }),
+    );
+    return Object.fromEntries(pairs);
+  }
+}
 
 export type ResolvedTickerData = {
   ticker: string;

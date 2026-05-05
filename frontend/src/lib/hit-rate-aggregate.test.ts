@@ -1,0 +1,103 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { DashboardPayload } from "./dashboard-types";
+import { computeHitRateAggregation, type HitRateSourceReport } from "./hit-rate-aggregate";
+
+function basePayload(): DashboardPayload {
+  return {
+    ticker: "TEST",
+    header: {},
+    red_flag_shield: [],
+    analysis_matrix: {
+      executive_summary_markdown: "",
+      key_insights: [],
+      bull_insights: [],
+      red_flag_insights: [],
+      swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] },
+    },
+    valuation_hub: {
+      method_blocks: [],
+      method_tabs: [],
+      consensus: {
+        current_price: 100,
+        mean_target_price: null,
+      },
+    },
+    dream_team: [],
+    forecast_forensic_matrix: {
+      current_revenue: null,
+      target_revenue: null,
+      current_earnings: null,
+      target_earnings: null,
+      forensic_flags: [],
+    },
+    decision_card: {
+      action: "",
+      position_size_pct_of_notional: 0,
+      mean_investment_amount: null,
+      rationale: "",
+    },
+    artifacts: {},
+  };
+}
+
+test("Overall model uses dashboard mean target and mean investment with correct hit-rate math", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [
+    {
+      name: "DCF",
+      target_price: 130,
+      investment_amount: 10000,
+      key_metric_means: {},
+      outputs: [],
+    },
+  ];
+  payload.valuation_hub.consensus.mean_target_price = 80;
+  payload.decision_card.mean_investment_amount = -5000;
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
+
+  const agg = computeHitRateAggregation(reports, live);
+  const overall = agg.by_model.find((row) => row.key === "Overall");
+  assert.ok(overall);
+
+  // Mean target 80 vs baseline 100 predicts down -> miss against actual up.
+  assert.equal(overall.targets.hits, 0);
+  assert.equal(overall.targets.misses, 1);
+  assert.equal(overall.targets.neutral, 0);
+  assert.equal(overall.targets.considered, 1);
+  assert.equal(overall.targets.hit_rate_pct, 0);
+
+  // Mean investment -5000 predicts down allocation -> miss against actual up.
+  assert.equal(overall.allocations.hits, 0);
+  assert.equal(overall.allocations.misses, 1);
+  assert.equal(overall.allocations.neutral, 0);
+  assert.equal(overall.allocations.considered, 1);
+  assert.equal(overall.allocations.hit_rate_pct, 0);
+});
+
+test("Overall target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
+  const payload = basePayload();
+  payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100
+  payload.decision_card.mean_investment_amount = 0; // neutral allocation verdict
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
+
+  const agg = computeHitRateAggregation(reports, live);
+  const overall = agg.by_model.find((row) => row.key === "Overall");
+  assert.ok(overall);
+
+  assert.equal(overall.targets.hits, 1);
+  assert.equal(overall.targets.misses, 0);
+  assert.equal(overall.targets.considered, 1);
+  assert.equal(overall.targets.hit_rate_pct, 100);
+
+  assert.equal(overall.allocations.hits, 0);
+  assert.equal(overall.allocations.misses, 0);
+  assert.equal(overall.allocations.neutral, 1);
+  assert.equal(overall.allocations.considered, 0);
+  assert.equal(overall.allocations.hit_rate_pct, null);
+});

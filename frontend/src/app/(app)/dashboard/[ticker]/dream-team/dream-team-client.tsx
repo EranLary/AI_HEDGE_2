@@ -9,6 +9,7 @@ export type DreamTeamClientProps = {
   data: DashboardPayload;
   reportsForTicker: ReportListItem[];
   resolvedReportId: string;
+  liveCurrentPrice: number | null;
 };
 
 export function DreamTeamClient({
@@ -16,6 +17,7 @@ export function DreamTeamClient({
   data,
   reportsForTicker,
   resolvedReportId,
+  liveCurrentPrice,
 }: DreamTeamClientProps) {
   const ctx = buildCurrencyContext(data);
   const team = data.dream_team || [];
@@ -29,6 +31,7 @@ export function DreamTeamClient({
       dreamOutputs={dreamOutputs}
       ctx={ctx}
       currentPrice={typeof currentPrice === "number" ? currentPrice : null}
+      liveCurrentPrice={liveCurrentPrice}
       ticker={ticker}
       reports={reportsForTicker}
       currentReportId={resolvedReportId}

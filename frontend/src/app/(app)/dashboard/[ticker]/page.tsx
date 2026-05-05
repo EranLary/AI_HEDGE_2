@@ -11,5 +11,5 @@ export default async function DashboardTickerRootPage({
   const search = await searchParams;
   const report = typeof search?.report === "string" ? search.report : undefined;
   const suffix = report ? `?report=${encodeURIComponent(report)}` : "";
-  redirect(`/dashboard/${encodeURIComponent(ticker)}/overview${suffix}`);
+  redirect(`/dashboard/${encodeURIComponent(ticker)}/summary${suffix}`);
 }

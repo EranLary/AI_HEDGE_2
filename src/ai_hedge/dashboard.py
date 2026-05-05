@@ -65,7 +65,10 @@ Important requirements:
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
 - Write in simple, clear, professional language
 - Prioritize non-obvious insights over surface-level observations.
-- Use **bold** emphasis for key facts and turning points, it's much more readible
+- Every bullet must begin with a short bold theme prefix (2-5 words) that captures the core point.
+- Use this exact style: **<Theme Prefix>:** <specific reason and why it matters>
+- Example: **Pricing Power:** Gross margins expanded despite cost pressure, signaling durable customer willingness to pay.
+- Keep the prefix tight and descriptive (not generic words like "Good" or "Positive").
 - Think like a smart investor trying to justify a position
 - make at readible interstingly, not robotic
 
@@ -117,7 +120,10 @@ Important requirements:
 - Avoid generic statements (e.g. "competition exists")
 - Avoid repeating the same idea in different wording
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
-- Use **bold** emphasis for key facts and turning points, it's much more readible
+- Every bullet must begin with a short bold theme prefix (2-5 words) that captures the core point.
+- Use this exact style: **<Theme Prefix>:** <specific risk and why it matters>
+- Example: **Customer Concentration:** One major client drives a large share of revenue, creating meaningful downside if demand weakens.
+- Keep the prefix tight and descriptive (not generic words like "Risk" or "Concern").
 - Clearly explain why each point matters when necessary
 - Prioritize non-obvious insights over surface-level observations.
 - Prioritize risks that could materially damage the business or valuation

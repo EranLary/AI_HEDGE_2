@@ -19,9 +19,15 @@ export type RunStatusPayload = {
   llm_progress_pct?: number;
   llm_calls_note?: string;
   result?: Record<string, unknown> | null;
+  report_id?: string | null;
+  persistence_error?: string;
   error?: string;
   traceback?: string;
 };
+
+const APP_BOOT_TIME_MS = Date.now();
+const APP_BOOT_ISO = new Date(APP_BOOT_TIME_MS).toISOString();
+let staleRunsReconciled = false;
 
 export function repoRoot(): string {
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), "..");
@@ -74,5 +80,86 @@ export function readProgressLines(progressPath: string, maxLines = 80): string[]
     return lines.slice(-maxLines);
   } catch {
     return [];
+  }
+}
+
+function parseIsoToMs(value: unknown): number | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function failStatusDueToRestart(status: RunStatusPayload): RunStatusPayload {
+  const restartMsg =
+    "Run was interrupted by a server restart/deploy and was auto-marked failed. Please rerun this ticker.";
+
+  const existingError = String(status.error || "").trim();
+  const mergedError =
+    existingError && !existingError.includes(restartMsg)
+      ? `${existingError}\n${restartMsg}`
+      : existingError || restartMsg;
+
+  return {
+    ...status,
+    status: "failed",
+    finished_at: new Date().toISOString(),
+    error: mergedError,
+    persistence_error: String(status.persistence_error || "").trim(),
+    result: status.result ?? null,
+  };
+}
+
+export function reconcileStaleRunsAfterRestart(): void {
+  if (staleRunsReconciled) return;
+  staleRunsReconciled = true;
+
+  const root = siteRunsRoot();
+  if (!fs.existsSync(root)) return;
+
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const statusPath = path.resolve(root, entry.name, "_status.json");
+    if (!fs.existsSync(statusPath)) continue;
+
+    try {
+      const raw = fs.readFileSync(statusPath, "utf-8");
+      const status = JSON.parse(raw) as RunStatusPayload;
+      if (status.status !== "running" && status.status !== "queued") continue;
+
+      const startedMs = parseIsoToMs(status.started_at);
+      const createdMs = parseIsoToMs(status.created_at);
+      const stat = fs.statSync(statusPath);
+      const anchorMs = startedMs ?? createdMs ?? stat.mtimeMs;
+
+      // If a run was created/started before this process boot, it cannot still be alive.
+      if (anchorMs <= APP_BOOT_TIME_MS - 1000) {
+        const failed = failStatusDueToRestart(status);
+        fs.writeFileSync(statusPath, JSON.stringify(failed, null, 2), "utf-8");
+      }
+    } catch {
+      // best effort; never block request flow.
+      continue;
+    }
+  }
+
+  // Best effort marker for diagnostics.
+  try {
+    const marker = path.resolve(root, "_reconciled_at_startup.json");
+    fs.writeFileSync(
+      marker,
+      JSON.stringify({ reconciled_at: new Date().toISOString(), app_boot_at: APP_BOOT_ISO }, null, 2),
+      "utf-8",
+    );
+  } catch {
+    // ignore marker failures
   }
 }

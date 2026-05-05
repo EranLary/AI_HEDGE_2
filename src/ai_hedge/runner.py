@@ -123,6 +123,72 @@ def _format_sec_sources(files_dict: Optional[Dict[str, object]]) -> str:
     return ", ".join(entries)
 
 
+def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
+    explicit = str(raw.get("source", "") or "").strip().upper()
+    if explicit in {"SEC", "MAYA"}:
+        return explicit
+    if str(form_type or "").strip().upper().startswith("MAYA"):
+        return "MAYA"
+    return "SEC"
+
+
+def _build_sec_sources_footer(files_dict: Optional[Dict[str, object]]) -> str:
+    if not _has_filing_text(files_dict):
+        return ""
+
+    sources: List[str] = []
+    annual_date = ""
+    quarterly_date = ""
+
+    if isinstance(files_dict, dict):
+        for form_type, raw in files_dict.items():
+            if not isinstance(raw, dict):
+                continue
+            if not str(raw.get("text", "") or "").strip():
+                continue
+
+            source = _filing_source_label(str(form_type or ""), raw)
+            if source not in sources:
+                sources.append(source)
+
+            date = str(raw.get("date", "") or "").strip()
+            form_u = str(form_type or "").strip().upper()
+            title_u = str(raw.get("title", "") or "").strip().upper()
+
+            if not annual_date:
+                if "MAYA ANNUAL" in form_u or "10-K" in form_u or "20-F" in form_u or "ANNUAL" in title_u:
+                    annual_date = date
+
+            if not quarterly_date:
+                if "MAYA QUARTERLY" in form_u or "10-Q" in form_u or "6-K" in form_u or "QUARTER" in title_u or "Q1" in title_u or "Q2" in title_u or "Q3" in title_u or "Q4" in title_u:
+                    quarterly_date = date
+
+    if not sources:
+        return ""
+
+    source_label = ", ".join(sources)
+    annual_out = annual_date or "Not available"
+    quarterly_out = quarterly_date or "Not available"
+    lines = [
+        "## SEC Section Sources",
+        f"- Source: {source_label}",
+        f"- Annual report date: {annual_out}",
+        f"- Quarterly report date: {quarterly_out}",
+    ]
+    return "\n".join(lines).strip()
+
+
+def _has_filing_text(files_dict: Optional[Dict[str, object]]) -> bool:
+    if not isinstance(files_dict, dict):
+        return False
+    for raw in files_dict.values():
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("text", "") or "").strip():
+            return True
+    return False
+
+
 def _merge_unique_lines(base: List[str], extra: List[str], limit: int = 12) -> List[str]:
     out: List[str] = []
     seen = set()
@@ -575,64 +641,101 @@ def run_ticker_valuation(
 
     text = legacy.load_text_from_file("analysis.txt")
     regular_text = str(text or "").strip()
-    sec_short_text = ""
     notes: List[str] = []
+
+    # SEC/MAYA pre-decision Q&A: run only when filing text exists.
+    if _has_filing_text(files_dict):
+        try:
+            from .service import build_sec_question_answer_text
+
+            sec_qna_out = build_sec_question_answer_text(
+                ticker=ticker,
+                analysis_text=regular_text,
+                files_dict=files_dict,
+                financial_dict=financial_dict,
+            )
+            sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
+            sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
+            if sec_qna_out.get("status") == "success" and sec_qna_text:
+                legacy.append_text_to_file(
+                    text=sec_qna_text,
+                    header="SEC Pre-Decision Questions & Answers",
+                )
+                print(f"SEC pre-decision Q&A generated successfully for {ticker}")
+            elif sec_qna_errors:
+                notes.extend(sec_qna_errors[:3])
+        except Exception as sec_qna_exc:
+            notes.append(f"SEC pre-decision Q&A generation failed: {sec_qna_exc}")
+
+    sec_short_text = ""
     sec_fallback_used = False
     sec_fallback_message = ""
-    try:
-        from .service import build_sec_short_analysis_text
-
-        sec_out = build_sec_short_analysis_text(
-            ticker=ticker,
-            info_dict=info_dict,
-            files_dict=files_dict,
-            financial_dict=financial_dict,
-        )
-
-        sec_errors = [str(e) for e in sec_out.get("errors", [])]
-        sec_candidate = str(sec_out.get("text", "")).strip()
-        if sec_out.get("status") == "success" and sec_candidate:
-            sec_short_text = sec_candidate
-            legacy.append_text_to_file(
-                text=sec_short_text,
-                header="SEC Short Analysis Context",
-            )
-            print(f"SEC short analysis generated successfully for {ticker}")
-            
-            if sec_errors:
-                legacy.append_text_to_file(
-                    text="\n".join(sec_errors[:3]),
-                    header="SEC Short Analysis Notes",
-                )
-                notes.extend(sec_errors[:3])
-        else:
-            warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
-            legacy.append_text_to_file(
-                text=warn,
-                header="SEC Short Analysis Context (Warning)",
-            )
-            sec_fallback_used = True
-            sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
-            notes.append(
-                "SEC short analysis failed or was empty. "
-                "Valuation fallback applied: using regular analysis text for the combined pass."
-            )
-            if sec_errors:
-                notes.extend(sec_errors[:3])
-    except Exception as sec_exc:
-        warn_text = f"SEC short analysis generation failed: {sec_exc}"
+    if not _has_filing_text(files_dict):
         legacy.append_text_to_file(
-            text=warn_text,
+            text="No filing text available in files_dict (SEC/MAYA). Continuing with regular analysis only.",
             header="SEC Short Analysis Context (Warning)",
         )
-        print(f"Warning: SEC short analysis generation failed for {ticker}.")
         sec_fallback_used = True
-        sec_fallback_message = "SEC download/parse failed, continuing without SEC context."
+        sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
         notes.append(
-            "SEC short analysis generation raised an exception. "
+            "No filing text available. "
             "Valuation fallback applied: using regular analysis text for the combined pass."
         )
-        notes.append(warn_text)
+    else:
+        try:
+            from .service import build_sec_short_analysis_text
+
+            sec_out = build_sec_short_analysis_text(
+                ticker=ticker,
+                info_dict=info_dict,
+                files_dict=files_dict,
+                financial_dict=financial_dict,
+            )
+
+            sec_errors = [str(e) for e in sec_out.get("errors", [])]
+            sec_candidate = str(sec_out.get("text", "")).strip()
+            if sec_out.get("status") == "success" and sec_candidate:
+                sec_short_text = sec_candidate
+                legacy.append_text_to_file(
+                    text=sec_short_text,
+                    header="SEC Short Analysis Context",
+                )
+                print(f"SEC short analysis generated successfully for {ticker}")
+
+                if sec_errors:
+                    legacy.append_text_to_file(
+                        text="\n".join(sec_errors[:3]),
+                        header="SEC Short Analysis Notes",
+                    )
+                    notes.extend(sec_errors[:3])
+            else:
+                warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
+                legacy.append_text_to_file(
+                    text=warn,
+                    header="SEC Short Analysis Context (Warning)",
+                )
+                sec_fallback_used = True
+                sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
+                notes.append(
+                    "SEC short analysis failed or was empty. "
+                    "Valuation fallback applied: using regular analysis text for the combined pass."
+                )
+                if sec_errors:
+                    notes.extend(sec_errors[:3])
+        except Exception as sec_exc:
+            warn_text = f"SEC short analysis generation failed: {sec_exc}"
+            legacy.append_text_to_file(
+                text=warn_text,
+                header="SEC Short Analysis Context (Warning)",
+            )
+            print(f"Warning: SEC short analysis generation failed for {ticker}.")
+            sec_fallback_used = True
+            sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
+            notes.append(
+                "SEC short analysis generation raised an exception. "
+                "Valuation fallback applied: using regular analysis text for the combined pass."
+            )
+            notes.append(warn_text)
     sec_sources = _format_sec_sources(files_dict)
     _append_progress(
         progress_file,
@@ -883,6 +986,9 @@ def run_ticker_valuation(
                 merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
 
             merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
+            sources_footer = _build_sec_sources_footer(files_dict)
+            if sources_footer:
+                merged_text = f"{merged_text}\n\n---\n\n{sources_footer}".strip()
             if merged_text:
                 merged_pdf_source.write_text(merged_text + "\n", encoding="utf-8")
                 convert_text_to_pdf(merged_pdf_source, target_pdf, target_html)
@@ -906,7 +1012,12 @@ def run_ticker_valuation(
 
     try:
         from ai_hedge.db.writer import write_run_to_db
-        write_run_to_db(out_dir.resolve(), source=run_source)
+        write_run_to_db(
+            out_dir.resolve(),
+            source=run_source,
+            max_attempts=3,
+            retry_backoff_seconds=1.5,
+        )
     except Exception as _db_exc:  # noqa: BLE001
         print(f"[runner] DB write skipped: {_db_exc}", file=sys.stderr)
 

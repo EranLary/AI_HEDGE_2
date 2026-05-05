@@ -249,6 +249,7 @@ export type DiscoveryRow = {
   overvaluation_pct: number;
   dispersion: number;
   return_pct: number;
+  investment_allocation_pct: number | null;
   confidence_cv: number;
   decision_label?: string;
   decision_tone?: "buy" | "sell" | "hold";

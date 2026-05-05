@@ -20,7 +20,7 @@ function DashboardIndexInner() {
   useEffect(() => {
     if (legacyTicker) {
       const suffix = legacyReport ? `?report=${encodeURIComponent(legacyReport)}` : "";
-      router.replace(`/dashboard/${encodeURIComponent(legacyTicker.toUpperCase())}/overview${suffix}`);
+      router.replace(`/dashboard/${encodeURIComponent(legacyTicker.toUpperCase())}/summary${suffix}`);
       return;
     }
     router.replace("/reports");

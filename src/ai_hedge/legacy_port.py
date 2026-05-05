@@ -829,7 +829,7 @@ def get_largest_6k_in_range(json_data, months_back=3, ref_date_str=None):
 
     return None
 
-def latest_filing_full_text(ticker: str) -> dict:
+def _latest_filing_full_text_sec(ticker: str) -> dict:
     """
     Retrieves the full text and extracted tables of the latest filings for a given ticker.
 
@@ -942,6 +942,28 @@ def latest_filing_full_text(ticker: str) -> dict:
                         "date": None
                     }
         return files_dict
+
+
+def latest_filing_full_text(ticker: str) -> dict:
+    """
+    Routing wrapper:
+    - `.TA` tickers -> MAYA financial reports (annual + quarterly when available)
+    - non-`.TA` tickers -> existing SEC downloader
+    """
+    ticker_u = str(ticker or "").strip().upper()
+    if ticker_u.endswith(".TA"):
+        try:
+            from .maya_reports import fetch_latest_maya_reports
+
+            maya_files = fetch_latest_maya_reports(ticker_u)
+            if isinstance(maya_files, dict):
+                return maya_files
+            return {}
+        except Exception as maya_exc:
+            print(f"MAYA fetch error for {ticker_u}: {maya_exc}")
+            return {}
+
+    return _latest_filing_full_text_sec(ticker_u)
 
 import yfinance as yf
 import pandas as pd
@@ -1178,14 +1200,26 @@ def deepseek_simple_text(
         print("------------------------------------------------")
         print(prompt)
 
+    normalized_model = str(model or "").strip().lower()
+    model_name = str(model or "").strip()
+    # Keep legacy call sites stable while targeting explicit V4 models.
+    if normalized_model == "deepseek-chat":
+        model_name = "deepseek-v4-flash"
+    elif normalized_model == "deepseek-reasoner":
+        model_name = "deepseek-v4-pro"
+
     payload = {
-        "model": model,
+        "model": model_name,
         "temperature": temperature,
         "messages": [
             {"role": "system", "content": "Answer clearly and concisely."},
             {"role": "user", "content": prompt},
         ],
     }
+    # Preserve reasoner behavior by explicitly enabling thinking mode.
+    if normalized_model == "deepseek-reasoner":
+        payload["thinking"] = {"type": "enabled"}
+        payload["reasoning_effort"] = "high"
 
     session = _get_session(
         total_retries=max_retries,
@@ -2982,6 +3016,7 @@ def reset_file_if_not_empty(file_path: str = "analysis.txt") -> None:
 
 def generate_first_text(ticker, variables_dict, file_path: str = "analysis.txt"):
     title = f"# {ticker} - Analysis file"
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Write title as a real Markdown H1 (no "header: value" formatting)
     append_text_to_file(
@@ -2992,7 +3027,15 @@ def generate_first_text(ticker, variables_dict, file_path: str = "analysis.txt")
         add_timestamp=False
     )
 
-    # Add one blank line after title for readability
+    # Add generation datetime directly under the title.
+    append_text_to_file(
+        text=generated_at,
+        header=None,
+        file_path=file_path,
+        two_rows_n=False
+    )
+
+    # Add one blank line after header metadata for readability.
     append_text_to_file(
         text="",
         header=None,
@@ -5225,6 +5268,7 @@ def run_valuations(
     "Aswath Damodaran",
     "Charlie Munger",
     "Peter Lynch",
+    "Peter Thiel",
     "Howard Marks",
     "Bill Ackman",
     "Cathie Wood",

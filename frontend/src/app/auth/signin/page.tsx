@@ -1,4 +1,4 @@
-import { BrandLogo } from "@/components/brand-logo";
+import Image from "next/image";
 import { SignInButton } from "@/components/auth/signin-button";
 
 type SearchParams = Promise<{ callbackUrl?: string; error?: string }>;

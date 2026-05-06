@@ -1172,7 +1172,8 @@ def _get_session(*, total_retries: int, backoff_factor: float, pool_size: int) -
         _thread_local.session = s
     return s
 
-def deepseek_simple_text(
+
+def _deepseek_simple_full(
     *,
     api_key: str,
     prompt: str,
@@ -1184,7 +1185,14 @@ def deepseek_simple_text(
     short_answer: bool = True,
     print_prompt: bool = False,
     pool_size: int = 20,
-) -> str:
+) -> dict:
+    """Full-data variant of deepseek_simple_text — returns content + metadata.
+
+    Used by the obs instrumentation layer to capture tokens, latency, and the
+    actual prompt that was sent (after the short_answer suffix). The public
+    ``deepseek_simple_text`` delegates here and returns just the content string,
+    so behaviour for legacy callers is unchanged.
+    """
     url = "https://api.deepseek.com/chat/completions"
 
     headers = {
@@ -1234,6 +1242,7 @@ def deepseek_simple_text(
     retryable_statuses = {408, 429, 500, 502, 503, 504}
     attempts = max(1, int(max_retries) + 1)
     last_error: Exception | None = None
+    started = time.time()
 
     for attempt in range(attempts):
         try:
@@ -1250,7 +1259,16 @@ def deepseek_simple_text(
                 raise http_err
 
             data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            message = (data.get("choices") or [{}])[0].get("message") or {}
+            return {
+                "content": message.get("content", ""),
+                "reasoning_content": message.get("reasoning_content"),
+                "model_actual": data.get("model") or model_name,
+                "usage": data.get("usage") or {},
+                "latency_ms": int((time.time() - started) * 1000),
+                "retries": attempt,
+                "effective_prompt": prompt,
+            }
         except transient_errors as exc:
             last_error = exc
         except ValueError as exc:
@@ -1265,6 +1283,33 @@ def deepseek_simple_text(
     if last_error is not None:
         raise RuntimeError(f"DeepSeek request failed after {attempts} attempts: {last_error}") from last_error
     raise RuntimeError(f"DeepSeek request failed after {attempts} attempts.")
+
+
+def deepseek_simple_text(
+    *,
+    api_key: str,
+    prompt: str,
+    model: str = "deepseek-chat",
+    temperature: float = 0.5,
+    timeout: tuple[float, float] = (10.0, 180.0),
+    max_retries: int = 4,
+    backoff_factor: float = 0.4,
+    short_answer: bool = True,
+    print_prompt: bool = False,
+    pool_size: int = 20,
+) -> str:
+    return _deepseek_simple_full(
+        api_key=api_key,
+        prompt=prompt,
+        model=model,
+        temperature=temperature,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=backoff_factor,
+        short_answer=short_answer,
+        print_prompt=print_prompt,
+        pool_size=pool_size,
+    )["content"]
 
 
 from datetime import datetime

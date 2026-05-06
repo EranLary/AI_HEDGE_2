@@ -610,6 +610,58 @@ def run_ticker_valuation(
     progress_file: Optional[str] = None,
     run_source: str = "site",
 ) -> Dict[str, object]:
+    """Public entry — bookends the implementation with obs lifecycle."""
+    from . import obs as _obs
+
+    _obs.install()
+    ticker_clean = ticker.upper().strip()
+    obs_run_id = _obs.db.insert_run(ticker=ticker_clean, source=run_source)
+    token = _obs.RUN_ID.set(obs_run_id) if obs_run_id else None
+    obs_started = time.perf_counter()
+    obs_status = "success"
+    obs_error: Optional[str] = None
+    try:
+        return _run_ticker_valuation_impl(
+            ticker,
+            output_root=output_root,
+            save_pdf=save_pdf,
+            show_plots=show_plots,
+            valuation_iterations=valuation_iterations,
+            analysis_workers=analysis_workers,
+            llm_workers_each_block=llm_workers_each_block,
+            valuation_blocks_workers=valuation_blocks_workers,
+            progress_file=progress_file,
+            run_source=run_source,
+        )
+    except Exception as exc:
+        obs_status = "error"
+        obs_error = f"{type(exc).__name__}: {exc}"[:1000]
+        raise
+    finally:
+        if token is not None:
+            _obs.RUN_ID.reset(token)
+        if obs_run_id:
+            _obs.db.finalize_run_row(
+                run_id=obs_run_id,
+                status=obs_status,
+                error_message=obs_error,
+                duration_ms=int((time.perf_counter() - obs_started) * 1000),
+            )
+
+
+def _run_ticker_valuation_impl(
+    ticker: str,
+    *,
+    output_root: str = "outputs",
+    save_pdf: bool = True,
+    show_plots: bool = True,
+    valuation_iterations: int = DEFAULT_VALUATION_ITERATIONS,
+    analysis_workers: int = DEFAULT_ANALYSIS_WORKERS,
+    llm_workers_each_block: int = DEFAULT_LLM_WORKERS,
+    valuation_blocks_workers: int = DEFAULT_VALUATION_BLOCK_WORKERS,
+    progress_file: Optional[str] = None,
+    run_source: str = "site",
+) -> Dict[str, object]:
     """
     Runs the notebook-equivalent valuation flow for one ticker and saves artifacts.
 
@@ -623,6 +675,7 @@ def run_ticker_valuation(
     _ = valuation_iterations
     _require_api_key()
     from . import legacy_port as legacy
+    from . import obs as _obs
 
     ticker = ticker.upper().strip()
     out_dir = Path(output_root) / ticker
@@ -631,10 +684,11 @@ def run_ticker_valuation(
 
     legacy.ticker = ticker
 
-    info_dict, files_dict, financial_dict, variables_dict = legacy.make_analysis_file(
-        ticker,
-        parallel_workers=analysis_workers,
-    )
+    with _obs.llm_context(stage="analyst"):
+        info_dict, files_dict, financial_dict, variables_dict = legacy.make_analysis_file(
+            ticker,
+            parallel_workers=analysis_workers,
+        )
     _append_progress(progress_file, "Finished analysis of Files and Financials")
     if not info_dict.get("short_name"):
         raise ValueError(f"Ticker '{ticker}' is invalid or unavailable")
@@ -648,12 +702,13 @@ def run_ticker_valuation(
         try:
             from .service import build_sec_question_answer_text
 
-            sec_qna_out = build_sec_question_answer_text(
-                ticker=ticker,
-                analysis_text=regular_text,
-                files_dict=files_dict,
-                financial_dict=financial_dict,
-            )
+            with _obs.llm_context(stage="sec.qa"):
+                sec_qna_out = build_sec_question_answer_text(
+                    ticker=ticker,
+                    analysis_text=regular_text,
+                    files_dict=files_dict,
+                    financial_dict=financial_dict,
+                )
             sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
             sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
             if sec_qna_out.get("status") == "success" and sec_qna_text:
@@ -685,12 +740,13 @@ def run_ticker_valuation(
         try:
             from .service import build_sec_short_analysis_text
 
-            sec_out = build_sec_short_analysis_text(
-                ticker=ticker,
-                info_dict=info_dict,
-                files_dict=files_dict,
-                financial_dict=financial_dict,
-            )
+            with _obs.llm_context(stage="sec.short"):
+                sec_out = build_sec_short_analysis_text(
+                    ticker=ticker,
+                    info_dict=info_dict,
+                    files_dict=files_dict,
+                    financial_dict=financial_dict,
+                )
 
             sec_errors = [str(e) for e in sec_out.get("errors", [])]
             sec_candidate = str(sec_out.get("text", "")).strip()
@@ -756,14 +812,15 @@ def run_ticker_valuation(
         price_cv=None,
         lmil=None,
     )
-    qualitative_sections = generate_dashboard_sections(
-        ticker=ticker,
-        analysis_text=regular_text,
-        sec_short_text=sec_short_text,
-        financial_dict=financial_dict,
-        deterministic_red_flags=pre_dashboard_red_flags,
-        enable_llm_extractions=True,
-    )
+    with _obs.llm_context(stage="dashboard.extract"):
+        qualitative_sections = generate_dashboard_sections(
+            ticker=ticker,
+            analysis_text=regular_text,
+            sec_short_text=sec_short_text,
+            financial_dict=financial_dict,
+            deterministic_red_flags=pre_dashboard_red_flags,
+            enable_llm_extractions=True,
+        )
     _append_progress(progress_file, "Finished Dashboard Extraction (Pre-Valuation)")
 
     try:
@@ -781,19 +838,20 @@ def run_ticker_valuation(
     valuation_contexts = [regular_text]
 
     explain_payload: Dict[str, Any] = {}
-    final_dict = legacy.run_valuations(
-        ticker,
-        info_dict,
-        financial_dict,
-        variables_dict,
-        regular_text,
-        n=1,
-        llm_workers_each_block=llm_workers_each_block,
-        blocks_workers=valuation_blocks_workers,
-        add_text=False,
-        valuation_contexts=valuation_contexts,
-        explain_collector=explain_payload,
-    )
+    with _obs.llm_context(stage="valuations"):
+        final_dict = legacy.run_valuations(
+            ticker,
+            info_dict,
+            financial_dict,
+            variables_dict,
+            regular_text,
+            n=1,
+            llm_workers_each_block=llm_workers_each_block,
+            blocks_workers=valuation_blocks_workers,
+            add_text=False,
+            valuation_contexts=valuation_contexts,
+            explain_collector=explain_payload,
+        )
     _append_progress(progress_file, "Finished Valuations")
 
     revenue_dict = final_dict.get("Revenue", {}) if isinstance(final_dict, dict) else {}
@@ -861,12 +919,13 @@ def run_ticker_valuation(
         )
 
         technical_model = str(os.getenv("TECHNICAL_ANALYSIS_MODEL", "deepseek-chat") or "deepseek-chat").strip() or "deepseek-chat"
-        technical_run = run_technical_analysis(
-            ticker=ticker,
-            api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
-            model=technical_model,
-            temperature=0.1,
-        )
+        with _obs.llm_context(stage="technical"):
+            technical_run = run_technical_analysis(
+                ticker=ticker,
+                api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+                model=technical_model,
+                temperature=0.1,
+            )
         technical_analysis_payload = {
             "status": "success",
             "generated_at": technical_run.get("created_at"),

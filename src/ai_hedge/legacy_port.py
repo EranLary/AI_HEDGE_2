@@ -1329,23 +1329,38 @@ REQUIRED_F_SCORE_KEYS = [
 ]
 
 
+UNKNOWN_F_SCORE_MARKERS = {
+    "unknown",
+    "n/a",
+    "na",
+    "missing",
+    "not available",
+    "not_available",
+    "uncertain",
+    "null",
+}
+
+
 def extract_f_score_json_and_total(response_text: str) -> dict:
     """
     Extract a Piotroski F-Score JSON object from a model response.
 
     Rules:
     - Raises ValueError if no valid JSON object is found
-    - Raises ValueError if any required key has a value not in {0, 1}
+    - Raises ValueError if any required key has an invalid value
     - Does NOT fail if keys are missing or extra keys exist
     - Normalizes the result so that all required keys always exist
-    - Missing required keys are filled with 0
+    - Missing or ambiguous required keys are filled with null-equivalent (None)
     - Extra keys are ignored
 
     Returns:
         {
-            "f_score_json": {all 9 required keys only, each 0 or 1},
+            "f_score_json": {all 9 required keys only, each 0, 1, or None},
             "f_score_total": int,
-            "valid_keys": bool
+            "valid_keys": bool,
+            "known_criteria": int,
+            "total_criteria": int,
+            "coverage_ratio": float,
         }
     """
 
@@ -1373,20 +1388,42 @@ def extract_f_score_json_and_total(response_text: str) -> dict:
             valid_keys = parsed_keys == required_keys_set
 
             normalized = {}
+            known_criteria = 0
             for key in REQUIRED_F_SCORE_KEYS:
-                value = parsed.get(key, 0)
+                value = parsed.get(key, None)
 
-                if value not in (0, 1):
-                    raise ValueError(f"Invalid value for {key}: {value}")
+                if value in (0, 1):
+                    normalized[key] = int(value)
+                    known_criteria += 1
+                    continue
 
-                normalized[key] = value
+                if value is None:
+                    normalized[key] = None
+                    continue
 
-            f_score_total = sum(normalized.values())
+                if isinstance(value, str):
+                    marker = value.strip().lower()
+                    if marker in UNKNOWN_F_SCORE_MARKERS:
+                        normalized[key] = None
+                        continue
+
+                if isinstance(value, (int, float)) and float(value) == -1.0:
+                    normalized[key] = None
+                    continue
+
+                raise ValueError(f"Invalid value for {key}: {value}")
+
+            f_score_total = sum(v for v in normalized.values() if v in (0, 1))
+            total_criteria = len(REQUIRED_F_SCORE_KEYS)
+            coverage_ratio = (known_criteria / total_criteria) if total_criteria else 0.0
 
             return {
                 "f_score_json": normalized,
                 "f_score_total": f_score_total,
                 "valid_keys": valid_keys,
+                "known_criteria": known_criteria,
+                "total_criteria": total_criteria,
+                "coverage_ratio": coverage_ratio,
             }
 
         except Exception as e:
@@ -1407,27 +1444,39 @@ def f_score_result_to_text(f_score_result: dict) -> str:
     f_score_total = f_score_result.get("f_score_total")
     valid_keys = f_score_result.get("valid_keys", False)
     f_score_json = f_score_result.get("f_score_json", {})
+    known_criteria_raw = f_score_result.get("known_criteria", len(REQUIRED_F_SCORE_KEYS))
+    total_criteria_raw = f_score_result.get("total_criteria", len(REQUIRED_F_SCORE_KEYS))
 
     if not isinstance(f_score_total, int) or not (0 <= f_score_total <= 9):
         return "No valid F score"
+    try:
+        known_criteria = int(known_criteria_raw)
+    except Exception:
+        known_criteria = len(REQUIRED_F_SCORE_KEYS)
+    try:
+        total_criteria = int(total_criteria_raw)
+    except Exception:
+        total_criteria = len(REQUIRED_F_SCORE_KEYS)
+    total_criteria = max(1, total_criteria)
+    known_criteria = max(0, min(known_criteria, total_criteria))
 
-    score_meaning = {
-        0: "This is an extremely weak F-Score and suggests very poor financial strength.",
-        1: "This is a very weak F-Score and suggests serious financial weakness.",
-        2: "This is a weak F-Score and suggests the company has many financial issues.",
-        3: "This is a below-average F-Score and suggests limited financial quality.",
-        4: "This is a modest F-Score and suggests mixed financial signals.",
-        5: "This is a neutral F-Score and suggests average financial quality.",
-        6: "This is a decent F-Score and suggests fairly solid financial health.",
-        7: "This is a strong F-Score and suggests good financial quality.",
-        8: "This is a very strong F-Score and suggests high financial quality.",
-        9: "This is an excellent F-Score and suggests outstanding financial strength.",
-    }
+    known_score = f_score_total
+    score_base = known_criteria if known_criteria > 0 else total_criteria
+    score_ratio = known_score / score_base if score_base else 0.0
+
+    if score_ratio >= 0.78:
+        score_meaning = "This suggests strong financial quality based on the criteria with enough data."
+    elif score_ratio >= 0.56:
+        score_meaning = "This suggests mixed-to-decent financial quality based on available evidence."
+    elif score_ratio >= 0.34:
+        score_meaning = "This suggests below-average financial quality with meaningful weak spots."
+    else:
+        score_meaning = "This suggests weak financial quality based on the criteria with enough data."
 
     if not valid_keys:
         return (
-            f"The company has a Piotroski F-Score of {f_score_total} out of 9. "
-            f"{score_meaning[f_score_total]}"
+            f"The company has a Piotroski F-Score of {known_score} out of {score_base} known criteria. "
+            f"{score_meaning}"
         )
 
     key_descriptions = {
@@ -1442,19 +1491,30 @@ def f_score_result_to_text(f_score_result: dict) -> str:
         "improving_asset_turnover": "Improving asset turnover",
     }
 
-    lines = [f"The company has a Piotroski F-Score of {f_score_total} out of 9."]
-    lines.append(score_meaning[f_score_total])
+    lines = [f"The company has a Piotroski F-Score of {known_score} out of {score_base} known criteria."]
+    lines.append(score_meaning)
+    if known_criteria < total_criteria:
+        unknown_count = total_criteria - known_criteria
+        lines.append(
+            f"{unknown_count} criterion/criteria were marked as unknown due to missing or ambiguous data."
+        )
 
     for key in REQUIRED_F_SCORE_KEYS:
-        value = f_score_json.get(key, 0)
+        value = f_score_json.get(key, None)
         description = key_descriptions[key]
-        lines.append(f"- {description}: {'Yes' if value == 1 else 'No'}")
+        if value == 1:
+            verdict = "Yes"
+        elif value == 0:
+            verdict = "No"
+        else:
+            verdict = "Unknown"
+        lines.append(f"- {description}: {verdict}")
 
     return "\n".join(lines)
 
 
 def build_f_score_prompt(info: dict, financials_info: dict, financials: object) -> str:
-    output_format = {key: 0 for key in REQUIRED_F_SCORE_KEYS}
+    output_format = {key: None for key in REQUIRED_F_SCORE_KEYS}
 
     prompt = f"""
 You are an elite forensic financial analyst performing a mission-critical Piotroski F-Score evaluation.
@@ -1476,7 +1536,7 @@ This task is important for professional financial analysis. Your output will be 
 - You must not output any text before or after the JSON.
 
 A partially speculative answer is worse than a conservative answer.
-If the required metric is missing, ambiguous, contradictory, or cannot be reliably computed from the provided dictionaries, assign 0 for that criterion.
+If the required metric is missing, ambiguous, contradictory, or cannot be reliably computed from the provided dictionaries, assign null for that criterion (unknown), not 0.
 
 ========================
 INPUTS
@@ -1519,11 +1579,12 @@ Do NOT:
 - use industry assumptions
 - use company history not present in the inputs
 
-If a metric is missing or cannot be computed with confidence, return 0 for that criterion.
+If a metric is missing or cannot be computed with confidence, return null for that criterion (unknown).
 
 Every output value must be strictly either:
 - 1
 - 0
+- null (when the criterion cannot be evaluated with confidence from the provided data)
 
 No other values are allowed.
 
@@ -1538,9 +1599,9 @@ If data is inconsistent across the dictionaries:
 - prefer the most explicit historical financial statement data
 - prefer directly reported values over derived summaries
 - prefer comparable annual values over mixed-period values
-- if still ambiguous, assign 0
+- if still ambiguous, assign null (unknown)
 
-Be conservative. When in doubt, assign 0.
+Be conservative. When in doubt, assign null (unknown), not 0.
 
 ========================
 PIOTROSKI F-SCORE CRITERIA
@@ -1581,7 +1642,7 @@ Otherwise return 0.
 Return 1 if Shares Outstanding did NOT increase compared to the previous year.
 If shares stayed flat or declined, return 1.
 If shares increased, return 0.
-If unavailable or ambiguous, return 0.
+If unavailable or ambiguous, return null.
 
 OPERATING EFFICIENCY
 
@@ -1608,7 +1669,7 @@ FINAL INSTRUCTIONS
 Think very carefully and rigorously before answering.
 Perform a full internal check before producing the final JSON:
 - confirm each key exists exactly as required
-- confirm each value is only 0 or 1
+- confirm each value is only 0, 1, or null
 - confirm there are exactly 9 keys
 - confirm there is no extra text
 
@@ -1623,8 +1684,10 @@ def vote_f_score_results(results: list[dict]) -> dict:
     Build one final F-score result by majority vote across all valid runs.
 
     Voting rule:
-    - For each key, return 1 only if the majority voted 1
-    - Tie returns 0
+    - For each key, vote over known values only (0/1)
+    - Return 1 only if the majority of known votes is 1
+    - Return 0 only if the majority of known votes is 0
+    - If no known votes exist for a key, return None
     """
 
     if not results:
@@ -1633,17 +1696,35 @@ def vote_f_score_results(results: list[dict]) -> dict:
     voted_json = {}
 
     for key in REQUIRED_F_SCORE_KEYS:
-        ones = sum(result["f_score_json"].get(key, 0) for result in results)
-        zeros = len(results) - ones
-        voted_json[key] = 1 if ones > zeros else 0
+        known_votes = []
+        for result in results:
+            val = result.get("f_score_json", {}).get(key, None)
+            if val in (0, 1):
+                known_votes.append(int(val))
+        if not known_votes:
+            voted_json[key] = None
+            continue
+        ones = sum(1 for v in known_votes if v == 1)
+        zeros = sum(1 for v in known_votes if v == 0)
+        if ones > zeros:
+            voted_json[key] = 1
+        elif zeros > ones:
+            voted_json[key] = 0
+        else:
+            voted_json[key] = None
 
-    voted_total = sum(voted_json.values())
+    voted_total = sum(v for v in voted_json.values() if v in (0, 1))
+    known_criteria = sum(1 for v in voted_json.values() if v in (0, 1))
+    total_criteria = len(REQUIRED_F_SCORE_KEYS)
     all_valid_keys = all(result.get("valid_keys", False) for result in results)
 
     return {
         "f_score_json": voted_json,
         "f_score_total": voted_total,
         "valid_keys": all_valid_keys,
+        "known_criteria": known_criteria,
+        "total_criteria": total_criteria,
+        "coverage_ratio": (known_criteria / total_criteria) if total_criteria else 0.0,
     }
 
 
@@ -3277,7 +3358,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -3321,7 +3402,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -3360,7 +3441,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -3395,7 +3476,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and "target_market_cap_rationale" fields must be single comprehensive strings.
@@ -3436,7 +3517,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" must be a single comprehensive string and MUST be the first key in the JSON.
@@ -3494,7 +3575,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -3548,7 +3629,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 P/E definition and underwriting requirements:
 - "pe_multiple" represents a carefully underwritten, long-term P/E (Price to Earnings) multiple that reflects the company's true business quality and earnings power.
@@ -3616,7 +3697,7 @@ Definitions:
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -4121,6 +4202,7 @@ def build_prompt(ticker, financial_dict, instruction, text):
   - Internally infer what the market price assumes about scale, margins, and timing.
   - Triangulate base, bear, and bull cases without narrative explanation.
   - Internally verify consistency between valuation assumptions and TAM/SOM realities.
+  - Apply symmetrical scrutiny: evaluate upside paths as rigorously as downside paths, and do not apply a default risk discount unless evidence supports it.
 
   G) Catalysts and timeline
   - Internally identify near-, mid-, and long-term catalysts.

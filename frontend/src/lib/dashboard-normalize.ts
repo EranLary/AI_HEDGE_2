@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { createFallbackDashboard } from "@/lib/dashboard-fallback";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { canonicalMethodName } from "@/lib/method-names";
 import { findLatestByFileName, readJson, readUtf8 } from "@/lib/server-outputs";
 
 function asFinite(value: unknown): number | null {
@@ -138,6 +139,50 @@ function normalizeTechnicalAnalysisPayload(
   };
 }
 
+function canonicalizeMethodLabels(payload: DashboardPayload): DashboardPayload {
+  const methodBlocks = (payload.valuation_hub?.method_blocks || []).map((block) => ({
+    ...block,
+    name: canonicalMethodName(block.name) || String(block.name || "").trim() || "Unknown Model",
+  }));
+
+  const methodTabs = (payload.valuation_hub?.method_tabs || []).map((tab) => ({
+    ...tab,
+    name: canonicalMethodName(tab.name) || String(tab.name || "").trim() || "Unknown Model",
+  }));
+
+  const metricMeans = (payload.valuation_hub?.all_values?.metric_means || []).map((row) => ({
+    ...row,
+    methods: Array.isArray(row.methods)
+      ? Array.from(
+          new Set(
+            row.methods
+              .map((name) => canonicalMethodName(name) || String(name || "").trim())
+              .filter((name) => name.length > 0),
+          ),
+        )
+      : [],
+  }));
+
+  const sourceValues = (payload.valuation_hub?.all_values?.source_values || []).map((row) => ({
+    ...row,
+    method: canonicalMethodName(row.method) || String(row.method || "").trim(),
+  }));
+
+  return {
+    ...payload,
+    valuation_hub: {
+      ...payload.valuation_hub,
+      method_blocks: methodBlocks,
+      method_tabs: methodTabs,
+      all_values: {
+        ...(payload.valuation_hub?.all_values || {}),
+        metric_means: metricMeans,
+        source_values: sourceValues,
+      },
+    },
+  };
+}
+
 function hydrateTechnicalAnalysis(
   payload: DashboardPayload,
   ticker: string,
@@ -249,8 +294,9 @@ export function normalizePayload(
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
   };
 
-  const scale = inferLegacyModelTargetScale(merged);
-  const scaled = applyLegacyModelTargetScale(merged, scale);
+  const canonicalized = canonicalizeMethodLabels(merged);
+  const scale = inferLegacyModelTargetScale(canonicalized);
+  const scaled = applyLegacyModelTargetScale(canonicalized, scale);
   return hydrateTechnicalAnalysis(scaled, tk, reportMeta);
 }
 
@@ -375,7 +421,8 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       if (!trimmed || !/Method Target Price:/i.test(trimmed)) {
         continue;
       }
-      const titleLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
+      const rawTitleLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
+      const titleLine = canonicalMethodName(rawTitleLine) || rawTitleLine;
       const targetMatch = trimmed.match(/Method Target Price:\s*\$?([0-9,.\-]+)/i);
       const investMatch = trimmed.match(/Method Mean Investment:\s*\$?([0-9,.\-]+)/i);
 

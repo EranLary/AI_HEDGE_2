@@ -80,6 +80,11 @@ def add_indicators(df: pd.DataFrame, include_sma150: bool = True) -> pd.DataFram
     out["SMA50"] = close.rolling(50).mean()
     if include_sma150:
         out["SMA150"] = close.rolling(150).mean()
+    bb_std20 = close.rolling(20).std()
+    out["BB_MID20"] = out["SMA20"]
+    out["BB_UPPER20"] = out["SMA20"] + (2 * bb_std20)
+    out["BB_LOWER20"] = out["SMA20"] - (2 * bb_std20)
+    out["BB_WIDTH20_PCT"] = ((out["BB_UPPER20"] - out["BB_LOWER20"]) / out["BB_MID20"]) * 100
 
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -109,11 +114,11 @@ def add_indicators(df: pd.DataFrame, include_sma150: bool = True) -> pd.DataFram
 
 def _download_data(ticker: str) -> Dict[str, pd.DataFrame]:
     end = datetime.now(timezone.utc)
-    start_365 = end - timedelta(days=365)
+    start_6mo = end - timedelta(days=183)
 
-    daily_365 = yf.download(
+    daily_6mo = yf.download(
         ticker,
-        start=start_365.date(),
+        start=start_6mo.date(),
         end=end.date(),
         interval="1d",
         auto_adjust=False,
@@ -126,18 +131,18 @@ def _download_data(ticker: str) -> Dict[str, pd.DataFrame]:
         auto_adjust=False,
         progress=False,
     )
-    daily_2mo = yf.download(
+    hourly_2mo = yf.download(
         ticker,
         period="2mo",
-        interval="1d",
+        interval="1h",
         auto_adjust=False,
         progress=False,
     )
 
     return {
-        "DAILY_365": add_indicators(daily_365, include_sma150=True),
+        "DAILY_6MO": add_indicators(daily_6mo, include_sma150=True),
         "WEEKLY_ALL": add_indicators(weekly_all, include_sma150=False),
-        "DAILY_2MO": add_indicators(daily_2mo, include_sma150=True),
+        "HOURLY_2MO": add_indicators(hourly_2mo, include_sma150=True),
     }
 
 
@@ -210,10 +215,23 @@ def _prepare_for_llm(df: pd.DataFrame, name: str, tail_rows: int = 60) -> Dict[s
         "latest_macd_hist": _clean_value(latest.get("MACD_HIST")),
         "latest_obv": _clean_value(latest.get("OBV")),
         "latest_cmf20": _clean_value(latest.get("CMF20")),
+        "latest_bb_mid20": _clean_value(latest.get("BB_MID20")),
+        "latest_bb_upper20": _clean_value(latest.get("BB_UPPER20")),
+        "latest_bb_lower20": _clean_value(latest.get("BB_LOWER20")),
+        "latest_bb_width20_pct": _clean_value(latest.get("BB_WIDTH20_PCT")),
         "close_vs_sma20_pct": _clean_value((latest["Close"] / latest["SMA20"] - 1) * 100) if pd.notna(latest.get("SMA20")) else None,
         "close_vs_sma50_pct": _clean_value((latest["Close"] / latest["SMA50"] - 1) * 100) if pd.notna(latest.get("SMA50")) else None,
         "close_vs_sma150_pct": _clean_value((latest["Close"] / sma150_value - 1) * 100)
         if sma150_value is not None and pd.notna(sma150_value)
+        else None,
+        "close_vs_bb_mid20_pct": _clean_value((latest["Close"] / latest["BB_MID20"] - 1) * 100)
+        if pd.notna(latest.get("BB_MID20"))
+        else None,
+        "close_vs_bb_upper20_pct": _clean_value((latest["Close"] / latest["BB_UPPER20"] - 1) * 100)
+        if pd.notna(latest.get("BB_UPPER20"))
+        else None,
+        "close_vs_bb_lower20_pct": _clean_value((latest["Close"] / latest["BB_LOWER20"] - 1) * 100)
+        if pd.notna(latest.get("BB_LOWER20"))
         else None,
         "period_return_pct": _clean_value((temp["Close"].iloc[-1] / temp["Close"].iloc[0] - 1) * 100),
         "max_close": _clean_value(temp["Close"].max()),
@@ -248,9 +266,9 @@ def build_llm_payload(ticker: str, data: Dict[str, pd.DataFrame]) -> Dict[str, A
         "ticker": ticker.upper(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "datasets": {
-            "DAILY_365": _prepare_for_llm(data.get("DAILY_365", pd.DataFrame()), "DAILY_365", tail_rows=80),
+            "DAILY_6MO": _prepare_for_llm(data.get("DAILY_6MO", pd.DataFrame()), "DAILY_6MO", tail_rows=120),
             "WEEKLY_ALL": _prepare_for_llm(data.get("WEEKLY_ALL", pd.DataFrame()), "WEEKLY_ALL", tail_rows=100),
-            "DAILY_2MO": _prepare_for_llm(data.get("DAILY_2MO", pd.DataFrame()), "DAILY_2MO", tail_rows=45),
+            "HOURLY_2MO": _prepare_for_llm(data.get("HOURLY_2MO", pd.DataFrame()), "HOURLY_2MO", tail_rows=180),
         },
     }
 
@@ -270,7 +288,7 @@ Important:
 - Use only the provided data.
 - If a level is uncertain, mark confidence as "low".
 - Separate observations from conclusions.
-- Compare weekly, daily 365-day, and recent daily 2-month datasets.
+- Compare weekly, daily 6-month, and recent hourly 2-month datasets.
 - Highlight agreement and disagreement between timeframes.
 
 Additional requirements:

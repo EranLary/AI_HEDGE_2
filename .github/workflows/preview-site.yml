@@ -1,0 +1,240 @@
+name: Site Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    paths:
+      - 'frontend/**'
+      - 'src/**'
+      - 'requirements.txt'
+      - 'Dockerfile.site'
+      - 'fly.site.toml'
+      - '.github/workflows/preview-site.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-site-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  FLY_REGION: fra
+  PROD_APP: hedge-in-a-box-site
+  PROD_VOLUME_NAME: site_data_fra
+  FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+  PREVIEW_APP: pr-${{ github.event.pull_request.number }}-hedge-in-a-box-site
+
+jobs:
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flyctl
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::No Fly token found. Set FLY_API_TOKEN in repo secrets."
+            exit 1
+          fi
+          echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Generate preview fly.toml
+        run: |
+          # Swap app name + flip auto-stop / min-machines so idle previews cost nothing.
+          sed \
+            -e 's/^app = "hedge-in-a-box-site"/app = "${{ env.PREVIEW_APP }}"/' \
+            -e 's/auto_stop_machines = false/auto_stop_machines = "stop"/' \
+            -e 's/min_machines_running = 1/min_machines_running = 0/' \
+            fly.site.toml > fly.preview.toml
+          echo '--- fly.preview.toml ---'
+          cat fly.preview.toml
+
+      - name: Ensure preview app exists
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          if flyctl apps list --json | jq -e --arg n "${{ env.PREVIEW_APP }}" '.[] | select((.Name // .name)==$n)' >/dev/null; then
+            echo "App ${{ env.PREVIEW_APP }} exists — reusing."
+          else
+            flyctl apps create "${{ env.PREVIEW_APP }}" --org "${{ env.FLY_ORG }}"
+          fi
+
+      - name: Fork prod volume on first deploy
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          existing=$(flyctl volumes list -a "${{ env.PREVIEW_APP }}" --json \
+            | jq -r --arg n "${{ env.PROD_VOLUME_NAME }}" '.[] | select(.name==$n) | .id' | head -1)
+          if [ -n "$existing" ]; then
+            echo "Preview volume exists ($existing) — keeping it (staleness accepted)."
+            exit 0
+          fi
+
+          prod_vol=$(flyctl volumes list -a "${{ env.PROD_APP }}" --json \
+            | jq -r --arg n "${{ env.PROD_VOLUME_NAME }}" '.[] | select(.name==$n) | .id' | head -1)
+          if [ -z "$prod_vol" ]; then
+            echo "::error::No prod volume named ${{ env.PROD_VOLUME_NAME }} on ${{ env.PROD_APP }}"
+            exit 1
+          fi
+
+          prod_size=$(flyctl volumes list -a "${{ env.PROD_APP }}" --json \
+            | jq -r --arg n "${{ env.PROD_VOLUME_NAME }}" '.[] | select(.name==$n) | .size_gb' | head -1)
+          [ -z "$prod_size" ] || [ "$prod_size" = "null" ] && prod_size=1
+
+          # Use most recent existing snapshot if any, else create one and wait.
+          snap=$(flyctl volumes snapshots list "$prod_vol" --json \
+            | jq -r 'sort_by(.created_at) | reverse | .[0] | select(.status=="created") | .id // empty')
+          if [ -z "$snap" ]; then
+            echo "No ready snapshot — creating one."
+            flyctl volumes snapshots create "$prod_vol"
+            for i in $(seq 1 20); do
+              sleep 15
+              snap=$(flyctl volumes snapshots list "$prod_vol" --json \
+                | jq -r 'sort_by(.created_at) | reverse | .[0] | select(.status=="created") | .id // empty')
+              if [ -n "$snap" ]; then break; fi
+              echo "Waiting for snapshot... ($i/20)"
+            done
+            if [ -z "$snap" ]; then
+              echo "::error::Snapshot did not become ready in time"
+              exit 1
+            fi
+          fi
+
+          echo "Restoring preview volume from snapshot $snap (size ${prod_size}GB)"
+          flyctl volumes create "${{ env.PROD_VOLUME_NAME }}" \
+            --app "${{ env.PREVIEW_APP }}" \
+            --region "${{ env.FLY_REGION }}" \
+            --snapshot-id "$snap" \
+            --size "$prod_size" \
+            --yes
+
+      - name: Stage preview secrets
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        run: |
+          args=()
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "::warning::DEEPSEEK_API_KEY secret not set — preview will be missing it."
+          else
+            args+=("DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY")
+          fi
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL secret not set — preview will fall back to unpooled."
+          else
+            args+=("DATABASE_URL=$DATABASE_URL")
+          fi
+          if [ -z "$DATABASE_URL_UNPOOLED" ]; then
+            echo "::warning::DATABASE_URL_UNPOOLED secret not set — preview will run without DB."
+          else
+            args+=("DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED")
+          fi
+          if [ "${#args[@]}" -gt 0 ]; then
+            flyctl secrets set "${args[@]}" --app "${{ env.PREVIEW_APP }}" --stage
+          fi
+
+      - name: Deploy preview
+        id: deploy
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          flyctl deploy --remote-only \
+            --config fly.preview.toml \
+            --app "${{ env.PREVIEW_APP }}" \
+            --ha=false \
+            --wait-timeout 5m
+
+      - name: Diagnostics on deploy failure
+        if: failure() && steps.deploy.conclusion == 'failure'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          set +e
+          echo '::group::flyctl status'
+          flyctl status --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::flyctl machines list'
+          flyctl machines list --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::flyctl machines list (json)'
+          flyctl machines list --app "${{ env.PREVIEW_APP }}" --json
+          echo '::endgroup::'
+
+          echo '::group::flyctl volumes list'
+          flyctl volumes list --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::recent logs (30s tail)'
+          timeout 30 flyctl logs --app "${{ env.PREVIEW_APP }}" || true
+          echo '::endgroup::'
+
+      - name: Sticky comment with preview URL
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: site-preview
+          message: |
+            ### Site preview deployed
+
+            **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
+
+            - Volume forked from prod on PR open; staleness accepted until close.
+            - Machine auto-stops when idle, auto-starts on request.
+            - Tear-down runs automatically when this PR is closed.
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install flyctl
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then echo "::error::No Fly token found"; exit 1; fi
+          echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Destroy preview app (and its volume)
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          if flyctl apps list --json | jq -e --arg n "${{ env.PREVIEW_APP }}" '.[] | select((.Name // .name)==$n)' >/dev/null; then
+            flyctl apps destroy "${{ env.PREVIEW_APP }}" --yes
+          else
+            echo "App ${{ env.PREVIEW_APP }} already gone — nothing to destroy."
+          fi
+
+      - name: Update sticky comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: site-preview
+          message: |
+            ### Site preview torn down
+
+            The preview environment for this PR has been destroyed.

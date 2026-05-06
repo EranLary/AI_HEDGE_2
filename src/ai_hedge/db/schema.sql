@@ -94,3 +94,48 @@ DROP TRIGGER IF EXISTS reports_after_change ON reports;
 CREATE TRIGGER reports_after_change
     AFTER INSERT OR DELETE ON reports
     FOR EACH ROW EXECUTE FUNCTION trg_reports_after_change();
+
+-- Discovery dynamic strategy tracking (forward-tested from go-live)
+CREATE TABLE IF NOT EXISTS discovery_strategy_nav (
+    strategy_id      text NOT NULL,
+    lens_type        text NOT NULL,      -- overall | model | valuator
+    lens_key         text NOT NULL,      -- empty string for overall
+    nav_date         date NOT NULL,
+    nav              numeric NOT NULL,
+    daily_return     numeric NOT NULL DEFAULT 0,
+    turnover         numeric NOT NULL DEFAULT 0,
+    holdings_count   int NOT NULL DEFAULT 0,
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (strategy_id, lens_type, lens_key, nav_date)
+);
+
+CREATE INDEX IF NOT EXISTS discovery_strategy_nav_date_idx
+    ON discovery_strategy_nav (nav_date DESC);
+
+CREATE TABLE IF NOT EXISTS discovery_strategy_holdings (
+    strategy_id      text NOT NULL,
+    lens_type        text NOT NULL,
+    lens_key         text NOT NULL,
+    nav_date         date NOT NULL,
+    ticker           text NOT NULL,
+    rank             int NOT NULL,
+    target_weight    numeric NOT NULL,
+    close_price      numeric NOT NULL,
+    PRIMARY KEY (strategy_id, lens_type, lens_key, nav_date, ticker)
+);
+
+CREATE INDEX IF NOT EXISTS discovery_strategy_holdings_date_idx
+    ON discovery_strategy_holdings (nav_date DESC);
+
+CREATE TABLE IF NOT EXISTS discovery_benchmark_nav (
+    benchmark_id     text NOT NULL,      -- ^GSPC
+    nav_date         date NOT NULL,
+    nav              numeric NOT NULL,
+    daily_return     numeric NOT NULL DEFAULT 0,
+    close_price      numeric NOT NULL,
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (benchmark_id, nav_date)
+);
+
+CREATE INDEX IF NOT EXISTS discovery_benchmark_nav_date_idx
+    ON discovery_benchmark_nav (nav_date DESC);

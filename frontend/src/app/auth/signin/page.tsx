@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import { SignInButton } from "@/components/auth/signin-button";
 
 type SearchParams = Promise<{ callbackUrl?: string; error?: string }>;
@@ -25,7 +26,24 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
     <div className="hib-landing relative isolate flex min-h-screen flex-col overflow-hidden">
       <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-10">
         <div className="hib-landing-brand inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.22em]">
-          <span aria-hidden className="hib-landing-mark">◆</span>
+          <span aria-hidden className="relative inline-flex h-8 w-8 items-center justify-center">
+            <Image
+              src="/hedge-logo-dark.png"
+              alt=""
+              width={32}
+              height={32}
+              priority
+              className="hib-brand-logo-dark h-8 w-8 object-contain"
+            />
+            <Image
+              src="/hedge-logo-light.png"
+              alt=""
+              width={32}
+              height={32}
+              priority
+              className="hib-brand-logo-light h-8 w-8 object-contain"
+            />
+          </span>
           <span>Hedge in a Box</span>
         </div>
         <span className="hib-landing-meta hidden text-[11px] uppercase tracking-[0.22em] sm:inline">

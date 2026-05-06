@@ -10,10 +10,10 @@ import {
   FileText,
   Target,
   Plus,
-  Sparkles,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { TickerCombobox } from "@/components/shell/ticker-combobox";
 import { ActiveRunsPanel } from "@/components/shell/active-runs-panel";
 import { useNewRunModal } from "@/components/shell/new-run-context";
@@ -63,9 +63,7 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
           className="flex items-center gap-2 overflow-hidden"
           aria-label="Home"
         >
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-500/15 text-emerald-200">
-            <Sparkles size={14} />
-          </span>
+          <BrandLogo size={32} priority className="shrink-0" />
           {!collapsedDesktop ? (
             <span className="font-display text-sm leading-tight">
               <span className="block text-zinc-100">Hedge</span>

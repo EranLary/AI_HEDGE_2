@@ -192,6 +192,17 @@ html[data-theme="light"] {
   color-scheme: light;
 }
 
+/* Brand logo: dark variant by default (matches default dark theme); swap to light variant under data-theme="light". */
+.hib-brand-logo-light {
+  display: none;
+}
+html[data-theme="light"] .hib-brand-logo-dark {
+  display: none;
+}
+html[data-theme="light"] .hib-brand-logo-light {
+  display: block;
+}
+
 .hib-shell {
   background:
     radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.18), transparent 35%),

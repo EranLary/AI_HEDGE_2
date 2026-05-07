@@ -429,6 +429,19 @@ html[data-theme="light"] .hib-conviction-accent {
   font-variant-numeric: tabular-nums;
 }
 
+/* Summary cards: allow long localized price strings to wrap safely inside narrow boxes */
+.hib-summary-metric-value {
+  font-size: clamp(1.15rem, 2.35vw, 1.9rem);
+  line-height: 1.12;
+  display: block;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  letter-spacing: -0.012em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Chart readability */
 .hib-chart .recharts-cartesian-grid line {
   stroke: rgba(100, 116, 139, 0.35) !important;

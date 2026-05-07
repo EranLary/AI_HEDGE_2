@@ -393,13 +393,22 @@ export default function DashboardSummaryPage({
           <section className="grid gap-4 md:grid-cols-5">
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Current Live Price</p>
-              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price, upper)}</p>
+              <p className="hib-summary-metric-value mt-2 font-bold text-zinc-100">
+                {fmtMoney(data.overview.live_current_price, upper)}
+              </p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
-              <p className={`mt-2 text-3xl font-bold ${toneClassFromTarget(data.overview.mean_target_price, data.overview.live_current_price)}`}>
-                {fmtMoney(data.overview.mean_target_price, upper)}{" "}
-                <span className="text-lg">({fmtPct(meanTargetChangePct)})</span>
+              <p
+                className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromTarget(
+                  data.overview.mean_target_price,
+                  data.overview.live_current_price,
+                )}`}
+              >
+                {fmtMoney(data.overview.mean_target_price, upper)}
+              </p>
+              <p className={`mt-1 text-sm font-semibold ${toneClassFromSign(meanTargetChangePct)}`}>
+                ({fmtPct(meanTargetChangePct)})
               </p>
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
             </article>

@@ -7,7 +7,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
-import { canonicalMethodName } from "@/lib/method-names";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
@@ -228,12 +227,7 @@ function formatAssumptionValue(label: string, value: number | null | undefined, 
 }
 
 function modelExplanation(modelName: string): string {
-  const canonical = canonicalMethodName(modelName);
-  return (
-    MODEL_EXPLANATIONS[canonical] ||
-    MODEL_EXPLANATIONS[String(modelName || "").trim()] ||
-    "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision."
-  );
+  return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision.";
 }
 
 function stripBrokenMarkdownArtifacts(text: string): string {

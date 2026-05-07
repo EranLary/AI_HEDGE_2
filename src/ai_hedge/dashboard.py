@@ -9,20 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import yfinance as yf
-from ai_hedge.method_names import (
-    CANONICAL_METHOD_ORDER,
-    METHOD_NAME_RENAMES,
-    canonical_method_name,
-    canonicalize_method_dict,
-)
-
-METHOD_DCF = METHOD_NAME_RENAMES["DCF"]
-METHOD_EARNINGS = METHOD_NAME_RENAMES["Net Income & P/E"]
-METHOD_REVENUE = METHOD_NAME_RENAMES["Revenue & EV/S"]
-METHOD_DREAM = METHOD_NAME_RENAMES["Dream Team"]
-METHOD_TARGET_SCENARIO = METHOD_NAME_RENAMES["BBB Target"]
-METHOD_EARNINGS_SCENARIO = METHOD_NAME_RENAMES["BBB NI & P/E"]
-METHOD_COMPOSITE = METHOD_NAME_RENAMES["Lary's Logic"]
 
 
 INSTRUCTION_EXECUTIVE_SUMMARY = """
@@ -489,43 +475,42 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
                     vals.append(n)
         return _mean(vals)
 
-    method_key = canonical_method_name(method_name)
     metrics: Dict[str, Optional[float]] = {}
-    if method_key == METHOD_DCF:
+    if method_name == "DCF":
         metrics = {
             "fcf_next_year": avg_mid("fcf_next_year"),
             "growth_rate": avg_mid("g"),
             "wacc": avg_mid("WACC"),
             "terminal_growth": avg_mid("TERMINAL"),
         }
-    elif method_key == METHOD_EARNINGS:
+    elif method_name == "Net Income & P/E":
         metrics = {
             "net_income_3y": avg_mid("net_income_3y"),
             "pe_multiple": avg_mid("pe_multiple"),
         }
-    elif method_key == METHOD_REVENUE:
+    elif method_name == "Revenue & EV/S":
         metrics = {
             "revenue_3y": avg_mid("revenue_3y"),
             "ev_sales_multiple": avg_mid("ev_sales_multiple"),
         }
-    elif method_key == METHOD_DREAM:
+    elif method_name == "Dream Team":
         metrics = {
             "target_market_cap": avg_num("target_market_cap"),
         }
-    elif method_key == METHOD_TARGET_SCENARIO:
+    elif method_name == "BBB Target":
         metrics = {
             "bull_target_market_cap": avg_scenario_value("bull", 1),
             "base_target_market_cap": avg_scenario_value("base", 1),
             "bear_target_market_cap": avg_scenario_value("bear", 1),
         }
-    elif method_key == METHOD_EARNINGS_SCENARIO:
+    elif method_name == "BBB NI & P/E":
         metrics = {
             "bull_net_income": avg_scenario_value("bull", 1),
             "base_net_income": avg_scenario_value("base", 1),
             "bear_net_income": avg_scenario_value("bear", 1),
             "pe_multiple": avg_num("pe_multiple"),
         }
-    elif method_key == METHOD_COMPOSITE:
+    elif method_name == "Lary's Logic":
         metrics = {
             "revenue_growth_3y_avg": avg_num("revenue_growth_3y_avg"),
             "operating_margin": avg_num("operating_profitability_margin"),
@@ -1190,27 +1175,24 @@ def build_dashboard_payload(
         enable_llm_extractions=enable_llm_extractions,
     )
 
-    method_details_raw = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
-    aggregate_targets_raw = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
-    aggregate_investments_raw = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
-    method_details = canonicalize_method_dict(method_details_raw) if isinstance(method_details_raw, dict) else {}
-    aggregate_targets = (
-        canonicalize_method_dict(aggregate_targets_raw)
-        if isinstance(aggregate_targets_raw, dict)
-        else {}
-    )
-    aggregate_investments = (
-        canonicalize_method_dict(aggregate_investments_raw)
-        if isinstance(aggregate_investments_raw, dict)
-        else {}
-    )
+    method_details = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
+    aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
+    aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
     target_multiplier = _resolve_model_price_multiplier(
         aggregate_targets=aggregate_targets if isinstance(aggregate_targets, dict) else {},
         consensus_price=consensus_price,
         price_currency_to_usd=_safe_float(currency_context.get("price_currency_to_usd")) or 1.0,
         is_foreign=bool(currency_context.get("display_currency")) and str(currency_context.get("display_currency")).upper() != "USD",
     )
-    method_order = list(CANONICAL_METHOD_ORDER)
+    method_order = [
+        "DCF",
+        "Net Income & P/E",
+        "Revenue & EV/S",
+        "Dream Team",
+        "BBB Target",
+        "BBB NI & P/E",
+        "Lary's Logic",
+    ]
 
     method_blocks: List[Dict[str, Any]] = []
     method_tabs: List[Dict[str, Any]] = []
@@ -1266,7 +1248,7 @@ def build_dashboard_payload(
     )
 
     dream_cards: List[Dict[str, Any]] = []
-    for item in method_details.get(METHOD_DREAM, []) if isinstance(method_details, dict) else []:
+    for item in method_details.get("Dream Team", []) if isinstance(method_details, dict) else []:
         if not isinstance(item, dict):
             continue
         raw_json = _parse_raw_json_from_item(item)

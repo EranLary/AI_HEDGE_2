@@ -25,6 +25,13 @@ export class TickerNotFoundError extends Error {
   }
 }
 
+export class SignInRequiredForRunError extends Error {
+  constructor(detail?: string) {
+    super(detail || "Please sign in with Google before running a new analysis.");
+    this.name = "SignInRequiredForRunError";
+  }
+}
+
 /** Single source of truth for starting an analysis run. Validates the ticker,
  *  POSTs to /api/run-analysis, seeds the active-runs store, and returns the
  *  job_id so callers can do per-call follow-up if needed. */
@@ -42,6 +49,9 @@ export async function submitNewRun(rawTicker: string): Promise<SubmitNewRunResul
   const json = (await res.json().catch(() => ({}))) as { job_id?: string; error?: string; status?: string };
   if (res.status === 422) {
     throw new TickerNotFoundError(ticker, json.error);
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new SignInRequiredForRunError(json.error);
   }
   if (!res.ok || !json.job_id) {
     throw new Error(json.error || `Failed to start analysis (${res.status}).`);

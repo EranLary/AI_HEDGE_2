@@ -129,22 +129,42 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID }}
+          AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET }}
         run: |
           args=()
           if [ -z "$DEEPSEEK_API_KEY" ]; then
-            echo "::warning::DEEPSEEK_API_KEY secret not set — preview will be missing it."
+            echo "::warning::DEEPSEEK_API_KEY secret not set - preview will be missing it."
           else
             args+=("DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY")
           fi
           if [ -z "$DATABASE_URL" ]; then
-            echo "::warning::DATABASE_URL secret not set — preview will fall back to unpooled."
+            echo "::warning::DATABASE_URL secret not set - preview will fall back to unpooled."
           else
             args+=("DATABASE_URL=$DATABASE_URL")
           fi
           if [ -z "$DATABASE_URL_UNPOOLED" ]; then
-            echo "::warning::DATABASE_URL_UNPOOLED secret not set — preview will run without DB."
+            echo "::warning::DATABASE_URL_UNPOOLED secret not set - preview will run without DB."
           else
             args+=("DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED")
+          fi
+          if [ -z "$AUTH_SECRET" ]; then
+            generated_auth_secret="$(openssl rand -hex 32)"
+            echo "::warning::AUTH_SECRET secret not set - generating ephemeral secret for this preview app."
+            args+=("AUTH_SECRET=$generated_auth_secret")
+          else
+            args+=("AUTH_SECRET=$AUTH_SECRET")
+          fi
+          if [ -z "$AUTH_GOOGLE_ID" ]; then
+            echo "::warning::AUTH_GOOGLE_ID secret not set - Google sign-in will fail."
+          else
+            args+=("AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID")
+          fi
+          if [ -z "$AUTH_GOOGLE_SECRET" ]; then
+            echo "::warning::AUTH_GOOGLE_SECRET secret not set - Google sign-in will fail."
+          else
+            args+=("AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET")
           fi
           if [ "${#args[@]}" -gt 0 ]; then
             flyctl secrets set "${args[@]}" --app "${{ env.PREVIEW_APP }}" --stage

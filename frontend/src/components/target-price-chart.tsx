@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Gauge } from "lucide-react";
 import {
   Bar,
@@ -19,12 +19,6 @@ import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/componen
 import { useThemeTokens } from "@/lib/theme-tokens";
 
 const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear"] as const;
-const CHART_FALLBACKS: Record<(typeof CHART_TOKENS)[number], string> = {
-  "--chart-grid": "#cbd5e1",
-  "--chart-current": "#f59e0b",
-  "--chart-bull": "#16a34a",
-  "--chart-bear": "#dc2626",
-};
 
 type ChartHoverState = {
   chartX?: number;
@@ -56,14 +50,6 @@ function ChartHoverTooltip({
 export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
   const tokens = useThemeTokens(CHART_TOKENS);
-  const resolvedTokens = useMemo(() => {
-    const out = {} as Record<(typeof CHART_TOKENS)[number], string>;
-    for (const key of CHART_TOKENS) {
-      const value = String(tokens[key] || "").trim();
-      out[key] = value || CHART_FALLBACKS[key];
-    }
-    return out;
-  }, [tokens]);
   const consensus = data?.valuation_hub?.consensus;
   const consensusCurrent =
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
@@ -130,8 +116,27 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   }, [chartData, consensusCurrent]);
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const [chartReady, setChartReady] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hide = () => setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+
+  useEffect(() => {
+    setChartReady(false);
+  }, [chartData.length]);
+
+  useEffect(() => {
+    const node = wrapRef.current;
+    if (!node) return;
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      setChartReady(rect.width > 0 && rect.height > 0);
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const handleMouseMove = (state: unknown) => {
     const hoverState: ChartHoverState | undefined =
@@ -190,10 +195,11 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
           <Gauge size={14} /> Target Price by Model
         </span>
       </div>
-      <div ref={wrapRef} className="hib-chart relative h-96">
-        <ResponsiveContainer width="100%" height="100%">
+      <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">
+        {chartReady ? (
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
           <BarChart data={chartData} onMouseMove={handleMouseMove} onMouseLeave={hide}>
-            <CartesianGrid strokeDasharray="3 3" stroke={resolvedTokens["--chart-grid"]} />
+            <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
             <XAxis dataKey="name" tick={false} axisLine={false} tickLine={false} />
             <YAxis
               width={140}
@@ -214,7 +220,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             {Number(consensus?.current_price || 0) > 0 ? (
               <ReferenceLine
                 y={Number(consensus?.current_price || 0)}
-                stroke={resolvedTokens["--chart-current"]}
+                stroke={tokens["--chart-current"]}
                 strokeWidth={2.5}
                 strokeDasharray="6 4"
               />
@@ -223,7 +229,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               {chartData.map((entry) => (
                 <Cell
                   key={`target-${entry.name}`}
-                  fill={entry.aboveCurrent ? resolvedTokens["--chart-bull"] : resolvedTokens["--chart-bear"]}
+                  fill={entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
                   style={{ cursor: "pointer" }}
                 />
               ))}
@@ -235,6 +241,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             />
           </BarChart>
         </ResponsiveContainer>
+        ) : (
+          <div className="h-full w-full rounded-xl border border-white/10 bg-black/25" />
+        )}
         {tooltip.visible ? (
           <div
             className="hib-line-tooltip pointer-events-none absolute z-20 rounded-md border px-2 py-1 text-[11px] shadow-lg"

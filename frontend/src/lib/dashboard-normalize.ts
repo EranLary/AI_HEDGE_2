@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { createFallbackDashboard } from "@/lib/dashboard-fallback";
 import type { DashboardPayload } from "@/lib/dashboard-types";
-import { canonicalMethodName } from "@/lib/method-names";
+import { canonicalModelName } from "@/lib/method-display";
 import { findLatestByFileName, readJson, readUtf8 } from "@/lib/server-outputs";
 
 function asFinite(value: unknown): number | null {
@@ -77,6 +77,7 @@ function applyLegacyModelTargetScale(payload: DashboardPayload, scale: number): 
         : null;
     return {
       ...block,
+      name: canonicalModelName(String(block.name || "")),
       target_price: scaledTarget,
       upside_pct: upside,
     };
@@ -84,6 +85,7 @@ function applyLegacyModelTargetScale(payload: DashboardPayload, scale: number): 
 
   const methodTabs = (payload.valuation_hub?.method_tabs || []).map((tab) => ({
     ...tab,
+    name: canonicalModelName(String(tab.name || "")),
     target_price: scaleValue(tab.target_price),
     outputs: (tab.outputs || []).map((output) => ({
       ...output,
@@ -135,50 +137,6 @@ function normalizeTechnicalAnalysisPayload(
     analysis: {
       ...(analysis as NonNullable<NonNullable<DashboardPayload["technical_analysis"]>["analysis"]>),
       ticker: String(analysis.ticker || ticker).toUpperCase(),
-    },
-  };
-}
-
-function canonicalizeMethodLabels(payload: DashboardPayload): DashboardPayload {
-  const methodBlocks = (payload.valuation_hub?.method_blocks || []).map((block) => ({
-    ...block,
-    name: canonicalMethodName(block.name) || String(block.name || "").trim() || "Unknown Model",
-  }));
-
-  const methodTabs = (payload.valuation_hub?.method_tabs || []).map((tab) => ({
-    ...tab,
-    name: canonicalMethodName(tab.name) || String(tab.name || "").trim() || "Unknown Model",
-  }));
-
-  const metricMeans = (payload.valuation_hub?.all_values?.metric_means || []).map((row) => ({
-    ...row,
-    methods: Array.isArray(row.methods)
-      ? Array.from(
-          new Set(
-            row.methods
-              .map((name) => canonicalMethodName(name) || String(name || "").trim())
-              .filter((name) => name.length > 0),
-          ),
-        )
-      : [],
-  }));
-
-  const sourceValues = (payload.valuation_hub?.all_values?.source_values || []).map((row) => ({
-    ...row,
-    method: canonicalMethodName(row.method) || String(row.method || "").trim(),
-  }));
-
-  return {
-    ...payload,
-    valuation_hub: {
-      ...payload.valuation_hub,
-      method_blocks: methodBlocks,
-      method_tabs: methodTabs,
-      all_values: {
-        ...(payload.valuation_hub?.all_values || {}),
-        metric_means: metricMeans,
-        source_values: sourceValues,
-      },
     },
   };
 }
@@ -263,8 +221,14 @@ export function normalizePayload(
     valuation_hub: {
       ...base.valuation_hub,
       ...(payload.valuation_hub || {}),
-      method_blocks: payload.valuation_hub?.method_blocks || [],
-      method_tabs: payload.valuation_hub?.method_tabs || [],
+      method_blocks: (payload.valuation_hub?.method_blocks || []).map((block) => ({
+        ...block,
+        name: canonicalModelName(String(block.name || "")),
+      })),
+      method_tabs: (payload.valuation_hub?.method_tabs || []).map((tab) => ({
+        ...tab,
+        name: canonicalModelName(String(tab.name || "")),
+      })),
       all_values: payload.valuation_hub?.all_values || base.valuation_hub?.all_values,
       consensus: {
         ...base.valuation_hub.consensus,
@@ -294,9 +258,8 @@ export function normalizePayload(
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
   };
 
-  const canonicalized = canonicalizeMethodLabels(merged);
-  const scale = inferLegacyModelTargetScale(canonicalized);
-  const scaled = applyLegacyModelTargetScale(canonicalized, scale);
+  const scale = inferLegacyModelTargetScale(merged);
+  const scaled = applyLegacyModelTargetScale(merged, scale);
   return hydrateTechnicalAnalysis(scaled, tk, reportMeta);
 }
 
@@ -421,8 +384,7 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       if (!trimmed || !/Method Target Price:/i.test(trimmed)) {
         continue;
       }
-      const rawTitleLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
-      const titleLine = canonicalMethodName(rawTitleLine) || rawTitleLine;
+      const titleLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
       const targetMatch = trimmed.match(/Method Target Price:\s*\$?([0-9,.\-]+)/i);
       const investMatch = trimmed.match(/Method Mean Investment:\s*\$?([0-9,.\-]+)/i);
 
@@ -451,7 +413,7 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       const upside = current && targetPrice ? ((targetPrice - current) / current) * 100 : null;
       const invest = parseMoney(investMatch?.[1] || "");
       blocks.push({
-        name: titleLine,
+        name: canonicalModelName(titleLine),
         target_price: targetPrice,
         upside_pct: upside,
         investment_amount: invest,

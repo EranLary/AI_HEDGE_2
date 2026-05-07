@@ -182,7 +182,7 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
   assert.equal(agg.overview.mean_target_price, 130);
   assert.equal(agg.overview.mean_allocation_pct, 15);
 
-  const dcf = agg.by_model.find((row) => row.key === "Intrinsic DCF");
+  const dcf = agg.by_model.find((row) => row.key === "DCF");
   assert.ok(dcf);
   assert.equal(dcf.mean_target_price, 140);
   assert.equal(dcf.mean_allocation_pct, 7.5);

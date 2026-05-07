@@ -59,7 +59,7 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
         <div className="min-w-0 flex-1" />
       )}
 
-      <div className="hidden shrink-0 items-center gap-2 md:flex">
+      <div className="flex shrink-0 items-center gap-2">
         <ThemeToggle />
         <AuthMenu />
       </div>

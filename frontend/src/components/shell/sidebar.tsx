@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Compass,
   FileText,
-  LineChart,
   Target,
   Plus,
 } from "lucide-react";
@@ -18,8 +17,6 @@ import { BrandLogo } from "@/components/brand-logo";
 import { TickerCombobox } from "@/components/shell/ticker-combobox";
 import { ActiveRunsPanel } from "@/components/shell/active-runs-panel";
 import { useNewRunModal } from "@/components/shell/new-run-context";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { AuthMenu } from "@/components/shell/auth-menu";
 
 type NavItem = {
   href: string;
@@ -31,7 +28,6 @@ const GLOBAL_NAV: NavItem[] = [
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/discovery", label: "Discovery", icon: Compass },
   { href: "/hit-rate", label: "Hit Rate", icon: Target },
-  { href: "/observatory", label: "Observatory", icon: LineChart },
 ];
 
 type SidebarProps = {
@@ -152,24 +148,9 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
       </div>
 
       {!collapsedDesktop ? (
-        <div className="hib-sidebar-heading border-t border-white/5 px-4 py-3">
-          {mobile ? (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] uppercase tracking-[0.14em]">
-                <Activity size={10} className="mr-1 inline" />
-                <span>AI valuation</span>
-              </p>
-              <div className="flex items-center gap-2">
-                <ThemeToggle />
-                <AuthMenu />
-              </div>
-            </div>
-          ) : (
-            <p className="text-[10px] uppercase tracking-[0.14em]">
-              <Activity size={10} className="mr-1 inline" />
-              <span>AI valuation</span>
-            </p>
-          )}
+        <div className="hib-sidebar-heading border-t border-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.14em]">
+          <Activity size={10} className="mr-1 inline" />
+          <span>AI valuation</span>
         </div>
       ) : null}
 

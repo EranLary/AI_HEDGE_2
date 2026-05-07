@@ -65,8 +65,10 @@ function fmtDateTimeNoSeconds(value: string): string {
   });
 }
 
-function fmtMoney(value: number | null | undefined, currency: string = "USD"): string {
+function fmtMoney(value: number | null | undefined, ticker: string): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  const isIsraeliTicker = String(ticker || "").toUpperCase().endsWith(".TA");
+  const currency = isIsraeliTicker ? "ILS" : "USD";
   return new Intl.NumberFormat(undefined, {
     style: "currency",
     currency,
@@ -114,16 +116,48 @@ function compareRowsByMeanTargetDesc(a: MeanRow, b: MeanRow): number {
   return a.label.localeCompare(b.label);
 }
 
+function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+  const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
+  const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
+  if (!hasInvestment && !hasTarget) return null;
+  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
+}
+
+function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number | null): number | null {
+  if (typeof baseScore !== "number" || !Number.isFinite(baseScore)) return null;
+  const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
+  const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
+  return baseScore * confidenceFactor;
+}
+
+function decisionFromAdjustedScore(adjustedScore: number): {
+  label: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell";
+  tone: "buy" | "sell" | "hold";
+} {
+  if (adjustedScore >= 20) return { label: "Strong Buy", tone: "buy" };
+  if (adjustedScore >= 5) return { label: "Buy", tone: "buy" };
+  if (adjustedScore > -5) return { label: "Hold", tone: "hold" };
+  if (adjustedScore > -20) return { label: "Sell", tone: "sell" };
+  return { label: "Strong Sell", tone: "sell" };
+}
+
+function decisionClass(tone: "buy" | "sell" | "hold"): string {
+  if (tone === "buy") return "hib-signal-buy";
+  if (tone === "sell") return "hib-signal-sell";
+  return "hib-signal-hold";
+}
+
 function MeanTable({
   title,
   rows,
   liveCurrentPrice,
-  currencyCode,
+  ticker,
 }: {
   title: string;
   rows: MeanRow[];
   liveCurrentPrice: number | null;
-  currencyCode: string;
+  ticker: string;
 }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -135,7 +169,7 @@ function MeanTable({
             <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
               <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
-                {fmtMoney(row.mean_target_price, currencyCode)}
+                {fmtMoney(row.mean_target_price, ticker)}
               </p>
               <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(changePct)}`}>
                 Change vs Live: ({fmtPct(changePct)})
@@ -156,35 +190,28 @@ function MeanTable({
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
               <th className="px-3 py-2 text-right font-medium">Mean Target</th>
-              <th className="px-3 py-2 text-right font-medium">Change vs Live</th>
               <th className="px-3 py-2 text-right font-medium">Target N</th>
               <th className="px-3 py-2 text-right font-medium">Mean Allocation</th>
               <th className="px-3 py-2 text-right font-medium">Allocation N</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
-              const changePct = targetChangePct(row.mean_target_price, liveCurrentPrice);
-              return (
-                <tr key={row.key} className="border-b border-white/5 last:border-b-0">
-                  <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
-                  <td className={`px-3 py-2 text-right ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
-                    {fmtMoney(row.mean_target_price, currencyCode)}
-                  </td>
-                  <td className={`px-3 py-2 text-right ${toneClassFromSign(changePct)}`}>
-                    {fmtPct(changePct)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-zinc-400">{row.target_samples}</td>
-                  <td className={`px-3 py-2 text-right ${toneClassFromSign(row.mean_allocation_pct)}`}>
-                    {fmtPct(row.mean_allocation_pct)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-zinc-400">{row.allocation_samples}</td>
-                </tr>
-              );
-            })}
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b border-white/5 last:border-b-0">
+                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
+                <td className={`px-3 py-2 text-right ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
+                  {fmtMoney(row.mean_target_price, ticker)}
+                </td>
+                <td className="px-3 py-2 text-right text-zinc-400">{row.target_samples}</td>
+                <td className={`px-3 py-2 text-right ${toneClassFromSign(row.mean_allocation_pct)}`}>
+                  {fmtPct(row.mean_allocation_pct)}
+                </td>
+                <td className="px-3 py-2 text-right text-zinc-400">{row.allocation_samples}</td>
+              </tr>
+            ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={6} className="px-3 py-3 text-zinc-500">
+                <td colSpan={5} className="px-3 py-3 text-zinc-500">
                   No rows available.
                 </td>
               </tr>
@@ -255,7 +282,6 @@ export default function DashboardSummaryPage({
   const [data, setData] = useState<SummaryPayload | null>(null);
 
   const reportId = search?.get("report") || "";
-  const currencyCode = upper.endsWith(".TA") ? "ILS" : "USD";
 
   useEffect(() => {
     let cancelled = false;
@@ -303,6 +329,12 @@ export default function DashboardSummaryPage({
     () => (data?.by_valuator || []).slice().sort(compareRowsByMeanTargetDesc),
     [data?.by_valuator],
   );
+  const overviewCombinedScore = combinedDecisionScore(data?.overview.mean_allocation_pct, meanTargetChangePct);
+  const overviewAdjustedScore = confidenceAdjustedScore(overviewCombinedScore, data?.overview.mean_disagreement_score);
+  const overviewDecision =
+    typeof overviewAdjustedScore === "number" && Number.isFinite(overviewAdjustedScore)
+      ? decisionFromAdjustedScore(overviewAdjustedScore)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -358,15 +390,15 @@ export default function DashboardSummaryPage({
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Current Live Price</p>
-              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price, currencyCode)}</p>
+              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price, upper)}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromTarget(data.overview.mean_target_price, data.overview.live_current_price)}`}>
-                {fmtMoney(data.overview.mean_target_price, currencyCode)}{" "}
+                {fmtMoney(data.overview.mean_target_price, upper)}{" "}
                 <span className="text-lg">({fmtPct(meanTargetChangePct)})</span>
               </p>
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
@@ -383,19 +415,28 @@ export default function DashboardSummaryPage({
               <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtNum(data.overview.mean_disagreement_score)}</p>
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
             </article>
+            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Decision</p>
+              <p className={`mt-2 text-2xl font-bold ${overviewDecision ? decisionClass(overviewDecision.tone) : "text-zinc-100"}`}>
+                {overviewDecision
+                  ? `${overviewDecision.label} (${typeof overviewAdjustedScore === "number" ? overviewAdjustedScore.toFixed(2) : "N/A"})`
+                  : "N/A"}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">Confidence-adjusted point score</p>
+            </article>
           </section>
 
           <MeanTable
             title="By Model Mean Target + Mean Allocation"
             rows={modelRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
-            currencyCode={currencyCode}
+            ticker={upper}
           />
           <MeanTable
             title="By Valuator Mean Target + Mean Allocation"
             rows={valuatorRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
-            currencyCode={currencyCode}
+            ticker={upper}
           />
           <AssumptionsTable rows={data.assumptions} />
         </>

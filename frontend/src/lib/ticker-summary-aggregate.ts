@@ -1,6 +1,6 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { NOTIONAL_BASE_USD } from "@/lib/hit-rate-utils";
-import { canonicalMethodName } from "@/lib/method-names";
+import { canonicalModelName } from "@/lib/method-display";
 
 export type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
 
@@ -365,7 +365,7 @@ export function computeTickerSummaryAggregation(
 
   const applyModel = (name: string, targetPrice: number | null, allocationPct: number | null) => {
     if (targetPrice === null && allocationPct === null) return;
-    const key = canonicalMethodName(name) || String(name || "").trim() || "Unknown Model";
+    const key = canonicalModelName(String(name || "").trim());
     if (!modelMap.has(key)) {
       modelMap.set(key, createMeanAccumulator());
     }
@@ -399,12 +399,12 @@ export function computeTickerSummaryAggregation(
     const modelRows =
       methodTabs.length > 0
         ? methodTabs.map((tab) => ({
-            name: canonicalMethodName(tab.name) || String(tab.name || "").trim() || "Unknown Model",
+            name: String(tab.name || "").trim() || "Unknown Model",
             targetPrice: safeTarget(tab.target_price),
             allocationPct: allocationPctFromAmount(tab.investment_amount),
           }))
         : methodBlocks.map((block) => ({
-            name: canonicalMethodName(block.name) || String(block.name || "").trim() || "Unknown Model",
+            name: String(block.name || "").trim() || "Unknown Model",
             targetPrice: safeTarget(block.target_price),
             allocationPct: allocationPctFromAmount(block.investment_amount),
           }));
@@ -427,7 +427,7 @@ export function computeTickerSummaryAggregation(
 
     const hasDreamTeamOutputs = methodTabs.some(
       (tab) =>
-        canonicalMethodName(tab.name).toLowerCase() === "dream team" &&
+        String(tab.name || "").trim().toLowerCase() === "dream team" &&
         Array.isArray(tab.outputs) &&
         tab.outputs.length > 0,
     );

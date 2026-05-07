@@ -60,8 +60,6 @@ test("Overall model uses dashboard mean target and mean investment with correct 
   const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
 
   const agg = computeHitRateAggregation(reports, live);
-  const intrinsicDcf = agg.by_model.find((row) => row.key === "Intrinsic DCF");
-  assert.ok(intrinsicDcf);
   const overall = agg.by_model.find((row) => row.key === "Overall");
   assert.ok(overall);
 

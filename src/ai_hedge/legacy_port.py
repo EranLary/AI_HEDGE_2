@@ -31,19 +31,6 @@ def get_10_day_avg_risk_free_rate():
 
 from typing import Any, Dict, Optional
 import pandas as pd
-from ai_hedge.method_names import (
-    CANONICAL_METHOD_ORDER,
-    METHOD_NAME_RENAMES,
-    canonical_method_name,
-)
-
-METHOD_DCF = METHOD_NAME_RENAMES["DCF"]
-METHOD_EARNINGS = METHOD_NAME_RENAMES["Net Income & P/E"]
-METHOD_REVENUE = METHOD_NAME_RENAMES["Revenue & EV/S"]
-METHOD_DREAM = METHOD_NAME_RENAMES["Dream Team"]
-METHOD_TARGET_SCENARIO = METHOD_NAME_RENAMES["BBB Target"]
-METHOD_EARNINGS_SCENARIO = METHOD_NAME_RENAMES["BBB NI & P/E"]
-METHOD_COMPOSITE = METHOD_NAME_RENAMES["Lary's Logic"]
 
 def _df_to_table_payload(
     df: pd.DataFrame,
@@ -4856,7 +4843,7 @@ def dcf_range_full(
 
     all_results = []
     details = []
-    name_of_eval = "Intrinsic DCF Valuation"
+    name_of_eval = "DCF Range Price Valuation"
 
     for answer in answers:
         raw_json_text = _extract_raw_json_text(answer)
@@ -4912,7 +4899,7 @@ def profit_pe_range_full(
     pe_results = []
     ni_results = []
     details = []
-    name_of_eval = "Earnings Multiple Valuation"
+    name_of_eval = "P/E & Earnings Range Price Valuation"
 
     for answer in answers:
         raw_json_text = _extract_raw_json_text(answer)
@@ -4971,7 +4958,7 @@ def revenue_ps_range_full(
     ps_results = []
     revenue_results = []
     details = []
-    name_of_eval = "Revenue Multiple Valuation"
+    name_of_eval = "Revenue & EV/S Range Price Valuation"
 
     for answer in answers:
         raw_json_text = _extract_raw_json_text(answer)
@@ -5054,7 +5041,7 @@ def dream_valuation_full(
     collect_details: bool = False,
 ):
     # Parallelize across names
-    name_of_eval = "Dream Team Valuation"
+    name_of_eval = "Dream Team Target Price Valuation"
     tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
 
     def _one_name(name: str) -> Tuple[str, str]:
@@ -5181,7 +5168,7 @@ def bbb_tp_full(
   )
   all_results = []
   details = []
-  name_of_eval = "Target Scenario Valuation"
+  name_of_eval = "Bull Base Bear Target Price Valuation"
   for answer in answers:
     raw_json_text = _extract_raw_json_text(answer)
     raw_json = _extract_raw_json_dict(answer)
@@ -5235,7 +5222,7 @@ def bbb_ni_pe_full(
   ni_results = []
   pe_results = []
   details = []
-  name_of_eval = "Earnings Scenario Valuation"
+  name_of_eval = "Bull Base Bear Net Income & P/E Valuation"
   for answer in answers:
     raw_json_text = _extract_raw_json_text(answer)
     raw_json = _extract_raw_json_dict(answer)
@@ -5293,7 +5280,7 @@ def forest_logic_full(
   ni_results = []
   pe_results = []
   details = []
-  name_of_eval = "Composite Logic Valuation"
+  name_of_eval = "Lary's Logic Valuation"
   for answer in answers:
     raw_json_text = _extract_raw_json_text(answer)
     raw_json = _extract_raw_json_dict(answer)
@@ -5421,13 +5408,13 @@ def run_valuations(
     collect_explain = isinstance(explain_collector, dict)
     collect_details_for_metrics = True
     method_details = {
-        METHOD_DCF: [],
-        METHOD_EARNINGS: [],
-        METHOD_REVENUE: [],
-        METHOD_DREAM: [],
-        METHOD_TARGET_SCENARIO: [],
-        METHOD_EARNINGS_SCENARIO: [],
-        METHOD_COMPOSITE: [],
+        "DCF": [],
+        "Net Income & P/E": [],
+        "Revenue & EV/S": [],
+        "Dream Team": [],
+        "BBB Target": [],
+        "BBB NI & P/E": [],
+        "Lary's Logic": [],
     }
     def _collect_investment_values(items):
         out = []
@@ -5475,7 +5462,7 @@ def run_valuations(
 
     def _run_dcf_mixed():
         all_results = []
-        summary_name = "Intrinsic DCF Valuation"
+        summary_name = "DCF Range Price Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5506,7 +5493,7 @@ def run_valuations(
         all_results = []
         pe_results = []
         ni_results = []
-        summary_name = "Earnings Multiple Valuation"
+        summary_name = "P/E & Earnings Range Price Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5539,7 +5526,7 @@ def run_valuations(
         all_results = []
         ps_results = []
         revenue_results = []
-        summary_name = "Revenue Multiple Valuation"
+        summary_name = "Revenue & EV/S Range Price Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5570,7 +5557,7 @@ def run_valuations(
 
     def _run_bbb_tp_mixed():
         all_results = []
-        summary_name = "Target Scenario Valuation"
+        summary_name = "Bull Base Bear Target Price Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5601,7 +5588,7 @@ def run_valuations(
         all_results = []
         ni_results = []
         pe_results = []
-        summary_name = "Earnings Scenario Valuation"
+        summary_name = "Bull Base Bear Net Income & P/E Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5635,7 +5622,7 @@ def run_valuations(
         rev_results = []
         ni_results = []
         pe_results = []
-        summary_name = "Composite Logic Valuation"
+        summary_name = "Forest Logic Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5667,7 +5654,7 @@ def run_valuations(
 
     def _run_dream_mixed():
         all_results = []
-        summary_name = "Dream Team Valuation"
+        summary_name = "Dream Team Target Price Valuation"
         details = []
         for ctx_text, _, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5743,7 +5730,7 @@ def run_valuations(
 
         dcf_result = _safe_future_result(
             fut_dcf,
-            ([], ("\nNo results\n\n", "Intrinsic DCF Valuation"), []),
+            ([], ("\nNo results\n\n", "DCF Range Price Valuation"), []),
             "DCF block",
         )
         dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "DCF block")
@@ -5751,7 +5738,7 @@ def run_valuations(
 
         pe_result = _safe_future_result(
             fut_pe,
-            ([], [], [], ("\nNo results\n\n", "Earnings Multiple Valuation"), []),
+            ([], [], [], ("\nNo results\n\n", "P/E & Earnings Range Price Valuation"), []),
             "P/E & Earnings block",
         )
         pe_result = _retry_block_once_if_empty(pe_result, _run_profit_pe_mixed, "P/E & Earnings block")
@@ -5759,17 +5746,17 @@ def run_valuations(
 
         ps_result = _safe_future_result(
             fut_ps,
-            ([], [], [], ("\nNo results\n\n", "Revenue Multiple Valuation"), []),
-            "Revenue Multiple block",
+            ([], [], [], ("\nNo results\n\n", "Revenue & EV/S Range Price Valuation"), []),
+            "Revenue & EV/S block",
         )
-        ps_result = _retry_block_once_if_empty(ps_result, _run_revenue_ps_mixed, "Revenue Multiple block")
+        ps_result = _retry_block_once_if_empty(ps_result, _run_revenue_ps_mixed, "Revenue & EV/S block")
         all_results_revenue_ps, ps_results_revenue_ps, revenue_results_revenue_ps, text_ps, details_ps = ps_result
 
         # all_results_target, text_target = fut_target.result()
 
         dream_result = _safe_future_result(
             fut_dream,
-            ([], ("\nNo results\n\n", "Dream Team Valuation"), []),
+            ([], ("\nNo results\n\n", "Dream Team Target Price Valuation"), []),
             "Dream Team block",
         )
         dream_result = _retry_block_once_if_empty(dream_result, _run_dream_mixed, "Dream Team block")
@@ -5779,23 +5766,23 @@ def run_valuations(
 
         bbb_tp_result = _safe_future_result(
             fut_bbb_tp,
-            ([], ("\nNo results\n\n", "Target Scenario Valuation"), []),
-            "Target Scenario block",
+            ([], ("\nNo results\n\n", "Bull Base Bear Target Price Valuation"), []),
+            "BBB Target block",
         )
-        bbb_tp_result = _retry_block_once_if_empty(bbb_tp_result, _run_bbb_tp_mixed, "Target Scenario block")
+        bbb_tp_result = _retry_block_once_if_empty(bbb_tp_result, _run_bbb_tp_mixed, "BBB Target block")
         all_results_bbb_tp, text_bbb_tp, details_bbb_tp = bbb_tp_result
 
         bbb_ni_pe_result = _safe_future_result(
             fut_bbb_ni_pe,
-            ([], [], [], ("\nNo results\n\n", "Earnings Scenario Valuation"), []),
-            "Earnings Scenario block",
+            ([], [], [], ("\nNo results\n\n", "Bull Base Bear Net Income & P/E Valuation"), []),
+            "BBB NI & P/E block",
         )
-        bbb_ni_pe_result = _retry_block_once_if_empty(bbb_ni_pe_result, _run_bbb_ni_pe_mixed, "Earnings Scenario block")
+        bbb_ni_pe_result = _retry_block_once_if_empty(bbb_ni_pe_result, _run_bbb_ni_pe_mixed, "BBB NI & P/E block")
         all_results_bbb_ni_pe, ni_results_bbb_ni_pe, pe_results_bbb_ni_pe, text_bbb_ni_pe, details_bbb_ni_pe = bbb_ni_pe_result
 
         forest_result = _safe_future_result(
             fut_forest_logic,
-            ([], [], [], [], ("\nNo results\n\n", "Composite Logic Valuation"), []),
+            ([], [], [], [], ("\nNo results\n\n", "Forest Logic Valuation"), []),
             "Forest Logic block",
         )
         forest_result = _retry_block_once_if_empty(forest_result, _run_forest_logic_mixed, "Forest Logic block")
@@ -5808,13 +5795,13 @@ def run_valuations(
             details_forest_logic,
         ) = forest_result
 
-    method_details[METHOD_DCF] = details_dcf
-    method_details[METHOD_EARNINGS] = details_pe
-    method_details[METHOD_REVENUE] = details_ps
-    method_details[METHOD_DREAM] = details_dream
-    method_details[METHOD_TARGET_SCENARIO] = details_bbb_tp
-    method_details[METHOD_EARNINGS_SCENARIO] = details_bbb_ni_pe
-    method_details[METHOD_COMPOSITE] = details_forest_logic
+    method_details["DCF"] = details_dcf
+    method_details["Net Income & P/E"] = details_pe
+    method_details["Revenue & EV/S"] = details_ps
+    method_details["Dream Team"] = details_dream
+    method_details["BBB Target"] = details_bbb_tp
+    method_details["BBB NI & P/E"] = details_bbb_ni_pe
+    method_details["Lary's Logic"] = details_forest_logic
 
     all_investment_values = []
     for method_name, items in method_details.items():
@@ -5837,13 +5824,13 @@ def run_valuations(
     lmil = [mean_investment_percent, investment_cv]
 
     aggregate_investments = {
-        METHOD_DCF: _mean_investment_for_method(method_details[METHOD_DCF]),
-        METHOD_EARNINGS: _mean_investment_for_method(method_details[METHOD_EARNINGS]),
-        METHOD_REVENUE: _mean_investment_for_method(method_details[METHOD_REVENUE]),
-        METHOD_DREAM: _mean_investment_for_method(method_details[METHOD_DREAM]),
-        METHOD_TARGET_SCENARIO: _mean_investment_for_method(method_details[METHOD_TARGET_SCENARIO]),
-        METHOD_EARNINGS_SCENARIO: _mean_investment_for_method(method_details[METHOD_EARNINGS_SCENARIO]),
-        METHOD_COMPOSITE: _mean_investment_for_method(method_details[METHOD_COMPOSITE]),
+        "DCF": _mean_investment_for_method(method_details["DCF"]),
+        "Net Income & P/E": _mean_investment_for_method(method_details["Net Income & P/E"]),
+        "Revenue & EV/S": _mean_investment_for_method(method_details["Revenue & EV/S"]),
+        "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
+        "BBB Target": _mean_investment_for_method(method_details["BBB Target"]),
+        "BBB NI & P/E": _mean_investment_for_method(method_details["BBB NI & P/E"]),
+        "Lary's Logic": _mean_investment_for_method(method_details["Lary's Logic"]),
     }
     aggregate_investment_percents = {
         method_name: (
@@ -5856,15 +5843,15 @@ def run_valuations(
 
     # Build final_dict (same logic as your original)
     all_results_list = [
-        (all_results_dcf, METHOD_DCF),
-        (all_results_profit_pe, METHOD_EARNINGS),
-        (all_results_revenue_ps, METHOD_REVENUE),
+        (all_results_dcf, "DCF"),
+        (all_results_profit_pe, "Net Income & P/E"),
+        (all_results_revenue_ps, "Revenue & EV/S"),
         # (all_results_target, "LLM Target"),
-        (all_results_dream, METHOD_DREAM),
+        (all_results_dream, "Dream Team"),
         # (all_results_sotp, "SOTP"),
-        (all_results_bbb_tp, METHOD_TARGET_SCENARIO),
-        (all_results_bbb_ni_pe, METHOD_EARNINGS_SCENARIO),
-        (all_results_forest_logic, METHOD_COMPOSITE),
+        (all_results_bbb_tp, "BBB Target"),
+        (all_results_bbb_ni_pe, "BBB NI & P/E"),
+        (all_results_forest_logic, "Lary's Logic"),
     ]
 
     all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
@@ -5936,13 +5923,13 @@ def run_valuations(
               "investment_std": std_investment,
               "lmil": lmil,
               "aggregate_targets": {
-                  METHOD_DCF: float(all_results_dcf[0]) if all_results_dcf else None,
-                  METHOD_EARNINGS: float(all_results_profit_pe[0]) if all_results_profit_pe else None,
-                  METHOD_REVENUE: float(all_results_revenue_ps[0]) if all_results_revenue_ps else None,
-                  METHOD_DREAM: float(all_results_dream[0]) if all_results_dream else None,
-                  METHOD_TARGET_SCENARIO: float(all_results_bbb_tp[0]) if all_results_bbb_tp else None,
-                  METHOD_EARNINGS_SCENARIO: float(all_results_bbb_ni_pe[0]) if all_results_bbb_ni_pe else None,
-                  METHOD_COMPOSITE: float(all_results_forest_logic[0]) if all_results_forest_logic else None,
+                  "DCF": float(all_results_dcf[0]) if all_results_dcf else None,
+                  "Net Income & P/E": float(all_results_profit_pe[0]) if all_results_profit_pe else None,
+                  "Revenue & EV/S": float(all_results_revenue_ps[0]) if all_results_revenue_ps else None,
+                  "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
+                  "BBB Target": float(all_results_bbb_tp[0]) if all_results_bbb_tp else None,
+                  "BBB NI & P/E": float(all_results_bbb_ni_pe[0]) if all_results_bbb_ni_pe else None,
+                  "Lary's Logic": float(all_results_forest_logic[0]) if all_results_forest_logic else None,
               },
               "aggregate_investments": aggregate_investments,
               "aggregate_investment_percents": aggregate_investment_percents,
@@ -6862,13 +6849,6 @@ def plot_section_ranges(
         ranges.append((k, mn / scale, mx / scale, mid / scale))
 
     fig, ax = plt.subplots(figsize=figsize)
-    # Force light plot colors regardless of host matplotlib style/theme.
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    ax.tick_params(axis="both", colors="black")
-    ax.xaxis.label.set_color("black")
-    ax.yaxis.label.set_color("black")
-    ax.title.set_color("black")
 
     cmap = plt.get_cmap("tab10")
     colors = [cmap(i % 10) for i in range(len(ranges))]
@@ -6963,13 +6943,7 @@ def plot_section_ranges(
     if save_path:
         save_target = Path(save_path)
         save_target.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(
-        str(save_target),
-        dpi=180,
-        bbox_inches="tight",
-        facecolor="white",
-        edgecolor="white",
-    )
+        fig.savefig(str(save_target), dpi=180, bbox_inches="tight")
     if show_plot:
         plt.show(block=True)
     else:
@@ -7000,8 +6974,7 @@ def plot_all_three(
       for method_name, raw_percent in method_investment_percents.items():
         val = _to_float(raw_percent)
         if isinstance(val, (int, float, np.floating)):
-          canonical_name = canonical_method_name(method_name) or str(method_name)
-          midpoint_suffix_map[canonical_name] = f"({val:.1f}%)"
+          midpoint_suffix_map[str(method_name)] = f"({val:.1f}%)"
 
     lmil_vals = prices_sec.get("LMIL") if prices_sec else None
     lmil_text = None
@@ -7024,7 +6997,16 @@ def plot_all_three(
         title=f"{ticker}",
         xlabel="Price",
         thousands=False,
-        include_keys=[*CANONICAL_METHOD_ORDER, "Overall"],
+        include_keys=[
+            "DCF",
+            "Net Income & P/E",
+            "Revenue & EV/S",
+            "Dream Team",
+            "BBB Target",
+            "BBB NI & P/E",
+            "Lary's Logic",
+            "Overall",
+        ],
         extra_text=extra_price_text,
         midpoint_suffix_map=midpoint_suffix_map,
         save_path=prices_path,

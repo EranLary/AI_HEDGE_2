@@ -9,23 +9,23 @@ function normalizeModelKey(value: string): string {
 }
 
 const MODEL_NAME_ALIASES: Record<string, string> = {
-  dcf: "DCF",
-  "intrinsic dcf": "DCF",
-  "net income and p e": "Net Income & P/E",
-  "net income p e": "Net Income & P/E",
-  "earnings multiple": "Net Income & P/E",
-  "revenue and ev s": "Revenue & EV/S",
-  "revenue ev s": "Revenue & EV/S",
-  "revenue multiple": "Revenue & EV/S",
+  dcf: "Intrinsic DCF",
+  "intrinsic dcf": "Intrinsic DCF",
+  "net income and p e": "Earnings Multiple",
+  "net income p e": "Earnings Multiple",
+  "earnings multiple": "Earnings Multiple",
+  "revenue and ev s": "Revenue Multiple",
+  "revenue ev s": "Revenue Multiple",
+  "revenue multiple": "Revenue Multiple",
   "dream team": "Dream Team",
-  "bbb target": "BBB Target",
-  "target scenario": "BBB Target",
-  "bbb ni and p e": "BBB NI & P/E",
-  "bbb ni p e": "BBB NI & P/E",
-  "earnings scenario": "BBB NI & P/E",
-  "larys logic": "Lary's Logic",
-  "laries logic": "Lary's Logic",
-  "composite logic": "Lary's Logic",
+  "bbb target": "Target Scenario",
+  "target scenario": "Target Scenario",
+  "bbb ni and p e": "Earnings Scenario",
+  "bbb ni p e": "Earnings Scenario",
+  "earnings scenario": "Earnings Scenario",
+  "larys logic": "Composite Logic",
+  "laries logic": "Composite Logic",
+  "composite logic": "Composite Logic",
   overall: "Overall",
 };
 
@@ -35,4 +35,3 @@ export function canonicalModelName(value: string): string {
   const key = normalizeModelKey(raw);
   return MODEL_NAME_ALIASES[key] || raw;
 }
-

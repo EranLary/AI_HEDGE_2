@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { createFallbackDashboard } from "@/lib/dashboard-fallback";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { canonicalModelName } from "@/lib/method-display";
 import { findLatestByFileName, readJson, readUtf8 } from "@/lib/server-outputs";
 
 function asFinite(value: unknown): number | null {
@@ -76,6 +77,7 @@ function applyLegacyModelTargetScale(payload: DashboardPayload, scale: number): 
         : null;
     return {
       ...block,
+      name: canonicalModelName(String(block.name || "")),
       target_price: scaledTarget,
       upside_pct: upside,
     };
@@ -83,6 +85,7 @@ function applyLegacyModelTargetScale(payload: DashboardPayload, scale: number): 
 
   const methodTabs = (payload.valuation_hub?.method_tabs || []).map((tab) => ({
     ...tab,
+    name: canonicalModelName(String(tab.name || "")),
     target_price: scaleValue(tab.target_price),
     outputs: (tab.outputs || []).map((output) => ({
       ...output,
@@ -218,8 +221,14 @@ export function normalizePayload(
     valuation_hub: {
       ...base.valuation_hub,
       ...(payload.valuation_hub || {}),
-      method_blocks: payload.valuation_hub?.method_blocks || [],
-      method_tabs: payload.valuation_hub?.method_tabs || [],
+      method_blocks: (payload.valuation_hub?.method_blocks || []).map((block) => ({
+        ...block,
+        name: canonicalModelName(String(block.name || "")),
+      })),
+      method_tabs: (payload.valuation_hub?.method_tabs || []).map((tab) => ({
+        ...tab,
+        name: canonicalModelName(String(tab.name || "")),
+      })),
       all_values: payload.valuation_hub?.all_values || base.valuation_hub?.all_values,
       consensus: {
         ...base.valuation_hub.consensus,
@@ -404,7 +413,7 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       const upside = current && targetPrice ? ((targetPrice - current) / current) * 100 : null;
       const invest = parseMoney(investMatch?.[1] || "");
       blocks.push({
-        name: titleLine,
+        name: canonicalModelName(titleLine),
         target_price: targetPrice,
         upside_pct: upside,
         investment_amount: invest,

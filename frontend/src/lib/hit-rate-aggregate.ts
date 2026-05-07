@@ -1,4 +1,5 @@
 import type { DashboardPayload } from "./dashboard-types";
+import { canonicalModelName } from "./method-display";
 import {
   actualDirectionFromPrices,
   allocationDirectionFromAmount,
@@ -137,12 +138,12 @@ export function computeHitRateAggregation(
     const modelRows =
       methodTabs.length > 0
         ? methodTabs.map((tab) => ({
-            name: String(tab.name || "").trim() || "Unknown Model",
+            name: canonicalModelName(String(tab.name || "").trim()),
             target_price: toNumOrNull(tab.target_price),
             investment_amount: toNumOrNull(tab.investment_amount),
           }))
         : methodBlocks.map((block) => ({
-            name: String(block.name || "").trim() || "Unknown Model",
+            name: canonicalModelName(String(block.name || "").trim()),
             target_price: toNumOrNull(block.target_price),
             investment_amount: toNumOrNull(block.investment_amount),
           }));

@@ -65,11 +65,13 @@ function fmtDateTimeNoSeconds(value: string): string {
   });
 }
 
-function fmtMoney(value: number | null | undefined): string {
+function fmtMoney(value: number | null | undefined, ticker: string): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  const isIsraeliTicker = String(ticker || "").toUpperCase().endsWith(".TA");
+  const currency = isIsraeliTicker ? "ILS" : "USD";
   return new Intl.NumberFormat(undefined, {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -150,10 +152,12 @@ function MeanTable({
   title,
   rows,
   liveCurrentPrice,
+  ticker,
 }: {
   title: string;
   rows: MeanRow[];
   liveCurrentPrice: number | null;
+  ticker: string;
 }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -165,7 +169,7 @@ function MeanTable({
             <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
               <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
-                {fmtMoney(row.mean_target_price)}
+                {fmtMoney(row.mean_target_price, ticker)}
               </p>
               <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(changePct)}`}>
                 Change vs Live: ({fmtPct(changePct)})
@@ -196,7 +200,7 @@ function MeanTable({
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
                 <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
                 <td className={`px-3 py-2 text-right ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
-                  {fmtMoney(row.mean_target_price)}
+                  {fmtMoney(row.mean_target_price, ticker)}
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-400">{row.target_samples}</td>
                 <td className={`px-3 py-2 text-right ${toneClassFromSign(row.mean_allocation_pct)}`}>
@@ -389,12 +393,12 @@ export default function DashboardSummaryPage({
           <section className="grid gap-4 md:grid-cols-5">
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Current Live Price</p>
-              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price)}</p>
+              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price, upper)}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromTarget(data.overview.mean_target_price, data.overview.live_current_price)}`}>
-                {fmtMoney(data.overview.mean_target_price)}{" "}
+                {fmtMoney(data.overview.mean_target_price, upper)}{" "}
                 <span className="text-lg">({fmtPct(meanTargetChangePct)})</span>
               </p>
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
@@ -426,11 +430,13 @@ export default function DashboardSummaryPage({
             title="By Model Mean Target + Mean Allocation"
             rows={modelRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
+            ticker={upper}
           />
           <MeanTable
             title="By Valuator Mean Target + Mean Allocation"
             rows={valuatorRowsSorted}
             liveCurrentPrice={data.overview.live_current_price}
+            ticker={upper}
           />
           <AssumptionsTable rows={data.assumptions} />
         </>

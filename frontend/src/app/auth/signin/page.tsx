@@ -1,12 +1,12 @@
 import Image from "next/image";
-import { SignInButton } from "@/components/auth/signin-button";
+import { GuestSignInButton, SignInButton } from "@/components/auth/signin-button";
 
 type SearchParams = Promise<{ callbackUrl?: string; error?: string }>;
 
 const FEATURES: { title: string; body: string }[] = [
   {
     title: "Institutional valuations",
-    body: "DCF, multiples, scenario analysis, and a Dream Team second opinion — generated end to end in minutes.",
+    body: "DCF, multiples, scenario analysis, and a Dream Team second opinion generated end to end in minutes.",
   },
   {
     title: "Bull vs bear, by design",
@@ -61,8 +61,8 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
             The valuation desk that fits in your browser.
           </h1>
           <p className="hib-landing-sub mt-5 max-w-md text-balance text-base sm:text-lg lg:max-w-lg">
-            Run an institutional-grade equity analysis on any ticker — DCF, scenarios, flags, and a
-            second-opinion Dream Team — in the time it takes to make coffee.
+            Run an institutional-grade equity analysis on any ticker: DCF, scenarios, flags, and a
+            second-opinion Dream Team in the time it takes to make coffee.
           </p>
         </section>
 
@@ -70,19 +70,20 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
           <div className="hib-landing-card relative flex flex-col gap-5 rounded-2xl p-7">
             <div className="flex items-center justify-between">
               <span className="hib-landing-meta text-[11px] uppercase tracking-[0.22em]">Sign in</span>
-              <span className="hib-landing-meta text-[11px] uppercase tracking-[0.22em]">Required</span>
+              <span className="hib-landing-meta text-[11px] uppercase tracking-[0.22em]">Google or Guest</span>
             </div>
             <div>
               <div className="text-2xl font-semibold tracking-tight">Continue to your desk</div>
               <p className="hib-landing-sub mt-1.5 text-sm">
-                Use your Google account to access dashboards and run new valuations.
+                Use Google for full access, or continue as guest to browse reports and dashboards.
               </p>
             </div>
 
             <div className="mt-1 flex flex-col items-stretch gap-3">
               <SignInButton callbackUrl={target} />
+              <GuestSignInButton callbackUrl={target} />
               <p className="hib-landing-meta text-center text-[11px] uppercase tracking-[0.18em]">
-                No card required · Read-only by default
+                Guests can explore everything except running a new analysis
               </p>
               {error ? (
                 <p className="hib-landing-error mt-1 rounded-md px-3 py-2 text-center text-xs">
@@ -95,7 +96,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
 
             <div className="mt-1 border-t border-white/10 pt-4">
               <p className="hib-landing-meta text-[11px] leading-relaxed">
-                By continuing you agree this is for informational purposes only — not investment advice.
+                By continuing you agree this is for informational purposes only, not investment advice.
               </p>
             </div>
           </div>

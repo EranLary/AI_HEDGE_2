@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import { UserRound } from "lucide-react";
 
 function GoogleMark() {
   return (
@@ -34,6 +35,19 @@ export function SignInButton({ callbackUrl = "/" }: { callbackUrl?: string }) {
     >
       <GoogleMark />
       <span>Continue with Google</span>
+    </button>
+  );
+}
+
+export function GuestSignInButton({ callbackUrl = "/" }: { callbackUrl?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => signIn("guest", { callbackUrl })}
+      className="hib-google-btn flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold tracking-tight text-zinc-100 hover:bg-white/10"
+    >
+      <UserRound size={18} />
+      <span>Continue as Guest</span>
     </button>
   );
 }

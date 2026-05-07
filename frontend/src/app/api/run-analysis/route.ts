@@ -39,6 +39,15 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!bypassAuth && session?.user?.isGuest) {
+    return NextResponse.json(
+      {
+        error: "Please sign in with Google before running a new analysis.",
+        code: "SIGN_IN_REQUIRED",
+      },
+      { status: 403 },
+    );
+  }
 
   let body: { ticker?: string } = {};
   try {

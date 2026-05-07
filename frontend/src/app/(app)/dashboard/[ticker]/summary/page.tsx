@@ -114,6 +114,38 @@ function compareRowsByMeanTargetDesc(a: MeanRow, b: MeanRow): number {
   return a.label.localeCompare(b.label);
 }
 
+function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+  const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
+  const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
+  if (!hasInvestment && !hasTarget) return null;
+  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
+}
+
+function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number | null): number | null {
+  if (typeof baseScore !== "number" || !Number.isFinite(baseScore)) return null;
+  const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
+  const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
+  return baseScore * confidenceFactor;
+}
+
+function decisionFromAdjustedScore(adjustedScore: number): {
+  label: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell";
+  tone: "buy" | "sell" | "hold";
+} {
+  if (adjustedScore >= 20) return { label: "Strong Buy", tone: "buy" };
+  if (adjustedScore >= 5) return { label: "Buy", tone: "buy" };
+  if (adjustedScore > -5) return { label: "Hold", tone: "hold" };
+  if (adjustedScore > -20) return { label: "Sell", tone: "sell" };
+  return { label: "Strong Sell", tone: "sell" };
+}
+
+function decisionClass(tone: "buy" | "sell" | "hold"): string {
+  if (tone === "buy") return "hib-signal-buy";
+  if (tone === "sell") return "hib-signal-sell";
+  return "hib-signal-hold";
+}
+
 function MeanTable({
   title,
   rows,
@@ -293,6 +325,12 @@ export default function DashboardSummaryPage({
     () => (data?.by_valuator || []).slice().sort(compareRowsByMeanTargetDesc),
     [data?.by_valuator],
   );
+  const overviewCombinedScore = combinedDecisionScore(data?.overview.mean_allocation_pct, meanTargetChangePct);
+  const overviewAdjustedScore = confidenceAdjustedScore(overviewCombinedScore, data?.overview.mean_disagreement_score);
+  const overviewDecision =
+    typeof overviewAdjustedScore === "number" && Number.isFinite(overviewAdjustedScore)
+      ? decisionFromAdjustedScore(overviewAdjustedScore)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -348,7 +386,7 @@ export default function DashboardSummaryPage({
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-5">
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Current Live Price</p>
               <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtMoney(data.overview.live_current_price)}</p>
@@ -372,6 +410,15 @@ export default function DashboardSummaryPage({
               <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Disagreement Score</p>
               <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtNum(data.overview.mean_disagreement_score)}</p>
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Decision</p>
+              <p className={`mt-2 text-2xl font-bold ${overviewDecision ? decisionClass(overviewDecision.tone) : "text-zinc-100"}`}>
+                {overviewDecision
+                  ? `${overviewDecision.label} (${typeof overviewAdjustedScore === "number" ? overviewAdjustedScore.toFixed(2) : "N/A"})`
+                  : "N/A"}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">Confidence-adjusted point score</p>
             </article>
           </section>
 

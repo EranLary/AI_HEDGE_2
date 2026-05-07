@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Gauge } from "lucide-react";
 import {
   Bar,
@@ -116,8 +116,27 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   }, [chartData, consensusCurrent]);
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const [chartReady, setChartReady] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hide = () => setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+
+  useEffect(() => {
+    setChartReady(false);
+  }, [chartData.length]);
+
+  useEffect(() => {
+    const node = wrapRef.current;
+    if (!node) return;
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      setChartReady(rect.width > 0 && rect.height > 0);
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const handleMouseMove = (state: unknown) => {
     const hoverState: ChartHoverState | undefined =
@@ -176,8 +195,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
           <Gauge size={14} /> Target Price by Model
         </span>
       </div>
-      <div ref={wrapRef} className="hib-chart relative h-96">
-        <ResponsiveContainer width="100%" height="100%">
+      <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">
+        {chartReady ? (
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
           <BarChart data={chartData} onMouseMove={handleMouseMove} onMouseLeave={hide}>
             <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
             <XAxis dataKey="name" tick={false} axisLine={false} tickLine={false} />
@@ -221,6 +241,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             />
           </BarChart>
         </ResponsiveContainer>
+        ) : (
+          <div className="h-full w-full rounded-xl border border-white/10 bg-black/25" />
+        )}
         {tooltip.visible ? (
           <div
             className="hib-line-tooltip pointer-events-none absolute z-20 rounded-md border px-2 py-1 text-[11px] shadow-lg"

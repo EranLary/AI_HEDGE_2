@@ -1,5 +1,6 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { NOTIONAL_BASE_USD } from "@/lib/hit-rate-utils";
+import { canonicalModelName } from "@/lib/method-display";
 
 export type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
 
@@ -364,7 +365,7 @@ export function computeTickerSummaryAggregation(
 
   const applyModel = (name: string, targetPrice: number | null, allocationPct: number | null) => {
     if (targetPrice === null && allocationPct === null) return;
-    const key = String(name || "").trim() || "Unknown Model";
+    const key = canonicalModelName(String(name || "").trim());
     if (!modelMap.has(key)) {
       modelMap.set(key, createMeanAccumulator());
     }

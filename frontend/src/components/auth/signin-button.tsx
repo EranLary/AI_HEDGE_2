@@ -43,7 +43,17 @@ export function GuestSignInButton({ callbackUrl = "/" }: { callbackUrl?: string 
   return (
     <button
       type="button"
-      onClick={() => signIn("guest", { callbackUrl })}
+      onClick={async () => {
+        const safePath = callbackUrl.startsWith("/") ? callbackUrl : "/";
+        const res = await signIn("guest", { callbackUrl: safePath, redirect: false });
+        const nextUrl = res?.url || safePath;
+        try {
+          const parsed = new URL(nextUrl, window.location.origin);
+          window.location.assign(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+        } catch {
+          window.location.assign(safePath);
+        }
+      }}
       className="hib-google-btn flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold tracking-tight text-zinc-100 hover:bg-white/10"
     >
       <UserRound size={18} />

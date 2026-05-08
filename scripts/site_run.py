@@ -36,10 +36,11 @@ def _estimate_total_llm_calls() -> int:
         return 30
 
 
-def _looks_like_success_result(result: Any) -> bool:
+def _looks_like_material_success_result(result: Any) -> bool:
     if not isinstance(result, dict):
         return False
-    return str(result.get("status", "") or "").strip().lower() == "success"
+    status = str(result.get("status", "") or "").strip().lower()
+    return status in {"success", "partial_success"}
 
 
 def main() -> int:
@@ -182,7 +183,7 @@ def main() -> int:
                 "persistence_error": persistence_error or "DB persistence failed.",
                 "error": "",
             }
-            if not _looks_like_success_result(result):
+            if not _looks_like_material_success_result(result):
                 failed_payload = {
                     **completed_with_warning,
                     "status": "failed",

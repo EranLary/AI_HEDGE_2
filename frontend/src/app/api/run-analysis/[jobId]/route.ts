@@ -29,11 +29,17 @@ function writeStatusSafe(status: RunStatusPayload): void {
 
 const PERSISTENCE_ONLY_ERROR_RE = /no reports row found for source_run_id/i;
 
+function isMaterialSuccessResult(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const status = String((result as { status?: unknown }).status || "").trim().toLowerCase();
+  return status === "success" || status === "partial_success";
+}
+
 function shouldTreatAsCompleted(status: RunStatusPayload): boolean {
   if (status.status !== "failed") return false;
   if (!PERSISTENCE_ONLY_ERROR_RE.test(String(status.persistence_error || status.error || ""))) return false;
   const result = status.result as Record<string, unknown> | null | undefined;
-  return String(result?.status || "").toLowerCase() === "success";
+  return isMaterialSuccessResult(result);
 }
 
 function reconcileLegacyPersistenceFailure(status: RunStatusPayload): RunStatusPayload {

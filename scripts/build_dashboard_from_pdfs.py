@@ -127,7 +127,7 @@ def _is_noise_line(line: str) -> bool:
     s = line.strip()
     if not s:
         return False
-    if s in {"ג€¢", "ג€¡", "ג€ ", "(", ")", '"', "'"}:
+    if s in {"(", ")", "\x22", "\x27"}:
         return True
     if len(s) <= 8 and not re.search(r"[A-Za-z0-9]", s):
         return True

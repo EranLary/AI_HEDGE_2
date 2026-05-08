@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { NextResponse } from "next/server";
 
@@ -69,6 +70,74 @@ function parsePid(value: unknown): number | null {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
+}
+
+function isPidAlive(pid: number | null): boolean {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasFile(filePath: string): boolean {
+  if (!filePath) return false;
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function hasCompletionArtifacts(status: RunStatusPayload): boolean {
+  const outputDir = String(status.output_dir || "").trim();
+  const ticker = String(status.ticker || "").trim().toUpperCase();
+  if (!outputDir || !ticker) return false;
+
+  const dashboardJson = path.resolve(outputDir, `${ticker}_dashboard.json`);
+  const analysisTxt = path.resolve(outputDir, `${ticker}_analysis.txt`);
+  const analysisPdf = path.resolve(outputDir, `${ticker}_analysis.pdf`);
+
+  return hasFile(dashboardJson) && (hasFile(analysisTxt) || hasFile(analysisPdf));
+}
+
+function shouldPromoteRunningToCompleted(status: RunStatusPayload, progressLines: string[]): boolean {
+  if (status.status !== "running") return false;
+
+  const workerAlive = isPidAlive(parsePid(status.worker_pid));
+  const runnerAlive = isPidAlive(parsePid(status.runner_pid));
+  if (workerAlive || runnerAlive) return false;
+
+  if (!hasCompletionArtifacts(status)) return false;
+
+  const joined = progressLines.join("\n").toLowerCase();
+  const reachedFinalPhase =
+    joined.includes("finished technical analysis") || joined.includes("finished valuations");
+  const llmPct = typeof status.llm_progress_pct === "number" ? status.llm_progress_pct : 0;
+  return reachedFinalPhase || llmPct >= 99;
+}
+
+function reconcileRunningCompletion(status: RunStatusPayload, progressLines: string[]): RunStatusPayload {
+  if (!shouldPromoteRunningToCompleted(status, progressLines)) return status;
+
+  const llmTotal = typeof status.llm_total_estimated === "number" ? status.llm_total_estimated : 0;
+  const llmDone = typeof status.llm_completed === "number" ? status.llm_completed : 0;
+  const next: RunStatusPayload = {
+    ...status,
+    status: "completed",
+    finished_at: status.finished_at || new Date().toISOString(),
+    error: "",
+    llm_progress_pct: 100,
+    llm_completed: Math.max(llmDone, llmTotal),
+    result:
+      status.result && typeof status.result === "object"
+        ? status.result
+        : { status: "success", source: "artifact_reconciliation" },
+  };
+  writeStatusSafe(next);
+  return next;
 }
 
 function tryTerminatePid(pid: number): boolean {
@@ -156,9 +225,9 @@ export async function GET(
   }
 
   const reconciledStatus = reconcileLegacyPersistenceFailure(status);
-  const updatedStatus = await reconcileCompletedStatus(reconciledStatus);
-
-  const progress = readProgressLines(updatedStatus.progress_file || "", 80);
+  const progress = readProgressLines(reconciledStatus.progress_file || "", 80);
+  const completionReconciled = reconcileRunningCompletion(reconciledStatus, progress);
+  const updatedStatus = await reconcileCompletedStatus(completionReconciled);
   const llmTotal = typeof updatedStatus.llm_total_estimated === "number" ? updatedStatus.llm_total_estimated : 0;
   const llmDone = typeof updatedStatus.llm_completed === "number" ? updatedStatus.llm_completed : 0;
   let llmPct =

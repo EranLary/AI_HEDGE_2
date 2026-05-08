@@ -11,6 +11,10 @@ function normalizeModelKey(value: string): string {
 const MODEL_NAME_ALIASES: Record<string, string> = {
   dcf: "Intrinsic DCF",
   "intrinsic dcf": "Intrinsic DCF",
+  "scenario dcf": "Scenario DCF",
+  "scenario dcf valuation": "Scenario DCF",
+  "scenario dcf price valuation": "Scenario DCF",
+  "scenario dcf price": "Scenario DCF",
   "net income and p e": "Earnings Multiple",
   "net income p e": "Earnings Multiple",
   "earnings multiple": "Earnings Multiple",

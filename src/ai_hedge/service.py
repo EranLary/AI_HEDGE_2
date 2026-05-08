@@ -116,7 +116,7 @@ Produce ONLY sections 1-7:
 
 3) Deep Financial Analysis
 - Revenue growth (multi-period, trend, volatility)
-- Profitability (gross, operating, net margins — trend over time)
+- Profitability (gross, operating, net margins - trend over time)
 - Cash flow vs earnings (quality of earnings)
 - Balance sheet strength (debt, liquidity, risks)
 - Share dilution / buybacks (capital allocation signals)
@@ -138,7 +138,7 @@ Produce ONLY sections 1-7:
 - Where the company sits in the value chain
 
 6) Industry-Critical Metrics
-- Identify the 3–6 MOST important KPIs for this industry
+- Identify the 3-6 MOST important KPIs for this industry
 - Build a table:
 
 KPI | Company Performance | Interpretation
@@ -210,7 +210,7 @@ Threats:
 - [...]
 
 15) Key Metrics to Track Going Forward
-- Define the 5–7 MOST critical forward-looking KPIs
+- Define the 5-7 MOST critical forward-looking KPIs
 - These should be leading indicators, not lagging ones
 - Each metric must connect to valuation impact
 

@@ -1,4 +1,4 @@
-"""Run lifecycle helpers — bookend a ticker pipeline run with obs_runs rows."""
+"""Run lifecycle helpers - bookend a ticker pipeline run with obs_runs rows."""
 from __future__ import annotations
 
 import time
@@ -26,7 +26,7 @@ def start_run(*, ticker: str, source: str = "cli", source_run_id: Optional[str] 
     run_id = db.insert_run(ticker=ticker, source=source, source_run_id=source_run_id, user_id=user_id)
     started = time.perf_counter()
     if run_id is None:
-        # DB unavailable — yield None and skip context. LLM calls won't be persisted
+        # DB unavailable - yield None and skip context. LLM calls won't be persisted
         # this run, but the pipeline still works.
         try:
             yield None

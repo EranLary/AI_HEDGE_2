@@ -10,7 +10,7 @@ private ``_deepseek_simple_full`` helper added to legacy_port to access the
 data the original throws away.
 
 Also monkey-patches ``concurrent.futures.ThreadPoolExecutor.submit`` to
-propagate contextvars into worker threads — without this, every LLM call in
+propagate contextvars into worker threads - without this, every LLM call in
 a worker pool loses its ``run_id`` / ``stage`` / ``persona`` context.
 """
 from __future__ import annotations

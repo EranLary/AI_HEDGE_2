@@ -483,6 +483,16 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "wacc": avg_mid("WACC"),
             "terminal_growth": avg_mid("TERMINAL"),
         }
+    elif method_name == "Scenario DCF":
+        metrics = {
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "fcf_next_year": avg_mid("fcf_next_year"),
+            "growth_rate": avg_mid("g"),
+            "wacc": avg_mid("WACC"),
+            "terminal_growth": avg_mid("TERMINAL"),
+        }
     elif method_name == "Net Income & P/E":
         metrics = {
             "net_income_3y": avg_mid("net_income_3y"),
@@ -1185,6 +1195,7 @@ def build_dashboard_payload(
         is_foreign=bool(currency_context.get("display_currency")) and str(currency_context.get("display_currency")).upper() != "USD",
     )
     method_order = [
+        "Scenario DCF",
         "DCF",
         "Net Income & P/E",
         "Revenue & EV/S",

@@ -1186,7 +1186,7 @@ def _deepseek_simple_full(
     print_prompt: bool = False,
     pool_size: int = 20,
 ) -> dict:
-    """Full-data variant of deepseek_simple_text — returns content + metadata.
+    """Full-data variant of deepseek_simple_text - returns content + metadata.
 
     Used by the obs instrumentation layer to capture tokens, latency, and the
     actual prompt that was sent (after the short_answer suffix). The public
@@ -1867,7 +1867,7 @@ Write 5-7 short sentences.
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2088,7 +2088,7 @@ Your output should be only 5 to 10 key insights that summarize what the options 
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2312,7 +2312,7 @@ Now extract the key insights about what analysts collectively believe about this
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2758,7 +2758,8 @@ def swot_analysis(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -2845,7 +2846,8 @@ def market_analyst(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -2899,7 +2901,8 @@ def bear_vs_bull_insights(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -3406,6 +3409,54 @@ Rules:
 11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
+instructions_scenario_dcf = """Based on the input you receive, produce a probabilistic 3-scenario DCF (Bull / Base / Bear) as a professional equity analyst would.
+
+You must:
+1) Build a Bull, Base, and Bear scenario from the provided information.
+2) For EACH scenario, provide:
+   - probability of the scenario materializing (decimal between 0 and 1),
+   - fcf_next_year,
+   - g (explicit-period annual FCF growth),
+   - WACC,
+   - TERMINAL (perpetual growth).
+3) Return STRICT JSON only.
+
+Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+
+Output schema (must match exactly):
+{
+  "step_by_step_analysis": "string",
+  "bull": [number, number, number, number, number],
+  "bull_rationale": "string",
+  "base": [number, number, number, number, number],
+  "base_rationale": "string",
+  "bear": [number, number, number, number, number],
+  "bear_rationale": "string",
+  "investment_amount": number,
+  "investment_rationale": "string"
+}
+
+Scenario tuple definition (fixed order):
+[probability, fcf_next_year, g, WACC, TERMINAL]
+
+Definitions:
+- probability must be decimal (0..1), not percent string.
+- fcf_next_year must be absolute full units in U.S. dollars.
+- g, WACC, and TERMINAL must be decimal ratios (example: 0.10 for 10%).
+- investment_amount is capital allocated out of a $100,000 notional budget in [-100000, 100000].
+
+Rules:
+1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
+2) bull/base/bear must each be present exactly once and each must be a 5-item numeric array:
+   [probability, fcf_next_year, g, WACC, TERMINAL].
+3) Probabilities must sum to 1.0 (+/- 0.001 tolerance).
+4) Do NOT output null, NaN, strings (except rationale fields), formatted numbers, or ranges in numeric arrays.
+5) WACC must be greater than TERMINAL in each scenario.
+6) If missing data exists, still provide best-effort assumptions and state proxies explicitly in "step_by_step_analysis".
+7) "investment_rationale" must justify position size via expected value asymmetry, downside risk, and conviction.
+8) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON.
+"""
+
 instructions_profit_pe_range = """Based on the input you receive, estimate the company's REPRESENTATIVE steady-state earnings power in 3 years and its REPRESENTATIVE valuation multiple, and return them in STRICT JSON.
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3615,7 +3666,7 @@ Rules:
 3) Do NOT output ranges. Each probability and target market cap must be a single number.
 4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, or formatted numbers inside the arrays.
 5) Do NOT add nested objects. No additional top-level keys beyond step_by_step_analysis, bull, base, bear, and their corresponding rationales.
-6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of ֲ±0.001).
+6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of +/-0.001).
 7) Your step_by_step_analysis must justify the differentiation between scenarios, the valuation methods, assumptions regarding net debt/cash, share count/dilution impacts on equity value, and explicitly state any proxy assumptions used due to missing inputs.
 8) Do NOT include a "total" key, do NOT include per-share price outputs, and do NOT include scenario narratives outside "step_by_step_analysis" and the rationales.
 9) "investment_amount" must be a single numeric value in [-100000, 100000].
@@ -3674,7 +3725,7 @@ Rules:
 3) Do NOT output ranges. Each probability, each net income, and pe_multiple must be a single number.
 4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, or formatted numbers inside the arrays.
 5) Do NOT add nested objects. No additional top-level keys beyond step_by_step_analysis, bull, base, bear, pe_multiple, and their corresponding rationales.
-6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of ֲ±0.001).
+6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of +/-0.001).
 7) Your step_by_step_analysis must explicitly justify:
    - what differentiates bull vs base vs bear in operating reality (growth, margins, pricing, retention, competition, cycle, execution),
    - how net_income_3y_normalized was estimated and normalized (one-offs removed, SBC treatment, tax rate assumptions, cycle normalization),
@@ -3687,7 +3738,7 @@ Rules:
 12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
-instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
+instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, its REPRESENTATIVE effective tax rate, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
 
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3700,6 +3751,8 @@ Output schema (must match exactly):
   "margin_rationale": "string",
   "net_financing_result": number,
   "financing_rationale": "string",
+  "tax_rate": number,
+  "tax_rationale": "string",
   "pe_multiple": number,
   "pe_rationale": "string",
   "investment_amount": number,
@@ -3721,6 +3774,10 @@ Definitions:
   If it is expected to incur net financing expenses, return a negative number.
   This must be expressed as a full absolute value (not in thousands or millions).
   For example: negative fifty million dollars must be written as -50000000.
+- "tax_rate" represents the normalized effective tax rate applied to pre-tax earnings to derive after-tax earnings power.
+  It must be expressed as a decimal ratio (for example 0.23 for 23%), not a percentage string.
+  Derive it from the company's jurisdiction mix, historical effective tax behavior, structural tax profile, and realistic normalization assumptions.
+  If current taxes are distorted by one-off items, loss carryforwards, valuation allowances, or temporary accounting effects, normalize to a sustainable through-cycle rate and explain why.
 - "pe_multiple" represents a carefully underwritten, long-term fair P/E multiple reflecting durable earnings power.
   It must incorporate earnings quality, cyclicality, competitive intensity and trajectory,
   reinvestment requirements, capital structure risk, regulatory and macro sensitivity,
@@ -3733,14 +3790,15 @@ Definitions:
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "revenue_growth_3y_avg", "operating_profitability_margin", "net_financing_result", and "pe_multiple" must each be a single numeric value (not a list, not a range).
-3) Growth and margins must be numeric decimal ratios, not percentages.
+2) "revenue_growth_3y_avg", "operating_profitability_margin", "net_financing_result", "tax_rate", and "pe_multiple" must each be a single numeric value (not a list, not a range).
+3) Growth, margins, and tax rate must be numeric decimal ratios, not percentages.
 4) Financing result must be expressed as a full absolute numeric value in U.S. dollars (no abbreviations).
-5) Do NOT include null, NaN, percentages, formatted numbers, or ranges in the numerical fields.
-6) Your step_by_step_analysis must reference growth durability, TAM realism, competitive dynamics, pricing power, operating leverage, cost structure, capital intensity, balance sheet strength, refinancing risk, interest rate sensitivity, and cyclicality where relevant.
-7) "investment_amount" must be a single numeric value in [-100000, 100000].
-8) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-9) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+5) tax_rate must be numeric and decimal-form. If you internally think in percent terms, convert before output (example: 23% -> 0.23, -5% -> -0.05).
+6) Do NOT include null, NaN, percentages, formatted numbers, or ranges in the numerical fields.
+7) Your step_by_step_analysis must reference growth durability, TAM realism, competitive dynamics, pricing power, operating leverage, cost structure, capital intensity, balance sheet strength, refinancing risk, interest rate sensitivity, cyclicality, and tax normalization logic where relevant.
+8) "investment_amount" must be a single numeric value in [-100000, 100000].
+9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
 def build_prompt_dream_valuation(name):
@@ -3837,6 +3895,77 @@ def extract_dcf_range_json(text: str) -> Dict[str, Any]:
         "g": tuple(data["g"]),
         "WACC": tuple(data["WACC"]),
         "TERMINAL": tuple(data["TERMINAL"]),
+        "investment_amount": investment_amount,
+        "investment_rationale": investment_rationale,
+    }
+
+
+def _normalize_decimal_ratio(x: float) -> float:
+    xf = float(x)
+    if abs(xf) > 1.0:
+        return xf / 100.0
+    return xf
+
+
+def _normalize_probability(x: float) -> float:
+    xf = float(x)
+    if xf > 1.0 and xf <= 100.0:
+        xf = xf / 100.0
+    return xf
+
+
+def extract_scenario_dcf_json(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+
+    json_str = match.group(0)
+    data = json.loads(json_str)
+
+    required_keys = {"bull", "base", "bear"}
+    if required_keys - data.keys():
+        return {}
+
+    investment_fields = _extract_investment_fields(data)
+    if not investment_fields:
+        return {}
+    investment_amount, investment_rationale = investment_fields
+
+    scenarios: Dict[str, Dict[str, float]] = {}
+    for scenario_name in ["bull", "base", "bear"]:
+        value = data.get(scenario_name)
+        if not isinstance(value, list) or len(value) != 5:
+            return {}
+
+        prob_raw, fcf_raw, g_raw, wacc_raw, terminal_raw = value
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in [prob_raw, fcf_raw, g_raw, wacc_raw, terminal_raw]):
+            return {}
+
+        prob = _normalize_probability(float(prob_raw))
+        fcf = float(fcf_raw)
+        g = _normalize_decimal_ratio(float(g_raw))
+        wacc = _normalize_decimal_ratio(float(wacc_raw))
+        terminal = _normalize_decimal_ratio(float(terminal_raw))
+
+        if prob < 0.0 or prob > 1.0:
+            return {}
+        if wacc <= terminal:
+            return {}
+
+        scenarios[scenario_name] = {
+            "probability": prob,
+            "fcf_next_year": fcf,
+            "g": g,
+            "wacc": wacc,
+            "terminal_g": terminal,
+        }
+
+    prob_sum = sum(s["probability"] for s in scenarios.values())
+    if abs(prob_sum - 1.0) > 0.001:
+        return {}
+
+    return {
+        "scenarios": scenarios,
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
     }
@@ -4103,6 +4232,7 @@ def extract_forest_logic_json(text: str) -> Dict[str, Any]:
         "revenue_growth_3y_avg",
         "operating_profitability_margin",
         "net_financing_result",
+        "tax_rate",
         "pe_multiple"
     ]
 
@@ -4113,11 +4243,20 @@ def extract_forest_logic_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    try:
+        tax_rate = float(data["tax_rate"])
+    except Exception:
+        return {}
+    # Normalize percent-style outputs into decimal form:
+    # 23 -> 0.23, -5 -> -0.05. Keep already-decimal values unchanged.
+    if abs(tax_rate) > 1.0:
+        tax_rate = tax_rate / 100.0
 
     return {
         "revenue_growth_3y_avg": float(data["revenue_growth_3y_avg"]),
         "operating_profitability_margin": float(data["operating_profitability_margin"]),
         "net_financing_result": float(data["net_financing_result"]),
+        "tax_rate": tax_rate,
         "pe_multiple": float(data["pe_multiple"]),
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
@@ -4318,6 +4457,44 @@ def calculate_dcf(variable_dict, fcf0, wacc, g, terminal_g, years=5):
 
     return share
 
+
+def calculate_scenario_dcf(variable_dict, scenarios_dict):
+    expected_price = 0.0
+    weighted_fcf = 0.0
+    weighted_g = 0.0
+    weighted_wacc = 0.0
+    weighted_terminal = 0.0
+    per_scenario_prices: Dict[str, float] = {}
+
+    for scenario_name in ["bear", "base", "bull"]:
+        payload = scenarios_dict.get(scenario_name, {})
+        p = float(payload.get("probability", 0.0))
+        fcf = float(payload.get("fcf_next_year", 0.0))
+        g = float(payload.get("g", 0.0))
+        wacc = float(payload.get("wacc", 0.0))
+        terminal_g = float(payload.get("terminal_g", 0.0))
+
+        scenario_price = float(calculate_dcf(variable_dict, fcf, wacc, g, terminal_g))
+        per_scenario_prices[scenario_name] = scenario_price
+
+        expected_price += p * scenario_price
+        weighted_fcf += p * fcf
+        weighted_g += p * g
+        weighted_wacc += p * wacc
+        weighted_terminal += p * terminal_g
+
+    if expected_price < 0:
+        expected_price = 0.0
+
+    return {
+        "expected_price": expected_price,
+        "weighted_fcf_next_year": weighted_fcf,
+        "weighted_g": weighted_g,
+        "weighted_wacc": weighted_wacc,
+        "weighted_terminal_g": weighted_terminal,
+        "per_scenario_prices": per_scenario_prices,
+    }
+
 def calculate_pe(variable_dict, pe, ni):
     fmc = pe * ni
     shares_outstanding = variable_dict["shares_outstanding"]
@@ -4389,7 +4566,7 @@ def calculate_bbb_ni_pe(variable_dict, scenarios_dict, pe_multiple):
     return 0, ni
   return share_price, ni
 
-def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, pe):
+def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe):
   revenue = variable_dict["revenue"]
   if revenue <= 0:
     return 0, 0, 0, 0
@@ -4397,8 +4574,7 @@ def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, pe):
   revenue_3y = revenue * ((1+growth)**3)
   op_earnings = revenue_3y * op_margin
   net_bt_earnings = op_earnings + net_financing
-  tax = 0.23
-  net_earnings = net_bt_earnings * (1-tax)
+  net_earnings = net_bt_earnings * (1-tax_rate)
   mc = net_earnings * pe
   price = mc / shares_outstanding
   if price < 0:
@@ -4508,6 +4684,13 @@ def get_bbb_tp(bbb_tp_json, variables_dict):
   else:
     return []
 
+def get_scenario_dcf(scenario_dcf_json, variables_dict):
+  calc = calculate_scenario_dcf(variables_dict, scenario_dcf_json["scenarios"])
+  expected_price = float(calc["expected_price"])
+  if expected_price > 0:
+    return [expected_price], calc
+  return [], calc
+
 def get_bbb_ni_pe(bbb_ni_pe_json, variables_dict):
   pe = bbb_ni_pe_json["pe_multiple"]
   price, ni = calculate_bbb_ni_pe(variables_dict, bbb_ni_pe_json["scenarios"], pe)
@@ -4517,16 +4700,18 @@ def get_bbb_ni_pe(bbb_ni_pe_json, variables_dict):
     return [], [ni], [pe]
 
 def get_forest_logic(forest_logic_json, variables_dict):
-  # growth, op_margin, net_financing, pe
+  # growth, op_margin, net_financing, tax_rate, pe
   growth = forest_logic_json["revenue_growth_3y_avg"]
   print("growth:", growth)
   op_margin = forest_logic_json["operating_profitability_margin"]
   print("op_margin:", op_margin)
   net_financing = forest_logic_json["net_financing_result"]
   print("net_financing:", net_financing)
+  tax_rate = forest_logic_json["tax_rate"]
+  print("tax_rate:", tax_rate)
   pe = forest_logic_json["pe_multiple"]
   print("pe:", pe)
-  price, revenue, net_earnings, pe = calculate_forest_logic(variables_dict, growth, op_margin, net_financing, pe)
+  price, revenue, net_earnings, pe = calculate_forest_logic(variables_dict, growth, op_margin, net_financing, tax_rate, pe)
   if price > 0:
     return [price], [revenue], [net_earnings], [pe]
   else:
@@ -5146,6 +5331,70 @@ def sotp_full(
     summary_text = ("\nNo results\n\n", name_of_eval)
     return [], summary_text
 
+def scenario_dcf_full(
+    financial_dict,
+    text,
+    num_iterations=3,
+    llm_workers=6,
+    runtime_context=None,
+    variables_dict_input=None,
+    ticker_input=None,
+    model="deepseek-chat",
+    collect_details: bool = False,
+):
+  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
+  prompt = build_prompt(tk, financial_dict, instructions_scenario_dcf, text)
+  answers = llm_n_answers_parallel(
+      api_key=DEEPSEEK_API_KEY,
+      prompt=prompt,
+      n=num_iterations,
+      max_workers=llm_workers,
+      model=model,
+  )
+  all_results = []
+  details = []
+  name_of_eval = "Scenario DCF Price Valuation"
+  for answer in answers:
+    raw_json_text = _extract_raw_json_text(answer)
+    raw_json = _extract_raw_json_dict(answer)
+    scenario_dcf_json = extract_scenario_dcf_json(answer)
+    if not scenario_dcf_json:
+      continue
+    prices, calc = get_scenario_dcf(scenario_dcf_json, vdict)
+    all_results.extend(prices)
+    if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      # Emit weighted assumptions under canonical DCF keys so assumptions UI can aggregate them directly.
+      weighted_fcf = float(calc.get("weighted_fcf_next_year", 0.0))
+      weighted_g = float(calc.get("weighted_g", 0.0))
+      weighted_wacc = float(calc.get("weighted_wacc", 0.0))
+      weighted_terminal = float(calc.get("weighted_terminal_g", 0.0))
+      raw_for_detail["fcf_next_year"] = [weighted_fcf, weighted_fcf]
+      raw_for_detail["g"] = [weighted_g, weighted_g]
+      raw_for_detail["WACC"] = [weighted_wacc, weighted_wacc]
+      raw_for_detail["TERMINAL"] = [weighted_terminal, weighted_terminal]
+      details.append(
+          {
+              "target_price": float(prices[0]) if prices else None,
+              "investment_amount": float(scenario_dcf_json.get("investment_amount")),
+              "raw_json_text": raw_json_text,
+              "raw_json": raw_for_detail if raw_for_detail else dict(scenario_dcf_json),
+          }
+      )
+
+  if all_results:
+    summary_text = plot_results(all_results, name_of_eval)
+    if collect_details:
+      return all_results, summary_text, details
+    return all_results, summary_text
+
+  summary_text = ("\nNo results\n\n", name_of_eval)
+  if collect_details:
+    return [], summary_text, details
+  return [], summary_text
+
 def bbb_tp_full(
     financial_dict,
     text,
@@ -5408,7 +5657,7 @@ def run_valuations(
     collect_explain = isinstance(explain_collector, dict)
     collect_details_for_metrics = True
     method_details = {
-        "DCF": [],
+        "Scenario DCF": [],
         "Net Income & P/E": [],
         "Revenue & EV/S": [],
         "Dream Team": [],
@@ -5462,11 +5711,11 @@ def run_valuations(
 
     def _run_dcf_mixed():
         all_results = []
-        summary_name = "DCF Range Price Valuation"
+        summary_name = "Scenario DCF Price Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = dcf_range_full(
+                ctx_results, ctx_summary, ctx_details = scenario_dcf_full(
                     financial_dict,
                     ctx_text,
                     num_iterations=iter_count,
@@ -5477,7 +5726,7 @@ def run_valuations(
                 )
                 details.extend(ctx_details)
             else:
-                ctx_results, ctx_summary = dcf_range_full(
+                ctx_results, ctx_summary = scenario_dcf_full(
                     financial_dict,
                     ctx_text,
                     num_iterations=iter_count,
@@ -5730,10 +5979,10 @@ def run_valuations(
 
         dcf_result = _safe_future_result(
             fut_dcf,
-            ([], ("\nNo results\n\n", "DCF Range Price Valuation"), []),
-            "DCF block",
+            ([], ("\nNo results\n\n", "Scenario DCF Price Valuation"), []),
+            "Scenario DCF block",
         )
-        dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "DCF block")
+        dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "Scenario DCF block")
         all_results_dcf, text_dcf, details_dcf = dcf_result
 
         pe_result = _safe_future_result(
@@ -5795,7 +6044,7 @@ def run_valuations(
             details_forest_logic,
         ) = forest_result
 
-    method_details["DCF"] = details_dcf
+    method_details["Scenario DCF"] = details_dcf
     method_details["Net Income & P/E"] = details_pe
     method_details["Revenue & EV/S"] = details_ps
     method_details["Dream Team"] = details_dream
@@ -5824,7 +6073,7 @@ def run_valuations(
     lmil = [mean_investment_percent, investment_cv]
 
     aggregate_investments = {
-        "DCF": _mean_investment_for_method(method_details["DCF"]),
+        "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
         "Net Income & P/E": _mean_investment_for_method(method_details["Net Income & P/E"]),
         "Revenue & EV/S": _mean_investment_for_method(method_details["Revenue & EV/S"]),
         "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
@@ -5843,7 +6092,7 @@ def run_valuations(
 
     # Build final_dict (same logic as your original)
     all_results_list = [
-        (all_results_dcf, "DCF"),
+        (all_results_dcf, "Scenario DCF"),
         (all_results_profit_pe, "Net Income & P/E"),
         (all_results_revenue_ps, "Revenue & EV/S"),
         # (all_results_target, "LLM Target"),
@@ -5923,7 +6172,7 @@ def run_valuations(
               "investment_std": std_investment,
               "lmil": lmil,
               "aggregate_targets": {
-                  "DCF": float(all_results_dcf[0]) if all_results_dcf else None,
+                  "Scenario DCF": float(all_results_dcf[0]) if all_results_dcf else None,
                   "Net Income & P/E": float(all_results_profit_pe[0]) if all_results_profit_pe else None,
                   "Revenue & EV/S": float(all_results_revenue_ps[0]) if all_results_revenue_ps else None,
                   "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
@@ -6010,7 +6259,7 @@ def extract_gaap_sbc_non_recurring_json(text: str, variables_dict: Dict[str, Any
     return result
 
 
-def make_sicum_file(ticker, text, financial_dict, as_of_date, n, variables_dict):
+def _run_sicum_once(ticker, text, financial_dict, as_of_date, n, variables_dict):
   financial_reports = financial_dict["All Reports"]
   info = financial_dict["info"]
   currrency_statement = financial_dict["currency_statement"]
@@ -6180,7 +6429,7 @@ def make_sicum_file_full(ticker, text, financial_dict, variables_dict, n_years =
   cnt = 0
   for i in range(n_runs):
     cnt += 1
-    json_data = make_sicum_file(ticker, text, financial_dict, today, n_years, variables_dict)
+    json_data = _run_sicum_once(ticker, text, financial_dict, today, n_years, variables_dict)
 
     if not json_data:
       continue
@@ -6721,27 +6970,16 @@ def build_pptx_from_json_file(json_path: str, output_path: str = "deck.pptx") ->
     return build_pptx_from_deck_json(deck, output_path=output_path)
 
 
-def make_presentation_json(ticker: str) -> str:
-    """
-    Calls the model to produce a PPT-ready deck JSON (strict schema).
-    Returns the raw model response (string). You can then parse with extract_json_from_ai_response().
-    """
+def pptx_downloader(ticker, n_tries = 3):
+  n_tries = 3
+  for try_idx in range(n_tries):
     text = load_text_from_file()
     prompt = build_presentation_prompt(ticker=ticker, text=text)
-
-    raw_answer = deepseek_simple_text(
+    raw_response = deepseek_simple_text(
         api_key=DEEPSEEK_API_KEY,
         prompt=prompt,
         short_answer=False
     )
-
-    return raw_answer
-
-
-def pptx_downloader(ticker, n_tries = 3):
-  n_tries = 3
-  for try_idx in range(n_tries):
-    raw_response = make_presentation_json(ticker)
     print(raw_response)
     deck_json = extract_json_from_ai_response(raw_response)
     print(deck_json)

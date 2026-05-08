@@ -6,6 +6,7 @@ import sys
 import json
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +17,7 @@ from .dashboard import (
     generate_dashboard_sections,
     write_dashboard_payload,
 )
+from .io import get_artifact_store
 
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name, "").strip()
@@ -55,6 +57,7 @@ class RunArtifacts:
     f_score_text: str
     sec_fallback_used: bool
     sec_fallback_message: str
+    r2_keys: Optional[Dict[str, str]] = None
 
 
 
@@ -1069,6 +1072,26 @@ def _run_ticker_valuation_impl(
             if html_src.exists():
                 shutil.move(str(html_src), target_html)
 
+    store = get_artifact_store()
+    artifact_local_paths: Dict[str, Path] = {
+        "analysis-txt": analysis_dst,
+        "analysis-pdf": Path(pdf_dst) if pdf_dst else None,
+        "prices-explain-txt": prices_explain_txt,
+        "prices-explain-pdf": Path(prices_explain_pdf) if prices_explain_pdf else None,
+        "dashboard-json": Path(dashboard_json) if dashboard_json else None,
+        "prices-chart": out_dir / f"{ticker}_prices_valuation.png",
+        "revenue-chart": out_dir / f"{ticker}_revenue_valuation.png",
+        "net-income-chart": out_dir / f"{ticker}_net_income_valuation.png",
+    }
+    generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    collected_keys: Dict[str, str] = {}
+    for kind, local_path in artifact_local_paths.items():
+        if local_path is None or not local_path.exists():
+            continue
+        r2_key = f"reports/{ticker}/{generated_at_iso}/{local_path.name}"
+        collected_keys[kind] = store.put(local_path, key=r2_key)
+    r2_keys: Optional[Dict[str, str]] = collected_keys if store.is_remote else None
+
     try:
         from ai_hedge.db.writer import write_run_to_db
         write_run_to_db(
@@ -1076,6 +1099,7 @@ def _run_ticker_valuation_impl(
             source=run_source,
             max_attempts=3,
             retry_backoff_seconds=1.5,
+            r2_keys=r2_keys,
         )
     except Exception as _db_exc:  # noqa: BLE001
         print(f"[runner] DB write skipped: {_db_exc}", file=sys.stderr)
@@ -1099,6 +1123,7 @@ def _run_ticker_valuation_impl(
         f_score_text=f_score_text,
         sec_fallback_used=sec_fallback_used,
         sec_fallback_message=sec_fallback_message,
+        r2_keys=r2_keys,
     )
 
     return {
@@ -1121,4 +1146,5 @@ def _run_ticker_valuation_impl(
         "analysis_duration_minutes": round((time.perf_counter() - run_started) / 60.0, 2),
         "sec_fallback_used": artifacts.sec_fallback_used,
         "sec_fallback_message": artifacts.sec_fallback_message,
+        "r2_keys": artifacts.r2_keys,
     }

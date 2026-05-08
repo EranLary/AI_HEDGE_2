@@ -52,6 +52,7 @@ def write_run_to_db(
     source: str,
     max_attempts: int = 1,
     retry_backoff_seconds: float = 1.5,
+    r2_keys: dict | None = None,
 ) -> str | None:
     """
     Best-effort DB write at the end of a successful run.
@@ -59,6 +60,9 @@ def write_run_to_db(
     - No-op (returns None) if DATABASE_URL_UNPOOLED / DATABASE_URL is unset.
     - Catches and logs all errors so DB problems don't kill a successful run.
     - Returns the inserted report_id on success, or None.
+    - `r2_keys`, when provided, is persisted onto report_artifacts.r2_keys.
+      Used by the runner to record the ArtifactStore's returned keys when an
+      R2-backed store is active. Disk-only backfill paths leave it None.
     """
     if not (os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")):
         return None
@@ -86,6 +90,9 @@ def write_run_to_db(
             file=sys.stderr,
         )
         return None
+
+    if r2_keys is not None:
+        bundle["artifact_row"]["r2_keys"] = r2_keys
 
     attempts = max(1, int(max_attempts or 1))
     last_exc: Exception | None = None

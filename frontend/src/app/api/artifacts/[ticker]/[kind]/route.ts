@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { fetchLatestReport } from "@/lib/reports-db";
 import { findLatestByFileName } from "@/lib/server-outputs";
 
 const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = {
@@ -23,6 +24,24 @@ export async function GET(
   const kind = String(params.kind || "").toLowerCase().trim();
   if (!ticker || !kind || !(kind in KIND_TO_FILE)) {
     return NextResponse.json({ error: "Invalid ticker or artifact kind." }, { status: 400 });
+  }
+
+  // Phase 0.1 seam: when an R2-backed runner has populated r2_keys for this
+  // report and the R2 public base URL is configured, redirect to R2. Until
+  // both conditions hold (Phase 0.6 / 1), fall through to the FS path.
+  try {
+    const row = await fetchLatestReport(ticker);
+    const r2Key = row?.r2_keys?.[kind];
+    const base = process.env.R2_PUBLIC_BASE_URL?.trim();
+    if (r2Key && base) {
+      const target =
+        r2Key.startsWith("http://") || r2Key.startsWith("https://")
+          ? r2Key
+          : `${base.replace(/\/+$/, "")}/${r2Key.replace(/^\/+/, "")}`;
+      return NextResponse.redirect(target, 302);
+    }
+  } catch {
+    // DB unreachable / missing row: fall through to FS path below.
   }
 
   const spec = KIND_TO_FILE[kind];

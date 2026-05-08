@@ -65,9 +65,9 @@ SELECT id FROM reports
 
 _INSERT_ARTIFACT_SQL = """
 INSERT INTO report_artifacts (
-    report_id, dashboard, analysis_md, prices_explain_md, analysis_md_source
+    report_id, dashboard, analysis_md, prices_explain_md, analysis_md_source, r2_keys
 ) VALUES (
-    %(report_id)s, %(dashboard)s, %(analysis_md)s, %(prices_explain_md)s, %(analysis_md_source)s
+    %(report_id)s, %(dashboard)s, %(analysis_md)s, %(prices_explain_md)s, %(analysis_md_source)s, %(r2_keys)s
 );
 """
 
@@ -96,6 +96,8 @@ def insert_report(
         new_id = str(result[0])
         artifact_payload = dict(artifact_row)
         artifact_payload["dashboard"] = Jsonb(artifact_payload["dashboard"])
+        r2_val = artifact_payload.get("r2_keys")
+        artifact_payload["r2_keys"] = Jsonb(r2_val) if r2_val else None
         artifact_payload["report_id"] = new_id
         cur.execute(_INSERT_ARTIFACT_SQL, artifact_payload)
         return (new_id, True)

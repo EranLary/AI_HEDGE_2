@@ -190,17 +190,23 @@ function MeanTable({
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
               <th className="px-3 py-2 text-right font-medium">Mean Target</th>
+              <th className="px-3 py-2 text-right font-medium">Change vs Live</th>
               <th className="px-3 py-2 text-right font-medium">Target N</th>
               <th className="px-3 py-2 text-right font-medium">Mean Allocation</th>
               <th className="px-3 py-2 text-right font-medium">Allocation N</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const changePct = targetChangePct(row.mean_target_price, liveCurrentPrice);
+              return (
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
                 <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
                 <td className={`px-3 py-2 text-right ${toneClassFromTarget(row.mean_target_price, liveCurrentPrice)}`}>
                   {fmtMoney(row.mean_target_price, ticker)}
+                </td>
+                <td className={`px-3 py-2 text-right ${toneClassFromSign(changePct)}`}>
+                  ({fmtPct(changePct)})
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-400">{row.target_samples}</td>
                 <td className={`px-3 py-2 text-right ${toneClassFromSign(row.mean_allocation_pct)}`}>
@@ -208,10 +214,10 @@ function MeanTable({
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-400">{row.allocation_samples}</td>
               </tr>
-            ))}
+            )})}
             {!rows.length ? (
               <tr>
-                <td colSpan={5} className="px-3 py-3 text-zinc-500">
+                <td colSpan={6} className="px-3 py-3 text-zinc-500">
                   No rows available.
                 </td>
               </tr>

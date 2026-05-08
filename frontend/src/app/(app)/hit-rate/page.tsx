@@ -73,7 +73,7 @@ function CountBadge({
   value: number;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 tabular-nums">
       <span className="text-[10px] uppercase tracking-[0.08em] text-zinc-500">{label}</span>
       <span className="font-mono text-[11px] font-semibold text-zinc-200">{value}</span>
     </span>
@@ -82,7 +82,7 @@ function CountBadge({
 
 function CountsPills({ metric }: { metric: MetricCounts }) {
   return (
-    <div className="flex flex-wrap justify-end gap-1">
+    <div className="inline-flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
       <CountBadge label="H" value={metric.hits} />
       <CountBadge label="M" value={metric.misses} />
       <CountBadge label="-" value={metric.neutral} />
@@ -182,7 +182,7 @@ export default function HitRatePage() {
   const [data, setData] = useState<HitRatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [mode, setMode] = useState<HitRateMode>("all");
+  const [mode, setMode] = useState<HitRateMode>("positive_only");
 
   useEffect(() => {
     let cancelled = false;

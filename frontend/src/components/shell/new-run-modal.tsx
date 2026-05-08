@@ -121,7 +121,7 @@ export function NewRunModal() {
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</p>
           ) : null}
           {isGuest ? (
-            <p className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            <p className="hib-guest-note rounded-lg border px-3 py-2 text-xs">
               Guest accounts can browse everything, but must sign in with Google to run a new analysis.
             </p>
           ) : null}

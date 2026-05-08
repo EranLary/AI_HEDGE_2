@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Gem, Radar, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { Gem, Radar, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
@@ -287,6 +287,13 @@ export default function DiscoveryPage() {
             </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <SectionCard
+                title="Top Scores"
+                icon={<Star size={16} className="text-emerald-300" />}
+                rows={data.top_scores}
+                accent="text-emerald-300"
+                metricLabel="score"
+              />
+              <SectionCard
                 title="Most Undervalued"
                 icon={<Gem size={16} className="text-emerald-400" />}
                 rows={data.top_undervalued}
@@ -299,6 +306,22 @@ export default function DiscoveryPage() {
                 rows={data.top_highest_allocation}
                 accent="text-emerald-300"
                 metricLabel="allocation"
+              />
+              {lensType === "overall" ? (
+                <SectionCard
+                  title="Top Conviction"
+                  icon={<Radar size={16} className="hib-conviction-accent" />}
+                  rows={data.top_conviction}
+                  accent="hib-conviction-accent"
+                  metricLabel="disagreement"
+                />
+              ) : null}
+              <SectionCard
+                title="Lowest Scores"
+                icon={<Star size={16} className="text-red-300" />}
+                rows={data.lowest_scores}
+                accent="text-red-300"
+                metricLabel="score"
               />
               <SectionCard
                 title="Most Overvalued"
@@ -314,29 +337,6 @@ export default function DiscoveryPage() {
                 accent="text-red-300"
                 metricLabel="allocation"
               />
-              <SectionCard
-                title="Top Scores"
-                icon={<TrendingUp size={16} className="text-emerald-400" />}
-                rows={data.top_scores}
-                accent="text-emerald-300"
-                metricLabel="score"
-              />
-              <SectionCard
-                title="Lowest Scores"
-                icon={<TrendingDown size={16} className="text-red-400" />}
-                rows={data.lowest_scores}
-                accent="text-red-300"
-                metricLabel="score"
-              />
-              {lensType === "overall" ? (
-                <SectionCard
-                  title="Top Conviction"
-                  icon={<Radar size={16} className="hib-conviction-accent" />}
-                  rows={data.top_conviction}
-                  accent="hib-conviction-accent"
-                  metricLabel="disagreement"
-                />
-              ) : null}
             </div>
           </>
         )}

@@ -17,6 +17,8 @@ import { BrandLogo } from "@/components/brand-logo";
 import { TickerCombobox } from "@/components/shell/ticker-combobox";
 import { ActiveRunsPanel } from "@/components/shell/active-runs-panel";
 import { useNewRunModal } from "@/components/shell/new-run-context";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthMenu } from "@/components/shell/auth-menu";
 
 type NavItem = {
   href: string;
@@ -149,8 +151,18 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
 
       {!collapsedDesktop ? (
         <div className="hib-sidebar-heading border-t border-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.14em]">
-          <Activity size={10} className="mr-1 inline" />
-          <span>AI valuation</span>
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              <Activity size={10} className="mr-1 inline" />
+              <span>AI valuation</span>
+            </span>
+            {mobile ? (
+              <div className="flex items-center gap-2 normal-case tracking-normal">
+                <ThemeToggle className="h-8 px-2 py-1.5" />
+                <AuthMenu />
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

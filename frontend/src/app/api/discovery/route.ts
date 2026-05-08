@@ -283,6 +283,7 @@ export async function GET(request: Request) {
       return_pct: returnPct,
       investment_allocation_pct: positionPct,
       confidence_cv: confidenceCv,
+      points_score: typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : null,
       decision_label: decision.label,
       decision_tone: decision.tone,
       updated_at: prepared.latestUpdatedAt,
@@ -323,6 +324,26 @@ export async function GET(request: Request) {
     .sort((a, b) => Number(a.investment_allocation_pct) - Number(b.investment_allocation_pct))
     .slice(0, 20);
 
+  const topScores = [...rows]
+    .filter(
+      (row) =>
+        typeof row.points_score === "number" &&
+        Number.isFinite(row.points_score) &&
+        Number(row.points_score) > 0,
+    )
+    .sort((a, b) => Number(b.points_score) - Number(a.points_score))
+    .slice(0, 20);
+
+  const lowestScores = [...rows]
+    .filter(
+      (row) =>
+        typeof row.points_score === "number" &&
+        Number.isFinite(row.points_score) &&
+        Number(row.points_score) < 0,
+    )
+    .sort((a, b) => Number(a.points_score) - Number(b.points_score))
+    .slice(0, 20);
+
   return NextResponse.json({
     generated_at: new Date().toISOString(),
     lens,
@@ -338,6 +359,8 @@ export async function GET(request: Request) {
     top_conviction: topConviction,
     top_highest_allocation: topHighestAllocation,
     top_lowest_allocation: topLowestAllocation,
+    top_scores: topScores,
+    lowest_scores: lowestScores,
     // Backward-compatible aliases.
     top_gems: topUndervalued,
     bubbles: topOvervalued,

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Gem, Radar, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { Gem, Radar, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 
@@ -27,6 +27,8 @@ type DiscoveryPayload = {
   top_conviction: DiscoveryRow[];
   top_highest_allocation: DiscoveryRow[];
   top_lowest_allocation: DiscoveryRow[];
+  top_scores: DiscoveryRow[];
+  lowest_scores: DiscoveryRow[];
 };
 
 function fmtDateTimeNoSeconds(value: string): string {
@@ -46,6 +48,11 @@ function fmtPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function fmtScore(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 function decisionClass(tone?: DiscoveryRow["decision_tone"]): string {
   if (tone === "buy") return "hib-signal-buy";
   if (tone === "sell") return "hib-signal-sell";
@@ -63,7 +70,7 @@ function SectionCard({
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
-  metricLabel: "return" | "disagreement" | "allocation";
+  metricLabel: "return" | "disagreement" | "allocation" | "score";
 }) {
   const [topN, setTopN] = useState<10 | 20>(10);
   const shownRows = rows.slice(0, topN);
@@ -126,6 +133,14 @@ function SectionCard({
                         : "N/A"}
                     </p>
                   </div>
+                ) : metricLabel === "score" ? (
+                  <div>
+                    <p className="text-zinc-500">Summary Score</p>
+                    <p className={accent}>{fmtScore(row.points_score)}</p>
+                    <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
+                      {row.decision_label || "Hold"}
+                    </p>
+                  </div>
                 ) : (
                   <div>
                     <p className="text-zinc-500">Disagreement Score</p>
@@ -155,6 +170,28 @@ export default function DiscoveryPage() {
   const [loading, setLoading] = useState(true);
   const [lensType, setLensType] = useState<DiscoveryLensType>("overall");
   const [lensKey, setLensKey] = useState("");
+  const initializedFromQueryRef = useRef(false);
+
+  useEffect(() => {
+    if (initializedFromQueryRef.current) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const rawType = String(params.get("lens_type") || "").trim().toLowerCase();
+    const rawKey = String(params.get("lens_key") || "").trim();
+    if (rawType === "model" || rawType === "valuator") {
+      setLensType(rawType);
+      setLensKey(rawKey);
+      initializedFromQueryRef.current = true;
+      return;
+    }
+    if (rawType === "overall") {
+      setLensType("overall");
+      setLensKey("");
+      initializedFromQueryRef.current = true;
+      return;
+    }
+    initializedFromQueryRef.current = true;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -272,6 +309,13 @@ export default function DiscoveryPage() {
             </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <SectionCard
+                title="Top Scores"
+                icon={<Star size={16} className="text-emerald-300" />}
+                rows={data.top_scores}
+                accent="text-emerald-300"
+                metricLabel="score"
+              />
+              <SectionCard
                 title="Most Undervalued"
                 icon={<Gem size={16} className="text-emerald-400" />}
                 rows={data.top_undervalued}
@@ -284,6 +328,13 @@ export default function DiscoveryPage() {
                 rows={data.top_highest_allocation}
                 accent="text-emerald-300"
                 metricLabel="allocation"
+              />
+              <SectionCard
+                title="Lowest Scores"
+                icon={<Star size={16} className="text-red-300" />}
+                rows={data.lowest_scores}
+                accent="text-red-300"
+                metricLabel="score"
               />
               <SectionCard
                 title="Most Overvalued"

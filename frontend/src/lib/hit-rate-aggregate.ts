@@ -61,6 +61,8 @@ export type HitRateAggregation = {
   by_valuator: HitRateRow[];
 };
 
+export type HitRateMode = "all" | "positive_only";
+
 function createMetricSet(): MetricAccSet {
   return {
     targets: createAccumulator(),
@@ -94,13 +96,25 @@ function isPlaceholderValuatorLabel(label: string): boolean {
   return /^output\s+\d+$/i.test(String(label || "").trim());
 }
 
-function applyPrediction(metric: MetricAccSet, type: "target" | "allocation", predictedDirection: -1 | 0 | 1 | null, actualDirection: -1 | 0 | 1 | null): void {
+function applyPrediction(
+  metric: MetricAccSet,
+  type: "target" | "allocation",
+  predictedDirection: -1 | 0 | 1 | null,
+  actualDirection: -1 | 0 | 1 | null,
+): void {
   const verdict = verdictFromDirections(predictedDirection, actualDirection);
   if (type === "target") {
     applyVerdict(metric.targets, verdict);
     return;
   }
   applyVerdict(metric.allocations, verdict);
+}
+
+function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -1 | 0 | 1 | null): boolean {
+  if (mode === "positive_only") {
+    return predictedDirection === 1;
+  }
+  return true;
 }
 
 function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {
@@ -113,6 +127,7 @@ function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {
 export function computeHitRateAggregation(
   reports: HitRateSourceReport[],
   livePriceByTicker: Map<string, number | null>,
+  mode: HitRateMode = "all",
 ): HitRateAggregation {
   const uniqueTickers = Array.from(new Set(reports.map((r) => String(r.ticker || "").toUpperCase()).filter(Boolean)));
 
@@ -157,10 +172,14 @@ export function computeHitRateAggregation(
       const targetDirection = targetDirectionWithFloor(targetPrice, reportPrice);
       const allocationDirection = allocationDirectionFromAmount(investmentAmount);
 
-      applyPrediction(modelMetric, "target", targetDirection, actualDirection);
-      applyPrediction(modelMetric, "allocation", allocationDirection, actualDirection);
-      applyPrediction(overview, "target", targetDirection, actualDirection);
-      applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+      if (shouldIncludePrediction(mode, targetDirection)) {
+        applyPrediction(modelMetric, "target", targetDirection, actualDirection);
+        applyPrediction(overview, "target", targetDirection, actualDirection);
+      }
+      if (shouldIncludePrediction(mode, allocationDirection)) {
+        applyPrediction(modelMetric, "allocation", allocationDirection, actualDirection);
+        applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+      }
     };
 
     for (const modelRow of modelRows) {
@@ -179,8 +198,12 @@ export function computeHitRateAggregation(
         const targetDirection = targetDirectionWithFloor(toNumOrNull(output.target_price), reportPrice);
         const allocationDirection = allocationDirectionFromAmount(toNumOrNull(output.investment_amount));
 
-        applyPrediction(overview, "target", targetDirection, actualDirection);
-        applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+        if (shouldIncludePrediction(mode, targetDirection)) {
+          applyPrediction(overview, "target", targetDirection, actualDirection);
+        }
+        if (shouldIncludePrediction(mode, allocationDirection)) {
+          applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+        }
 
         const persona = String(output.persona || "").trim() || `Output ${output.output_id}`;
         if (isPlaceholderValuatorLabel(persona)) {
@@ -190,8 +213,12 @@ export function computeHitRateAggregation(
           byValuatorMap.set(persona, createMetricSet());
         }
         const valuatorMetric = byValuatorMap.get(persona)!;
-        applyPrediction(valuatorMetric, "target", targetDirection, actualDirection);
-        applyPrediction(valuatorMetric, "allocation", allocationDirection, actualDirection);
+        if (shouldIncludePrediction(mode, targetDirection)) {
+          applyPrediction(valuatorMetric, "target", targetDirection, actualDirection);
+        }
+        if (shouldIncludePrediction(mode, allocationDirection)) {
+          applyPrediction(valuatorMetric, "allocation", allocationDirection, actualDirection);
+        }
       }
     }
 
@@ -210,10 +237,14 @@ export function computeHitRateAggregation(
         const targetDirection = targetDirectionWithFloor(toNumOrNull(member.target_price), reportPrice);
         const allocationDirection = allocationDirectionFromAmount(toNumOrNull(member.investment_amount));
 
-        applyPrediction(valuatorMetric, "target", targetDirection, actualDirection);
-        applyPrediction(valuatorMetric, "allocation", allocationDirection, actualDirection);
-        applyPrediction(overview, "target", targetDirection, actualDirection);
-        applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+        if (shouldIncludePrediction(mode, targetDirection)) {
+          applyPrediction(valuatorMetric, "target", targetDirection, actualDirection);
+          applyPrediction(overview, "target", targetDirection, actualDirection);
+        }
+        if (shouldIncludePrediction(mode, allocationDirection)) {
+          applyPrediction(valuatorMetric, "allocation", allocationDirection, actualDirection);
+          applyPrediction(overview, "allocation", allocationDirection, actualDirection);
+        }
       }
     }
   }

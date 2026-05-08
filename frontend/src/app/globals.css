@@ -429,6 +429,19 @@ html[data-theme="light"] .hib-conviction-accent {
   font-variant-numeric: tabular-nums;
 }
 
+/* Summary cards: keep price + currency symbol on one line without overflow */
+.hib-summary-metric-value {
+  font-size: clamp(0.95rem, 1.7vw, 1.45rem);
+  line-height: 1.1;
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.012em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Chart readability */
 .hib-chart .recharts-cartesian-grid line {
   stroke: rgba(100, 116, 139, 0.35) !important;
@@ -998,6 +1011,28 @@ html[data-theme="light"] .hib-disclaimer-amber {
   border-color: rgba(180, 83, 9, 0.55) !important;
   background-color: rgba(254, 243, 199, 0.95) !important;
   color: #78350f !important;
+}
+
+/* Hit-rate table model/valuator links must remain readable in both themes */
+.hib-hitrate-link {
+  color: var(--text-primary) !important;
+}
+.hib-hitrate-link:hover,
+.hib-hitrate-link:focus-visible {
+  color: var(--text-primary) !important;
+  opacity: 0.9;
+}
+
+/* Guest sign-in reminder: readable in both themes without yellow glare in light mode */
+.hib-guest-note {
+  border-color: rgba(52, 211, 153, 0.45) !important;
+  background-color: rgba(16, 185, 129, 0.12) !important;
+  color: #d1fae5 !important;
+}
+html[data-theme="light"] .hib-guest-note {
+  border-color: rgba(5, 150, 105, 0.5) !important;
+  background-color: rgba(236, 253, 245, 0.98) !important;
+  color: #065f46 !important;
 }
 
 /* Flag / scenario / artifact surface tokens (reused in new routed pages) */

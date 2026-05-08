@@ -53,6 +53,7 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
   "Intrinsic DCF": "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
+  "Scenario DCF": "Scenario DCF runs a full Bull/Base/Bear discounted-cash-flow map with explicit probabilities for each path. Instead of one fragile set of assumptions, it blends three coherent operating realities into one weighted intrinsic value.",
   "Earnings Multiple": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
   "Revenue Multiple": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
   "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",

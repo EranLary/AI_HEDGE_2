@@ -356,9 +356,9 @@ def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Opt
 
 def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Optional[Dict[str, Any]] = None) -> str:
     specs = [
-        ("Predicted Revenue", "Revenue"),
-        ("Predicted Earnings", "Net Income"),
-        ("Predicted P/E", "P/E"),
+        ("Representative Revenue", "Revenue"),
+        ("Representative Earnings", "Net Income"),
+        ("Representative P/E", "P/E"),
     ]
     lines: List[str] = []
     for label, key in specs:
@@ -448,7 +448,7 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
             ("Base Probability", _avg(base_prob_vals), "pct"),
             ("Bear Probability", _avg(bear_prob_vals), "pct"),
             ("Growth Rate (G) [DCF + Scenario DCF]", _avg(weighted_g_vals), "pct"),
-            ("Predicted FCF (Next Year) [DCF + Scenario DCF]", _avg(weighted_fcf_vals), "num"),
+            ("Representative FCF [DCF + Scenario DCF]", _avg(weighted_fcf_vals), "num"),
             ("Terminal Value Growth [DCF + Scenario DCF]", _avg(weighted_terminal_vals), "pct"),
             ("WACC [DCF + Scenario DCF]", _avg(weighted_wacc_vals), "pct"),
         ]

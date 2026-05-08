@@ -135,7 +135,7 @@ function HitRateTable({
           <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
             <Link
               href={discoveryHrefForRow(row)}
-              className="text-[11px] uppercase tracking-[0.12em] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+              className="hib-hitrate-link text-[11px] uppercase tracking-[0.12em] underline-offset-2 hover:underline"
             >
               {row.label}
             </Link>
@@ -170,7 +170,7 @@ function HitRateTable({
                 <td className="px-3 py-2 font-medium text-zinc-200">
                   <Link
                     href={discoveryHrefForRow(row)}
-                    className="underline-offset-2 hover:text-zinc-100 hover:underline"
+                    className="hib-hitrate-link underline-offset-2 hover:underline"
                   >
                     {row.label}
                   </Link>

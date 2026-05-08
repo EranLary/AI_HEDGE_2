@@ -373,7 +373,14 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
 
     methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     scenario_items = methods.get("Scenario DCF", []) if isinstance(methods, dict) else []
-    if isinstance(scenario_items, list) and scenario_items:
+    dcf_items = methods.get("DCF", []) if isinstance(methods, dict) else []
+    dcf_assumption_items: List[Dict[str, Any]] = []
+    if isinstance(scenario_items, list):
+        dcf_assumption_items.extend(item for item in scenario_items if isinstance(item, dict))
+    if isinstance(dcf_items, list):
+        dcf_assumption_items.extend(item for item in dcf_items if isinstance(item, dict))
+
+    if dcf_assumption_items:
         weighted_fcf_vals: List[float] = []
         weighted_g_vals: List[float] = []
         weighted_wacc_vals: List[float] = []
@@ -405,9 +412,7 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
             n = _first_float(v)
             return float(n) if n is not None else None
 
-        for item in scenario_items:
-            if not isinstance(item, dict):
-                continue
+        for item in dcf_assumption_items:
             raw = _parse_raw(item)
             if not raw:
                 continue
@@ -425,6 +430,7 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
             if terminal_mid is not None:
                 weighted_terminal_vals.append(terminal_mid)
 
+            # Scenario DCF contributes probability fields; intrinsic DCF does not.
             for label, bucket in [("bull", bull_prob_vals), ("base", base_prob_vals), ("bear", bear_prob_vals)]:
                 arr = raw.get(label)
                 if isinstance(arr, (list, tuple)) and len(arr) >= 1:
@@ -441,10 +447,10 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
             ("Bull Probability", _avg(bull_prob_vals), "pct"),
             ("Base Probability", _avg(base_prob_vals), "pct"),
             ("Bear Probability", _avg(bear_prob_vals), "pct"),
-            ("Growth Rate (G)", _avg(weighted_g_vals), "pct"),
-            ("Predicted FCF (Next Year)", _avg(weighted_fcf_vals), "num"),
-            ("Terminal Value Growth", _avg(weighted_terminal_vals), "pct"),
-            ("WACC", _avg(weighted_wacc_vals), "pct"),
+            ("Growth Rate (G) [DCF + Scenario DCF]", _avg(weighted_g_vals), "pct"),
+            ("Predicted FCF (Next Year) [DCF + Scenario DCF]", _avg(weighted_fcf_vals), "num"),
+            ("Terminal Value Growth [DCF + Scenario DCF]", _avg(weighted_terminal_vals), "pct"),
+            ("WACC [DCF + Scenario DCF]", _avg(weighted_wacc_vals), "pct"),
         ]
         for label, value, kind in scenario_lines:
             if value is None:

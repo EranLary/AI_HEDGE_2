@@ -476,7 +476,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
         return _mean(vals)
 
     metrics: Dict[str, Optional[float]] = {}
-    if method_name in {"DCF", "Scenario DCF"}:
+    if method_name == "DCF":
         metrics = {
             "fcf_next_year": avg_mid("fcf_next_year"),
             "growth_rate": avg_mid("g"),

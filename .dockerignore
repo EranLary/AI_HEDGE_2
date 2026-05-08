@@ -22,5 +22,10 @@ frontend/.next
 frontend/.vercel
 frontend/.turbo
 
+frontend-obs/node_modules
+frontend-obs/.next
+frontend-obs/.vercel
+frontend-obs/.turbo
+
 tests
 *.ipynb

@@ -159,7 +159,7 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
             {mobile ? (
               <div className="flex items-center gap-2 normal-case tracking-normal">
                 <ThemeToggle className="h-8 px-2 py-1.5" />
-                <AuthMenu />
+                <AuthMenu menuDirection="up" />
               </div>
             ) : null}
           </div>

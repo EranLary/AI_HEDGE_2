@@ -95,6 +95,8 @@ export async function POST(req: Request) {
     progress_file: progressFile,
     user_id: userId,
     attributed: false,
+    runner_pid: null,
+    worker_pid: null,
     llm_total_estimated: 30,
     llm_completed: 0,
     llm_progress_pct: 0,
@@ -140,6 +142,11 @@ export async function POST(req: Request) {
         },
       },
     );
+    const queuedStatus: RunStatusPayload = {
+      ...initialStatus,
+      runner_pid: typeof child.pid === "number" ? child.pid : null,
+    };
+    writeStatus(statusFile, queuedStatus);
     child.unref();
   } catch (err) {
     const failedStatus: RunStatusPayload = {

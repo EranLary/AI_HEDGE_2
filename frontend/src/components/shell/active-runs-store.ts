@@ -141,3 +141,28 @@ export function nudgeActiveRuns(): void {
   emit();
   if (timer != null) pollOnce();
 }
+
+export async function cancelActiveRun(jobId: string): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const cleanJobId = String(jobId || "").trim();
+  if (!cleanJobId) {
+    return { ok: false, error: "Missing job id." };
+  }
+
+  try {
+    const res = await fetch(`/api/run-analysis/${encodeURIComponent(cleanJobId)}`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok || !json.ok) {
+      return { ok: false, error: String(json.error || "Failed to stop run.") };
+    }
+
+    removeActiveRun(cleanJobId);
+    latestRuns = listActiveRuns();
+    emit();
+    return { ok: true, message: String(json.message || "") };
+  } catch {
+    return { ok: false, error: "Failed to stop run." };
+  }
+}

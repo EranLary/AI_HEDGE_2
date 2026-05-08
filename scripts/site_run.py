@@ -36,6 +36,12 @@ def _estimate_total_llm_calls() -> int:
         return 30
 
 
+def _looks_like_success_result(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return str(result.get("status", "") or "").strip().lower() == "success"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a site-triggered valuation job.")
     parser.add_argument("--ticker", required=True, help="Ticker symbol")
@@ -72,6 +78,10 @@ def main() -> int:
         "finished_at": None,
         "output_dir": output_dir,
         "progress_file": progress_file,
+        "user_id": existing_status.get("user_id"),
+        "attributed": bool(existing_status.get("attributed", False)),
+        "runner_pid": existing_status.get("runner_pid"),
+        "worker_pid": os.getpid(),
         "llm_total_estimated": llm_total_estimated,
         "llm_completed": llm_completed,
         "llm_progress_pct": 0.0,
@@ -101,17 +111,21 @@ def main() -> int:
         from ai_hedge.service import run_full_analysis
 
         original_deepseek = legacy_port.deepseek_simple_text
+        original_full = legacy_port._deepseek_simple_full
 
-        def tracked_deepseek(*args, **kwargs):
+        def tracked_full(*args, **kwargs):
             nonlocal llm_completed
             try:
-                return original_deepseek(*args, **kwargs)
+                return original_full(*args, **kwargs)
             finally:
                 with lock:
                     llm_completed += 1
                 _write_running_progress()
 
-        legacy_port.deepseek_simple_text = tracked_deepseek
+        # Track the low-level full wrapper instead of deepseek_simple_text.
+        # obs.install() rebinds deepseek_simple_text, but it still calls
+        # _deepseek_simple_full internally.
+        legacy_port._deepseek_simple_full = tracked_full
 
         result = run_full_analysis(
             ticker=ticker,
@@ -154,19 +168,35 @@ def main() -> int:
             persistence_error = f"DB persistence verification failed: {persist_exc}"
 
         if not report_id:
-            failed_payload = {
+            # The run can still be materially successful for the user even if
+            # DB persistence is temporarily unavailable. Keep this as completed
+            # and surface the persistence issue for diagnostics.
+            completed_with_warning = {
                 **running_payload,
-                "status": "failed",
+                "status": "completed",
                 "finished_at": _utc_now(),
                 "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
                 "llm_progress_pct": 100.0,
                 "result": result,
-                "error": persistence_error or "DB persistence failed.",
+                "report_id": None,
                 "persistence_error": persistence_error or "DB persistence failed.",
+                "error": "",
             }
-            _write_json(status_file, failed_payload)
+            if not _looks_like_success_result(result):
+                failed_payload = {
+                    **completed_with_warning,
+                    "status": "failed",
+                    "error": persistence_error or "DB persistence failed.",
+                }
+                _write_json(status_file, failed_payload)
+                legacy_port._deepseek_simple_full = original_full
+                legacy_port.deepseek_simple_text = original_deepseek
+                return 1
+
+            _write_json(status_file, completed_with_warning)
+            legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
-            return 1
+            return 0
 
         completed_payload = {
             **running_payload,
@@ -178,6 +208,7 @@ def main() -> int:
             "report_id": report_id,
         }
         _write_json(status_file, completed_payload)
+        legacy_port._deepseek_simple_full = original_full
         legacy_port.deepseek_simple_text = original_deepseek
         return 0
     except Exception as exc:

@@ -7,6 +7,7 @@ import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import type { ClientActiveRun } from "@/lib/active-runs";
 import { getProgressStep } from "@/lib/run-progress";
 import {
+  cancelActiveRun,
   getActiveRunsSnapshot,
   subscribeActiveRuns,
   subscribeRunCompletion,
@@ -28,6 +29,7 @@ function safePct(value: number | undefined): number {
 export function ActiveRunIndicator() {
   const [runs, setRuns] = useState<ClientActiveRun[]>(() => getActiveRunsSnapshot());
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [stoppingJobId, setStoppingJobId] = useState<string>("");
 
   useEffect(() => subscribeActiveRuns(setRuns), []);
 
@@ -62,6 +64,7 @@ export function ActiveRunIndicator() {
   const topRun = activeRuns[0];
   const topPct = safePct(topRun?.llm_progress_pct);
   const topStep = getProgressStep(topPct);
+  const topRunStopping = Boolean(topRun?.job_id && stoppingJobId === topRun.job_id);
 
   return (
     <>
@@ -79,8 +82,32 @@ export function ActiveRunIndicator() {
               </div>
               <div className="mt-1 flex items-center justify-between gap-3">
                 <span className="hib-active-run-text text-[11px] tracking-[0.08em]">{topStep}</span>
-                <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-emerald-300 transition-all duration-500" style={{ width: `${topPct}%` }} />
+                <div className="flex items-center gap-2">
+                  {topRun ? (
+                    <button
+                      type="button"
+                      disabled={topRunStopping}
+                      onClick={async () => {
+                        const ok = window.confirm(`Stop analysis for ${topRun.ticker}?`);
+                        if (!ok) return;
+                        setStoppingJobId(topRun.job_id);
+                        try {
+                          const res = await cancelActiveRun(topRun.job_id);
+                          if (!res.ok) {
+                            window.alert(res.error || "Failed to stop run.");
+                          }
+                        } finally {
+                          setStoppingJobId("");
+                        }
+                      }}
+                      className="rounded border border-red-400/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-red-100 hover:bg-red-500/20 disabled:opacity-60"
+                    >
+                      {topRunStopping ? "Stopping..." : "Stop"}
+                    </button>
+                  ) : null}
+                  <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-emerald-300 transition-all duration-500" style={{ width: `${topPct}%` }} />
+                  </div>
                 </div>
               </div>
             </div>

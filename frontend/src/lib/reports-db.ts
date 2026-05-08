@@ -462,32 +462,32 @@ export async function listDashboardsForDiscovery(): Promise<
  * pages like Hit Rate.
  */
 export async function listAllDashboardsForHitRate(): Promise<
-  { ticker: string; generated_at: string; dashboard: unknown }[]
+  { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
 > {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT r.ticker, r.generated_at, a.dashboard
+    SELECT r.ticker, r.generated_at, r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
      WHERE r.deleted_at IS NULL
      ORDER BY r.generated_at DESC;
-  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
+  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
   return rows;
 }
 
 export async function listDashboardsForTicker(ticker: string): Promise<
-  { ticker: string; generated_at: string; dashboard: unknown }[]
+  { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
 > {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT r.ticker, r.generated_at, a.dashboard
+    SELECT r.ticker, r.generated_at, r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
      WHERE r.deleted_at IS NULL
        AND r.ticker = ${String(ticker || "").toUpperCase()}
      ORDER BY r.generated_at DESC;
-  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
+  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
   return rows;
 }

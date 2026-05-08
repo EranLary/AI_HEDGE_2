@@ -1867,7 +1867,7 @@ Write 5-7 short sentences.
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2088,7 +2088,7 @@ Your output should be only 5 to 10 key insights that summarize what the options 
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2312,7 +2312,7 @@ Now extract the key insights about what analysts collectively believe about this
             prompt=prompt,
             model="deepseek-chat",
             temperature=0.35,
-            short_answer=True,
+            short_answer=False,
         )
         return header, answer
 
@@ -2758,7 +2758,8 @@ def swot_analysis(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -2845,7 +2846,8 @@ def market_analyst(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -2899,7 +2901,8 @@ def bear_vs_bull_insights(ticker):
       api_key=DEEPSEEK_API_KEY,
       prompt=prompt,
       model="deepseek-chat",
-      temperature=0.35)
+      temperature=0.35,
+      short_answer=False)
 
   append_text_to_file(
       text=answer,
@@ -3615,7 +3618,7 @@ Rules:
 3) Do NOT output ranges. Each probability and target market cap must be a single number.
 4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, or formatted numbers inside the arrays.
 5) Do NOT add nested objects. No additional top-level keys beyond step_by_step_analysis, bull, base, bear, and their corresponding rationales.
-6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of ֲ±0.001).
+6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of +/-0.001).
 7) Your step_by_step_analysis must justify the differentiation between scenarios, the valuation methods, assumptions regarding net debt/cash, share count/dilution impacts on equity value, and explicitly state any proxy assumptions used due to missing inputs.
 8) Do NOT include a "total" key, do NOT include per-share price outputs, and do NOT include scenario narratives outside "step_by_step_analysis" and the rationales.
 9) "investment_amount" must be a single numeric value in [-100000, 100000].
@@ -3674,7 +3677,7 @@ Rules:
 3) Do NOT output ranges. Each probability, each net income, and pe_multiple must be a single number.
 4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, or formatted numbers inside the arrays.
 5) Do NOT add nested objects. No additional top-level keys beyond step_by_step_analysis, bull, base, bear, pe_multiple, and their corresponding rationales.
-6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of ֲ±0.001).
+6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of +/-0.001).
 7) Your step_by_step_analysis must explicitly justify:
    - what differentiates bull vs base vs bear in operating reality (growth, margins, pricing, retention, competition, cycle, execution),
    - how net_income_3y_normalized was estimated and normalized (one-offs removed, SBC treatment, tax rate assumptions, cycle normalization),

@@ -3690,7 +3690,7 @@ Rules:
 12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
-instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
+instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, its REPRESENTATIVE effective tax rate, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
 
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3703,6 +3703,8 @@ Output schema (must match exactly):
   "margin_rationale": "string",
   "net_financing_result": number,
   "financing_rationale": "string",
+  "tax_rate": number,
+  "tax_rationale": "string",
   "pe_multiple": number,
   "pe_rationale": "string",
   "investment_amount": number,
@@ -3724,6 +3726,10 @@ Definitions:
   If it is expected to incur net financing expenses, return a negative number.
   This must be expressed as a full absolute value (not in thousands or millions).
   For example: negative fifty million dollars must be written as -50000000.
+- "tax_rate" represents the normalized effective tax rate applied to pre-tax earnings to derive after-tax earnings power.
+  It must be expressed as a decimal ratio (for example 0.23 for 23%), not a percentage string.
+  Derive it from the company's jurisdiction mix, historical effective tax behavior, structural tax profile, and realistic normalization assumptions.
+  If current taxes are distorted by one-off items, loss carryforwards, valuation allowances, or temporary accounting effects, normalize to a sustainable through-cycle rate and explain why.
 - "pe_multiple" represents a carefully underwritten, long-term fair P/E multiple reflecting durable earnings power.
   It must incorporate earnings quality, cyclicality, competitive intensity and trajectory,
   reinvestment requirements, capital structure risk, regulatory and macro sensitivity,
@@ -3736,14 +3742,15 @@ Definitions:
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "revenue_growth_3y_avg", "operating_profitability_margin", "net_financing_result", and "pe_multiple" must each be a single numeric value (not a list, not a range).
-3) Growth and margins must be numeric decimal ratios, not percentages.
+2) "revenue_growth_3y_avg", "operating_profitability_margin", "net_financing_result", "tax_rate", and "pe_multiple" must each be a single numeric value (not a list, not a range).
+3) Growth, margins, and tax rate must be numeric decimal ratios, not percentages.
 4) Financing result must be expressed as a full absolute numeric value in U.S. dollars (no abbreviations).
-5) Do NOT include null, NaN, percentages, formatted numbers, or ranges in the numerical fields.
-6) Your step_by_step_analysis must reference growth durability, TAM realism, competitive dynamics, pricing power, operating leverage, cost structure, capital intensity, balance sheet strength, refinancing risk, interest rate sensitivity, and cyclicality where relevant.
-7) "investment_amount" must be a single numeric value in [-100000, 100000].
-8) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-9) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+5) tax_rate must be numeric and decimal-form. If you internally think in percent terms, convert before output (example: 23% -> 0.23, -5% -> -0.05).
+6) Do NOT include null, NaN, percentages, formatted numbers, or ranges in the numerical fields.
+7) Your step_by_step_analysis must reference growth durability, TAM realism, competitive dynamics, pricing power, operating leverage, cost structure, capital intensity, balance sheet strength, refinancing risk, interest rate sensitivity, cyclicality, and tax normalization logic where relevant.
+8) "investment_amount" must be a single numeric value in [-100000, 100000].
+9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
 def build_prompt_dream_valuation(name):
@@ -4106,6 +4113,7 @@ def extract_forest_logic_json(text: str) -> Dict[str, Any]:
         "revenue_growth_3y_avg",
         "operating_profitability_margin",
         "net_financing_result",
+        "tax_rate",
         "pe_multiple"
     ]
 
@@ -4116,11 +4124,20 @@ def extract_forest_logic_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    try:
+        tax_rate = float(data["tax_rate"])
+    except Exception:
+        return {}
+    # Normalize percent-style outputs into decimal form:
+    # 23 -> 0.23, -5 -> -0.05. Keep already-decimal values unchanged.
+    if abs(tax_rate) > 1.0:
+        tax_rate = tax_rate / 100.0
 
     return {
         "revenue_growth_3y_avg": float(data["revenue_growth_3y_avg"]),
         "operating_profitability_margin": float(data["operating_profitability_margin"]),
         "net_financing_result": float(data["net_financing_result"]),
+        "tax_rate": tax_rate,
         "pe_multiple": float(data["pe_multiple"]),
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
@@ -4392,7 +4409,7 @@ def calculate_bbb_ni_pe(variable_dict, scenarios_dict, pe_multiple):
     return 0, ni
   return share_price, ni
 
-def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, pe):
+def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe):
   revenue = variable_dict["revenue"]
   if revenue <= 0:
     return 0, 0, 0, 0
@@ -4400,8 +4417,7 @@ def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, pe):
   revenue_3y = revenue * ((1+growth)**3)
   op_earnings = revenue_3y * op_margin
   net_bt_earnings = op_earnings + net_financing
-  tax = 0.23
-  net_earnings = net_bt_earnings * (1-tax)
+  net_earnings = net_bt_earnings * (1-tax_rate)
   mc = net_earnings * pe
   price = mc / shares_outstanding
   if price < 0:
@@ -4520,16 +4536,18 @@ def get_bbb_ni_pe(bbb_ni_pe_json, variables_dict):
     return [], [ni], [pe]
 
 def get_forest_logic(forest_logic_json, variables_dict):
-  # growth, op_margin, net_financing, pe
+  # growth, op_margin, net_financing, tax_rate, pe
   growth = forest_logic_json["revenue_growth_3y_avg"]
   print("growth:", growth)
   op_margin = forest_logic_json["operating_profitability_margin"]
   print("op_margin:", op_margin)
   net_financing = forest_logic_json["net_financing_result"]
   print("net_financing:", net_financing)
+  tax_rate = forest_logic_json["tax_rate"]
+  print("tax_rate:", tax_rate)
   pe = forest_logic_json["pe_multiple"]
   print("pe:", pe)
-  price, revenue, net_earnings, pe = calculate_forest_logic(variables_dict, growth, op_margin, net_financing, pe)
+  price, revenue, net_earnings, pe = calculate_forest_logic(variables_dict, growth, op_margin, net_financing, tax_rate, pe)
   if price > 0:
     return [price], [revenue], [net_earnings], [pe]
   else:

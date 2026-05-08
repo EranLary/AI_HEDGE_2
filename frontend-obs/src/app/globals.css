@@ -6,7 +6,11 @@
   --color-border: rgba(148, 163, 184, 0.2);
   --color-muted: rgba(148, 163, 184, 0.1);
   --color-accent: #60a5fa;
+  --color-accent-hover: #93c5fd;
   --color-danger: #f87171;
+  --color-header-bg: rgba(11, 18, 32, 0.72);
+  --color-card-bg: rgba(255, 255, 255, 0.02);
+  --color-row-hover: rgba(148, 163, 184, 0.08);
 }
 
 html[data-theme="light"] {
@@ -15,7 +19,11 @@ html[data-theme="light"] {
   --color-border: rgba(15, 23, 42, 0.12);
   --color-muted: rgba(15, 23, 42, 0.04);
   --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
   --color-danger: #dc2626;
+  --color-header-bg: rgba(248, 250, 252, 0.78);
+  --color-card-bg: rgba(15, 23, 42, 0.02);
+  --color-row-hover: rgba(15, 23, 42, 0.04);
 }
 
 html, body {
@@ -35,4 +43,137 @@ a:hover {
 
 button {
   cursor: pointer;
+}
+
+/* Theme-aware logo: show one image per theme, no JS, no flash. */
+.hib-logo-dark { display: block; }
+.hib-logo-light { display: none; }
+html[data-theme="light"] .hib-logo-dark { display: none; }
+html[data-theme="light"] .hib-logo-light { display: block; }
+
+/* App header */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-header-bg);
+  backdrop-filter: saturate(140%) blur(10px);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--color-foreground);
+}
+
+.app-header__brand:hover { text-decoration: none; }
+
+.app-header__title {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.1px;
+  line-height: 1;
+}
+
+.app-header__subtitle {
+  font-size: 11px;
+  opacity: 0.6;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  line-height: 1;
+  margin-top: 3px;
+}
+
+.app-header__pill {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  opacity: 0.7;
+}
+
+.app-header__nav {
+  display: flex;
+  gap: 18px;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.app-header__nav a {
+  color: var(--color-foreground);
+  opacity: 0.78;
+}
+
+.app-header__nav a:hover {
+  opacity: 1;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.app-header__spacer { flex: 1; }
+
+.app-header__email {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* Ghost button used for sign out + theme toggle */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  opacity: 0.85;
+  transition: opacity 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.btn-ghost:hover {
+  opacity: 1;
+  border-color: var(--color-accent);
+  background: var(--color-row-hover);
+}
+
+.btn-ghost--icon {
+  padding: 5px 7px;
+}
+
+/* Page content wrapper used by authed layout */
+.app-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+/* Run hierarchy / call detail building blocks */
+.card {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.row-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: inherit;
+}
+
+.row-link:hover {
+  background: var(--color-row-hover);
+  text-decoration: none;
 }

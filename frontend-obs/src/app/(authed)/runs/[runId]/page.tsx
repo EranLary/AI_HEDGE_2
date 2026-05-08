@@ -1,17 +1,25 @@
 import Link from "next/link";
 
 import { getRun, listCallsForRun } from "@/lib/obs-db";
+import { formatCost, formatDuration, formatTokens } from "@/lib/obs-format";
 
 import RunFlowClient from "./run-flow-client";
+import { RunHierarchy } from "./run-hierarchy";
+import { RunTabs } from "./run-tabs";
 
 export const dynamic = "force-dynamic";
 
 export default async function RunDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ runId: string }>;
+  searchParams?: Promise<{ view?: string }>;
 }) {
   const { runId } = await params;
+  const sp = (await searchParams) ?? {};
+  const view: "flow" | "hierarchy" = sp.view === "flow" ? "flow" : "hierarchy";
+
   const [run, calls] = await Promise.all([getRun(runId), listCallsForRun(runId)]);
 
   if (!run) {
@@ -41,9 +49,9 @@ export default async function RunDetailPage({
         <div style={{ display: "flex", gap: 24, fontSize: 13, opacity: 0.8, marginTop: 8, flexWrap: "wrap" }}>
           <span>Status: <strong>{run.status}</strong></span>
           <span>Calls: <strong>{run.total_calls}</strong></span>
-          <span>Tokens: <strong>{run.total_tokens_in}↑ / {run.total_tokens_out}↓</strong></span>
-          <span>Cost: <strong>${Number(run.total_cost_usd).toFixed(4)}</strong></span>
-          <span>Duration: <strong>{run.duration_ms != null ? `${(run.duration_ms / 1000).toFixed(1)}s` : "—"}</strong></span>
+          <span>Tokens: <strong>{formatTokens(run.total_tokens_in)}↑ / {formatTokens(run.total_tokens_out)}↓</strong></span>
+          <span>Cost: <strong>{formatCost(run.total_cost_usd)}</strong></span>
+          <span>Duration: <strong>{formatDuration(run.duration_ms)}</strong></span>
         </div>
         {run.error_message && (
           <pre
@@ -64,7 +72,13 @@ export default async function RunDetailPage({
         )}
       </div>
 
-      <RunFlowClient calls={calls} />
+      <RunTabs activeView={view} />
+
+      {view === "flow" ? (
+        <RunFlowClient runId={runId} calls={calls} />
+      ) : (
+        <RunHierarchy runId={runId} calls={calls} />
+      )}
     </div>
   );
 }

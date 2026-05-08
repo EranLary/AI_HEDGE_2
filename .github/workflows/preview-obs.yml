@@ -1,0 +1,179 @@
+name: Obs Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    paths:
+      - 'frontend-obs/**'
+      - 'Dockerfile.obs'
+      - 'fly.obs.toml'
+      - '.github/workflows/preview-obs.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-obs-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  FLY_REGION: fra
+  FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+  PREVIEW_APP: pr-${{ github.event.pull_request.number }}-hedge-in-a-box-obs
+
+jobs:
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flyctl
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::No Fly token found. Set FLY_API_TOKEN in repo secrets."
+            exit 1
+          fi
+          echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Generate preview fly.toml
+        run: |
+          # Swap app name + force auto-stop / zero idle machines so previews are free when nobody is poking them.
+          sed \
+            -e 's/^app = "hedge-in-a-box-obs"/app = "${{ env.PREVIEW_APP }}"/' \
+            -e 's/auto_stop_machines = false/auto_stop_machines = "stop"/' \
+            -e 's/min_machines_running = 1/min_machines_running = 0/' \
+            fly.obs.toml > fly.obs.preview.toml
+          echo '--- fly.obs.preview.toml ---'
+          cat fly.obs.preview.toml
+
+      - name: Ensure preview app exists
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          if flyctl apps list --json | jq -e --arg n "${{ env.PREVIEW_APP }}" '.[] | select((.Name // .name)==$n)' >/dev/null; then
+            echo "App ${{ env.PREVIEW_APP }} exists — reusing."
+          else
+            flyctl apps create "${{ env.PREVIEW_APP }}" --org "${{ env.FLY_ORG }}"
+          fi
+
+      - name: Stage preview secrets
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          OBS_DATABASE_URL: ${{ secrets.OBS_DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          args=(
+            "AUTH_BYPASS_PREVIEW=1"
+          )
+          if [ -z "$OBS_DATABASE_URL" ]; then
+            echo "::warning::OBS_DATABASE_URL secret not set - preview will show no run data."
+          else
+            args+=("OBS_DATABASE_URL=$OBS_DATABASE_URL")
+          fi
+          if [ -z "$AUTH_SECRET" ]; then
+            generated_auth_secret="$(openssl rand -hex 32)"
+            echo "::warning::AUTH_SECRET secret not set - generating ephemeral secret for this preview app."
+            args+=("AUTH_SECRET=$generated_auth_secret")
+          else
+            args+=("AUTH_SECRET=$AUTH_SECRET")
+          fi
+          flyctl secrets set "${args[@]}" --app "${{ env.PREVIEW_APP }}" --stage
+
+      - name: Deploy preview
+        id: deploy
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          flyctl deploy --remote-only \
+            --config fly.obs.preview.toml \
+            --app "${{ env.PREVIEW_APP }}" \
+            --ha=false \
+            --wait-timeout 5m
+
+      - name: Diagnostics on deploy failure
+        if: failure() && steps.deploy.conclusion == 'failure'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          set +e
+          echo '::group::flyctl status'
+          flyctl status --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::flyctl machines list'
+          flyctl machines list --app "${{ env.PREVIEW_APP }}"
+          echo '::endgroup::'
+
+          echo '::group::recent logs (30s tail)'
+          timeout 30 flyctl logs --app "${{ env.PREVIEW_APP }}" || true
+          echo '::endgroup::'
+
+      - name: Sticky comment with preview URL
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: obs-preview
+          message: |
+            ### Obs preview deployed
+
+            **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
+
+            ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
+            redirect URIs for `pr-*` hostnames, so the preview hands out admin access
+            to anyone with the URL. Don't share it externally. The preview reads from
+            the same `OBS_DATABASE_URL` as prod (read-only views), so what you see is
+            real production data.
+
+            - Machine auto-stops when idle, auto-starts on request.
+            - Tear-down runs automatically when this PR is closed.
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install flyctl
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then echo "::error::No Fly token found"; exit 1; fi
+          echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Destroy preview app
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+        run: |
+          if flyctl apps list --json | jq -e --arg n "${{ env.PREVIEW_APP }}" '.[] | select((.Name // .name)==$n)' >/dev/null; then
+            flyctl apps destroy "${{ env.PREVIEW_APP }}" --yes
+          else
+            echo "App ${{ env.PREVIEW_APP }} already gone — nothing to destroy."
+          fi
+
+      - name: Update sticky comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: obs-preview
+          message: |
+            ### Obs preview torn down
+
+            The preview environment for this PR has been destroyed.

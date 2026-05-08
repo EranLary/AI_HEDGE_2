@@ -4,6 +4,9 @@ param(
     "site",
     "status-site",
     "logs-site",
+    "obs",
+    "status-obs",
+    "logs-obs",
     "help"
   )]
   [string]$Action = "help",
@@ -17,6 +20,8 @@ $root = $PSScriptRoot
 
 $siteApp = "hedge-in-a-box-site"
 $siteConfig = Join-Path $root "fly.site.toml"
+$obsApp = "hedge-in-a-box-obs"
+$obsConfig = Join-Path $root "fly.obs.toml"
 
 function Assert-FlyCli {
   if (-not (Test-Path $fly)) {
@@ -56,6 +61,9 @@ function Show-Help {
   Write-Host "  site         Deploy website app (hedge-in-a-box-site)"
   Write-Host "  status-site  Show website app status"
   Write-Host "  logs-site    Tail website logs"
+  Write-Host "  obs          Deploy observability app (hedge-in-a-box-obs)"
+  Write-Host "  status-obs   Show obs app status"
+  Write-Host "  logs-obs     Tail obs app logs"
   Write-Host ""
   Write-Host "Options:"
   Write-Host "  -NoDepot     Deploy with --depot=false"
@@ -63,7 +71,8 @@ function Show-Help {
   Write-Host ""
   Write-Host "Examples:"
   Write-Host "  .\deploy_fly.ps1 site"
-  Write-Host "  .\deploy_fly.ps1 status-site"
+  Write-Host "  .\deploy_fly.ps1 obs"
+  Write-Host "  .\deploy_fly.ps1 logs-obs"
   Write-Host ""
 }
 
@@ -81,6 +90,18 @@ switch ($Action) {
   }
   "logs-site" {
     & $fly logs --app $siteApp | Out-Host
+    break
+  }
+  "obs" {
+    Invoke-Deploy -app $obsApp -configPath $obsConfig
+    break
+  }
+  "status-obs" {
+    & $fly status --app $obsApp | Out-Host
+    break
+  }
+  "logs-obs" {
+    & $fly logs --app $obsApp | Out-Host
     break
   }
   default {

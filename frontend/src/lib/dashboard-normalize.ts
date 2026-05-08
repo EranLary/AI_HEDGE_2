@@ -254,8 +254,16 @@ export function normalizePayload(
     report_mtime: reportMeta?.reportMtime || payload.report_mtime,
   };
 
+  const reportQuery = merged.report_id
+    ? `?report_id=${encodeURIComponent(String(merged.report_id))}`
+    : "";
+
   merged.downloads = {
-    analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
+    analysis_pdf: `/api/artifacts/${tk}/analysis-pdf${reportQuery}`,
+    analysis_txt: `/api/artifacts/${tk}/analysis-txt${reportQuery}`,
+    prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt${reportQuery}`,
+    prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf${reportQuery}`,
+    dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
   };
 
   const scale = inferLegacyModelTargetScale(merged);

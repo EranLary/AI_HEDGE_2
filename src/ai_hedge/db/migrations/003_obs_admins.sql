@@ -9,11 +9,7 @@ CREATE TABLE IF NOT EXISTS obs_admins (
     is_super   boolean NOT NULL DEFAULT false         -- super admins can remove other super admins
 );
 
--- Seed the bootstrap admin set.
--- TODO before running in prod: replace the two TBD placeholders with Eran's
--- and Nitzan's actual Google account emails (lowercased).
+-- Seed the bootstrap admin: yonash8 only. Other admins are added from /users.
 INSERT INTO obs_admins (email, added_by, is_super) VALUES
-    ('yonash8@gmail.com',           NULL, true),
-    ('TBD-eran-lary@example.com',   NULL, true),
-    ('TBD-nitzan-lary@example.com', NULL, true)
+    ('yonash8@gmail.com', NULL, true)
 ON CONFLICT (email) DO NOTHING;

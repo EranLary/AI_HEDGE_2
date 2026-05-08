@@ -16,7 +16,7 @@ For frontend / Dockerfile.site / fly.site.toml changes:
 The site-preview workflow will deploy pr-<N>-hedge-in-a-box-site.fly.dev
 and edit a sticky comment with the URL. Paste it here once it's up.
 
-For backend-only changes (src/, bot/):
+For backend-only changes (src/):
 Write "n/a — backend only" and describe how you verified locally.
 -->
 

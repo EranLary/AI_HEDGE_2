@@ -25,7 +25,7 @@ gh pr create --title "..." --body "..."   # use .github/pull_request_template.md
 Then:
 
 - For **frontend / `Dockerfile.site` / `fly.site.toml`** changes, the preview workflow ([.github/workflows/preview-site.yml](.github/workflows/preview-site.yml)) auto-deploys `pr-<N>-hedge-in-a-box-site.fly.dev` and posts the URL in a sticky comment. **Open the URL and verify the change** before declaring the task done; report what you verified in the PR body.
-- For **backend-only changes** (Python under [src/](src/), [bot/](bot/)), there is no preview app — verify locally and document the manual test in the PR's "Test plan" section so reviewers know the coverage.
+- For **backend-only changes** (Python under [src/](src/)), there is no preview app — verify locally and document the manual test in the PR's "Test plan" section so reviewers know the coverage.
 
 **Start every task from a clean `main`.** Before making any code change, check where you are: `git branch --show-current` and `git status`. If you're on a feature branch left over from a previous task, **do not pile new work onto it** — that branch belongs to a different PR and mixing changes will pollute its diff and confuse review. Switch to `main`, pull, and branch off:
 
@@ -55,7 +55,6 @@ When in doubt: open `BRAND_COLORS.md`, find the token, use it.
 These come from [CLAUDE.md](CLAUDE.md) and apply equally here:
 
 - Don't bump Python to 3.13+ without checking `weasyprint` / `python-pptx` wheels.
-- Don't swap `python-telegram-bot` off the `[job-queue]` extra — `bot/telegram_bot.py` fails fast if the JobQueue isn't available.
 - Don't run `pip install` in the Docker image's build context expecting to persist `outputs/` — the Fly container symlinks `/app/outputs` → `/data/outputs` at startup.
 - Don't casually refactor [src/ai_hedge/legacy_port.py](src/ai_hedge/legacy_port.py) prompts/parsers — they mirror notebook behavior.
 - Don't commit generated artifacts under `outputs/`, `logs/`, or `.env`.

@@ -96,6 +96,8 @@ The flow:
 
 **Backend-only PRs** (Python under [src/](src/), [bot/](bot/)) do not get a preview environment. Verify locally — `python run.py --ticker AAPL` for valuation changes, `py bot/telegram_bot.py` against a staging Telegram bot for bot changes. State this in the PR's "Test plan" so the reviewer knows what coverage to expect.
 
+**Obs PRs** (changes under [frontend-obs/](frontend-obs/), [Dockerfile.obs](Dockerfile.obs), [fly.obs.toml](fly.obs.toml)) **do not get a per-PR preview** — the obs surface is internal-only, sign-in is required, and Google OAuth doesn't allow wildcard redirect URIs (so per-PR `*.fly.dev` URLs would fail auth). Verify locally with `cd frontend-obs && npm run dev -- --port 3001` and rely on the CI build passing. **Merging to `main` deploys directly to `observability.hedge-in-a-box.com` via the `deploy-obs` job in [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml).** Treat it like the public site's deploy — small, focused PRs only.
+
 **Branch hygiene — start every task from a clean `main`.** Before making any code change, check the current branch (`git branch --show-current`) and working-tree state (`git status`). If you're sitting on a feature branch from a prior task, do **not** pile the new work onto it — that branch belongs to a different PR and mixing changes will pollute its diff. Always `git checkout main && git pull` and branch off fresh, unless the user explicitly asks you to amend or extend a specific existing PR.
 
 **Exceptions to the no-direct-push rule** are explicit, narrow, and human-authorized: a destructive `main` recovery, a CI-fix that unbreaks the deploy pipeline. Agents must not infer the exception themselves — ask the user first.

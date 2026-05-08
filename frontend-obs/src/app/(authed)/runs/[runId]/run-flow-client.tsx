@@ -3,6 +3,7 @@
 import "@xyflow/react/dist/style.css";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Background,
   Controls,
@@ -12,16 +13,7 @@ import {
 } from "@xyflow/react";
 
 import type { ObsCallRow } from "@/lib/obs-db";
-
-const STAGE_ORDER = [
-  "analyst",
-  "sec.qa",
-  "sec.short",
-  "dashboard.extract",
-  "valuations",
-  "technical",
-  "unknown",
-];
+import { stageColor, STAGE_ORDER } from "@/lib/obs-styles";
 
 type StageGroup = {
   stage: string;
@@ -55,19 +47,15 @@ function groupByStage(calls: ObsCallRow[]): StageGroup[] {
   return ordered;
 }
 
-function stageColor(stage: string): string {
-  if (stage.startsWith("persona")) return "#fbbf24";
-  if (stage.startsWith("sec")) return "#a78bfa";
-  if (stage.startsWith("valuation")) return "#34d399";
-  if (stage === "analyst") return "#60a5fa";
-  if (stage === "technical") return "#f87171";
-  if (stage.startsWith("dashboard")) return "#22d3ee";
-  return "#94a3b8";
-}
-
-export default function RunFlowClient({ calls }: { calls: ObsCallRow[] }) {
+export default function RunFlowClient({
+  runId,
+  calls,
+}: {
+  runId: string;
+  calls: ObsCallRow[];
+}) {
+  const router = useRouter();
   const groups = useMemo(() => groupByStage(calls), [calls]);
-  const [selected, setSelected] = useState<ObsCallRow | null>(null);
   const [openStage, setOpenStage] = useState<string | null>(null);
 
   const { nodes, edges } = useMemo(() => {
@@ -164,12 +152,17 @@ export default function RunFlowClient({ calls }: { calls: ObsCallRow[] }) {
   }, [groups, openStage]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, height: "calc(100vh - 220px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 12, opacity: 0.6 }}>
+        Click a stage to expand its calls. Click a call to open its detail page.
+      </div>
       <div
         style={{
           border: "1px solid var(--color-border)",
           borderRadius: 8,
           overflow: "hidden",
+          height: "calc(100vh - 320px)",
+          minHeight: 480,
         }}
       >
         <ReactFlow
@@ -181,11 +174,9 @@ export default function RunFlowClient({ calls }: { calls: ObsCallRow[] }) {
             if (node.id.startsWith("stage:")) {
               const stage = node.id.replace(/^stage:/, "");
               setOpenStage(openStage === stage ? null : stage);
-              setSelected(null);
             } else if (node.id.startsWith("call:")) {
               const callId = node.id.replace(/^call:/, "");
-              const c = calls.find((c) => c.id === callId) ?? null;
-              setSelected(c);
+              router.push(`/runs/${runId}/calls/${callId}?view=flow`);
             }
           }}
           proOptions={{ hideAttribution: true }}
@@ -194,129 +185,6 @@ export default function RunFlowClient({ calls }: { calls: ObsCallRow[] }) {
           <Controls />
         </ReactFlow>
       </div>
-
-      <SidePanel call={selected} />
-    </div>
-  );
-}
-
-function SidePanel({ call }: { call: ObsCallRow | null }) {
-  if (!call) {
-    return (
-      <div
-        style={{
-          border: "1px solid var(--color-border)",
-          borderRadius: 8,
-          padding: 16,
-          fontSize: 13,
-          opacity: 0.7,
-          overflow: "auto",
-        }}
-      >
-        Click a stage node to expand its calls. Click a call to see the
-        full prompt, response, tokens, and cost here.
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        border: "1px solid var(--color-border)",
-        borderRadius: 8,
-        padding: 16,
-        fontSize: 13,
-        overflow: "auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 11, opacity: 0.6, textTransform: "uppercase", letterSpacing: 0.4 }}>
-          {call.stage}
-          {call.persona ? ` · ${call.persona}` : ""}
-        </div>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>Call #{call.sequence}</div>
-        <div style={{ opacity: 0.7, fontSize: 12 }}>
-          {call.model_actual ?? call.model_requested} · temp {call.temperature}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
-        <Stat label="Tokens in" value={call.tokens_in ?? "—"} />
-        <Stat label="Tokens out" value={call.tokens_out ?? "—"} />
-        <Stat label="Cost" value={call.cost_usd ? `$${Number(call.cost_usd).toFixed(6)}` : "—"} />
-        <Stat label="Latency" value={`${(call.latency_ms / 1000).toFixed(2)}s`} />
-        <Stat label="Retries" value={call.retries} />
-        <Stat label="Status" value={call.status} />
-      </div>
-
-      <Section title="Prompt">
-        <pre style={preStyle}>{call.prompt}</pre>
-      </Section>
-      <Section title="Response">
-        <pre style={preStyle}>{call.response ?? "(no response captured)"}</pre>
-      </Section>
-      {call.reasoning && (
-        <Section title="Reasoning">
-          <pre style={preStyle}>{call.reasoning}</pre>
-        </Section>
-      )}
-      {call.error_message && (
-        <Section title="Error">
-          <pre style={{ ...preStyle, color: "#fca5a5" }}>{call.error_message}</pre>
-        </Section>
-      )}
-    </div>
-  );
-}
-
-const preStyle: React.CSSProperties = {
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 12,
-  margin: 0,
-  padding: 8,
-  background: "rgba(0,0,0,0.04)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
-  maxHeight: 320,
-  overflow: "auto",
-};
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        background: "rgba(0,0,0,0.04)",
-        padding: "6px 10px",
-        borderRadius: 6,
-        border: "1px solid var(--color-border)",
-      }}
-    >
-      <div style={{ fontSize: 10, opacity: 0.6, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontWeight: 600 }}>{value}</div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          opacity: 0.7,
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-          marginBottom: 4,
-        }}
-      >
-        {title}
-      </div>
-      {children}
     </div>
   );
 }

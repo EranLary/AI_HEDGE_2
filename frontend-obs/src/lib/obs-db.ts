@@ -110,3 +110,40 @@ export async function listCallsForRun(runId: string): Promise<ObsCallRow[]> {
   `) as unknown as ObsCallRow[];
   return rows;
 }
+
+export async function getCall(callId: string): Promise<ObsCallRow | null> {
+  const sql = getObsSql();
+  if (!sql) return null;
+  const rows = (await sql`
+    SELECT id::text, run_id::text, parent_id::text, sequence,
+           stage, persona, call_site,
+           model_requested, model_actual, temperature::text AS temperature,
+           prompt, response, reasoning,
+           tokens_in, tokens_out, tokens_total,
+           cost_usd::text AS cost_usd,
+           latency_ms, retries, status, error_class, error_message,
+           started_at, ended_at
+      FROM obs_calls
+     WHERE id = ${callId}::uuid
+  `) as unknown as ObsCallRow[];
+  return rows[0] ?? null;
+}
+
+export async function listChildCalls(parentId: string): Promise<ObsCallRow[]> {
+  const sql = getObsSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT id::text, run_id::text, parent_id::text, sequence,
+           stage, persona, call_site,
+           model_requested, model_actual, temperature::text AS temperature,
+           prompt, response, reasoning,
+           tokens_in, tokens_out, tokens_total,
+           cost_usd::text AS cost_usd,
+           latency_ms, retries, status, error_class, error_message,
+           started_at, ended_at
+      FROM obs_calls
+     WHERE parent_id = ${parentId}::uuid
+     ORDER BY sequence
+  `) as unknown as ObsCallRow[];
+  return rows;
+}

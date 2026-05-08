@@ -6013,7 +6013,7 @@ def extract_gaap_sbc_non_recurring_json(text: str, variables_dict: Dict[str, Any
     return result
 
 
-def make_sicum_file(ticker, text, financial_dict, as_of_date, n, variables_dict):
+def _run_sicum_once(ticker, text, financial_dict, as_of_date, n, variables_dict):
   financial_reports = financial_dict["All Reports"]
   info = financial_dict["info"]
   currrency_statement = financial_dict["currency_statement"]
@@ -6183,7 +6183,7 @@ def make_sicum_file_full(ticker, text, financial_dict, variables_dict, n_years =
   cnt = 0
   for i in range(n_runs):
     cnt += 1
-    json_data = make_sicum_file(ticker, text, financial_dict, today, n_years, variables_dict)
+    json_data = _run_sicum_once(ticker, text, financial_dict, today, n_years, variables_dict)
 
     if not json_data:
       continue
@@ -6724,27 +6724,16 @@ def build_pptx_from_json_file(json_path: str, output_path: str = "deck.pptx") ->
     return build_pptx_from_deck_json(deck, output_path=output_path)
 
 
-def make_presentation_json(ticker: str) -> str:
-    """
-    Calls the model to produce a PPT-ready deck JSON (strict schema).
-    Returns the raw model response (string). You can then parse with extract_json_from_ai_response().
-    """
+def pptx_downloader(ticker, n_tries = 3):
+  n_tries = 3
+  for try_idx in range(n_tries):
     text = load_text_from_file()
     prompt = build_presentation_prompt(ticker=ticker, text=text)
-
-    raw_answer = deepseek_simple_text(
+    raw_response = deepseek_simple_text(
         api_key=DEEPSEEK_API_KEY,
         prompt=prompt,
         short_answer=False
     )
-
-    return raw_answer
-
-
-def pptx_downloader(ticker, n_tries = 3):
-  n_tries = 3
-  for try_idx in range(n_tries):
-    raw_response = make_presentation_json(ticker)
     print(raw_response)
     deck_json = extract_json_from_ai_response(raw_response)
     print(deck_json)

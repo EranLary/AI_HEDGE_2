@@ -1186,7 +1186,7 @@ def _deepseek_simple_full(
     print_prompt: bool = False,
     pool_size: int = 20,
 ) -> dict:
-    """Full-data variant of deepseek_simple_text — returns content + metadata.
+    """Full-data variant of deepseek_simple_text - returns content + metadata.
 
     Used by the obs instrumentation layer to capture tokens, latency, and the
     actual prompt that was sent (after the short_answer suffix). The public

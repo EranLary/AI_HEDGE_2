@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 _PRICES: dict[str, Tuple[float, float]] = {
     "deepseek-v4-flash": (0.27, 1.10),
     "deepseek-v4-pro":   (0.55, 2.19),
-    # Legacy aliases — same prices, mirror legacy_port's remap.
+    # Legacy aliases - same prices, mirror legacy_port's remap.
     "deepseek-chat":     (0.27, 1.10),
     "deepseek-reasoner": (0.55, 2.19),
 }

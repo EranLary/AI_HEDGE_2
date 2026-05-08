@@ -696,7 +696,7 @@ def run_ticker_valuation(
     progress_file: Optional[str] = None,
     run_source: str = "site",
 ) -> Dict[str, object]:
-    """Public entry — bookends the implementation with obs lifecycle."""
+    """Public entry - bookends the implementation with obs lifecycle."""
     from . import obs as _obs
 
     _obs.install()

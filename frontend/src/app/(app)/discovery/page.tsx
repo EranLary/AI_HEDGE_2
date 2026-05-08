@@ -27,6 +27,8 @@ type DiscoveryPayload = {
   top_conviction: DiscoveryRow[];
   top_highest_allocation: DiscoveryRow[];
   top_lowest_allocation: DiscoveryRow[];
+  top_scores: DiscoveryRow[];
+  lowest_scores: DiscoveryRow[];
 };
 
 function fmtDateTimeNoSeconds(value: string): string {
@@ -46,6 +48,11 @@ function fmtPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function fmtScore(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 function decisionClass(tone?: DiscoveryRow["decision_tone"]): string {
   if (tone === "buy") return "hib-signal-buy";
   if (tone === "sell") return "hib-signal-sell";
@@ -63,7 +70,7 @@ function SectionCard({
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
-  metricLabel: "return" | "disagreement" | "allocation";
+  metricLabel: "return" | "disagreement" | "allocation" | "score";
 }) {
   const [topN, setTopN] = useState<10 | 20>(10);
   const shownRows = rows.slice(0, topN);
@@ -124,6 +131,14 @@ function SectionCard({
                       {typeof row.investment_allocation_pct === "number" && Number.isFinite(row.investment_allocation_pct)
                         ? fmtPct(row.investment_allocation_pct)
                         : "N/A"}
+                    </p>
+                  </div>
+                ) : metricLabel === "score" ? (
+                  <div>
+                    <p className="text-zinc-500">Summary Score</p>
+                    <p className={accent}>{fmtScore(row.points_score)}</p>
+                    <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
+                      {row.decision_label || "Hold"}
                     </p>
                   </div>
                 ) : (
@@ -298,6 +313,20 @@ export default function DiscoveryPage() {
                 rows={data.top_lowest_allocation}
                 accent="text-red-300"
                 metricLabel="allocation"
+              />
+              <SectionCard
+                title="Top Scores"
+                icon={<TrendingUp size={16} className="text-emerald-400" />}
+                rows={data.top_scores}
+                accent="text-emerald-300"
+                metricLabel="score"
+              />
+              <SectionCard
+                title="Lowest Scores"
+                icon={<TrendingDown size={16} className="text-red-400" />}
+                rows={data.lowest_scores}
+                accent="text-red-300"
+                metricLabel="score"
               />
               {lensType === "overall" ? (
                 <SectionCard

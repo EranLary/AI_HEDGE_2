@@ -251,6 +251,7 @@ export type DiscoveryRow = {
   return_pct: number;
   investment_allocation_pct: number | null;
   confidence_cv: number;
+  points_score?: number | null;
   decision_label?: string;
   decision_tone?: "buy" | "sell" | "hold";
   updated_at: string;

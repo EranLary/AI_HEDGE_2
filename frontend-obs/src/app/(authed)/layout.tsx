@@ -1,9 +1,15 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 
+import { signOut } from "@/auth";
 import { AdminForbiddenError, requireAdmin } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
+
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/auth/signin" });
+}
 
 export default async function AuthedLayout({ children }: { children: ReactNode }) {
   let email = "";
@@ -36,6 +42,22 @@ export default async function AuthedLayout({ children }: { children: ReactNode }
           <Link href="/users">Manage users</Link>
         </nav>
         <span style={{ fontSize: 12, opacity: 0.6 }}>{email}</span>
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            style={{
+              fontSize: 12,
+              padding: "4px 10px",
+              background: "transparent",
+              color: "var(--color-foreground)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 6,
+              opacity: 0.8,
+            }}
+          >
+            Sign out
+          </button>
+        </form>
       </header>
       <main style={{ padding: 24 }}>{children}</main>
     </div>

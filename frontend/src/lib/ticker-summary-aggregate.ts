@@ -213,13 +213,13 @@ const ASSUMPTIONS_ORDER_LABELS = [
   "Bull Probability",
   "Bear Probability",
   "Growth Rate (G)",
-  "Predicted FCF (Next Year)",
+  "Representative FCF",
   "Terminal Value Growth",
   "WACC",
-  "Predicted Revenue",
-  "Predicted EV/Sales",
-  "Predicted Earnings",
-  "Predicted P/E",
+  "Representative Revenue",
+  "Representative EV/Sales",
+  "Representative Earnings",
+  "Representative P/E",
 ] as const;
 
 function buildDashboardAssumptionMeans(payload: DashboardPayload): DashboardAssumptionMean[] {
@@ -236,11 +236,11 @@ function buildDashboardAssumptionMeans(payload: DashboardPayload): DashboardAssu
     }
   > = {
     predicted_ev_sales: {
-      label: "Predicted EV/Sales",
+      label: "Representative EV/Sales",
       items: [],
     },
     predicted_fcf_next_year: {
-      label: "Predicted FCF (Next Year)",
+      label: "Representative FCF",
       items: [],
     },
     growth_rate_g: {
@@ -316,6 +316,16 @@ function buildDashboardAssumptionMeans(payload: DashboardPayload): DashboardAssu
           ? "Bear Probability"
           : normalized === "bull 0"
             ? "Bull Probability"
+            : normalized === "predicted revenue"
+              ? "Representative Revenue"
+              : normalized === "predicted ev sales"
+                ? "Representative EV/Sales"
+                : normalized === "predicted earnings"
+                  ? "Representative Earnings"
+                  : normalized === "predicted p e"
+                    ? "Representative P/E"
+                    : normalized === "predicted fcf next year"
+                      ? "Representative FCF"
             : baseLabel;
     rows.push({
       key: normalizeLabel(renamedLabel),

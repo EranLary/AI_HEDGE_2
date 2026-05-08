@@ -52,6 +52,7 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   revenue_growth_3y_avg: "Revenue Growth (3Y Avg)",
   operating_margin: "EBIT Margin",
   net_financing_result: "Net Financing Result",
+  tax_rate: "Tax Rate",
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
@@ -79,9 +80,9 @@ const MONEY_METRIC_KEYS = new Set([
 ]);
 
 const ASSUMPTION_MONEY_LABELS = new Set([
-  "predicted revenue",
-  "predicted earnings",
-  "predicted fcf (next year)",
+  "representative revenue",
+  "representative earnings",
+  "representative fcf",
 ]);
 
 export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
@@ -915,12 +916,12 @@ export function HedgeDashboard({
       }
     > = {
       predicted_ev_sales: {
-        label: "Predicted EV/Sales",
+        label: "Representative EV/Sales",
         metric_key: "predicted_ev_sales",
         items: [],
       },
       predicted_fcf_next_year: {
-        label: "Predicted FCF (Next Year)",
+        label: "Representative FCF",
         metric_key: "predicted_fcf_next_year",
         items: [],
       },
@@ -1000,6 +1001,16 @@ export function HedgeDashboard({
           ? "Bear Probability"
           : normalized === "bull 0"
           ? "Bull Probability"
+          : normalized === "predicted revenue"
+          ? "Representative Revenue"
+          : normalized === "predicted ev sales"
+          ? "Representative EV/Sales"
+          : normalized === "predicted earnings"
+          ? "Representative Earnings"
+          : normalized === "predicted p e"
+          ? "Representative P/E"
+          : normalized === "predicted fcf next year"
+          ? "Representative FCF"
           : baseLabel;
 
       rows.push({ ...row, label: renamedLabel });
@@ -1044,14 +1055,14 @@ export function HedgeDashboard({
       "Bear Probability",
       "",
       "Growth Rate (G)",
-      "Predicted FCF (Next Year)",
+      "Representative FCF",
       "Terminal Value Growth",
       "WACC",
       "",
-      "Predicted Revenue",
-      "Predicted EV/Sales",
-      "Predicted Earnings",
-      "Predicted P/E",
+      "Representative Revenue",
+      "Representative EV/Sales",
+      "Representative Earnings",
+      "Representative P/E",
     ];
     return orderedLabels.map((label, idx) => {
       if (!label) {

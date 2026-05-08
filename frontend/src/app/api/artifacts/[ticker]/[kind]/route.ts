@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
-import { findLatestByFileName } from "@/lib/server-outputs";
+import { findLatestByFileName, resolveDashboardReportPath } from "@/lib/server-outputs";
 
 const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = {
   "analysis-pdf": { fileName: "{TICKER}_analysis.pdf", contentType: "application/pdf" },
@@ -15,7 +15,7 @@ const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = 
 };
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ ticker: string; kind: string }> },
 ) {
   const params = await context.params;
@@ -27,7 +27,21 @@ export async function GET(
 
   const spec = KIND_TO_FILE[kind];
   const fileName = spec.fileName.replace("{TICKER}", ticker);
-  const found = findLatestByFileName(fileName);
+  const url = new URL(request.url);
+  const reportId = String(url.searchParams.get("report_id") || "").trim();
+
+  let foundPath = "";
+  if (reportId) {
+    const reportPath = resolveDashboardReportPath(reportId);
+    if (reportPath) {
+      const candidate = path.resolve(path.dirname(reportPath), fileName);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        foundPath = candidate;
+      }
+    }
+  }
+
+  const found = foundPath ? { path: foundPath } : findLatestByFileName(fileName);
   if (!found) {
     return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
   }

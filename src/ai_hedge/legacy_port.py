@@ -5658,6 +5658,7 @@ def run_valuations(
     collect_details_for_metrics = True
     method_details = {
         "Scenario DCF": [],
+        "DCF": [],
         "Net Income & P/E": [],
         "Revenue & EV/S": [],
         "Dream Team": [],
@@ -5727,6 +5728,35 @@ def run_valuations(
                 details.extend(ctx_details)
             else:
                 ctx_results, ctx_summary = scenario_dcf_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                )
+            all_results.extend(ctx_results)
+            summary_name = ctx_summary[1]
+        return all_results, _plot_summary_or_empty(all_results, summary_name), details
+
+    def _run_intrinsic_dcf_mixed():
+        all_results = []
+        summary_name = "DCF Range Price Valuation"
+        details = []
+        for ctx_text, iter_count, model_name in _context_runs():
+            if collect_details_for_metrics:
+                ctx_results, ctx_summary, ctx_details = dcf_range_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                    collect_details=True,
+                )
+                details.extend(ctx_details)
+            else:
+                ctx_results, ctx_summary = dcf_range_full(
                     financial_dict,
                     ctx_text,
                     num_iterations=iter_count,
@@ -5968,6 +5998,7 @@ def run_valuations(
     # Launch all blocks in parallel
     with ThreadPoolExecutor(max_workers=blocks_workers) as ex:
         fut_dcf = ex.submit(_run_dcf_mixed)
+        fut_intrinsic_dcf = ex.submit(_run_intrinsic_dcf_mixed)
         fut_pe = ex.submit(_run_profit_pe_mixed)
         fut_ps = ex.submit(_run_revenue_ps_mixed)
         # fut_target = ex.submit(target_price_full, financial_dict, text, n, llm_workers_each_block)
@@ -5984,6 +6015,18 @@ def run_valuations(
         )
         dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "Scenario DCF block")
         all_results_dcf, text_dcf, details_dcf = dcf_result
+
+        intrinsic_dcf_result = _safe_future_result(
+            fut_intrinsic_dcf,
+            ([], ("\nNo results\n\n", "DCF Range Price Valuation"), []),
+            "DCF block",
+        )
+        intrinsic_dcf_result = _retry_block_once_if_empty(
+            intrinsic_dcf_result,
+            _run_intrinsic_dcf_mixed,
+            "DCF block",
+        )
+        all_results_intrinsic_dcf, text_intrinsic_dcf, details_intrinsic_dcf = intrinsic_dcf_result
 
         pe_result = _safe_future_result(
             fut_pe,
@@ -6045,6 +6088,7 @@ def run_valuations(
         ) = forest_result
 
     method_details["Scenario DCF"] = details_dcf
+    method_details["DCF"] = details_intrinsic_dcf
     method_details["Net Income & P/E"] = details_pe
     method_details["Revenue & EV/S"] = details_ps
     method_details["Dream Team"] = details_dream
@@ -6074,6 +6118,7 @@ def run_valuations(
 
     aggregate_investments = {
         "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
+        "DCF": _mean_investment_for_method(method_details["DCF"]),
         "Net Income & P/E": _mean_investment_for_method(method_details["Net Income & P/E"]),
         "Revenue & EV/S": _mean_investment_for_method(method_details["Revenue & EV/S"]),
         "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
@@ -6093,6 +6138,7 @@ def run_valuations(
     # Build final_dict (same logic as your original)
     all_results_list = [
         (all_results_dcf, "Scenario DCF"),
+        (all_results_intrinsic_dcf, "DCF"),
         (all_results_profit_pe, "Net Income & P/E"),
         (all_results_revenue_ps, "Revenue & EV/S"),
         # (all_results_target, "LLM Target"),
@@ -6147,6 +6193,7 @@ def run_valuations(
       append_text_to_file(text=f"Current Price: ${current_price}", two_rows_n=False)
 
       append_text_to_file(text = text_dcf[0], header = text_dcf[1])
+      append_text_to_file(text = text_intrinsic_dcf[0], header = text_intrinsic_dcf[1])
       append_text_to_file(text = text_pe[0], header = text_pe[1])
       append_text_to_file(text = text_ps[0], header = text_ps[1])
       # append_text_to_file(text = text_target[0], header = text_target[1])
@@ -6173,6 +6220,7 @@ def run_valuations(
               "lmil": lmil,
               "aggregate_targets": {
                   "Scenario DCF": float(all_results_dcf[0]) if all_results_dcf else None,
+                  "DCF": float(all_results_intrinsic_dcf[0]) if all_results_intrinsic_dcf else None,
                   "Net Income & P/E": float(all_results_profit_pe[0]) if all_results_profit_pe else None,
                   "Revenue & EV/S": float(all_results_revenue_ps[0]) if all_results_revenue_ps else None,
                   "Dream Team": float(all_results_dream[0]) if all_results_dream else None,

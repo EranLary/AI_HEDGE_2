@@ -254,8 +254,16 @@ export function normalizePayload(
     report_mtime: reportMeta?.reportMtime || payload.report_mtime,
   };
 
+  const reportQuery = merged.report_id
+    ? `?report_id=${encodeURIComponent(String(merged.report_id))}`
+    : "";
+
   merged.downloads = {
-    analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
+    analysis_pdf: `/api/artifacts/${tk}/analysis-pdf${reportQuery}`,
+    analysis_txt: `/api/artifacts/${tk}/analysis-txt${reportQuery}`,
+    prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt${reportQuery}`,
+    prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf${reportQuery}`,
+    dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
   };
 
   const scale = inferLegacyModelTargetScale(merged);
@@ -272,9 +280,10 @@ function parseMoney(text: string): number | null {
 function parseAssumptionsPackRows(text: string, sourcePath: string) {
   const src = String(text || "");
   const specs = [
-    { label: "Predicted Revenue", key: "predicted_revenue" },
-    { label: "Predicted Earnings", key: "predicted_earnings" },
-    { label: "Predicted P/E", key: "predicted_pe" },
+    // Support both old and new naming, and emit representative labels.
+    { labels: ["Representative Revenue", "Predicted Revenue"], label: "Representative Revenue", key: "representative_revenue" },
+    { labels: ["Representative Earnings", "Predicted Earnings"], label: "Representative Earnings", key: "representative_earnings" },
+    { labels: ["Representative P/E", "Predicted P/E"], label: "Representative P/E", key: "representative_pe" },
   ];
   const rows: Array<{
     metric_key: string;
@@ -289,12 +298,16 @@ function parseAssumptionsPackRows(text: string, sourcePath: string) {
   }> = [];
 
   for (const spec of specs) {
-    const escaped = spec.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const rx = new RegExp(
-      `-\\s*${escaped}\\s*\\(Mean\\/Min\\/Max\\):\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`,
-      "i",
-    );
-    const match = src.match(rx);
+    let match: RegExpMatchArray | null = null;
+    for (const rawLabel of spec.labels) {
+      const escaped = rawLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const rx = new RegExp(
+        `-\\s*${escaped}\\s*\\(Mean\\/Min\\/Max\\):\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)\\s*\\/\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`,
+        "i",
+      );
+      match = src.match(rx);
+      if (match) break;
+    }
     if (!match) continue;
     const mean = parseMoney(match[1]);
     const min = parseMoney(match[2]);

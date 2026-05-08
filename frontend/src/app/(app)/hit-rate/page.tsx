@@ -26,6 +26,7 @@ type HitRateRow = {
 
 type HitRatePayload = {
   generated_at: string;
+  mode?: "all" | "positive_only";
   coverage: {
     reports_scanned: number;
     reports_with_baseline_price: number;
@@ -39,6 +40,8 @@ type HitRatePayload = {
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
 };
+
+type HitRateMode = "all" | "positive_only";
 
 function fmtDateTimeNoSeconds(value: string): string {
   const dt = new Date(value);
@@ -179,13 +182,14 @@ export default function HitRatePage() {
   const [data, setData] = useState<HitRatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [mode, setMode] = useState<HitRateMode>("all");
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/hit-rate?refresh=${Date.now()}-${refreshToken}`, { cache: "no-store" });
+        const res = await fetch(`/api/hit-rate?mode=${mode}&refresh=${Date.now()}-${refreshToken}`, { cache: "no-store" });
         const json = (await res.json()) as HitRatePayload;
         if (!cancelled) {
           setData(json);
@@ -200,12 +204,13 @@ export default function HitRatePage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshToken]);
+  }, [refreshToken, mode]);
 
   const coverageText = useMemo(() => {
     if (!data) return "";
-    return `Scanned ${data.coverage.reports_scanned} reports across ${data.coverage.tickers_covered} tickers. Considered ${data.coverage.predictions_considered} predictions (${data.coverage.predictions_neutral} neutral).`;
-  }, [data]);
+    const modeLabel = mode === "positive_only" ? "Positive-only mode" : "All predictions mode";
+    return `${modeLabel}. Scanned ${data.coverage.reports_scanned} reports across ${data.coverage.tickers_covered} tickers. Considered ${data.coverage.predictions_considered} predictions (${data.coverage.predictions_neutral} neutral).`;
+  }, [data, mode]);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 text-zinc-100 sm:px-8">
@@ -215,14 +220,40 @@ export default function HitRatePage() {
             <h1 className="font-display text-2xl">Hit Rate</h1>
             <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Global Accuracy Across All Historical Reports</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setRefreshToken((v) => v + 1)}
-            disabled={loading}
-            className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Refreshing..." : "Refresh Hit Rate"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => setMode("all")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                  mode === "all"
+                    ? "bg-emerald-500/20 text-emerald-100"
+                    : "text-zinc-300 hover:text-zinc-100"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("positive_only")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                  mode === "positive_only"
+                    ? "bg-emerald-500/20 text-emerald-100"
+                    : "text-zinc-300 hover:text-zinc-100"
+                }`}
+              >
+                Positive Only
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRefreshToken((v) => v + 1)}
+              disabled={loading}
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Refreshing..." : "Refresh Hit Rate"}
+            </button>
+          </div>
         </div>
       </header>
 

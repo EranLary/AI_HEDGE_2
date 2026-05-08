@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Gem, Radar, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
 
@@ -170,6 +170,28 @@ export default function DiscoveryPage() {
   const [loading, setLoading] = useState(true);
   const [lensType, setLensType] = useState<DiscoveryLensType>("overall");
   const [lensKey, setLensKey] = useState("");
+  const initializedFromQueryRef = useRef(false);
+
+  useEffect(() => {
+    if (initializedFromQueryRef.current) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const rawType = String(params.get("lens_type") || "").trim().toLowerCase();
+    const rawKey = String(params.get("lens_key") || "").trim();
+    if (rawType === "model" || rawType === "valuator") {
+      setLensType(rawType);
+      setLensKey(rawKey);
+      initializedFromQueryRef.current = true;
+      return;
+    }
+    if (rawType === "overall") {
+      setLensType("overall");
+      setLensKey("");
+      initializedFromQueryRef.current = true;
+      return;
+    }
+    initializedFromQueryRef.current = true;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,15 +329,6 @@ export default function DiscoveryPage() {
                 accent="text-emerald-300"
                 metricLabel="allocation"
               />
-              {lensType === "overall" ? (
-                <SectionCard
-                  title="Top Conviction"
-                  icon={<Radar size={16} className="hib-conviction-accent" />}
-                  rows={data.top_conviction}
-                  accent="hib-conviction-accent"
-                  metricLabel="disagreement"
-                />
-              ) : null}
               <SectionCard
                 title="Lowest Scores"
                 icon={<Star size={16} className="text-red-300" />}
@@ -337,6 +350,15 @@ export default function DiscoveryPage() {
                 accent="text-red-300"
                 metricLabel="allocation"
               />
+              {lensType === "overall" ? (
+                <SectionCard
+                  title="Top Conviction"
+                  icon={<Radar size={16} className="hib-conviction-accent" />}
+                  rows={data.top_conviction}
+                  accent="hib-conviction-accent"
+                  metricLabel="disagreement"
+                />
+              ) : null}
             </div>
           </>
         )}

@@ -1,0 +1,21 @@
+FROM node:20-bookworm-slim
+
+ENV PORT=8080 \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=production
+
+WORKDIR /app
+
+COPY frontend-obs/package*.json /app/frontend-obs/
+WORKDIR /app/frontend-obs
+RUN npm ci
+
+WORKDIR /app
+COPY frontend-obs /app/frontend-obs
+
+WORKDIR /app/frontend-obs
+RUN npm run build
+
+EXPOSE 8080
+
+CMD ["sh", "-c", "exec npm run start -- --hostname 0.0.0.0 --port ${PORT:-8080}"]

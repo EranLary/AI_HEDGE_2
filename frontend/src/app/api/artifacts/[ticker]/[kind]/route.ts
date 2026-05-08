@@ -14,6 +14,36 @@ const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = 
   "prices-chart": { fileName: "{TICKER}_prices_valuation.png", contentType: "image/png" },
 };
 
+function findInTree(rootDir: string, fileName: string): string | null {
+  const target = fileName.toUpperCase();
+  const stack: string[] = [rootDir];
+
+  while (stack.length) {
+    const dir = String(stack.pop() || "");
+    if (!dir) continue;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (entry.name.toUpperCase() === target) {
+        return full;
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ ticker: string; kind: string }> },
@@ -37,7 +67,16 @@ export async function GET(
       const candidate = path.resolve(path.dirname(reportPath), fileName);
       if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
         foundPath = candidate;
+      } else {
+        foundPath = findInTree(path.dirname(reportPath), fileName) || "";
       }
+    }
+
+    if (!foundPath) {
+      return NextResponse.json(
+        { error: `${fileName} was not found for report_id=${reportId}.` },
+        { status: 404 },
+      );
     }
   }
 

@@ -95,6 +95,7 @@ function SectionPills({
   const search = useSearchParams();
   const reportParam = search?.get("report");
   const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
+  const pdfSuffix = reportParam ? `?report_id=${encodeURIComponent(reportParam)}` : "";
 
   return (
     <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 sm:gap-2">
@@ -118,7 +119,7 @@ function SectionPills({
         );
       })}
       <a
-        href={`/api/artifacts/${encodeURIComponent(activeTicker)}/analysis-pdf`}
+        href={`/api/artifacts/${encodeURIComponent(activeTicker)}/analysis-pdf${pdfSuffix}`}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/30 hover:text-zinc-100"
       >
         <Download size={12} />

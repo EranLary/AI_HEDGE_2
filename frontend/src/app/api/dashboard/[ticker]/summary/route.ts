@@ -8,7 +8,7 @@ import {
   type SummaryWindow,
 } from "@/lib/ticker-summary-aggregate";
 import { listDashboardsForTicker } from "@/lib/reports-db";
-import { listDashboardFiles, readJson } from "@/lib/server-outputs";
+import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,36 +21,52 @@ function parseWindow(value: string | null): SummaryWindow {
   return WINDOW_VALUES.has(raw as SummaryWindow) ? (raw as SummaryWindow) : "all";
 }
 
+function siteRunIdFromPathLike(value: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\\/g, "/");
+  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
 async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport[]> {
+  const merged = new Map<string, SummarySourceReport>();
+
   try {
     const dbRows = await listDashboardsForTicker(ticker);
-    if (dbRows.length) {
-      return dbRows
-        .map((r) => ({
-          ticker: String(r.ticker || "").toUpperCase(),
-          generatedAt: new Date(r.generated_at).toISOString(),
-          payload: r.dashboard as DashboardPayload,
-        }))
-        .filter((row) => row.ticker === ticker && Boolean(row.payload));
+    for (const r of dbRows) {
+      const row = {
+        ticker: String(r.ticker || "").toUpperCase(),
+        generatedAt: new Date(r.generated_at).toISOString(),
+        payload: r.dashboard as DashboardPayload,
+      };
+      if (row.ticker !== ticker || !row.payload) continue;
+      const runId = String((r as { source_run_id?: unknown }).source_run_id || "").trim();
+      const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.generatedAt}`;
+      merged.set(key, row);
     }
   } catch (err) {
     console.warn("[ticker-summary] DB read failed:", err);
   }
 
-  return listDashboardFiles()
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .map((item) => {
-      const payload = readJson<DashboardPayload>(item.path);
-      if (!payload) return null;
-      const payloadTicker = String(payload.ticker || "").toUpperCase();
-      if (payloadTicker !== ticker) return null;
-      return {
-        ticker,
-        generatedAt: new Date(item.mtimeMs).toISOString(),
-        payload,
-      } satisfies SummarySourceReport;
-    })
-    .filter((row): row is SummarySourceReport => row !== null);
+  for (const entry of listDashboardReports()) {
+    if (String(entry.ticker || "").toUpperCase() !== ticker) continue;
+    const payload = readJson<DashboardPayload>(entry.path);
+    if (!payload) continue;
+    const generatedAt =
+      typeof payload.generated_at === "string" && payload.generated_at.trim()
+        ? payload.generated_at
+        : new Date(entry.mtimeMs).toISOString();
+    const row: SummarySourceReport = { ticker, generatedAt, payload };
+    const runId = siteRunIdFromPathLike(entry.path);
+    const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
+    if (merged.has(key)) continue;
+    merged.set(key, row);
+  }
+
+  return Array.from(merged.values()).sort(
+    (a, b) => Date.parse(String(b.generatedAt || "")) - Date.parse(String(a.generatedAt || "")),
+  );
 }
 
 export async function GET(

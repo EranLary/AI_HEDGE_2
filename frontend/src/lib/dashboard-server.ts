@@ -39,36 +39,59 @@ export type LivePerformance = {
   };
 };
 
+function siteRunIdFromPathLike(value: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\\/g, "/");
+  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
 async function loadReportsList(): Promise<ReportListItem[]> {
+  const merged = new Map<string, ReportListItem>();
+
   try {
     const dbRows = await listAllReports();
-    if (dbRows.length) {
-      return dbRows.map((r) => ({
+    for (const r of dbRows) {
+      const row: ReportListItem = {
         report_id: r.id,
         ticker: r.ticker,
         generated_at: new Date(r.generated_at).toISOString(),
         report_file: r.source_run_id || r.id,
         updated_at: new Date(r.generated_at).toISOString(),
-      }));
+      };
+      const runId = String(r.source_run_id || "").trim();
+      const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
+      merged.set(key, row);
     }
   } catch (err) {
     console.warn("[reports] DB read failed:", err);
   }
 
-  const rows: ReportListItem[] = [];
   const reports = listDashboardReports();
   for (const report of reports) {
     const payload = readJson<DashboardPayload>(report.path);
     const generatedAt = String(payload?.generated_at || new Date(report.mtimeMs).toISOString());
-    rows.push({
+    const row: ReportListItem = {
       report_id: report.report_id,
       ticker: report.ticker,
       generated_at: generatedAt,
       report_file: report.path,
       updated_at: new Date(report.mtimeMs).toISOString(),
-    });
+    };
+    const runId = siteRunIdFromPathLike(report.path);
+    const key = runId ? `run:${report.ticker}:${runId}` : `file:${report.path}`;
+    if (merged.has(key)) continue;
+    merged.set(key, row);
   }
-  return rows;
+
+  return Array.from(merged.values()).sort((a, b) => {
+    const aMs = Date.parse(String(a.generated_at || a.updated_at || ""));
+    const bMs = Date.parse(String(b.generated_at || b.updated_at || ""));
+    const safeA = Number.isFinite(aMs) ? aMs : 0;
+    const safeB = Number.isFinite(bMs) ? bMs : 0;
+    return safeB - safeA;
+  });
 }
 
 export const getReportsList = unstable_cache(

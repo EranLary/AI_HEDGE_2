@@ -14,6 +14,8 @@ export type RunStatusPayload = {
   progress_file: string;
   user_id?: string | null;
   attributed?: boolean;
+  runner_pid?: number | null;
+  worker_pid?: number | null;
   llm_total_estimated?: number;
   llm_completed?: number;
   llm_progress_pct?: number;

@@ -5,7 +5,11 @@ import Image from "next/image";
 import { LogIn, LogOut, UserCircle2 } from "lucide-react";
 import { signIn, signOut, useSession } from "next-auth/react";
 
-export function AuthMenu() {
+type AuthMenuProps = {
+  menuDirection?: "down" | "up";
+};
+
+export function AuthMenu({ menuDirection = "down" }: AuthMenuProps) {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -53,6 +57,10 @@ export function AuthMenu() {
 
   const { name, email, image, isGuest } = session.user;
   const display = isGuest ? "Guest" : name || email || "Account";
+  const menuPositionClass =
+    menuDirection === "up"
+      ? "absolute bottom-full right-0 z-50 mb-2 w-64 rounded-xl p-2 shadow-xl"
+      : "absolute right-0 top-full z-50 mt-2 w-64 rounded-xl p-2 shadow-xl";
 
   return (
     <div ref={ref} className="relative">
@@ -80,7 +88,7 @@ export function AuthMenu() {
         </span>
       </button>
       {open ? (
-        <div className="hib-auth-menu absolute right-0 top-full z-50 mt-2 w-64 rounded-xl p-2 shadow-xl">
+        <div className={`hib-auth-menu ${menuPositionClass}`}>
           <div className="px-3 py-2 text-xs">
             <div className="truncate font-medium text-zinc-100">{isGuest ? "Guest session" : name || "Signed in"}</div>
             {email ? <div className="truncate text-zinc-400">{email}</div> : null}

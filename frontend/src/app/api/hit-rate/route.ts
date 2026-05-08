@@ -4,7 +4,7 @@ import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
-import { listDashboardFiles, readJson } from "@/lib/server-outputs";
+import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
 type LoadedDashboard = {
   ticker: string;
@@ -16,36 +16,53 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function siteRunIdFromPathLike(value: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\\/g, "/");
+  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
 async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
+  const merged = new Map<string, LoadedDashboard>();
+
   try {
     const dbRows = await listAllDashboardsForHitRate();
-    if (dbRows.length) {
-      return dbRows
-        .map((r) => ({
-          ticker: String(r.ticker || "").toUpperCase(),
-          generatedAt: new Date(r.generated_at).toISOString(),
-          payload: r.dashboard as DashboardPayload,
-        }))
-        .filter((row) => Boolean(row.ticker && row.payload));
+    for (const r of dbRows) {
+      const row = {
+        ticker: String(r.ticker || "").toUpperCase(),
+        generatedAt: new Date(r.generated_at).toISOString(),
+        payload: r.dashboard as DashboardPayload,
+      };
+      if (!row.ticker || !row.payload) continue;
+      const runId = String(r.source_run_id || "").trim();
+      const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.generatedAt}`;
+      merged.set(key, row);
     }
   } catch (err) {
     console.warn("[hit-rate] DB read failed:", err);
   }
 
-  const files = listDashboardFiles().sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return files
-    .map((item) => {
-      const payload = readJson<DashboardPayload>(item.path);
-      if (!payload) return null;
-      const ticker = String(payload.ticker || "").toUpperCase();
-      if (!ticker) return null;
-      return {
-        ticker,
-        generatedAt: new Date(item.mtimeMs).toISOString(),
-        payload,
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
+  for (const entry of listDashboardReports()) {
+    const payload = readJson<DashboardPayload>(entry.path);
+    if (!payload) continue;
+    const ticker = String(payload.ticker || entry.ticker || "").toUpperCase();
+    if (!ticker) continue;
+    const generatedAt =
+      typeof payload.generated_at === "string" && payload.generated_at.trim()
+        ? payload.generated_at
+        : new Date(entry.mtimeMs).toISOString();
+    const row = { ticker, generatedAt, payload };
+    const runId = siteRunIdFromPathLike(entry.path);
+    const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
+    if (merged.has(key)) continue;
+    merged.set(key, row);
+  }
+
+  return Array.from(merged.values()).sort(
+    (a, b) => Date.parse(String(b.generatedAt || "")) - Date.parse(String(a.generatedAt || "")),
+  );
 }
 
 function parseMode(value: string | null): HitRateMode {

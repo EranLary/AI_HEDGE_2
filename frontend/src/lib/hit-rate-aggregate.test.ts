@@ -60,8 +60,6 @@ test("Overall model uses dashboard mean target and mean investment with correct 
   const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
 
   const agg = computeHitRateAggregation(reports, live);
-  const intrinsicDcf = agg.by_model.find((row) => row.key === "Intrinsic DCF");
-  assert.ok(intrinsicDcf);
   const overall = agg.by_model.find((row) => row.key === "Overall");
   assert.ok(overall);
 
@@ -102,4 +100,37 @@ test("Overall target < 0 is floored to 0 and neutral allocations are excluded fr
   assert.equal(overall.allocations.neutral, 1);
   assert.equal(overall.allocations.considered, 0);
   assert.equal(overall.allocations.hit_rate_pct, null);
+});
+
+test("positive_only mode counts only positive target/allocation predictions", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [
+    {
+      name: "DCF",
+      target_price: 130, // positive prediction vs baseline 100
+      investment_amount: -5000, // negative allocation prediction -> excluded in positive_only mode
+      key_metric_means: {},
+      outputs: [],
+    },
+  ];
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 120]]); // actual up
+
+  const agg = computeHitRateAggregation(reports, live, "positive_only");
+  const dcf = agg.by_model.find((row) => row.key === "Intrinsic DCF");
+  assert.ok(dcf);
+
+  // Only positive target prediction should be counted -> hit.
+  assert.equal(dcf.targets.hits, 1);
+  assert.equal(dcf.targets.misses, 0);
+  assert.equal(dcf.targets.considered, 1);
+  assert.equal(dcf.targets.hit_rate_pct, 100);
+
+  // Negative allocation prediction is excluded completely in positive-only mode.
+  assert.equal(dcf.allocations.hits, 0);
+  assert.equal(dcf.allocations.misses, 0);
+  assert.equal(dcf.allocations.neutral, 0);
+  assert.equal(dcf.allocations.considered, 0);
+  assert.equal(dcf.allocations.hit_rate_pct, null);
 });

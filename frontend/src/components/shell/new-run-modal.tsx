@@ -2,19 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Play, X } from "lucide-react";
+import { signIn, useSession } from "next-auth/react";
 
 import { useNewRunModal } from "@/components/shell/new-run-context";
 import { useToast } from "@/components/shell/toast";
 import { TickerSearch } from "@/components/shell/ticker-search";
-import { submitNewRun, InvalidTickerError, TickerNotFoundError } from "@/lib/run-submission";
+import {
+  submitNewRun,
+  InvalidTickerError,
+  SignInRequiredForRunError,
+  TickerNotFoundError,
+} from "@/lib/run-submission";
 import type { TickerEntry } from "@/lib/ticker-catalog";
 
 export function NewRunModal() {
   const { isOpen, close } = useNewRunModal();
   const { push } = useToast();
+  const { data: session } = useSession();
   const [selected, setSelected] = useState<TickerEntry | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const isGuest = Boolean(session?.user?.isGuest);
 
   // Reset state when opened
   useEffect(() => {
@@ -49,6 +57,10 @@ export function NewRunModal() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting || !selected) return;
+    if (isGuest) {
+      setError("Please sign in with Google before running a new analysis.");
+      return;
+    }
     setError("");
     setSubmitting(true);
     try {
@@ -58,6 +70,8 @@ export function NewRunModal() {
     } catch (err) {
       if (err instanceof TickerNotFoundError) {
         setError(`${err.message} Double-check the symbol or try a different ticker.`);
+      } else if (err instanceof SignInRequiredForRunError) {
+        setError(err.message);
       } else if (err instanceof InvalidTickerError) {
         setError(err.message);
       } else {
@@ -106,7 +120,21 @@ export function NewRunModal() {
           {error ? (
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</p>
           ) : null}
+          {isGuest ? (
+            <p className="hib-guest-note rounded-lg border px-3 py-2 text-xs">
+              Guest accounts can browse everything, but must sign in with Google to run a new analysis.
+            </p>
+          ) : null}
           <div className="flex items-center justify-end gap-2 pt-1">
+            {isGuest ? (
+              <button
+                type="button"
+                onClick={() => signIn("google", { callbackUrl: window.location.pathname + window.location.search })}
+                className="rounded-lg border border-emerald-400/60 bg-emerald-500/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 hover:bg-emerald-500/25"
+              >
+                Sign in to run
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={close}

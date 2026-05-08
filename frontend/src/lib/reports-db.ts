@@ -1,4 +1,6 @@
 import { getSql } from "@/lib/db";
+import type { DashboardPayload } from "@/lib/dashboard-types";
+import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
 export type ReportVisibility = "public" | "private" | "unlisted";
 
@@ -159,6 +161,57 @@ export async function attributeReportToUser(opts: {
   return rows.length > 0;
 }
 
+function fallbackCommunityReportsFromOutputs(query?: string): DbReportSummary[] {
+  const q = String(query || "").trim().toLowerCase();
+  const rows: DbReportSummary[] = [];
+  for (const entry of listDashboardReports()) {
+    const dashboard = readJson<DashboardPayload>(entry.path);
+    if (!dashboard) continue;
+    const ticker = String(dashboard.ticker || entry.ticker || "").toUpperCase();
+    if (!ticker) continue;
+    const companyName = String(dashboard.header?.company_name || "").trim() || null;
+    if (q) {
+      const inTicker = ticker.toLowerCase().includes(q);
+      const inCompany = String(companyName || "").toLowerCase().includes(q);
+      if (!inTicker && !inCompany) continue;
+    }
+    const generatedAt =
+      typeof dashboard.generated_at === "string" && dashboard.generated_at.trim()
+        ? dashboard.generated_at
+        : new Date(entry.mtimeMs).toISOString();
+    rows.push({
+      id: entry.report_id,
+      ticker,
+      generated_at: generatedAt,
+      company_name: companyName,
+      current_price:
+        typeof dashboard.valuation_hub?.consensus?.current_price === "number" &&
+        Number.isFinite(dashboard.valuation_hub.consensus.current_price)
+          ? Number(dashboard.valuation_hub.consensus.current_price)
+          : null,
+      market_cap:
+        typeof dashboard.header?.market_cap === "number" && Number.isFinite(dashboard.header.market_cap)
+          ? Number(dashboard.header.market_cap)
+          : null,
+      currency: typeof dashboard.header?.currency === "string" ? dashboard.header.currency : null,
+      recommendation:
+        typeof dashboard.decision_card?.action === "string" && dashboard.decision_card.action.trim()
+          ? dashboard.decision_card.action.trim()
+          : null,
+      mean_target_price:
+        typeof dashboard.valuation_hub?.consensus?.mean_target_price === "number" &&
+        Number.isFinite(dashboard.valuation_hub.consensus.mean_target_price)
+          ? Number(dashboard.valuation_hub.consensus.mean_target_price)
+          : null,
+      source: "site",
+      source_run_id: null,
+      visibility: "public",
+    });
+  }
+  rows.sort((a, b) => Date.parse(String(b.generated_at || "")) - Date.parse(String(a.generated_at || "")));
+  return rows;
+}
+
 export async function findReportIdBySourceRunId(opts: {
   jobId: string;
   ticker?: string;
@@ -239,9 +292,10 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
 /** Public reports authored by anyone other than the optional excluded user. */
 export async function listCommunityReports(excludeUserId?: string): Promise<DbReportSummary[]> {
   const sql = getSql();
-  if (!sql) return [];
-  const rows = excludeUserId
-    ? ((await sql`
+  if (!sql) return fallbackCommunityReportsFromOutputs();
+  try {
+    const rows = excludeUserId
+      ? ((await sql`
         SELECT r.id::text AS id, r.ticker, r.generated_at,
                r.company_name,
                r.current_price::float8 AS current_price,
@@ -270,11 +324,14 @@ export async function listCommunityReports(excludeUserId?: string): Promise<DbRe
                r.visibility
           FROM reports r
           LEFT JOIN report_artifacts a ON a.report_id = r.id
-         WHERE r.visibility = 'public'
-           AND r.deleted_at IS NULL
+          WHERE r.visibility = 'public'
+            AND r.deleted_at IS NULL
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
-  return rows;
+    return rows;
+  } catch {
+    return fallbackCommunityReportsFromOutputs();
+  }
 }
 
 export interface PagedCommunityReports {
@@ -292,19 +349,25 @@ export async function listCommunityReportsPaged(opts: {
   limit: number;
   offset: number;
 }): Promise<PagedCommunityReports> {
-  const sql = getSql();
-  if (!sql) return { rows: [], hasMore: false };
   const rawLimit = Number(opts.limit);
   const rawOffset = Number(opts.offset);
   const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 16));
   const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0);
+  const sql = getSql();
+  if (!sql) {
+    const all = fallbackCommunityReportsFromOutputs(opts.query);
+    const pageRows = all.slice(offset, offset + limit + 1);
+    const hasMore = pageRows.length > limit;
+    return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
+  }
   const fetchN = limit + 1;
   const q = String(opts.query || "").trim();
   const like = q ? `%${q}%` : "";
   const excludeUserId = opts.excludeUserId?.trim() || null;
 
-  const rows = (excludeUserId
-    ? ((await sql`
+  try {
+    const rows = (excludeUserId
+      ? ((await sql`
         SELECT r.id::text AS id, r.ticker, r.generated_at,
                r.company_name,
                r.current_price::float8 AS current_price,
@@ -344,8 +407,14 @@ export async function listCommunityReportsPaged(opts: {
         OFFSET ${offset};
       `) as unknown as DbReportSummary[]));
 
-  const hasMore = rows.length > limit;
-  return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
+    const hasMore = rows.length > limit;
+    return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
+  } catch {
+    const all = fallbackCommunityReportsFromOutputs(opts.query);
+    const pageRows = all.slice(offset, offset + limit + 1);
+    const hasMore = pageRows.length > limit;
+    return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
+  }
 }
 
 /** Owner-scoped visibility update. Returns true if the row was updated. */

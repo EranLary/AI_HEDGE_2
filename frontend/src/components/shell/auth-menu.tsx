@@ -39,7 +39,10 @@ export function AuthMenu() {
     return (
       <button
         type="button"
-        onClick={() => signIn("google", { callbackUrl: window.location.pathname + window.location.search })}
+        onClick={() => {
+          const callbackUrl = window.location.pathname + window.location.search;
+          window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+        }}
         className="hib-auth-btn inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs uppercase tracking-[0.12em]"
       >
         <LogIn size={14} />
@@ -48,8 +51,8 @@ export function AuthMenu() {
     );
   }
 
-  const { name, email, image } = session.user;
-  const display = name || email || "Account";
+  const { name, email, image, isGuest } = session.user;
+  const display = isGuest ? "Guest" : name || email || "Account";
 
   return (
     <div ref={ref} className="relative">
@@ -79,9 +82,26 @@ export function AuthMenu() {
       {open ? (
         <div className="hib-auth-menu absolute right-0 top-full z-50 mt-2 w-64 rounded-xl p-2 shadow-xl">
           <div className="px-3 py-2 text-xs">
-            <div className="truncate font-medium text-zinc-100">{name || "Signed in"}</div>
+            <div className="truncate font-medium text-zinc-100">{isGuest ? "Guest session" : name || "Signed in"}</div>
             {email ? <div className="truncate text-zinc-400">{email}</div> : null}
+            {isGuest ? <div className="mt-0.5 text-zinc-400">Read-only for new analysis runs</div> : null}
           </div>
+          {isGuest ? (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  signIn("google", { callbackUrl: window.location.pathname + window.location.search });
+                }}
+                className="hib-auth-menu-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm"
+              >
+                <LogIn size={14} />
+                <span>Sign in with Google</span>
+              </button>
+            </>
+          ) : null}
           <div className="my-1 border-t border-white/10" />
           <button
             type="button"

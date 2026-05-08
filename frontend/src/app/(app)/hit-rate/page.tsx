@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type MetricCounts = {
@@ -26,6 +27,7 @@ type HitRateRow = {
 
 type HitRatePayload = {
   generated_at: string;
+  mode?: "all" | "positive_only";
   coverage: {
     reports_scanned: number;
     reports_with_baseline_price: number;
@@ -39,6 +41,8 @@ type HitRatePayload = {
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
 };
+
+type HitRateMode = "all" | "positive_only";
 
 function fmtDateTimeNoSeconds(value: string): string {
   const dt = new Date(value);
@@ -70,7 +74,7 @@ function CountBadge({
   value: number;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 tabular-nums">
       <span className="text-[10px] uppercase tracking-[0.08em] text-zinc-500">{label}</span>
       <span className="font-mono text-[11px] font-semibold text-zinc-200">{value}</span>
     </span>
@@ -79,7 +83,7 @@ function CountBadge({
 
 function CountsPills({ metric }: { metric: MetricCounts }) {
   return (
-    <div className="flex flex-wrap justify-end gap-1">
+    <div className="inline-flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
       <CountBadge label="H" value={metric.hits} />
       <CountBadge label="M" value={metric.misses} />
       <CountBadge label="-" value={metric.neutral} />
@@ -107,17 +111,34 @@ function OverviewCard({
 function HitRateTable({
   title,
   rows,
+  lensType,
 }: {
   title: string;
   rows: HitRateRow[];
+  lensType: "model" | "valuator";
 }) {
+  const discoveryHrefForRow = (row: HitRateRow): string => {
+    if (lensType === "model") {
+      if (String(row.key || "").trim().toLowerCase() === "overall") {
+        return "/discovery?lens_type=overall";
+      }
+      return `/discovery?lens_type=model&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+    }
+    return `/discovery?lens_type=valuator&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
       <div className="space-y-2 sm:hidden">
         {rows.map((row) => (
           <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+            <Link
+              href={discoveryHrefForRow(row)}
+              className="hib-hitrate-link text-[11px] uppercase tracking-[0.12em] underline-offset-2 hover:underline"
+            >
+              {row.label}
+            </Link>
             <p className="mt-1 text-xl font-bold text-zinc-100">Combined {fmtHitRate(row.combined.hit_rate_pct)}</p>
             <div className="mt-1 flex items-center justify-between text-sm">
               <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
@@ -146,7 +167,14 @@ function HitRateTable({
           <tbody>
             {rows.map((row) => (
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
-                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
+                <td className="px-3 py-2 font-medium text-zinc-200">
+                  <Link
+                    href={discoveryHrefForRow(row)}
+                    className="hib-hitrate-link underline-offset-2 hover:underline"
+                  >
+                    {row.label}
+                  </Link>
+                </td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.targets.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.combined.hit_rate_pct)}</td>
@@ -179,13 +207,14 @@ export default function HitRatePage() {
   const [data, setData] = useState<HitRatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [mode, setMode] = useState<HitRateMode>("positive_only");
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/hit-rate?refresh=${Date.now()}-${refreshToken}`, { cache: "no-store" });
+        const res = await fetch(`/api/hit-rate?mode=${mode}&refresh=${Date.now()}-${refreshToken}`, { cache: "no-store" });
         const json = (await res.json()) as HitRatePayload;
         if (!cancelled) {
           setData(json);
@@ -200,12 +229,13 @@ export default function HitRatePage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshToken]);
+  }, [refreshToken, mode]);
 
   const coverageText = useMemo(() => {
     if (!data) return "";
-    return `Scanned ${data.coverage.reports_scanned} reports across ${data.coverage.tickers_covered} tickers. Considered ${data.coverage.predictions_considered} predictions (${data.coverage.predictions_neutral} neutral).`;
-  }, [data]);
+    const modeLabel = mode === "positive_only" ? "Positive-only mode" : "All predictions mode";
+    return `${modeLabel}. Scanned ${data.coverage.reports_scanned} reports across ${data.coverage.tickers_covered} tickers. Considered ${data.coverage.predictions_considered} predictions (${data.coverage.predictions_neutral} neutral).`;
+  }, [data, mode]);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 text-zinc-100 sm:px-8">
@@ -215,14 +245,40 @@ export default function HitRatePage() {
             <h1 className="font-display text-2xl">Hit Rate</h1>
             <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Global Accuracy Across All Historical Reports</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setRefreshToken((v) => v + 1)}
-            disabled={loading}
-            className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Refreshing..." : "Refresh Hit Rate"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => setMode("all")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                  mode === "all"
+                    ? "bg-emerald-500/20 text-emerald-100"
+                    : "text-zinc-300 hover:text-zinc-100"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("positive_only")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                  mode === "positive_only"
+                    ? "bg-emerald-500/20 text-emerald-100"
+                    : "text-zinc-300 hover:text-zinc-100"
+                }`}
+              >
+                Positive Only
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRefreshToken((v) => v + 1)}
+              disabled={loading}
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Refreshing..." : "Refresh Hit Rate"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -244,8 +300,8 @@ export default function HitRatePage() {
             <OverviewCard title="Combined" metric={data.overview.combined} />
           </section>
 
-          <HitRateTable title="By Model" rows={data.by_model} />
-          <HitRateTable title="By Valuator" rows={data.by_valuator} />
+          <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
+          <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
         </div>
       )}
     </div>

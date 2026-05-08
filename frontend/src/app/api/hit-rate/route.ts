@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
-import { computeHitRateAggregation } from "@/lib/hit-rate-aggregate";
+import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardFiles, readJson } from "@/lib/server-outputs";
 
@@ -48,16 +48,23 @@ async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
     .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
-export async function GET() {
+function parseMode(value: string | null): HitRateMode {
+  return String(value || "").trim().toLowerCase() === "positive_only" ? "positive_only" : "all";
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const mode = parseMode(url.searchParams.get("mode"));
   const reports = await loadHistoricalDashboards();
   const uniqueTickers = Array.from(new Set(reports.map((r) => r.ticker).filter(Boolean)));
   const livePriceByTicker = new Map<string, number | null>(
     Object.entries(await getLiveCurrentPricesBatch(uniqueTickers)),
   );
-  const aggregation = computeHitRateAggregation(reports, livePriceByTicker);
+  const aggregation = computeHitRateAggregation(reports, livePriceByTicker, mode);
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
+    mode,
     coverage: aggregation.coverage,
     overview: aggregation.overview,
     by_model: aggregation.by_model,

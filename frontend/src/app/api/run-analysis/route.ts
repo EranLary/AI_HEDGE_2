@@ -81,7 +81,7 @@ export async function POST(req: Request) {
   const jobId = `${ticker}_${Date.now()}_${randomUUID().slice(0, 8)}`;
   const jobDir = runJobDir(jobId);
   const statusFile = runStatusFile(jobId);
-  const progressFile = path.resolve(jobDir, ticker, "_progress.log");
+  const progressFile = path.resolve(jobDir, "_progress.log");
   const startedAt = nowIso();
 
   const initialStatus: RunStatusPayload = {

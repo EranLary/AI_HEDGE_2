@@ -57,7 +57,7 @@ def main() -> int:
     ticker = str(args.ticker or "").strip().upper()
     output_dir = str(Path(args.output_dir).resolve())
     status_file = Path(args.status_file).resolve()
-    progress_file = str(Path(output_dir).resolve() / ticker / "_progress.log")
+    progress_file = str(Path(output_dir).resolve() / "_progress.log")
     llm_total_estimated = _estimate_total_llm_calls()
     llm_completed = 0
     lock = threading.Lock()

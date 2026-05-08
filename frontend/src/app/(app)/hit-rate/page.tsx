@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type MetricCounts = {
@@ -110,17 +111,34 @@ function OverviewCard({
 function HitRateTable({
   title,
   rows,
+  lensType,
 }: {
   title: string;
   rows: HitRateRow[];
+  lensType: "model" | "valuator";
 }) {
+  const discoveryHrefForRow = (row: HitRateRow): string => {
+    if (lensType === "model") {
+      if (String(row.key || "").trim().toLowerCase() === "overall") {
+        return "/discovery?lens_type=overall";
+      }
+      return `/discovery?lens_type=model&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+    }
+    return `/discovery?lens_type=valuator&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
       <div className="space-y-2 sm:hidden">
         {rows.map((row) => (
           <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
+            <Link
+              href={discoveryHrefForRow(row)}
+              className="text-[11px] uppercase tracking-[0.12em] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            >
+              {row.label}
+            </Link>
             <p className="mt-1 text-xl font-bold text-zinc-100">Combined {fmtHitRate(row.combined.hit_rate_pct)}</p>
             <div className="mt-1 flex items-center justify-between text-sm">
               <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
@@ -149,7 +167,14 @@ function HitRateTable({
           <tbody>
             {rows.map((row) => (
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
-                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
+                <td className="px-3 py-2 font-medium text-zinc-200">
+                  <Link
+                    href={discoveryHrefForRow(row)}
+                    className="underline-offset-2 hover:text-zinc-100 hover:underline"
+                  >
+                    {row.label}
+                  </Link>
+                </td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.targets.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.combined.hit_rate_pct)}</td>
@@ -275,8 +300,8 @@ export default function HitRatePage() {
             <OverviewCard title="Combined" metric={data.overview.combined} />
           </section>
 
-          <HitRateTable title="By Model" rows={data.by_model} />
-          <HitRateTable title="By Valuator" rows={data.by_valuator} />
+          <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
+          <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
         </div>
       )}
     </div>

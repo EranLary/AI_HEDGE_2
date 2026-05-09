@@ -21,7 +21,9 @@ export const dynamic = "force-dynamic";
 type Params = { runId: string; callId: string };
 
 function callLabel(call: ObsCallRow): string {
-  return call.call_site ?? call.persona ?? `#${call.sequence}`;
+  if (call.call_site) return call.call_site;
+  if (call.persona) return call.persona;
+  return `${call.stage} #${call.sequence}`;
 }
 
 export default async function CallDetailPage({

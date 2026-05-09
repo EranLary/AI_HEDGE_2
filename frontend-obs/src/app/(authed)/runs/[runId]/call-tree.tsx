@@ -15,7 +15,9 @@ export type TreeNode = {
 const PROMPT_PREVIEW_CHARS = 140;
 
 export function callLabel(call: ObsCallRow): string {
-  return call.call_site ?? call.persona ?? `#${call.sequence}`;
+  if (call.call_site) return call.call_site;
+  if (call.persona) return call.persona;
+  return `${call.stage} #${call.sequence}`;
 }
 
 export function CallTree({

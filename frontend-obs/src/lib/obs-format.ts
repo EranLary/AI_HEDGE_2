@@ -24,5 +24,7 @@ export function formatTokens(n: number | null | undefined): string {
 
 export function formatLatency(ms: number | null | undefined): string {
   if (ms == null) return "—";
-  return `${(ms / 1000).toFixed(2)}s`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(2)}s`;
+  return `${(s / 60).toFixed(1)}m`;
 }

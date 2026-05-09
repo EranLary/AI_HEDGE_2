@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StatusPill } from "@/components/status-pill";
 import type { ObsCallRow } from "@/lib/obs-db";
 import { formatCost, formatLatency, formatTokens } from "@/lib/obs-format";
+import { callLabel, callTitle } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 export type TreeNode = {
@@ -12,33 +13,33 @@ export type TreeNode = {
   children: TreeNode[];
 };
 
-const PROMPT_PREVIEW_CHARS = 140;
+export { callLabel, callTitle };
 
 export function CallTree({
   runId,
   nodes,
+  activeCallId,
   depth = 0,
 }: {
   runId: string;
   nodes: TreeNode[];
+  activeCallId?: string | null;
   depth?: number;
 }) {
   if (nodes.length === 0) return null;
+  const className = depth === 0 ? "tree-roots" : "tree-children";
   return (
-    <ul
-      style={{
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
-        marginLeft: depth === 0 ? 0 : 14,
-        borderLeft: depth === 0 ? "none" : "1px dashed var(--color-border)",
-      }}
-    >
+    <ul className={className}>
       {nodes.map((node) => (
-        <li key={node.call.id} style={{ paddingLeft: depth === 0 ? 0 : 12, marginTop: 4 }}>
-          <CallRow runId={runId} call={node.call} />
+        <li key={node.call.id}>
+          <CallRow runId={runId} call={node.call} active={node.call.id === activeCallId} />
           {node.children.length > 0 && (
-            <CallTree runId={runId} nodes={node.children} depth={depth + 1} />
+            <CallTree
+              runId={runId}
+              nodes={node.children}
+              activeCallId={activeCallId}
+              depth={depth + 1}
+            />
           )}
         </li>
       ))}
@@ -46,47 +47,69 @@ export function CallTree({
   );
 }
 
-function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
+function CallRow({
+  runId,
+  call,
+  active,
+}: {
+  runId: string;
+  call: ObsCallRow;
+  active: boolean;
+}) {
   const color = stageColor(call.stage);
-  const preview = (call.prompt ?? "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, PROMPT_PREVIEW_CHARS);
+  const title = callTitle(call);
+  const technical = callLabel(call);
+  const showSubtitle = technical && technical !== title;
 
   return (
     <Link
-      href={`/runs/${runId}/calls/${call.id}`}
-      className="row-link"
-      style={{ borderLeft: `2px solid ${color}`, paddingLeft: 10, display: "block" }}
+      href={`/runs/${runId}?call=${call.id}`}
+      className={active ? "row-link is-active" : "row-link"}
+      scroll={false}
+      prefetch={false}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
-          {call.persona ?? `#${call.sequence}`}
+        <span aria-hidden className="stage-dot" style={{ background: color }} />
+        <span
+          style={{
+            fontWeight: 600,
+            fontSize: 13,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
         </span>
-        <span style={{ fontSize: 11, opacity: 0.55 }}>
+        <span style={{ fontSize: 11, opacity: 0.5 }}>
           {call.model_actual ?? call.model_requested}
         </span>
         <StatusPill status={call.status} />
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
+        <span
+          className="call-row__metrics"
+          style={{ fontSize: 11, opacity: 0.6, fontVariantNumeric: "tabular-nums" }}
+        >
           {formatTokens(call.tokens_in)}↑ {formatTokens(call.tokens_out)}↓ ·{" "}
           {formatLatency(call.latency_ms)} · {formatCost(call.cost_usd, 4)}
         </span>
       </div>
-      {preview && (
+      {showSubtitle && (
         <div
+          className="call-row__preview"
           style={{
-            fontSize: 12,
-            opacity: 0.6,
-            marginTop: 3,
+            fontSize: 11,
+            opacity: 0.5,
+            marginTop: 2,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontFamily: "var(--font-mono)",
           }}
         >
-          {preview}
-          {call.prompt && call.prompt.length > PROMPT_PREVIEW_CHARS ? "…" : ""}
+          {technical}
+          {call.persona && call.persona !== technical ? ` · ${call.persona}` : ""}
         </div>
       )}
     </Link>

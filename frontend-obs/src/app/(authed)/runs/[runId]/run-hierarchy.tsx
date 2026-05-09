@@ -33,8 +33,20 @@ function groupByStage(calls: ObsCallRow[]): StageGroup[] {
   return ordered;
 }
 
-export function RunHierarchy({ runId, calls }: { runId: string; calls: ObsCallRow[] }) {
+export function RunHierarchy({
+  runId,
+  calls,
+  activeCallId,
+}: {
+  runId: string;
+  calls: ObsCallRow[];
+  activeCallId?: string | null;
+}) {
   const groups = useMemo(() => groupByStage(calls), [calls]);
+  const activeStage = useMemo(() => {
+    if (!activeCallId) return null;
+    return calls.find((c) => c.id === activeCallId)?.stage ?? null;
+  }, [calls, activeCallId]);
 
   if (groups.length === 0) {
     return (
@@ -54,7 +66,10 @@ export function RunHierarchy({ runId, calls }: { runId: string; calls: ObsCallRo
           key={g.stage}
           runId={runId}
           group={g}
-          defaultOpen={g.hasError || groups.length === 1}
+          activeCallId={activeCallId ?? null}
+          defaultOpen={
+            g.hasError || groups.length === 1 || activeStage === g.stage
+          }
         />
       ))}
     </div>

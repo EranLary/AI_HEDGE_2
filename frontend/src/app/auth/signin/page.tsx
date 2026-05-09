@@ -28,7 +28,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
         <div className="hib-landing-brand inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.22em]">
           <span aria-hidden className="relative inline-flex h-8 w-8 items-center justify-center">
             <Image
-              src="/hedge-logo-dark.png"
+              src="/hedge-logo-dark.svg"
               alt=""
               width={32}
               height={32}
@@ -36,7 +36,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
               className="hib-brand-logo-dark h-8 w-8 object-contain"
             />
             <Image
-              src="/hedge-logo-light.png"
+              src="/hedge-logo-light.svg"
               alt=""
               width={32}
               height={32}

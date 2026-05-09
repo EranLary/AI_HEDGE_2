@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 
+import { ArrowLeftIcon } from "@/components/icons";
 import { ResizablePanel } from "@/components/resizable-panel";
 import { getRun, listCallsForRun, type ObsRunRow } from "@/lib/obs-db";
 import { formatCost, formatDuration, formatTokens } from "@/lib/obs-format";
@@ -30,8 +31,13 @@ export default async function RunDetailPage({
   if (!run) {
     return (
       <div>
-        <Link href="/runs" style={{ fontSize: 14 }}>
-          ← All runs
+        <Link
+          href="/runs"
+          className="btn-ghost btn-ghost--icon"
+          title="All runs"
+          aria-label="Back to all runs"
+        >
+          <ArrowLeftIcon size={15} />
         </Link>
         <h1 style={{ marginTop: 12 }}>Run not found</h1>
         <p style={{ opacity: 0.7 }}>No obs_runs row matches id {runId}.</p>
@@ -44,7 +50,7 @@ export default async function RunDetailPage({
       <RunHeader run={run} />
       <RunTabs activeView={view} />
       <Suspense
-        key={`${runId}-${view}-${activeCallId ?? ""}`}
+        key={`${runId}-${view}`}
         fallback={<RunBodySkeleton />}
       >
         <RunBodyAsync runId={runId} view={view} activeCallId={activeCallId} />
@@ -56,8 +62,13 @@ export default async function RunDetailPage({
 function RunHeader({ run }: { run: ObsRunRow }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <Link href="/runs" style={{ fontSize: 14 }}>
-        ← All runs
+      <Link
+        href="/runs"
+        className="btn-ghost btn-ghost--icon"
+        title="All runs"
+        aria-label="Back to all runs"
+      >
+        <ArrowLeftIcon size={15} />
       </Link>
       <h1 style={{ fontSize: 24, marginTop: 8 }}>
         {run.ticker}{" "}
@@ -114,6 +125,26 @@ function RunBodySkeleton() {
   );
 }
 
+function CallPanelSkeleton() {
+  return (
+    <div
+      style={{
+        padding: 12,
+        fontSize: 12,
+        opacity: 0.55,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+      aria-busy="true"
+    >
+      <div className="card" style={{ height: 24 }} />
+      <div className="card" style={{ height: 56 }} />
+      <div className="card" style={{ height: 110 }} />
+    </div>
+  );
+}
+
 async function RunBodyAsync({
   runId,
   view,
@@ -146,7 +177,9 @@ async function RunBodyAsync({
             />
           }
         >
-          <CallPanelContent runId={runId} callId={activeCallId} />
+          <Suspense key={activeCallId} fallback={<CallPanelSkeleton />}>
+            <CallPanelContent runId={runId} callId={activeCallId} />
+          </Suspense>
         </ResizablePanel>
       )}
     </div>

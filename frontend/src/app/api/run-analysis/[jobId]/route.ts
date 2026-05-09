@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
@@ -215,6 +216,22 @@ async function reconcileCompletedStatus(status: RunStatusPayload): Promise<RunSt
   return withAttribution;
 }
 
+function revalidateReportsCacheOnce(status: RunStatusPayload): RunStatusPayload {
+  if (status.status !== "completed") return status;
+  if (status.cache_revalidated_at) return status;
+  try {
+    revalidateTag("reports", "max");
+  } catch {
+    // best effort; the listing's short TTL still picks up the new report
+  }
+  const next: RunStatusPayload = {
+    ...status,
+    cache_revalidated_at: new Date().toISOString(),
+  };
+  writeStatusSafe(next);
+  return next;
+}
+
 export async function GET(
   _: Request,
   context: { params: Promise<{ jobId: string }> },
@@ -235,7 +252,8 @@ export async function GET(
   const reconciledStatus = reconcileLegacyPersistenceFailure(status);
   const progress = readProgressLines(reconciledStatus.progress_file || "", 80);
   const completionReconciled = reconcileRunningCompletion(reconciledStatus, progress);
-  const updatedStatus = await reconcileCompletedStatus(completionReconciled);
+  const completedStatus = await reconcileCompletedStatus(completionReconciled);
+  const updatedStatus = revalidateReportsCacheOnce(completedStatus);
   const llmTotal = typeof updatedStatus.llm_total_estimated === "number" ? updatedStatus.llm_total_estimated : 0;
   const llmDone = typeof updatedStatus.llm_completed === "number" ? updatedStatus.llm_completed : 0;
   let llmPct =

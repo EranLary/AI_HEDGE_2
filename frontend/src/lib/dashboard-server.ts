@@ -97,7 +97,7 @@ async function loadReportsList(): Promise<ReportListItem[]> {
 export const getReportsList = unstable_cache(
   loadReportsList,
   ["reports-list-v1"],
-  { revalidate: 60, tags: ["reports"] },
+  { revalidate: 5, tags: ["reports"] },
 );
 
 async function loadDashboardPayload(

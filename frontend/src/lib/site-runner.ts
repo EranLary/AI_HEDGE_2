@@ -25,6 +25,7 @@ export type RunStatusPayload = {
   persistence_error?: string;
   error?: string;
   traceback?: string;
+  cache_revalidated_at?: string | null;
 };
 
 const APP_BOOT_TIME_MS = Date.now();

@@ -167,7 +167,9 @@ jobs:
           AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID }}
           AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET }}
         run: |
-          args=()
+          # Bypass auth on per-PR previews — Google OAuth doesn't permit
+          # wildcard redirect URIs for pr-N-* hostnames. Never set on prod.
+          args=("AUTH_BYPASS_PREVIEW=1")
           if [ -z "$DEEPSEEK_API_KEY" ]; then
             echo "::warning::DEEPSEEK_API_KEY secret not set - preview will be missing it."
           else
@@ -251,6 +253,10 @@ jobs:
             ### Site preview deployed
 
             **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
+
+            ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
+            redirect URIs for `pr-*` hostnames, so the preview hands out signed-in
+            access to anyone with the URL. Don't share it externally.
 
             - Volume forked from prod on PR open; staleness accepted until close.
             - DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.

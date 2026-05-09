@@ -8,11 +8,13 @@ import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-
 import { attributeReportToUser, findReportIdBySourceRunId } from "@/lib/reports-db";
 import {
   reconcileStaleRunsAfterRestart,
+  reconcileStaleRunsViaSql,
   readProgressLines,
   readRunStatus,
   runStatusFile,
   type RunStatusPayload,
 } from "@/lib/site-runner";
+import { readRunStatusFromDb, updateRunStatusFromNode } from "@/lib/site-runs-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -220,6 +222,7 @@ export async function GET(
   context: { params: Promise<{ jobId: string }> },
 ) {
   reconcileStaleRunsAfterRestart();
+  void reconcileStaleRunsViaSql();
 
   const { jobId } = await context.params;
   const cleanJobId = String(jobId || "").trim();
@@ -227,10 +230,38 @@ export async function GET(
     return NextResponse.json({ error: "Job id is required." }, { status: 400 });
   }
 
-  const status = readRunStatus(cleanJobId);
-  if (!status) {
+  const fsStatus = readRunStatus(cleanJobId);
+  const dbStatus = await readRunStatusFromDb(cleanJobId);
+  if (!fsStatus && !dbStatus) {
     return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
+
+  // FS-only fields (output_dir, progress_file, PIDs, result) come from the FS
+  // payload; status/timestamps/llm progress/error come from Neon when present.
+  // Caveat: if the final 'completed' write to Neon fails (issue #35 says Neon
+  // is best-effort during Phase 0.2), Neon may still show 'running' while FS
+  // says 'completed'. Trust FS in that specific case so today's behavior --
+  // run completes -- is preserved.
+  const isTerminal = (s: string | undefined): boolean =>
+    s === "completed" || s === "failed" || s === "cancelled";
+  const fsIsTerminalAndDbIsnt =
+    !!fsStatus && isTerminal(fsStatus.status) && !!dbStatus && !isTerminal(dbStatus.status);
+
+  const status: RunStatusPayload = dbStatus
+    ? fsIsTerminalAndDbIsnt
+      ? (fsStatus as RunStatusPayload)
+      : ({
+          ...(fsStatus ?? ({
+            job_id: dbStatus.job_id || cleanJobId,
+            ticker: dbStatus.ticker || "",
+            status: "queued",
+            created_at: dbStatus.created_at || new Date().toISOString(),
+            output_dir: "",
+            progress_file: "",
+          } as RunStatusPayload)),
+          ...dbStatus,
+        } as RunStatusPayload)
+    : (fsStatus as RunStatusPayload);
 
   const reconciledStatus = reconcileLegacyPersistenceFailure(status);
   const progress = readProgressLines(reconciledStatus.progress_file || "", 80);
@@ -325,6 +356,12 @@ export async function DELETE(
     : "Cancellation requested by user. Process termination could not be confirmed.";
   const canceled = cancelStatus(status, message);
   writeStatusSafe(canceled);
+  void updateRunStatusFromNode({
+    jobId: canceled.job_id,
+    status: canceled.status,
+    finishedAt: canceled.finished_at,
+    error: canceled.error,
+  });
 
   return NextResponse.json({
     ok: true,

@@ -8,7 +8,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import {
+  appBootIso,
   reconcileStaleRunsAfterRestart,
+  reconcileStaleRunsViaSql,
   TICKER_RE,
   type RunStatusPayload,
   repoRoot,
@@ -16,6 +18,7 @@ import {
   runStatusFile,
   siteRunsRoot,
 } from "@/lib/site-runner";
+import { insertQueuedRun, updateRunStatusFromNode } from "@/lib/site-runs-db";
 import { yahooValidate } from "@/lib/yahoo-lookup";
 
 export const runtime = "nodejs";
@@ -32,6 +35,8 @@ function writeStatus(filePath: string, payload: RunStatusPayload): void {
 
 export async function POST(req: Request) {
   reconcileStaleRunsAfterRestart();
+  // Fire-and-forget: SQL reconcile is best-effort and must not block the POST.
+  void reconcileStaleRunsViaSql();
 
   const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
   const session = await auth();
@@ -115,6 +120,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to initialize run directory." }, { status: 500 });
   }
 
+  // Best-effort durable insert. The Python worker will UPSERT this row on its
+  // first status write, so a Neon outage here doesn't lose the run.
+  void insertQueuedRun({
+    jobId,
+    ticker,
+    userId: userId,
+    llmTotalEstimated: initialStatus.llm_total_estimated ?? 30,
+    bootAnchorAt: appBootIso(),
+  });
+
   const root = repoRoot();
   const scriptPath = path.resolve(root, "scripts", "site_run.py");
   const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
@@ -159,6 +174,12 @@ export async function POST(req: Request) {
       error: `Failed to spawn process: ${String(err)}`,
     };
     writeStatus(statusFile, failedStatus);
+    void updateRunStatusFromNode({
+      jobId,
+      status: "failed",
+      finishedAt: failedStatus.finished_at,
+      error: failedStatus.error || "",
+    });
     return NextResponse.json({ error: "Failed to start analysis process." }, { status: 500 });
   }
 

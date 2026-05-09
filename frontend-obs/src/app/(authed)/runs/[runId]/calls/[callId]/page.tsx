@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { CSSProperties } from "react";
 
-import { CopyButton } from "@/components/copy-button";
+import { CollapsibleMarkdown } from "@/components/collapsible-markdown";
 import { StatusPill } from "@/components/status-pill";
 import {
   getCall,
@@ -20,6 +19,10 @@ import { stageColor } from "@/lib/obs-styles";
 export const dynamic = "force-dynamic";
 
 type Params = { runId: string; callId: string };
+
+function callLabel(call: ObsCallRow): string {
+  return call.call_site ?? call.persona ?? `#${call.sequence}`;
+}
 
 export default async function CallDetailPage({
   params,
@@ -42,6 +45,7 @@ export default async function CallDetailPage({
 
   const color = stageColor(call.stage);
   const backHref = `/runs/${runId}${backView === "flow" ? "?view=flow" : ""}`;
+  const label = callLabel(call);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -57,14 +61,11 @@ export default async function CallDetailPage({
           ← Back to {run.ticker} run
         </Link>
         <span style={{ opacity: 0.4 }}>/</span>
+        <span aria-hidden className="stage-dot" style={{ background: color }} />
         <span
           style={{
             fontSize: 12,
-            padding: "3px 10px",
-            borderRadius: 999,
-            border: `1px solid ${color}`,
-            color,
-            background: "transparent",
+            opacity: 0.85,
             textTransform: "uppercase",
             letterSpacing: 0.4,
             fontWeight: 600,
@@ -72,19 +73,27 @@ export default async function CallDetailPage({
         >
           {call.stage}
         </span>
-        {call.persona && (
+        {call.persona && call.persona !== label && (
           <span style={{ opacity: 0.7, fontSize: 13 }}>· {call.persona}</span>
         )}
         <StatusPill status={call.status} />
       </div>
 
       <div>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>
-          Call #{call.sequence}
+        <h1
+          style={{
+            fontSize: 22,
+            marginBottom: 4,
+            fontFamily: "var(--font-mono)",
+            fontWeight: 600,
+            letterSpacing: "-0.2px",
+          }}
+        >
+          {label}
         </h1>
         <div style={{ opacity: 0.7, fontSize: 13 }}>
-          {call.model_actual ?? call.model_requested} · temp {call.temperature}
-          {call.call_site ? ` · ${call.call_site}` : ""}
+          #{call.sequence} · {call.model_actual ?? call.model_requested} · temp{" "}
+          {call.temperature}
         </div>
       </div>
 
@@ -107,24 +116,32 @@ export default async function CallDetailPage({
 
       <CallContext runId={runId} parent={parent} children={children} backView={backView} />
 
-      <Section title="Prompt" copyText={call.prompt}>
-        <pre style={preStyle}>{call.prompt}</pre>
-      </Section>
-      <Section
+      <CollapsibleMarkdown
+        title="Prompt"
+        body={call.prompt}
+        defaultOpen={false}
+        meta={`${formatTokens(call.tokens_in)} tok in`}
+      />
+      <CollapsibleMarkdown
         title="Response"
-        copyText={call.response ?? ""}
-      >
-        <pre style={preStyle}>{call.response ?? "(no response captured)"}</pre>
-      </Section>
+        body={call.response}
+        defaultOpen
+        meta={`${formatTokens(call.tokens_out)} tok out · ${formatLatency(call.latency_ms)}`}
+      />
       {call.reasoning && (
-        <Section title="Reasoning" copyText={call.reasoning}>
-          <pre style={preStyle}>{call.reasoning}</pre>
-        </Section>
+        <CollapsibleMarkdown
+          title="Reasoning"
+          body={call.reasoning}
+          defaultOpen={false}
+        />
       )}
       {call.error_message && (
-        <Section title={`Error · ${call.error_class ?? ""}`} copyText={call.error_message}>
-          <pre style={{ ...preStyle, color: "#fca5a5" }}>{call.error_message}</pre>
-        </Section>
+        <CollapsibleMarkdown
+          title={`Error · ${call.error_class ?? ""}`}
+          body={call.error_message}
+          defaultOpen
+          emphasizeError
+        />
       )}
     </div>
   );
@@ -140,55 +157,6 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
-
-function Section({
-  title,
-  copyText,
-  children,
-}: {
-  title: string;
-  copyText?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 6,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            opacity: 0.7,
-            textTransform: "uppercase",
-            letterSpacing: 0.4,
-          }}
-        >
-          {title}
-        </div>
-        {copyText ? <CopyButton text={copyText} /> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-const preStyle: CSSProperties = {
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 12,
-  margin: 0,
-  padding: 14,
-  background: "var(--color-card-bg)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 8,
-  lineHeight: 1.55,
-};
 
 function CallContext({
   runId,
@@ -236,20 +204,11 @@ function CallContext({
 
 function CallSummary({ call }: { call: ObsCallRow }) {
   const color = stageColor(call.stage);
+  const label = callLabel(call);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 999,
-          background: color,
-          display: "inline-block",
-        }}
-      />
-      <span style={{ fontWeight: 600 }}>
-        {call.persona ?? `#${call.sequence}`}
-      </span>
+      <span aria-hidden className="stage-dot" style={{ background: color }} />
+      <span style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{label}</span>
       <span style={{ opacity: 0.6 }}>{call.stage}</span>
       <span style={{ opacity: 0.5 }}>· {formatLatency(call.latency_ms)}</span>
       <span style={{ opacity: 0.5 }}>· {formatCost(call.cost_usd, 4)}</span>

@@ -30,12 +30,7 @@ export function StageSection({
   const tree = open ? buildTree(group.calls) : [];
 
   return (
-    <section
-      className="card"
-      style={{
-        borderLeft: `3px solid ${color}`,
-      }}
-    >
+    <section className="card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -52,19 +47,8 @@ export function StageSection({
           textAlign: "left",
         }}
       >
-        <span
-          aria-hidden
-          style={{
-            display: "inline-block",
-            width: 10,
-            transition: "transform 120ms ease",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-            opacity: 0.7,
-            fontSize: 11,
-          }}
-        >
-          ▶
-        </span>
+        <Chevron open={open} />
+        <span aria-hidden className="stage-dot" style={{ background: color }} />
         <span style={{ fontWeight: 700, fontSize: 14 }}>{group.stage}</span>
         <span
           style={{
@@ -105,5 +89,24 @@ export function StageSection({
         </div>
       )}
     </section>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 12 12"
+      width={10}
+      height={10}
+      style={{
+        transition: "transform 120ms ease",
+        transform: open ? "rotate(90deg)" : "rotate(0deg)",
+        opacity: 0.7,
+        flex: "0 0 auto",
+      }}
+    >
+      <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

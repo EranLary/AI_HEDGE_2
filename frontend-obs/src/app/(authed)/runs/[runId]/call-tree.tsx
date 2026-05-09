@@ -14,6 +14,10 @@ export type TreeNode = {
 
 const PROMPT_PREVIEW_CHARS = 140;
 
+export function callLabel(call: ObsCallRow): string {
+  return call.call_site ?? call.persona ?? `#${call.sequence}`;
+}
+
 export function CallTree({
   runId,
   nodes,
@@ -24,18 +28,11 @@ export function CallTree({
   depth?: number;
 }) {
   if (nodes.length === 0) return null;
+  const className = depth === 0 ? "tree-roots" : "tree-children";
   return (
-    <ul
-      style={{
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
-        marginLeft: depth === 0 ? 0 : 14,
-        borderLeft: depth === 0 ? "none" : "1px dashed var(--color-border)",
-      }}
-    >
+    <ul className={className}>
       {nodes.map((node) => (
-        <li key={node.call.id} style={{ paddingLeft: depth === 0 ? 0 : 12, marginTop: 4 }}>
+        <li key={node.call.id}>
           <CallRow runId={runId} call={node.call} />
           {node.children.length > 0 && (
             <CallTree runId={runId} nodes={node.children} depth={depth + 1} />
@@ -48,22 +45,34 @@ export function CallTree({
 
 function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
   const color = stageColor(call.stage);
+  const label = callLabel(call);
+  const showPersona = call.persona && call.persona !== label;
   const preview = (call.prompt ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, PROMPT_PREVIEW_CHARS);
 
   return (
-    <Link
-      href={`/runs/${runId}/calls/${call.id}`}
-      className="row-link"
-      style={{ borderLeft: `2px solid ${color}`, paddingLeft: 10, display: "block" }}
-    >
+    <Link href={`/runs/${runId}/calls/${call.id}`} className="row-link">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
-          {call.persona ?? `#${call.sequence}`}
+        <span aria-hidden className="stage-dot" style={{ background: color }} />
+        <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "var(--font-mono)" }}>
+          {label}
         </span>
-        <span style={{ fontSize: 11, opacity: 0.55 }}>
+        {showPersona && (
+          <span
+            style={{
+              fontSize: 10,
+              padding: "1px 7px",
+              borderRadius: 999,
+              background: "var(--color-muted)",
+              opacity: 0.85,
+            }}
+          >
+            {call.persona}
+          </span>
+        )}
+        <span style={{ fontSize: 11, opacity: 0.5 }}>
           {call.model_actual ?? call.model_requested}
         </span>
         <StatusPill status={call.status} />
@@ -77,12 +86,12 @@ function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
         <div
           style={{
             fontSize: 12,
-            opacity: 0.6,
+            opacity: 0.55,
             marginTop: 3,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontFamily: "var(--font-mono)",
           }}
         >
           {preview}

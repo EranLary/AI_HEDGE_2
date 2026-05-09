@@ -16,6 +16,8 @@ a worker pool loses its ``run_id`` / ``stage`` / ``persona`` context.
 from __future__ import annotations
 
 import contextvars
+import inspect
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -26,6 +28,40 @@ from .context import current_context
 from .pricing import cost_usd
 
 _INSTALLED = False
+
+_OBS_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+_LEGACY_PORT_FILE: Optional[str] = None
+
+
+def _resolve_call_site() -> Optional[str]:
+    """Walk the stack to find the first frame outside obs/ and legacy_port.py.
+
+    Returns ``"qualname:lineno"`` (with class prefix when ``self`` is bound) or
+    None when nothing useful is found. Cheap enough to call per LLM request —
+    LLM latency dwarfs ``inspect.stack()``.
+    """
+    global _LEGACY_PORT_FILE
+    if _LEGACY_PORT_FILE is None:
+        try:
+            from ai_hedge import legacy_port as _lp
+
+            _LEGACY_PORT_FILE = os.path.abspath(_lp.__file__) if _lp.__file__ else ""
+        except Exception:
+            _LEGACY_PORT_FILE = ""
+
+    for frame_info in inspect.stack()[2:]:
+        path = os.path.abspath(frame_info.filename)
+        if path.startswith(_OBS_PKG_DIR):
+            continue
+        if _LEGACY_PORT_FILE and path == _LEGACY_PORT_FILE:
+            continue
+        name = frame_info.function
+        f_locals = frame_info.frame.f_locals
+        self_obj = f_locals.get("self")
+        if self_obj is not None:
+            name = f"{type(self_obj).__name__}.{name}"
+        return f"{name}:{frame_info.lineno}"
+    return None
 
 
 def _patch_thread_pool_executor() -> None:
@@ -81,6 +117,7 @@ def install() -> None:
     ) -> str:
         ctx = current_context()
         started_at = datetime.now(timezone.utc)
+        call_site = _resolve_call_site()
 
         # We can't know the exact augmented prompt the original computes
         # (with the short_answer suffix) without duplicating logic, so we
@@ -113,7 +150,7 @@ def install() -> None:
                     parent_id=ctx.parent_call_id,
                     stage=ctx.stage or "unknown",
                     persona=ctx.persona,
-                    call_site=None,
+                    call_site=call_site,
                     model_requested=model,
                     model_actual=model_actual,
                     temperature=float(temperature),
@@ -142,7 +179,7 @@ def install() -> None:
                         parent_id=ctx.parent_call_id,
                         stage=ctx.stage or "unknown",
                         persona=ctx.persona,
-                        call_site=None,
+                        call_site=call_site,
                         model_requested=model,
                         model_actual=None,
                         temperature=float(temperature),

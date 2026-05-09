@@ -30,7 +30,7 @@ export function BrandLogo({
     return () => observer.disconnect();
   }, []);
 
-  const src = theme === "light" ? "/hedge-logo-light.png" : "/hedge-logo-dark.png";
+  const src = theme === "light" ? "/hedge-logo-light.svg" : "/hedge-logo-dark.svg";
 
   return (
     <Image

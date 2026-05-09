@@ -53,43 +53,48 @@ def write_run_to_db(
     max_attempts: int = 1,
     retry_backoff_seconds: float = 1.5,
     r2_keys: dict | None = None,
-) -> str | None:
+) -> tuple[str | None, str | None]:
     """
     Best-effort DB write at the end of a successful run.
 
-    - No-op (returns None) if DATABASE_URL_UNPOOLED / DATABASE_URL is unset.
-    - Catches and logs all errors so DB problems don't kill a successful run.
-    - Returns the inserted report_id on success, or None.
-    - `r2_keys`, when provided, is persisted onto report_artifacts.r2_keys.
-      Used by the runner to record the ArtifactStore's returned keys when an
-      R2-backed store is active. Disk-only backfill paths leave it None.
+    Returns ``(report_id, error_message)``:
+
+    - Success: ``(id, None)``
+    - No-op (no DATABASE_URL, missing dashboard, etc.): ``(None, None)``
+    - Insert failure: ``(None, "<exc-type>: <exc-msg>")`` carrying the last
+      attempt's exception text so the caller can surface it to operators.
+
+    Stderr printing is preserved for log-aggregation continuity. The
+    swallowing pattern (best-effort, never kill a successful run) is
+    unchanged; only the return shape is richer.
+
+    ``r2_keys`` is persisted onto ``report_artifacts.r2_keys`` when provided.
     """
     if not (os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")):
-        return None
+        return (None, None)
 
     try:
         from ai_hedge.db.connection import get_conn
         from ai_hedge.db.repository import insert_report, upsert_ticker
         from ai_hedge.db.transform import ticker_dir_to_row
     except ImportError as exc:
-        print(f"[db.writer] skipping (import failed): {exc}", file=sys.stderr)
-        return None
+        msg = f"import failed: {exc}"
+        print(f"[db.writer] skipping ({msg})", file=sys.stderr)
+        return (None, msg)
 
     try:
         bundle = ticker_dir_to_row(Path(output_dir), source=source)
     except Exception as exc:  # noqa: BLE001
-        print(
-            f"[db.writer] skipping ({type(exc).__name__}: {exc})",
-            file=sys.stderr,
-        )
-        return None
+        msg = f"{type(exc).__name__}: {exc}"
+        print(f"[db.writer] skipping ({msg})", file=sys.stderr)
+        return (None, msg)
 
     if bundle is None:
         print(
             f"[db.writer] skipping {output_dir}: no dashboard/analysis found",
             file=sys.stderr,
         )
-        return None
+        return (None, None)
 
     if r2_keys is not None:
         bundle["artifact_row"]["r2_keys"] = r2_keys
@@ -109,7 +114,7 @@ def write_run_to_db(
                 f"[db.writer] {state} {bundle['report_row']['ticker']} -> {report_id}",
                 file=sys.stderr,
             )
-            return report_id
+            return (report_id, None)
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             print(
@@ -123,10 +128,12 @@ def write_run_to_db(
                 continue
             break
 
+    err_msg: str | None = None
     if last_exc is not None:
+        err_msg = f"{type(last_exc).__name__}: {last_exc}"
         print(
-            f"[db.writer] DB write failed permanently for {bundle['report_row']['ticker']}: "
-            f"{type(last_exc).__name__}: {last_exc}",
+            f"[db.writer] DB write failed permanently for "
+            f"{bundle['report_row']['ticker']}: {err_msg}",
             file=sys.stderr,
         )
-    return None
+    return (None, err_msg)

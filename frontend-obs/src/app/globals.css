@@ -509,6 +509,62 @@ html[data-theme="light"] .hib-logo-light { display: block; }
   outline: 1px solid var(--color-accent);
 }
 
+/* Resizable panel handle: sits inside the 16px gap between main and panel,
+   centered. Container is non-interactive so it doesn't block clicks; only
+   the visible notch in the middle responds to pointer events. */
+.panel-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -16px;
+  width: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  touch-action: none;
+  pointer-events: none;
+}
+
+.panel-resize-handle__notch {
+  width: 4px;
+  height: 44px;
+  border-radius: 3px;
+  background: var(--color-border);
+  cursor: col-resize;
+  transition: background 120ms ease, transform 120ms ease, height 120ms ease;
+  pointer-events: auto;
+}
+
+.panel-resize-handle:hover .panel-resize-handle__notch {
+  background: var(--color-accent);
+  height: 56px;
+  transform: scaleX(1.5);
+}
+
+.panel-resize-handle:active .panel-resize-handle__notch {
+  background: var(--color-accent);
+}
+
+/* Hide native scrollbars across the app — content still scrolls. */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+}
+
 /* Mobile responsive pass */
 @media (max-width: 720px) {
   .app-header {

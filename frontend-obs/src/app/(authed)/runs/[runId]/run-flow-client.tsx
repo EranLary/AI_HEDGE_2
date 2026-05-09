@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import dagre from "dagre";
 import {
@@ -22,32 +22,39 @@ import type { ObsCallRow } from "@/lib/obs-db";
 import { formatCost, formatLatency } from "@/lib/obs-format";
 import { stageColor } from "@/lib/obs-styles";
 
-import { callLabel } from "./call-tree";
+import { callTitle } from "@/lib/obs-labels";
 
-const NODE_W = 220;
-const NODE_H = 64;
+const NODE_W = 200;
+const NODE_H = 50;
+const ROOT_W = 110;
+const ROOT_H = 28;
+
+type Direction = "TB" | "LR";
 
 type LaidOut = { nodes: Node[]; edges: Edge[] };
 
-function buildGraph(calls: ObsCallRow[]): LaidOut {
+function buildGraph(calls: ObsCallRow[], dir: Direction): LaidOut {
   const ids = new Set(calls.map((c) => c.id));
   const hasRoots = calls.some((c) => !c.parent_id || !ids.has(c.parent_id));
   const multipleRoots =
     calls.filter((c) => !c.parent_id || !ids.has(c.parent_id)).length > 1;
   const useSyntheticRoot = hasRoots && multipleRoots;
+  const isLR = dir === "LR";
 
   const g = new dagre.graphlib.Graph({ multigraph: false });
   g.setGraph({
-    rankdir: "TB",
-    ranksep: 70,
-    nodesep: 30,
-    marginx: 20,
-    marginy: 20,
+    rankdir: dir,
+    // Tighter spacing for compact layouts; LR needs slightly more
+    // between ranks because nodes are wider than tall.
+    ranksep: isLR ? 60 : 44,
+    nodesep: isLR ? 14 : 18,
+    marginx: 16,
+    marginy: 16,
   });
   g.setDefaultEdgeLabel(() => ({}));
 
   if (useSyntheticRoot) {
-    g.setNode("__root__", { width: 120, height: 32 });
+    g.setNode("__root__", { width: ROOT_W, height: ROOT_H });
   }
 
   for (const c of calls) {
@@ -64,28 +71,35 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
+  const sourcePosition = isLR ? Position.Right : Position.Bottom;
+  const targetPosition = isLR ? Position.Left : Position.Top;
+
   if (useSyntheticRoot) {
     const n = g.node("__root__");
     nodes.push({
       id: "__root__",
       type: "default",
-      position: { x: n.x - 60, y: n.y - 16 },
+      position: { x: n.x - ROOT_W / 2, y: n.y - ROOT_H / 2 },
       data: {
         label: (
-          <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.85, textAlign: "center" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 600, opacity: 0.85, textAlign: "center", lineHeight: 1 }}>
             run start
           </div>
         ),
       },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
+      sourcePosition,
+      targetPosition,
       style: {
-        width: 120,
-        height: 32,
+        width: ROOT_W,
+        height: ROOT_H,
         background: "var(--color-muted)",
         border: "1px dashed var(--color-border)",
         borderRadius: 6,
         color: "var(--color-foreground)",
+        padding: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       },
       draggable: false,
       selectable: false,
@@ -96,7 +110,7 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
     const n = g.node(c.id);
     if (!n) continue;
     const color = stageColor(c.stage);
-    const label = callLabel(c);
+    const label = callTitle(c);
     const errored = c.status === "error";
 
     nodes.push({
@@ -108,31 +122,30 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
           <div
             style={{
               textAlign: "left",
-              padding: "6px 8px 6px 10px",
-              lineHeight: 1.25,
+              padding: "5px 8px 5px 9px",
+              lineHeight: 1.2,
               position: "relative",
             }}
           >
             <div
               style={{
-                fontSize: 11.5,
-                fontFamily: "var(--font-mono)",
+                fontSize: 11,
                 fontWeight: 600,
                 color: "var(--color-foreground)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                paddingRight: errored ? 26 : 0,
+                paddingRight: errored ? 24 : 0,
               }}
             >
               {label}
             </div>
             <div
               style={{
-                fontSize: 10.5,
-                opacity: 0.65,
+                fontSize: 10,
+                opacity: 0.6,
                 fontVariantNumeric: "tabular-nums",
-                marginTop: 2,
+                marginTop: 1,
               }}
             >
               {formatLatency(c.latency_ms)} · {formatCost(c.cost_usd, 4)}
@@ -141,13 +154,13 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
               <span
                 style={{
                   position: "absolute",
-                  top: 6,
-                  right: 6,
-                  fontSize: 9,
+                  top: 4,
+                  right: 5,
+                  fontSize: 8.5,
                   background: "rgba(239,68,68,0.18)",
                   color: "#fca5a5",
-                  padding: "1px 5px",
-                  borderRadius: 4,
+                  padding: "1px 4px",
+                  borderRadius: 3,
                   textTransform: "uppercase",
                   letterSpacing: 0.4,
                   fontWeight: 600,
@@ -159,8 +172,8 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
           </div>
         ),
       },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
+      sourcePosition,
+      targetPosition,
       style: {
         width: NODE_W,
         height: NODE_H,
@@ -169,7 +182,7 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
         borderRight: "1px solid var(--color-border)",
         borderBottom: "1px solid var(--color-border)",
         borderLeft: `3px solid ${color}`,
-        borderRadius: 8,
+        borderRadius: 6,
         padding: 0,
         color: "var(--color-foreground)",
       },
@@ -195,10 +208,28 @@ function buildGraph(calls: ObsCallRow[]): LaidOut {
   return { nodes, edges };
 }
 
+const DIR_STORAGE_KEY = "obs.flow.dir";
+
+function readSavedDir(): Direction {
+  if (typeof window === "undefined") return "TB";
+  const raw = window.localStorage.getItem(DIR_STORAGE_KEY);
+  return raw === "LR" ? "LR" : "TB";
+}
+
 function FlowInner({ runId, calls }: { runId: string; calls: ObsCallRow[] }) {
   const router = useRouter();
-  const { nodes, edges } = useMemo(() => buildGraph(calls), [calls]);
+  const [dir, setDir] = useState<Direction>("TB");
+  useEffect(() => {
+    setDir(readSavedDir());
+  }, []);
+  const { nodes, edges } = useMemo(() => buildGraph(calls, dir), [calls, dir]);
   const { fitView } = useReactFlow();
+
+  // Re-fit after direction change so the new layout is centered.
+  useEffect(() => {
+    const id = window.setTimeout(() => fitView({ padding: 0.2, duration: 250 }), 50);
+    return () => window.clearTimeout(id);
+  }, [dir, fitView]);
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
@@ -208,20 +239,43 @@ function FlowInner({ runId, calls }: { runId: string; calls: ObsCallRow[] }) {
     [router, runId],
   );
 
+  const toggleDir = useCallback(() => {
+    setDir((d) => {
+      const next: Direction = d === "TB" ? "LR" : "TB";
+      try {
+        window.localStorage.setItem(DIR_STORAGE_KEY, next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, opacity: 0.6 }}>
-          Top-down hierarchy by parent_id. Click a call to open its detail panel.
+          Hierarchy by parent_id ({dir === "TB" ? "top-down" : "left-to-right"}). Click a call to open its detail panel.
         </div>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => fitView({ padding: 0.2, duration: 200 })}
-          style={{ fontSize: 11, padding: "4px 10px" }}
-        >
-          Fit view
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={toggleDir}
+            style={{ fontSize: 11, padding: "4px 10px" }}
+            aria-label={`Switch to ${dir === "TB" ? "horizontal" : "vertical"} layout`}
+          >
+            {dir === "TB" ? "Horizontal" : "Vertical"} layout
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => fitView({ padding: 0.2, duration: 200 })}
+            style={{ fontSize: 11, padding: "4px 10px" }}
+          >
+            Fit view
+          </button>
+        </div>
       </div>
       <div
         style={{

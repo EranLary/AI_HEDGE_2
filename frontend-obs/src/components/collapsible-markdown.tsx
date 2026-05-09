@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -25,18 +25,33 @@ export function CollapsibleMarkdown({
   const [mode, setMode] = useState<Mode>("rendered");
   const hasBody = !!(body && body.trim().length > 0);
 
+  function toggle() {
+    if (hasBody) setOpen((v) => !v);
+  }
+
+  function onKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (!hasBody) return;
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      toggle();
+    }
+  }
+
   function stop(e: MouseEvent) {
     e.stopPropagation();
   }
 
   return (
     <div className={`collapsible${open && hasBody ? " collapsible--open" : ""}`}>
-      <button
-        type="button"
+      <div
         className="collapsible__header"
-        onClick={() => hasBody && setOpen((v) => !v)}
+        role="button"
+        tabIndex={hasBody ? 0 : -1}
         aria-expanded={open && hasBody}
-        disabled={!hasBody}
+        aria-disabled={!hasBody}
+        onClick={toggle}
+        onKeyDown={onKey}
+        style={{ cursor: hasBody ? "pointer" : "default" }}
       >
         <Chevron />
         <span className="collapsible__title">{title}</span>
@@ -68,7 +83,7 @@ export function CollapsibleMarkdown({
             <CopyButton text={body ?? ""} />
           </span>
         )}
-      </button>
+      </div>
       {open && hasBody && (
         <div className="collapsible__body">
           {mode === "rendered" ? (

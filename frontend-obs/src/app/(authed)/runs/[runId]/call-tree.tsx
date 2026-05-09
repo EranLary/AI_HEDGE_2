@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StatusPill } from "@/components/status-pill";
 import type { ObsCallRow } from "@/lib/obs-db";
 import { formatCost, formatLatency, formatTokens } from "@/lib/obs-format";
+import { callLabel, callTitle } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 export type TreeNode = {
@@ -12,13 +13,7 @@ export type TreeNode = {
   children: TreeNode[];
 };
 
-const PROMPT_PREVIEW_CHARS = 140;
-
-export function callLabel(call: ObsCallRow): string {
-  if (call.call_site) return call.call_site;
-  if (call.persona) return call.persona;
-  return `${call.stage} #${call.sequence}`;
-}
+export { callLabel, callTitle };
 
 export function CallTree({
   runId,
@@ -62,12 +57,9 @@ function CallRow({
   active: boolean;
 }) {
   const color = stageColor(call.stage);
-  const label = callLabel(call);
-  const showPersona = call.persona && call.persona !== label;
-  const preview = (call.prompt ?? "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, PROMPT_PREVIEW_CHARS);
+  const title = callTitle(call);
+  const technical = callLabel(call);
+  const showSubtitle = technical && technical !== title;
 
   return (
     <Link
@@ -78,22 +70,18 @@ function CallRow({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span aria-hidden className="stage-dot" style={{ background: color }} />
-        <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "var(--font-mono)" }}>
-          {label}
+        <span
+          style={{
+            fontWeight: 600,
+            fontSize: 13,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
         </span>
-        {showPersona && (
-          <span
-            style={{
-              fontSize: 10,
-              padding: "1px 7px",
-              borderRadius: 999,
-              background: "var(--color-muted)",
-              opacity: 0.85,
-            }}
-          >
-            {call.persona}
-          </span>
-        )}
         <span style={{ fontSize: 11, opacity: 0.5 }}>
           {call.model_actual ?? call.model_requested}
         </span>
@@ -107,21 +95,21 @@ function CallRow({
           {formatLatency(call.latency_ms)} · {formatCost(call.cost_usd, 4)}
         </span>
       </div>
-      {preview && (
+      {showSubtitle && (
         <div
           className="call-row__preview"
           style={{
-            fontSize: 12,
-            opacity: 0.55,
-            marginTop: 3,
+            fontSize: 11,
+            opacity: 0.5,
+            marginTop: 2,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
             fontFamily: "var(--font-mono)",
           }}
         >
-          {preview}
-          {call.prompt && call.prompt.length > PROMPT_PREVIEW_CHARS ? "…" : ""}
+          {technical}
+          {call.persona && call.persona !== technical ? ` · ${call.persona}` : ""}
         </div>
       )}
     </Link>

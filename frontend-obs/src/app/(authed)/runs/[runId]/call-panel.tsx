@@ -12,9 +12,8 @@ import {
   formatLatency,
   formatTokens,
 } from "@/lib/obs-format";
+import { callLabel, callTitle } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
-
-import { callLabel } from "./call-tree";
 
 export async function CallPanelContent({
   runId,
@@ -38,7 +37,9 @@ export async function CallPanelContent({
   ]);
 
   const color = stageColor(call.stage);
-  const label = callLabel(call);
+  const title = callTitle(call);
+  const technical = callLabel(call);
+  const showSubtitle = technical && technical !== title;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -55,7 +56,7 @@ export async function CallPanelContent({
         >
           {call.stage}
         </span>
-        {call.persona && call.persona !== label && (
+        {call.persona && (
           <span style={{ opacity: 0.7, fontSize: 12 }}>· {call.persona}</span>
         )}
         <StatusPill status={call.status} />
@@ -74,16 +75,22 @@ export async function CallPanelContent({
           style={{
             fontSize: 16,
             fontWeight: 600,
-            fontFamily: "var(--font-mono)",
             wordBreak: "break-word",
             lineHeight: 1.3,
           }}
         >
-          {label}
+          {title}
         </div>
-        <div style={{ opacity: 0.65, fontSize: 12, marginTop: 2 }}>
-          #{call.sequence} · {call.model_actual ?? call.model_requested} · temp{" "}
-          {call.temperature}
+        <div
+          style={{
+            opacity: 0.6,
+            fontSize: 11.5,
+            marginTop: 3,
+            fontFamily: showSubtitle ? "var(--font-mono)" : undefined,
+          }}
+        >
+          {showSubtitle ? `${technical} · ` : ""}#{call.sequence} ·{" "}
+          {call.model_actual ?? call.model_requested} · temp {call.temperature}
         </div>
       </div>
 
@@ -94,8 +101,6 @@ export async function CallPanelContent({
           gap: 6,
         }}
       >
-        <Stat label="Tokens in" value={formatTokens(call.tokens_in)} />
-        <Stat label="Tokens out" value={formatTokens(call.tokens_out)} />
         <Stat label="Cost" value={formatCost(call.cost_usd, 6)} />
         <Stat label="Latency" value={formatLatency(call.latency_ms)} />
         <Stat label="Retries" value={String(call.retries)} />
@@ -201,21 +206,20 @@ function PanelHierarchy({
 
 function PanelCallSummary({ call }: { call: ObsCallRow }) {
   const color = stageColor(call.stage);
-  const label = callLabel(call);
+  const title = callTitle(call);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12, minWidth: 0 }}>
       <span aria-hidden className="stage-dot" style={{ background: color }} />
       <span
         style={{
           fontWeight: 600,
-          fontFamily: "var(--font-mono)",
           minWidth: 0,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
       >
-        {label}
+        {title}
       </span>
       <span style={{ opacity: 0.55, fontSize: 11 }}>· {formatLatency(call.latency_ms)}</span>
       <span style={{ opacity: 0.55, fontSize: 11 }}>· {formatCost(call.cost_usd, 4)}</span>
@@ -229,8 +233,7 @@ export function PanelTitle({ label, stage }: { label: string; stage: string }) {
       <span aria-hidden className="stage-dot" style={{ background: stageColor(stage) }} />
       <span
         style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 12.5,
+          fontSize: 13,
           fontWeight: 600,
           overflow: "hidden",
           textOverflow: "ellipsis",

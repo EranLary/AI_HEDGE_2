@@ -14,17 +14,12 @@ import {
   formatLatency,
   formatTokens,
 } from "@/lib/obs-format";
+import { callLabel, callTitle } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 export const dynamic = "force-dynamic";
 
 type Params = { runId: string; callId: string };
-
-function callLabel(call: ObsCallRow): string {
-  if (call.call_site) return call.call_site;
-  if (call.persona) return call.persona;
-  return `${call.stage} #${call.sequence}`;
-}
 
 export default async function CallDetailPage({
   params,
@@ -47,7 +42,9 @@ export default async function CallDetailPage({
 
   const color = stageColor(call.stage);
   const backHref = `/runs/${runId}${backView === "flow" ? "?view=flow" : ""}`;
-  const label = callLabel(call);
+  const title = callTitle(call);
+  const technical = callLabel(call);
+  const showSubtitle = technical && technical !== title;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -75,7 +72,7 @@ export default async function CallDetailPage({
         >
           {call.stage}
         </span>
-        {call.persona && call.persona !== label && (
+        {call.persona && (
           <span style={{ opacity: 0.7, fontSize: 13 }}>· {call.persona}</span>
         )}
         <StatusPill status={call.status} />
@@ -86,16 +83,22 @@ export default async function CallDetailPage({
           style={{
             fontSize: 22,
             marginBottom: 4,
-            fontFamily: "var(--font-mono)",
             fontWeight: 600,
             letterSpacing: "-0.2px",
+            wordBreak: "break-word",
           }}
         >
-          {label}
+          {title}
         </h1>
-        <div style={{ opacity: 0.7, fontSize: 13 }}>
-          #{call.sequence} · {call.model_actual ?? call.model_requested} · temp{" "}
-          {call.temperature}
+        <div
+          style={{
+            opacity: 0.65,
+            fontSize: 12.5,
+            fontFamily: showSubtitle ? "var(--font-mono)" : undefined,
+          }}
+        >
+          {showSubtitle ? `${technical} · ` : ""}#{call.sequence} ·{" "}
+          {call.model_actual ?? call.model_requested} · temp {call.temperature}
         </div>
       </div>
 
@@ -206,11 +209,11 @@ function CallContext({
 
 function CallSummary({ call }: { call: ObsCallRow }) {
   const color = stageColor(call.stage);
-  const label = callLabel(call);
+  const title = callTitle(call);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
       <span aria-hidden className="stage-dot" style={{ background: color }} />
-      <span style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{label}</span>
+      <span style={{ fontWeight: 600 }}>{title}</span>
       <span style={{ opacity: 0.6 }}>{call.stage}</span>
       <span style={{ opacity: 0.5 }}>· {formatLatency(call.latency_ms)}</span>
       <span style={{ opacity: 0.5 }}>· {formatCost(call.cost_usd, 4)}</span>

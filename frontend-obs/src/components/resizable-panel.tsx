@@ -152,25 +152,19 @@ export function ResizablePanel({
       )}
       <aside style={asideStyle} aria-label="Call detail">
         {!isMobile && (
-          <div
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize panel"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: -3,
-              bottom: 0,
-              width: 6,
-              cursor: "col-resize",
-              touchAction: "none",
-              zIndex: 1,
-            }}
-          />
+          <div className="panel-resize-handle" aria-hidden>
+            <div
+              className="panel-resize-handle__notch"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize panel"
+              tabIndex={0}
+            />
+          </div>
         )}
         {isMobile && (
           <div

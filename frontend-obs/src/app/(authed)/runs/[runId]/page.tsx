@@ -3,9 +3,9 @@ import Link from "next/link";
 import { ResizablePanel } from "@/components/resizable-panel";
 import { getRun, listCallsForRun } from "@/lib/obs-db";
 import { formatCost, formatDuration, formatTokens } from "@/lib/obs-format";
+import { callTitle } from "@/lib/obs-labels";
 
 import { CallPanelContent, PanelTitle } from "./call-panel";
-import { callLabel } from "./call-tree";
 import RunFlowClient from "./run-flow-client";
 import { RunHierarchy } from "./run-hierarchy";
 import { RunTabs } from "./run-tabs";
@@ -94,7 +94,7 @@ export default async function RunDetailPage({
               <PanelTitle
                 label={
                   calls.find((c) => c.id === activeCallId)
-                    ? callLabel(calls.find((c) => c.id === activeCallId)!)
+                    ? callTitle(calls.find((c) => c.id === activeCallId)!)
                     : "Call"
                 }
                 stage={

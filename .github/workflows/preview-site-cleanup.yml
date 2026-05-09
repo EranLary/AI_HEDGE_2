@@ -1,8 +1,8 @@
-name: Site Preview Stale Cleanup
+name: Preview Stale Cleanup
 
-# Safety net: destroy preview apps that the PR-close hook missed (e.g. closed
-# while CI was down, or PR sat open for weeks). Apps older than MAX_AGE_DAYS
-# get nuked regardless of PR state.
+# Safety net: destroy preview apps (site + obs) that the PR-close hook missed
+# (e.g. closed while CI was down, or PR sat open for weeks). Apps older than
+# MAX_AGE_DAYS get nuked regardless of PR state.
 
 on:
   schedule:
@@ -48,7 +48,7 @@ jobs:
           echo "Cutoff: $(date -u -d "@$cutoff") (apps older than this will be destroyed)"
 
           mapfile -t names < <(flyctl apps list --json \
-            | jq -r '.[] | (.Name // .name) | select(test("^pr-[0-9]+-hedge-in-a-box-site$"))')
+            | jq -r '.[] | (.Name // .name) | select(test("^pr-[0-9]+-hedge-in-a-box-(site|obs)$"))')
 
           if [ "${#names[@]}" -eq 0 ]; then
             echo "No preview apps found."

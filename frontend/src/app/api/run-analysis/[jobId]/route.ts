@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { NextResponse } from "next/server";
 
@@ -17,6 +18,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RUN_FINALIZED_MARKER = "site run finalized:";
 
 function writeStatusSafe(status: RunStatusPayload): void {
   try {
@@ -28,11 +30,17 @@ function writeStatusSafe(status: RunStatusPayload): void {
 
 const PERSISTENCE_ONLY_ERROR_RE = /no reports row found for source_run_id/i;
 
+function isMaterialSuccessResult(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const status = String((result as { status?: unknown }).status || "").trim().toLowerCase();
+  return status === "success" || status === "partial_success";
+}
+
 function shouldTreatAsCompleted(status: RunStatusPayload): boolean {
   if (status.status !== "failed") return false;
   if (!PERSISTENCE_ONLY_ERROR_RE.test(String(status.persistence_error || status.error || ""))) return false;
   const result = status.result as Record<string, unknown> | null | undefined;
-  return String(result?.status || "").toLowerCase() === "success";
+  return isMaterialSuccessResult(result);
 }
 
 function reconcileLegacyPersistenceFailure(status: RunStatusPayload): RunStatusPayload {
@@ -69,6 +77,75 @@ function parsePid(value: unknown): number | null {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
+}
+
+function isPidAlive(pid: number | null): boolean {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasFile(filePath: string): boolean {
+  if (!filePath) return false;
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function hasCompletionArtifacts(status: RunStatusPayload): boolean {
+  const outputDir = String(status.output_dir || "").trim();
+  const ticker = String(status.ticker || "").trim().toUpperCase();
+  if (!outputDir || !ticker) return false;
+
+  const dashboardJson = path.resolve(outputDir, `${ticker}_dashboard.json`);
+  const analysisTxt = path.resolve(outputDir, `${ticker}_analysis.txt`);
+  const analysisPdf = path.resolve(outputDir, `${ticker}_analysis.pdf`);
+
+  return hasFile(dashboardJson) && (hasFile(analysisTxt) || hasFile(analysisPdf));
+}
+
+function shouldPromoteRunningToCompleted(status: RunStatusPayload, progressLines: string[]): boolean {
+  if (status.status !== "running") return false;
+
+  const workerAlive = isPidAlive(parsePid(status.worker_pid));
+  const runnerAlive = isPidAlive(parsePid(status.runner_pid));
+  if (workerAlive || runnerAlive) return false;
+
+  if (!hasCompletionArtifacts(status)) return false;
+
+  const joined = progressLines.join("\n").toLowerCase();
+  if (!joined.includes(RUN_FINALIZED_MARKER)) return false;
+  const reachedFinalPhase =
+    joined.includes("finished technical analysis") || joined.includes("finished valuations");
+  const llmPct = typeof status.llm_progress_pct === "number" ? status.llm_progress_pct : 0;
+  return reachedFinalPhase || llmPct >= 99;
+}
+
+function reconcileRunningCompletion(status: RunStatusPayload, progressLines: string[]): RunStatusPayload {
+  if (!shouldPromoteRunningToCompleted(status, progressLines)) return status;
+
+  const llmTotal = typeof status.llm_total_estimated === "number" ? status.llm_total_estimated : 0;
+  const llmDone = typeof status.llm_completed === "number" ? status.llm_completed : 0;
+  const next: RunStatusPayload = {
+    ...status,
+    status: "completed",
+    finished_at: status.finished_at || new Date().toISOString(),
+    error: "",
+    llm_progress_pct: 100,
+    llm_completed: Math.max(llmDone, llmTotal),
+    result:
+      status.result && typeof status.result === "object"
+        ? status.result
+        : { status: "success", source: "artifact_reconciliation" },
+  };
+  writeStatusSafe(next);
+  return next;
 }
 
 function tryTerminatePid(pid: number): boolean {
@@ -156,9 +233,9 @@ export async function GET(
   }
 
   const reconciledStatus = reconcileLegacyPersistenceFailure(status);
-  const updatedStatus = await reconcileCompletedStatus(reconciledStatus);
-
-  const progress = readProgressLines(updatedStatus.progress_file || "", 80);
+  const progress = readProgressLines(reconciledStatus.progress_file || "", 80);
+  const completionReconciled = reconcileRunningCompletion(reconciledStatus, progress);
+  const updatedStatus = await reconcileCompletedStatus(completionReconciled);
   const llmTotal = typeof updatedStatus.llm_total_estimated === "number" ? updatedStatus.llm_total_estimated : 0;
   const llmDone = typeof updatedStatus.llm_completed === "number" ? updatedStatus.llm_completed : 0;
   let llmPct =

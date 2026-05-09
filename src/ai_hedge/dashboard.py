@@ -483,6 +483,16 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "wacc": avg_mid("WACC"),
             "terminal_growth": avg_mid("TERMINAL"),
         }
+    elif method_name == "Scenario DCF":
+        metrics = {
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "fcf_next_year": avg_mid("fcf_next_year"),
+            "growth_rate": avg_mid("g"),
+            "wacc": avg_mid("WACC"),
+            "terminal_growth": avg_mid("TERMINAL"),
+        }
     elif method_name == "Net Income & P/E":
         metrics = {
             "net_income_3y": avg_mid("net_income_3y"),
@@ -515,6 +525,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "revenue_growth_3y_avg": avg_num("revenue_growth_3y_avg"),
             "operating_margin": avg_num("operating_profitability_margin"),
             "net_financing_result": avg_num("net_financing_result"),
+            "tax_rate": avg_num("tax_rate"),
             "pe_multiple": avg_num("pe_multiple"),
         }
     return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
@@ -1093,12 +1104,12 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
             }
         )
 
-    # Add unified predicted range rows from final_dict overall outputs.
+    # Add unified representative range rows from final_dict overall outputs.
     if isinstance(final_dict, dict):
         synthetic_rows = [
-            ("predicted_revenue", "Predicted Revenue", final_dict.get("Revenue", {})),
-            ("predicted_pe", "Predicted P/E", final_dict.get("P/E", {})),
-            ("predicted_earnings", "Predicted Earnings", final_dict.get("Net Income", {})),
+            ("representative_revenue", "Representative Revenue", final_dict.get("Revenue", {})),
+            ("representative_pe", "Representative P/E", final_dict.get("P/E", {})),
+            ("representative_earnings", "Representative Earnings", final_dict.get("Net Income", {})),
         ]
         for metric_key, label, metric_payload in synthetic_rows:
             mean_v, min_v, max_v = _extract_overall_triplet(metric_payload if isinstance(metric_payload, dict) else {})
@@ -1185,6 +1196,7 @@ def build_dashboard_payload(
         is_foreign=bool(currency_context.get("display_currency")) and str(currency_context.get("display_currency")).upper() != "USD",
     )
     method_order = [
+        "Scenario DCF",
         "DCF",
         "Net Income & P/E",
         "Revenue & EV/S",

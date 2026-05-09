@@ -4,13 +4,14 @@ Guidance for Claude Code working in this repo.
 
 ## What this is
 
-AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Three surfaces share the same core:
+AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Four surfaces share the same core:
 
 - **CLI** (`run.py`) — run valuation for one ticker, write artifacts to `outputs/<TICKER>/`.
 - **Telegram bot** (`bot/telegram_bot.py`) — thin wrapper around the valuation service with Stars billing.
-- **Next.js dashboard** (`frontend/`) — "Hedge in a Box", reads `outputs/**/<TICKER>_dashboard.json` and renders the analysis.
+- **Next.js dashboard** (`frontend/`) — "Hedge in a Box", customer-facing site at `hedge-in-a-box.com`. Reads `outputs/**/<TICKER>_dashboard.json` and renders the analysis.
+- **Observability app** (`frontend-obs/`) — internal-only admin app at `observability.hedge-in-a-box.com`. Reads `obs_runs` / `obs_calls` from the obs Neon DB and renders the LLM call DAG. DB-backed admin allowlist (`obs_admins` table) editable from `/users` — no env-var allowlist.
 
-Deployment target is Fly.io (two apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-site`).
+Deployment target is Fly.io (three apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-site`, `hedge-in-a-box-obs`).
 
 ## Layout
 
@@ -23,10 +24,11 @@ Deployment target is Fly.io (two apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-
   - [service.py](src/ai_hedge/service.py) — service layer used by the bot.
   - [cli.py](src/ai_hedge/cli.py) — argparse wrapper.
 - [bot/](bot/) — Telegram bot: `telegram_bot.py` (entry), `handlers.py`, `jobs.py`, `worker.py`, `billing.py`.
-- [frontend/](frontend/) — Next.js 16 + React 19 + Tailwind 4 app.
+- [frontend/](frontend/) — Next.js 16 + React 19 + Tailwind 4 app (public site).
+- [frontend-obs/](frontend-obs/) — Next.js 16 observability admin app. Independent NextAuth (Google), DB-backed admin allowlist via `obs_admins`. No persistent volume — reads from Neon only.
 - [outputs/](outputs/) — run artifacts per ticker (gitignored).
 - [logs/](logs/) — bot logs (gitignored).
-- [Dockerfile](Dockerfile) / [Dockerfile.site](Dockerfile.site) — Fly images (bot / site). Not needed for local dev.
+- [Dockerfile](Dockerfile) / [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) — Fly images (bot / site / obs). Not needed for local dev.
 
 ## Required env
 
@@ -51,6 +53,13 @@ cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
+Observability app:
+```powershell
+cd frontend-obs
+npm run dev -- --hostname 127.0.0.1 --port 3001
+```
+Local dev bypasses auth on `localhost`/`127.0.0.1` (gated by `AUTH_BYPASS_LOCAL`). For full sign-in testing, set `AUTH_BYPASS_LOCAL=0` and ensure `http://localhost:3001/api/auth/callback/google` is on the Google OAuth client's redirect URIs.
+
 Bot:
 ```powershell
 py bot/telegram_bot.py
@@ -60,9 +69,19 @@ Outputs land in `outputs/<TICKER>/` (CLI) or `outputs/<job_id>/` (bot).
 
 ## Deploy
 
-Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, or unified `deploy_fly.ps1 {site|bot|status-*|logs-*}`. GitHub Actions at [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml) auto-deploys both apps on push to `main`/`master` (needs `FLY_API_TOKEN` secret).
+Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, `deploy-obs.ps1`, or unified `deploy_fly.ps1 {site|bot|obs|status-*|logs-*}`. GitHub Actions at [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml) auto-deploys site and obs on push to `main`/`master` (needs `FLY_API_TOKEN` secret). The obs job no-ops gracefully until `flyctl apps create hedge-in-a-box-obs` has been run once.
 
-**Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). Machines auto-stop when idle. The app + volume are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes preview apps older than 14 days.
+**Observability app first-time setup** (one-shot, manual):
+1. `flyctl apps create hedge-in-a-box-obs --org <org>`
+2. `flyctl secrets set -a hedge-in-a-box-obs AUTH_SECRET=<new> AUTH_GOOGLE_ID=<existing> AUTH_GOOGLE_SECRET=<existing> OBS_DATABASE_URL=<existing> AUTH_URL=https://observability.hedge-in-a-box.com`
+3. Add `https://observability.hedge-in-a-box.com/api/auth/callback/google` (and `http://localhost:3001/api/auth/callback/google` for dev) to the existing Google OAuth client's authorized redirect URIs.
+4. `flyctl certs add observability.hedge-in-a-box.com -a hedge-in-a-box-obs`
+5. Add CNAME at DNS provider: `observability.hedge-in-a-box.com → hedge-in-a-box-obs.fly.dev`. Cert auto-issues.
+6. Apply [src/ai_hedge/db/migrations/003_obs_admins.sql](src/ai_hedge/db/migrations/003_obs_admins.sql) against `OBS_DATABASE_URL` (replace TBD seed emails first).
+
+**Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). Machines auto-stop when idle. The app + volume are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes both site and obs preview apps older than 14 days.
+
+**Per-PR obs previews.** [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml) creates `pr-<N>-hedge-in-a-box-obs.fly.dev` for any PR that touches `frontend-obs/**`, `Dockerfile.obs`, or `fly.obs.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets admin access, so don't share it externally. The preview reads from the same `OBS_DATABASE_URL` as prod (read-only views). No persistent volume; machines auto-stop when idle; app destroyed on PR close.
 
 ## Workflow (PR-first, no direct pushes to main)
 
@@ -78,6 +97,8 @@ The flow:
 6. Merge via squash (keeps `main` history linear). Closing the PR tears down the preview.
 
 **Backend-only PRs** (Python under [src/](src/), [bot/](bot/)) do not get a preview environment. Verify locally — `python run.py --ticker AAPL` for valuation changes, `py bot/telegram_bot.py` against a staging Telegram bot for bot changes. State this in the PR's "Test plan" so the reviewer knows what coverage to expect.
+
+**Obs PRs** (changes under [frontend-obs/](frontend-obs/), [Dockerfile.obs](Dockerfile.obs), [fly.obs.toml](fly.obs.toml)) get a per-PR preview at `pr-<N>-hedge-in-a-box-obs.fly.dev` via [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml). **Auth is bypassed on previews** — the URL is admin-equivalent for anyone who has it, so don't paste it into public channels. **Verify the change on the preview** before requesting review. **Merging to `main` deploys directly to `observability.hedge-in-a-box.com` via the `deploy-obs` job in [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml).** Treat it like the public site's deploy — small, focused PRs only.
 
 **Branch hygiene — start every task from a clean `main`.** Before making any code change, check the current branch (`git branch --show-current`) and working-tree state (`git status`). If you're sitting on a feature branch from a prior task, do **not** pile the new work onto it — that branch belongs to a different PR and mixing changes will pollute its diff. Always `git checkout main && git pull` and branch off fresh, unless the user explicitly asks you to amend or extend a specific existing PR.
 

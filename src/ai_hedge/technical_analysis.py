@@ -295,7 +295,7 @@ Additional requirements:
 - Estimate bullish and bearish probabilities based on the strength of signals.
 - Probabilities must sum to 1.0 (or 100%).
 - Base probabilities on trend, momentum, volume, and multi-timeframe alignment.
-- Do not guess randomly — justify internally from the data.
+- Do not guess randomly - justify internally from the data.
 - If probabilities are close (difference < 0.1), set final_decision to "neutral".
 
 Return this exact JSON structure:

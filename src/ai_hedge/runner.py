@@ -357,11 +357,11 @@ def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Opt
     return float(mean_v), float(min_v), float(max_v)
 
 
-def _build_assumptions_pack_text(final_dict: Dict[str, Any]) -> str:
+def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Optional[Dict[str, Any]] = None) -> str:
     specs = [
-        ("Predicted Revenue", "Revenue"),
-        ("Predicted Earnings", "Net Income"),
-        ("Predicted P/E", "P/E"),
+        ("Representative Revenue", "Revenue"),
+        ("Representative Earnings", "Net Income"),
+        ("Representative P/E", "P/E"),
     ]
     lines: List[str] = []
     for label, key in specs:
@@ -373,6 +373,95 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any]) -> str:
             f"- {label} (Mean/Min/Max): "
             f"{_fmt_number(mean_v)} / {_fmt_number(min_v)} / {_fmt_number(max_v)}"
         )
+
+    methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
+    scenario_items = methods.get("Scenario DCF", []) if isinstance(methods, dict) else []
+    dcf_items = methods.get("DCF", []) if isinstance(methods, dict) else []
+    dcf_assumption_items: List[Dict[str, Any]] = []
+    if isinstance(scenario_items, list):
+        dcf_assumption_items.extend(item for item in scenario_items if isinstance(item, dict))
+    if isinstance(dcf_items, list):
+        dcf_assumption_items.extend(item for item in dcf_items if isinstance(item, dict))
+
+    if dcf_assumption_items:
+        weighted_fcf_vals: List[float] = []
+        weighted_g_vals: List[float] = []
+        weighted_wacc_vals: List[float] = []
+        weighted_terminal_vals: List[float] = []
+        bull_prob_vals: List[float] = []
+        base_prob_vals: List[float] = []
+        bear_prob_vals: List[float] = []
+
+        def _parse_raw(item: Dict[str, Any]) -> Dict[str, Any]:
+            raw = item.get("raw_json", {})
+            if isinstance(raw, dict) and raw:
+                return raw
+            txt = str(item.get("raw_json_text", "") or "").strip()
+            if txt.startswith("{") and txt.endswith("}"):
+                try:
+                    parsed = json.loads(txt)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    return {}
+            return {}
+
+        def _mid(v: Any) -> Optional[float]:
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                a = _first_float(v[0])
+                b = _first_float(v[1])
+                if a is not None and b is not None:
+                    return (float(a) + float(b)) / 2.0
+            n = _first_float(v)
+            return float(n) if n is not None else None
+
+        for item in dcf_assumption_items:
+            raw = _parse_raw(item)
+            if not raw:
+                continue
+
+            fcf_mid = _mid(raw.get("fcf_next_year"))
+            g_mid = _mid(raw.get("g"))
+            wacc_mid = _mid(raw.get("WACC"))
+            terminal_mid = _mid(raw.get("TERMINAL"))
+            if fcf_mid is not None:
+                weighted_fcf_vals.append(fcf_mid)
+            if g_mid is not None:
+                weighted_g_vals.append(g_mid)
+            if wacc_mid is not None:
+                weighted_wacc_vals.append(wacc_mid)
+            if terminal_mid is not None:
+                weighted_terminal_vals.append(terminal_mid)
+
+            # Scenario DCF contributes probability fields; intrinsic DCF does not.
+            for label, bucket in [("bull", bull_prob_vals), ("base", base_prob_vals), ("bear", bear_prob_vals)]:
+                arr = raw.get(label)
+                if isinstance(arr, (list, tuple)) and len(arr) >= 1:
+                    p = _first_float(arr[0])
+                    if p is not None:
+                        bucket.append(float(p))
+
+        def _avg(vals: List[float]) -> Optional[float]:
+            if not vals:
+                return None
+            return float(sum(vals) / len(vals))
+
+        scenario_lines = [
+            ("Bull Probability", _avg(bull_prob_vals), "pct"),
+            ("Base Probability", _avg(base_prob_vals), "pct"),
+            ("Bear Probability", _avg(bear_prob_vals), "pct"),
+            ("Growth Rate (G) [DCF + Scenario DCF]", _avg(weighted_g_vals), "pct"),
+            ("Representative FCF [DCF + Scenario DCF]", _avg(weighted_fcf_vals), "num"),
+            ("Terminal Value Growth [DCF + Scenario DCF]", _avg(weighted_terminal_vals), "pct"),
+            ("WACC [DCF + Scenario DCF]", _avg(weighted_wacc_vals), "pct"),
+        ]
+        for label, value, kind in scenario_lines:
+            if value is None:
+                continue
+            if kind == "pct":
+                lines.append(f"- {label}: {_fmt_pct(value)}")
+            else:
+                lines.append(f"- {label}: {_fmt_number(value)}")
     return "\n".join(lines).strip()
 
 
@@ -535,7 +624,10 @@ def _build_prices_explain_text(
         ]
     )
 
-    assumptions_pack = _build_assumptions_pack_text(final_dict if isinstance(final_dict, dict) else {})
+    assumptions_pack = _build_assumptions_pack_text(
+        final_dict if isinstance(final_dict, dict) else {},
+        explain_payload if isinstance(explain_payload, dict) else {},
+    )
     if assumptions_pack:
         lines.extend(
             [
@@ -613,7 +705,7 @@ def run_ticker_valuation(
     progress_file: Optional[str] = None,
     run_source: str = "site",
 ) -> Dict[str, object]:
-    """Public entry — bookends the implementation with obs lifecycle."""
+    """Public entry - bookends the implementation with obs lifecycle."""
     from . import obs as _obs
 
     _obs.install()

@@ -46,13 +46,18 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   bull_net_income: "Bull Net Income",
   base_net_income: "Base Net Income",
   bear_net_income: "Bear Net Income",
+  bull_probability: "Bull Probability",
+  base_probability: "Base Probability",
+  bear_probability: "Bear Probability",
   revenue_growth_3y_avg: "Revenue Growth (3Y Avg)",
   operating_margin: "EBIT Margin",
   net_financing_result: "Net Financing Result",
+  tax_rate: "Tax Rate",
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
   "Intrinsic DCF": "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
+  "Scenario DCF": "Scenario DCF runs a full Bull/Base/Bear discounted-cash-flow map with explicit probabilities for each path. Instead of one fragile set of assumptions, it blends three coherent operating realities into one weighted intrinsic value.",
   "Earnings Multiple": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
   "Revenue Multiple": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
   "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",
@@ -75,9 +80,9 @@ const MONEY_METRIC_KEYS = new Set([
 ]);
 
 const ASSUMPTION_MONEY_LABELS = new Set([
-  "predicted revenue",
-  "predicted earnings",
-  "predicted fcf (next year)",
+  "representative revenue",
+  "representative earnings",
+  "representative fcf",
 ]);
 
 export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
@@ -911,12 +916,12 @@ export function HedgeDashboard({
       }
     > = {
       predicted_ev_sales: {
-        label: "Predicted EV/Sales",
+        label: "Representative EV/Sales",
         metric_key: "predicted_ev_sales",
         items: [],
       },
       predicted_fcf_next_year: {
-        label: "Predicted FCF (Next Year)",
+        label: "Representative FCF",
         metric_key: "predicted_fcf_next_year",
         items: [],
       },
@@ -996,6 +1001,16 @@ export function HedgeDashboard({
           ? "Bear Probability"
           : normalized === "bull 0"
           ? "Bull Probability"
+          : normalized === "predicted revenue"
+          ? "Representative Revenue"
+          : normalized === "predicted ev sales"
+          ? "Representative EV/Sales"
+          : normalized === "predicted earnings"
+          ? "Representative Earnings"
+          : normalized === "predicted p e"
+          ? "Representative P/E"
+          : normalized === "predicted fcf next year"
+          ? "Representative FCF"
           : baseLabel;
 
       rows.push({ ...row, label: renamedLabel });
@@ -1040,14 +1055,14 @@ export function HedgeDashboard({
       "Bear Probability",
       "",
       "Growth Rate (G)",
-      "Predicted FCF (Next Year)",
+      "Representative FCF",
       "Terminal Value Growth",
       "WACC",
       "",
-      "Predicted Revenue",
-      "Predicted EV/Sales",
-      "Predicted Earnings",
-      "Predicted P/E",
+      "Representative Revenue",
+      "Representative EV/Sales",
+      "Representative Earnings",
+      "Representative P/E",
     ];
     return orderedLabels.map((label, idx) => {
       if (!label) {

@@ -121,10 +121,6 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   const hide = () => setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
 
   useEffect(() => {
-    setChartReady(false);
-  }, [chartData.length]);
-
-  useEffect(() => {
     const node = wrapRef.current;
     if (!node) return;
     const update = () => {
@@ -136,7 +132,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     const observer = new ResizeObserver(update);
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [chartData.length]);
 
   const handleMouseMove = (state: unknown) => {
     const hoverState: ChartHoverState | undefined =

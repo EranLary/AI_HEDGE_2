@@ -4,7 +4,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { fetchLatestReport } from "@/lib/reports-db";
-import { findLatestByFileName } from "@/lib/server-outputs";
+import { findLatestByFileName, resolveDashboardReportPath } from "@/lib/server-outputs";
 
 const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = {
   "analysis-pdf": { fileName: "{TICKER}_analysis.pdf", contentType: "application/pdf" },
@@ -15,8 +15,38 @@ const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = 
   "prices-chart": { fileName: "{TICKER}_prices_valuation.png", contentType: "image/png" },
 };
 
+function findInTree(rootDir: string, fileName: string): string | null {
+  const target = fileName.toUpperCase();
+  const stack: string[] = [rootDir];
+
+  while (stack.length) {
+    const dir = String(stack.pop() || "");
+    if (!dir) continue;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (entry.name.toUpperCase() === target) {
+        return full;
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ ticker: string; kind: string }> },
 ) {
   const params = await context.params;
@@ -46,7 +76,30 @@ export async function GET(
 
   const spec = KIND_TO_FILE[kind];
   const fileName = spec.fileName.replace("{TICKER}", ticker);
-  const found = findLatestByFileName(fileName);
+  const url = new URL(request.url);
+  const reportId = String(url.searchParams.get("report_id") || "").trim();
+
+  let foundPath = "";
+  if (reportId) {
+    const reportPath = resolveDashboardReportPath(reportId);
+    if (reportPath) {
+      const candidate = path.resolve(path.dirname(reportPath), fileName);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        foundPath = candidate;
+      } else {
+        foundPath = findInTree(path.dirname(reportPath), fileName) || "";
+      }
+    }
+
+    if (!foundPath) {
+      return NextResponse.json(
+        { error: `${fileName} was not found for report_id=${reportId}.` },
+        { status: 404 },
+      );
+    }
+  }
+
+  const found = foundPath ? { path: foundPath } : findLatestByFileName(fileName);
   if (!found) {
     return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
   }

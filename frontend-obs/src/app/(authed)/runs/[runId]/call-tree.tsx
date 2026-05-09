@@ -3,13 +3,13 @@
 import Link from "next/link";
 
 import { StatusPill } from "@/components/status-pill";
-import type { ObsCallRow } from "@/lib/obs-db";
+import type { ObsCallSummaryRow } from "@/lib/obs-db";
 import { formatCost, formatLatency, formatTokens } from "@/lib/obs-format";
 import { callLabel, callTitle } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 export type TreeNode = {
-  call: ObsCallRow;
+  call: ObsCallSummaryRow;
   children: TreeNode[];
 };
 
@@ -53,7 +53,7 @@ function CallRow({
   active,
 }: {
   runId: string;
-  call: ObsCallRow;
+  call: ObsCallSummaryRow;
   active: boolean;
 }) {
   const color = stageColor(call.stage);
@@ -116,7 +116,7 @@ function CallRow({
   );
 }
 
-export function buildTree(calls: ObsCallRow[]): TreeNode[] {
+export function buildTree(calls: ObsCallSummaryRow[]): TreeNode[] {
   const ids = new Set(calls.map((c) => c.id));
   const map = new Map<string, TreeNode>();
   for (const c of calls) map.set(c.id, { call: c, children: [] });

@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 
 import { auth } from "@/auth";
-import { isAdmin } from "@/lib/admin-db";
 
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -49,6 +48,6 @@ export async function requireAdmin(): Promise<{ email: string }> {
   const session = await auth();
   const email = (session?.user?.email || "").toLowerCase();
   if (!email) throw new AdminForbiddenError("");
-  if (!(await isAdmin(email))) throw new AdminForbiddenError(email);
+  if (!session?.user?.isAdmin) throw new AdminForbiddenError(email);
   return { email };
 }

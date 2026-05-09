@@ -1,4 +1,12 @@
+import { unstable_cache } from "next/cache";
 import { neon, NeonQueryFunction } from "@neondatabase/serverless";
+
+// Short TTL on dashboard / runs-list aggregations: invisible to admins,
+// but turns repeat dashboard hits from "5 sequential Neon HTTP fetches"
+// into "served from the data cache". Revalidate via tag if a fresh-now
+// button is ever needed.
+const OBS_CACHE_TTL_S = 30;
+const OBS_CACHE_TAGS = ["obs-data"];
 
 let cached: NeonQueryFunction<false, false> | null = null;
 
@@ -63,7 +71,13 @@ export type ObsCallRow = {
   ended_at: string;
 };
 
-export async function listRecentRuns(limit = 50): Promise<ObsRunRow[]> {
+// Slim row for list/DAG/hierarchy views: drops `response` and `reasoning`
+// entirely (often multi-KB each) and ships only a 4 KB prefix of `prompt`
+// (callTitle/derivePromptTitle/classifyPrompt all read at most ~4 KB).
+// Full bodies are fetched on-demand via getCall() when a call panel opens.
+export type ObsCallSummaryRow = Omit<ObsCallRow, "response" | "reasoning">;
+
+async function _listRecentRuns(limit: number): Promise<ObsRunRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -76,6 +90,16 @@ export async function listRecentRuns(limit = 50): Promise<ObsRunRow[]> {
      LIMIT ${limit}
   `) as unknown as ObsRunRow[];
   return rows;
+}
+
+const _listRecentRunsCached = unstable_cache(
+  _listRecentRuns,
+  ["obs-list-recent-runs"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function listRecentRuns(limit = 50): Promise<ObsRunRow[]> {
+  return _listRecentRunsCached(limit);
 }
 
 export async function getRun(runId: string): Promise<ObsRunRow | null> {
@@ -92,14 +116,14 @@ export async function getRun(runId: string): Promise<ObsRunRow | null> {
   return rows[0] ?? null;
 }
 
-export async function listCallsForRun(runId: string): Promise<ObsCallRow[]> {
+export async function listCallsForRun(runId: string): Promise<ObsCallSummaryRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
     SELECT id::text, run_id::text, parent_id::text, sequence,
            stage, persona, call_site,
            model_requested, model_actual, temperature::text AS temperature,
-           prompt, response, reasoning,
+           substr(prompt, 1, 4000) AS prompt,
            tokens_in, tokens_out, tokens_total,
            cost_usd::text AS cost_usd,
            latency_ms, retries, status, error_class, error_message,
@@ -107,7 +131,7 @@ export async function listCallsForRun(runId: string): Promise<ObsCallRow[]> {
       FROM obs_calls
      WHERE run_id = ${runId}::uuid
      ORDER BY sequence
-  `) as unknown as ObsCallRow[];
+  `) as unknown as ObsCallSummaryRow[];
   return rows;
 }
 
@@ -171,7 +195,7 @@ export type SpendBreakdownRow = {
   cost_usd: string;
 };
 
-export async function getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
+async function _getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -191,7 +215,17 @@ export async function getSpendBreakdown(days: number): Promise<SpendBreakdownRow
   return rows;
 }
 
-export async function getDashboardSummary(days: number): Promise<DashboardSummary> {
+const _getSpendBreakdownCached = unstable_cache(
+  _getSpendBreakdown,
+  ["obs-spend-breakdown"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
+  return _getSpendBreakdownCached(days);
+}
+
+async function _getDashboardSummary(days: number): Promise<DashboardSummary> {
   const sql = getObsSql();
   const empty: DashboardSummary = {
     run_count: 0,
@@ -220,7 +254,17 @@ export async function getDashboardSummary(days: number): Promise<DashboardSummar
   return rows[0] ?? empty;
 }
 
-export async function getStageBreakdown(days: number): Promise<StageBreakdownRow[]> {
+const _getDashboardSummaryCached = unstable_cache(
+  _getDashboardSummary,
+  ["obs-dashboard-summary"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getDashboardSummary(days: number): Promise<DashboardSummary> {
+  return _getDashboardSummaryCached(days);
+}
+
+async function _getStageBreakdown(days: number): Promise<StageBreakdownRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -241,7 +285,17 @@ export async function getStageBreakdown(days: number): Promise<StageBreakdownRow
   return rows;
 }
 
-export async function getModelBreakdown(days: number): Promise<ModelBreakdownRow[]> {
+const _getStageBreakdownCached = unstable_cache(
+  _getStageBreakdown,
+  ["obs-stage-breakdown"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getStageBreakdown(days: number): Promise<StageBreakdownRow[]> {
+  return _getStageBreakdownCached(days);
+}
+
+async function _getModelBreakdown(days: number): Promise<ModelBreakdownRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -260,7 +314,17 @@ export async function getModelBreakdown(days: number): Promise<ModelBreakdownRow
   return rows;
 }
 
-export async function getDailySeries(days: number): Promise<DailySeriesRow[]> {
+const _getModelBreakdownCached = unstable_cache(
+  _getModelBreakdown,
+  ["obs-model-breakdown"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getModelBreakdown(days: number): Promise<ModelBreakdownRow[]> {
+  return _getModelBreakdownCached(days);
+}
+
+async function _getDailySeries(days: number): Promise<DailySeriesRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -276,14 +340,24 @@ export async function getDailySeries(days: number): Promise<DailySeriesRow[]> {
   return rows;
 }
 
-export async function listChildCalls(parentId: string): Promise<ObsCallRow[]> {
+const _getDailySeriesCached = unstable_cache(
+  _getDailySeries,
+  ["obs-daily-series"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getDailySeries(days: number): Promise<DailySeriesRow[]> {
+  return _getDailySeriesCached(days);
+}
+
+export async function listChildCalls(parentId: string): Promise<ObsCallSummaryRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
     SELECT id::text, run_id::text, parent_id::text, sequence,
            stage, persona, call_site,
            model_requested, model_actual, temperature::text AS temperature,
-           prompt, response, reasoning,
+           substr(prompt, 1, 4000) AS prompt,
            tokens_in, tokens_out, tokens_total,
            cost_usd::text AS cost_usd,
            latency_ms, retries, status, error_class, error_message,
@@ -291,6 +365,6 @@ export async function listChildCalls(parentId: string): Promise<ObsCallRow[]> {
       FROM obs_calls
      WHERE parent_id = ${parentId}::uuid
      ORDER BY sequence
-  `) as unknown as ObsCallRow[];
+  `) as unknown as ObsCallSummaryRow[];
   return rows;
 }

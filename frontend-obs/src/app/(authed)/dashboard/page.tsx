@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 
 import { SpendTreemap } from "@/components/spend-treemap";
@@ -50,59 +51,117 @@ export default async function DashboardPage({
     );
   }
 
-  const [summary, stages, models, daily, spend] = await Promise.all([
-    getDashboardSummary(days),
-    getStageBreakdown(days),
-    getModelBreakdown(days),
-    getDailySeries(days),
-    getSpendBreakdown(days),
-  ]);
-
-  const successRate =
-    summary.run_count > 0 ? (summary.success_count / summary.run_count) * 100 : 0;
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: 24, marginBottom: 2 }}>Dashboard</h1>
-          <div style={{ opacity: 0.6, fontSize: 13 }}>
-            Pipeline activity over the last {days} days
-          </div>
-        </div>
-        <div className="range-tabs">
-          {ALLOWED_DAYS.map((d) => (
-            <Link
-              key={d}
-              href={`/dashboard?days=${d}`}
-              className={d === days ? "is-active" : ""}
-              prefetch={false}
-            >
-              {d}d
-            </Link>
-          ))}
-        </div>
-      </div>
+      <DashboardHeader days={days} />
 
-      <SummaryTiles summary={summary} successRate={successRate} />
+      <Suspense key={`tiles-${days}`} fallback={<TilesSkeleton />}>
+        <SummaryTilesAsync days={days} />
+      </Suspense>
 
-      <DailyActivityCard rows={daily} days={days} />
+      <Suspense key={`daily-${days}`} fallback={<CardSkeleton height={120} />}>
+        <DailyActivityAsync days={days} />
+      </Suspense>
 
-      <SpendTreemap rows={spend} />
+      <Suspense key={`spend-${days}`} fallback={<CardSkeleton height={220} />}>
+        <SpendAsync days={days} />
+      </Suspense>
 
-      <StageTable rows={stages} />
+      <Suspense key={`stage-${days}`} fallback={<CardSkeleton height={180} />}>
+        <StageTableAsync days={days} />
+      </Suspense>
 
-      <ModelTable rows={models} />
+      <Suspense key={`model-${days}`} fallback={<CardSkeleton height={140} />}>
+        <ModelTableAsync days={days} />
+      </Suspense>
     </div>
   );
+}
+
+function DashboardHeader({ days }: { days: number }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: 12,
+      }}
+    >
+      <div>
+        <h1 style={{ fontSize: 24, marginBottom: 2 }}>Dashboard</h1>
+        <div style={{ opacity: 0.6, fontSize: 13 }}>
+          Pipeline activity over the last {days} days
+        </div>
+      </div>
+      <div className="range-tabs">
+        {ALLOWED_DAYS.map((d) => (
+          <Link
+            key={d}
+            href={`/dashboard?days=${d}`}
+            className={d === days ? "is-active" : ""}
+            prefetch={false}
+          >
+            {d}d
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CardSkeleton({ height }: { height: number }) {
+  return (
+    <div
+      className="card"
+      style={{ padding: 16, height, display: "flex", alignItems: "center", justifyContent: "center" }}
+      aria-busy="true"
+    >
+      <div style={{ opacity: 0.45, fontSize: 12 }}>Loading…</div>
+    </div>
+  );
+}
+
+function TilesSkeleton() {
+  return (
+    <div className="tiles" aria-busy="true">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="tile" style={{ opacity: 0.5 }}>
+          <div className="tile__label">&nbsp;</div>
+          <div className="tile__value" style={{ opacity: 0.4 }}>—</div>
+          <div className="tile__hint">&nbsp;</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+async function SummaryTilesAsync({ days }: { days: number }) {
+  const summary = await getDashboardSummary(days);
+  const successRate =
+    summary.run_count > 0 ? (summary.success_count / summary.run_count) * 100 : 0;
+  return <SummaryTiles summary={summary} successRate={successRate} />;
+}
+
+async function DailyActivityAsync({ days }: { days: number }) {
+  const daily = await getDailySeries(days);
+  return <DailyActivityCard rows={daily} days={days} />;
+}
+
+async function SpendAsync({ days }: { days: number }) {
+  const spend = await getSpendBreakdown(days);
+  return <SpendTreemap rows={spend} />;
+}
+
+async function StageTableAsync({ days }: { days: number }) {
+  const stages = await getStageBreakdown(days);
+  return <StageTable rows={stages} />;
+}
+
+async function ModelTableAsync({ days }: { days: number }) {
+  const models = await getModelBreakdown(days);
+  return <ModelTable rows={models} />;
 }
 
 function SummaryTiles({

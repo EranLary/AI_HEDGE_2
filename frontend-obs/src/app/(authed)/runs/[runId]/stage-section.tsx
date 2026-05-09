@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { ObsCallRow } from "@/lib/obs-db";
+import type { ObsCallSummaryRow } from "@/lib/obs-db";
 import { formatCost, formatTokens } from "@/lib/obs-format";
 import { stageDisplayName } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
@@ -11,7 +11,7 @@ import { buildTree, CallTree } from "./call-tree";
 
 export type StageGroup = {
   stage: string;
-  calls: ObsCallRow[];
+  calls: ObsCallSummaryRow[];
   totalTokens: number;
   totalCost: number;
   hasError: boolean;

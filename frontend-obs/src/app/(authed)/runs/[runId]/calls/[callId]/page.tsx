@@ -7,7 +7,7 @@ import {
   getCall,
   getRun,
   listChildCalls,
-  type ObsCallRow,
+  type ObsCallSummaryRow,
 } from "@/lib/obs-db";
 import {
   formatCost,
@@ -170,8 +170,8 @@ function CallContext({
   backView,
 }: {
   runId: string;
-  parent: ObsCallRow | null;
-  children: ObsCallRow[];
+  parent: ObsCallSummaryRow | null;
+  children: ObsCallSummaryRow[];
   backView: "flow" | "hierarchy";
 }) {
   if (!parent && children.length === 0) return null;
@@ -207,7 +207,7 @@ function CallContext({
   );
 }
 
-function CallSummary({ call }: { call: ObsCallRow }) {
+function CallSummary({ call }: { call: ObsCallSummaryRow }) {
   const color = stageColor(call.stage);
   const title = callTitle(call);
   return (

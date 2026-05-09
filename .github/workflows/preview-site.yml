@@ -25,6 +25,8 @@ env:
   PROD_VOLUME_NAME: site_data_fra
   FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
   PREVIEW_APP: pr-${{ github.event.pull_request.number }}-hedge-in-a-box-site
+  NEON_BRANCH_NAME: pr-${{ github.event.pull_request.number }}
+  NEON_PARENT_BRANCH: main
 
 jobs:
   deploy:
@@ -123,12 +125,44 @@ jobs:
             --size "$prod_size" \
             --yes
 
+      - name: Create or reuse Neon branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID_SITE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "::error::NEON_API_KEY and NEON_PROJECT_ID_SITE must be set."
+            exit 1
+          fi
+
+          npm install -g neonctl@latest >/dev/null
+
+          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json \
+             | jq -e --arg n "$NEON_BRANCH_NAME" '.[] | select(.name==$n)' >/dev/null; then
+            echo "Reusing existing Neon branch $NEON_BRANCH_NAME"
+          else
+            echo "Creating Neon branch $NEON_BRANCH_NAME off $NEON_PARENT_BRANCH"
+            neonctl branches create \
+              --project-id "$NEON_PROJECT_ID" \
+              --name "$NEON_BRANCH_NAME" \
+              --parent "$NEON_PARENT_BRANCH" \
+              >/dev/null 2>&1
+          fi
+
+          POOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --pooled)
+          UNPOOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID")
+          echo "::add-mask::$POOLED"
+          echo "::add-mask::$UNPOOLED"
+          echo "PR_DATABASE_URL=$POOLED" >> "$GITHUB_ENV"
+          echo "PR_DATABASE_URL_UNPOOLED=$UNPOOLED" >> "$GITHUB_ENV"
+
       - name: Stage preview secrets
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          DATABASE_URL: ${{ env.PR_DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ env.PR_DATABASE_URL_UNPOOLED }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID }}
           AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET }}
@@ -140,12 +174,14 @@ jobs:
             args+=("DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY")
           fi
           if [ -z "$DATABASE_URL" ]; then
-            echo "::warning::DATABASE_URL secret not set - preview will fall back to unpooled."
+            echo "::error::PR_DATABASE_URL not produced by Neon branch step."
+            exit 1
           else
             args+=("DATABASE_URL=$DATABASE_URL")
           fi
           if [ -z "$DATABASE_URL_UNPOOLED" ]; then
-            echo "::warning::DATABASE_URL_UNPOOLED secret not set - preview will run without DB."
+            echo "::error::PR_DATABASE_URL_UNPOOLED not produced by Neon branch step."
+            exit 1
           else
             args+=("DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED")
           fi
@@ -217,8 +253,9 @@ jobs:
             **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
 
             - Volume forked from prod on PR open; staleness accepted until close.
+            - DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
             - Machine auto-stops when idle, auto-starts on request.
-            - Tear-down runs automatically when this PR is closed.
+            - Tear-down (Fly app + volume + Neon branch) runs automatically when this PR is closed.
 
   teardown:
     if: github.event.action == 'closed'
@@ -248,6 +285,25 @@ jobs:
             flyctl apps destroy "${{ env.PREVIEW_APP }}" --yes
           else
             echo "App ${{ env.PREVIEW_APP }} already gone — nothing to destroy."
+          fi
+
+      - name: Delete Neon branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID_SITE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "Neon credentials missing — skipping branch delete."
+            exit 0
+          fi
+          npm install -g neonctl@latest >/dev/null
+          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json \
+             | jq -e --arg n "$NEON_BRANCH_NAME" '.[] | select(.name==$n)' >/dev/null; then
+            echo "Deleting Neon branch $NEON_BRANCH_NAME"
+            neonctl branches delete "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" >/dev/null
+          else
+            echo "Neon branch $NEON_BRANCH_NAME already gone — nothing to delete."
           fi
 
       - name: Update sticky comment

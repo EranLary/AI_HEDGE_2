@@ -15,6 +15,10 @@ export type DashboardReportEntry = {
   mtimeMs: number;
 };
 
+type SiteRunStatusPayload = {
+  status?: string;
+};
+
 export function outputsRoot(): string {
   const direct = path.resolve(process.cwd(), "outputs");
   const parent = path.resolve(process.cwd(), "..", "outputs");
@@ -35,6 +39,21 @@ export function outputsRoot(): string {
 function safeStat(filePath: string): fs.Stats | null {
   try {
     return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function readSiteRunStatus(runId: string): string | null {
+  const cleanRunId = String(runId || "").trim();
+  if (!cleanRunId) return null;
+  const statusPath = path.resolve(outputsRoot(), "_site_runs", cleanRunId, "_status.json");
+  try {
+    if (!fs.existsSync(statusPath)) return null;
+    const raw = fs.readFileSync(statusPath, "utf-8");
+    const parsed = JSON.parse(raw) as SiteRunStatusPayload;
+    const status = String(parsed?.status || "").trim().toLowerCase();
+    return status || null;
   } catch {
     return null;
   }
@@ -159,12 +178,19 @@ export function listDashboardReports(): DashboardReportEntry[] {
       const score = (isNestedTickerArtifact ? 10 : 0) + (isSiteRun ? 2 : 0);
 
       let dedupeKey = `file:${rel}`;
+      let siteRunId = "";
       const parts = rel.split("/").filter(Boolean);
       const siteRunsIdx = parts.findIndex((p) => p.toLowerCase() === "_site_runs");
       if (siteRunsIdx >= 0 && siteRunsIdx + 1 < parts.length) {
-        const runId = String(parts[siteRunsIdx + 1] || "").trim();
-        if (runId) {
-          dedupeKey = `site:${runId}:${ticker}`;
+        siteRunId = String(parts[siteRunsIdx + 1] || "").trim();
+        if (siteRunId) {
+          dedupeKey = `site:${siteRunId}:${ticker}`;
+        }
+      }
+      if (isSiteRun && siteRunId) {
+        const runStatus = readSiteRunStatus(siteRunId);
+        if (runStatus && runStatus !== "completed") {
+          return null;
         }
       }
 

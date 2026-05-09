@@ -116,7 +116,7 @@ export async function getRun(runId: string): Promise<ObsRunRow | null> {
   return rows[0] ?? null;
 }
 
-export async function listCallsForRun(runId: string): Promise<ObsCallSummaryRow[]> {
+async function _listCallsForRun(runId: string): Promise<ObsCallSummaryRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -135,7 +135,19 @@ export async function listCallsForRun(runId: string): Promise<ObsCallSummaryRow[
   return rows;
 }
 
-export async function getCall(callId: string): Promise<ObsCallRow | null> {
+const _listCallsForRunCached = unstable_cache(
+  _listCallsForRun,
+  ["obs-list-calls-for-run"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function listCallsForRun(
+  runId: string,
+): Promise<ObsCallSummaryRow[]> {
+  return _listCallsForRunCached(runId);
+}
+
+async function _getCall(callId: string): Promise<ObsCallRow | null> {
   const sql = getObsSql();
   if (!sql) return null;
   const rows = (await sql`
@@ -151,6 +163,16 @@ export async function getCall(callId: string): Promise<ObsCallRow | null> {
      WHERE id = ${callId}::uuid
   `) as unknown as ObsCallRow[];
   return rows[0] ?? null;
+}
+
+const _getCallCached = unstable_cache(
+  _getCall,
+  ["obs-get-call"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function getCall(callId: string): Promise<ObsCallRow | null> {
+  return _getCallCached(callId);
 }
 
 export type DashboardSummary = {
@@ -187,43 +209,6 @@ export type DailySeriesRow = {
   run_count: number;
   cost_usd: string;
 };
-
-export type SpendBreakdownRow = {
-  stage: string;
-  label: string;
-  call_count: number;
-  cost_usd: string;
-};
-
-async function _getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
-  const sql = getObsSql();
-  if (!sql) return [];
-  const rows = (await sql`
-    SELECT
-      c.stage,
-      coalesce(c.call_site, c.persona, 'unnamed') AS label,
-      count(*)::int AS call_count,
-      coalesce(sum(c.cost_usd), 0)::text AS cost_usd
-      FROM obs_calls c
-      JOIN obs_runs r ON r.id = c.run_id
-     WHERE r.started_at >= now() - (${days}::int * interval '1 day')
-       AND c.cost_usd IS NOT NULL
-     GROUP BY c.stage, coalesce(c.call_site, c.persona, 'unnamed')
-     HAVING sum(c.cost_usd) > 0
-     ORDER BY sum(c.cost_usd) DESC
-  `) as unknown as SpendBreakdownRow[];
-  return rows;
-}
-
-const _getSpendBreakdownCached = unstable_cache(
-  _getSpendBreakdown,
-  ["obs-spend-breakdown"],
-  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
-);
-
-export function getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
-  return _getSpendBreakdownCached(days);
-}
 
 async function _getDashboardSummary(days: number): Promise<DashboardSummary> {
   const sql = getObsSql();
@@ -350,7 +335,7 @@ export function getDailySeries(days: number): Promise<DailySeriesRow[]> {
   return _getDailySeriesCached(days);
 }
 
-export async function listChildCalls(parentId: string): Promise<ObsCallSummaryRow[]> {
+async function _listChildCalls(parentId: string): Promise<ObsCallSummaryRow[]> {
   const sql = getObsSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -367,4 +352,16 @@ export async function listChildCalls(parentId: string): Promise<ObsCallSummaryRo
      ORDER BY sequence
   `) as unknown as ObsCallSummaryRow[];
   return rows;
+}
+
+const _listChildCallsCached = unstable_cache(
+  _listChildCalls,
+  ["obs-list-child-calls"],
+  { revalidate: OBS_CACHE_TTL_S, tags: OBS_CACHE_TAGS },
+);
+
+export function listChildCalls(
+  parentId: string,
+): Promise<ObsCallSummaryRow[]> {
+  return _listChildCallsCached(parentId);
 }

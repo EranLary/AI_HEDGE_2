@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CallWaterfall } from "@/components/call-waterfall";
 import { CollapsibleMarkdown } from "@/components/collapsible-markdown";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -13,6 +14,7 @@ import {
   formatTokens,
 } from "@/lib/obs-format";
 import { callLabel, callTitle, stageDisplayName } from "@/lib/obs-labels";
+import { splitPrompt } from "@/lib/obs-prompt";
 import { stageColor } from "@/lib/obs-styles";
 
 export async function CallPanelContent({
@@ -108,16 +110,43 @@ export async function CallPanelContent({
 
       <PanelHierarchy runId={runId} parent={parent} children={children} />
 
-      <CollapsibleMarkdown
-        title="Prompt"
-        body={call.prompt}
-        defaultOpen={false}
-        meta={`${formatTokens(call.tokens_in)} tok in`}
-      />
+      {children.length > 0 && (
+        <CallWaterfall
+          runId={runId}
+          parent={{
+            id: call.id,
+            started_at: call.started_at,
+            ended_at: call.ended_at,
+            latency_ms: call.latency_ms,
+            stage: call.stage,
+          }}
+          children={children}
+          compact
+        />
+      )}
+
+      {(() => {
+        const { system, user } = splitPrompt(call);
+        return (
+          <>
+            <CollapsibleMarkdown
+              title="System"
+              body={system}
+              defaultOpen={false}
+            />
+            <CollapsibleMarkdown
+              title="User"
+              body={user}
+              defaultOpen={false}
+              meta={`${formatTokens(call.tokens_in)} tok in`}
+            />
+          </>
+        );
+      })()}
       <CollapsibleMarkdown
         title="Response"
         body={call.response}
-        defaultOpen
+        defaultOpen={false}
         meta={`${formatTokens(call.tokens_out)} tok out · ${formatLatency(call.latency_ms)}`}
       />
       {call.reasoning && (

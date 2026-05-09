@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CallWaterfall } from "@/components/call-waterfall";
 import { CollapsibleMarkdown } from "@/components/collapsible-markdown";
+import { ArrowLeftIcon } from "@/components/icons";
 import { StatusPill } from "@/components/status-pill";
 import {
   getCall,
@@ -15,6 +17,7 @@ import {
   formatTokens,
 } from "@/lib/obs-format";
 import { callLabel, callTitle } from "@/lib/obs-labels";
+import { splitPrompt } from "@/lib/obs-prompt";
 import { stageColor } from "@/lib/obs-styles";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +59,13 @@ export default async function CallDetailPage({
           flexWrap: "wrap",
         }}
       >
-        <Link href={backHref} className="btn-ghost">
-          ← Back to {run.ticker} run
+        <Link
+          href={backHref}
+          className="btn-ghost btn-ghost--icon"
+          title={`Back to ${run.ticker} run`}
+          aria-label={`Back to ${run.ticker} run`}
+        >
+          <ArrowLeftIcon size={15} />
         </Link>
         <span style={{ opacity: 0.4 }}>/</span>
         <span aria-hidden className="stage-dot" style={{ background: color }} />
@@ -121,16 +129,44 @@ export default async function CallDetailPage({
 
       <CallContext runId={runId} parent={parent} children={children} backView={backView} />
 
-      <CollapsibleMarkdown
-        title="Prompt"
-        body={call.prompt}
-        defaultOpen={false}
-        meta={`${formatTokens(call.tokens_in)} tok in`}
-      />
+      {children.length > 0 && (
+        <CallWaterfall
+          runId={runId}
+          parent={{
+            id: call.id,
+            started_at: call.started_at,
+            ended_at: call.ended_at,
+            latency_ms: call.latency_ms,
+            stage: call.stage,
+          }}
+          children={children}
+          linkMode="page"
+          backView={backView}
+        />
+      )}
+
+      {(() => {
+        const { system, user } = splitPrompt(call);
+        return (
+          <>
+            <CollapsibleMarkdown
+              title="System"
+              body={system}
+              defaultOpen={false}
+            />
+            <CollapsibleMarkdown
+              title="User"
+              body={user}
+              defaultOpen={false}
+              meta={`${formatTokens(call.tokens_in)} tok in`}
+            />
+          </>
+        );
+      })()}
       <CollapsibleMarkdown
         title="Response"
         body={call.response}
-        defaultOpen
+        defaultOpen={false}
         meta={`${formatTokens(call.tokens_out)} tok out · ${formatLatency(call.latency_ms)}`}
       />
       {call.reasoning && (

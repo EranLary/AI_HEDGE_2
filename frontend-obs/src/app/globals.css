@@ -484,13 +484,6 @@ html[data-theme="light"] .hib-logo-light { display: block; }
   font-weight: 600;
 }
 
-.spend-treemap {
-  height: 420px;
-  background: var(--color-muted);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
 /* Run page split: main + side panel */
 .run-layout {
   display: flex;
@@ -593,8 +586,6 @@ body::-webkit-scrollbar,
   .collapsible__header { gap: 6px; padding: 9px 10px; }
   .collapsible__title { font-size: 10px; }
   .collapsible__meta { display: none; }
-
-  .spend-treemap { height: 320px; }
 
   .call-row__preview { display: none; }
   .call-row__metrics { width: 100%; text-align: right; }

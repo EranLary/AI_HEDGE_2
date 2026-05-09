@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import { useTransition, type MouseEvent as ReactMouseEvent } from "react";
+import { useRouter } from "next/navigation";
 
 import { StatusPill } from "@/components/status-pill";
 import type { ObsCallSummaryRow } from "@/lib/obs-db";
@@ -60,13 +61,23 @@ function CallRow({
   const title = callTitle(call);
   const technical = callLabel(call);
   const showSubtitle = technical && technical !== title;
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  const onClick = (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    startTransition(() => {
+      router.push(`/runs/${runId}?call=${call.id}`, { scroll: false });
+    });
+  };
 
   return (
-    <Link
+    <a
       href={`/runs/${runId}?call=${call.id}`}
-      className={active ? "row-link is-active" : "row-link"}
-      scroll={false}
-      prefetch={false}
+      onClick={onClick}
+      className={`${active ? "row-link is-active" : "row-link"}${isPending ? " is-pending" : ""}`}
+      style={isPending ? { opacity: 0.7 } : undefined}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span aria-hidden className="stage-dot" style={{ background: color }} />
@@ -112,7 +123,7 @@ function CallRow({
           {call.persona && call.persona !== technical ? ` · ${call.persona}` : ""}
         </div>
       )}
-    </Link>
+    </a>
   );
 }
 

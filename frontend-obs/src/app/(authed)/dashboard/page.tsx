@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
 
-import { SpendTreemap } from "@/components/spend-treemap";
 import {
   type DailySeriesRow,
   type DashboardSummary,
@@ -10,7 +9,6 @@ import {
   getDailySeries,
   getDashboardSummary,
   getModelBreakdown,
-  getSpendBreakdown,
   getStageBreakdown,
   isObsDbEnabled,
 } from "@/lib/obs-db";
@@ -61,10 +59,6 @@ export default async function DashboardPage({
 
       <Suspense key={`daily-${days}`} fallback={<CardSkeleton height={120} />}>
         <DailyActivityAsync days={days} />
-      </Suspense>
-
-      <Suspense key={`spend-${days}`} fallback={<CardSkeleton height={220} />}>
-        <SpendAsync days={days} />
       </Suspense>
 
       <Suspense key={`stage-${days}`} fallback={<CardSkeleton height={180} />}>
@@ -147,11 +141,6 @@ async function SummaryTilesAsync({ days }: { days: number }) {
 async function DailyActivityAsync({ days }: { days: number }) {
   const daily = await getDailySeries(days);
   return <DailyActivityCard rows={daily} days={days} />;
-}
-
-async function SpendAsync({ days }: { days: number }) {
-  const spend = await getSpendBreakdown(days);
-  return <SpendTreemap rows={spend} />;
 }
 
 async function StageTableAsync({ days }: { days: number }) {

@@ -53,6 +53,10 @@ def insert_run(
     source_run_id: Optional[str] = None,
 ) -> Optional[str]:
     """Insert a row into obs_runs. Returns the run id (uuid str) or None on failure."""
+    # OBS_RUN_SOURCE_LABEL lets per-PR site previews tag rows on the prod obs DB
+    # (e.g. "preview-pr-123") so they are distinguishable from real cli/site/bot runs.
+    source_override = os.environ.get("OBS_RUN_SOURCE_LABEL", "").strip()
+    effective_source = source_override or source
     with _conn() as c:
         if c is None:
             return None
@@ -64,7 +68,7 @@ def insert_run(
                     VALUES (%s, %s, %s, %s, 'running', now())
                     RETURNING id::text
                     """,
-                    (ticker, user_id, source, source_run_id),
+                    (ticker, user_id, effective_source, source_run_id),
                 )
                 row = cur.fetchone()
                 return row[0] if row else None

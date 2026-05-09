@@ -1,8 +1,11 @@
 import Link from "next/link";
 
+import { ResizablePanel } from "@/components/resizable-panel";
 import { getRun, listCallsForRun } from "@/lib/obs-db";
 import { formatCost, formatDuration, formatTokens } from "@/lib/obs-format";
 
+import { CallPanelContent, PanelTitle } from "./call-panel";
+import { callLabel } from "./call-tree";
 import RunFlowClient from "./run-flow-client";
 import { RunHierarchy } from "./run-hierarchy";
 import { RunTabs } from "./run-tabs";
@@ -14,11 +17,12 @@ export default async function RunDetailPage({
   searchParams,
 }: {
   params: Promise<{ runId: string }>;
-  searchParams?: Promise<{ view?: string }>;
+  searchParams?: Promise<{ view?: string; call?: string }>;
 }) {
   const { runId } = await params;
   const sp = (await searchParams) ?? {};
   const view: "flow" | "hierarchy" = sp.view === "flow" ? "flow" : "hierarchy";
+  const activeCallId = sp.call ?? null;
 
   const [run, calls] = await Promise.all([getRun(runId), listCallsForRun(runId)]);
 
@@ -74,11 +78,35 @@ export default async function RunDetailPage({
 
       <RunTabs activeView={view} />
 
-      {view === "flow" ? (
-        <RunFlowClient runId={runId} calls={calls} />
-      ) : (
-        <RunHierarchy runId={runId} calls={calls} />
-      )}
+      <div className="run-layout">
+        <div className="run-layout__main">
+          {view === "flow" ? (
+            <RunFlowClient runId={runId} calls={calls} />
+          ) : (
+            <RunHierarchy runId={runId} calls={calls} activeCallId={activeCallId} />
+          )}
+        </div>
+
+        {activeCallId && (
+          <ResizablePanel
+            closeHref={`/runs/${runId}${view === "flow" ? "?view=flow" : ""}`}
+            title={
+              <PanelTitle
+                label={
+                  calls.find((c) => c.id === activeCallId)
+                    ? callLabel(calls.find((c) => c.id === activeCallId)!)
+                    : "Call"
+                }
+                stage={
+                  calls.find((c) => c.id === activeCallId)?.stage ?? "unknown"
+                }
+              />
+            }
+          >
+            <CallPanelContent runId={runId} callId={activeCallId} />
+          </ResizablePanel>
+        )}
+      </div>
     </div>
   );
 }

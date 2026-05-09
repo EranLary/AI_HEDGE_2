@@ -164,6 +164,33 @@ export type DailySeriesRow = {
   cost_usd: string;
 };
 
+export type SpendBreakdownRow = {
+  stage: string;
+  label: string;
+  call_count: number;
+  cost_usd: string;
+};
+
+export async function getSpendBreakdown(days: number): Promise<SpendBreakdownRow[]> {
+  const sql = getObsSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT
+      c.stage,
+      coalesce(c.call_site, c.persona, 'unnamed') AS label,
+      count(*)::int AS call_count,
+      coalesce(sum(c.cost_usd), 0)::text AS cost_usd
+      FROM obs_calls c
+      JOIN obs_runs r ON r.id = c.run_id
+     WHERE r.started_at >= now() - (${days}::int * interval '1 day')
+       AND c.cost_usd IS NOT NULL
+     GROUP BY c.stage, coalesce(c.call_site, c.persona, 'unnamed')
+     HAVING sum(c.cost_usd) > 0
+     ORDER BY sum(c.cost_usd) DESC
+  `) as unknown as SpendBreakdownRow[];
+  return rows;
+}
+
 export async function getDashboardSummary(days: number): Promise<DashboardSummary> {
   const sql = getObsSql();
   const empty: DashboardSummary = {

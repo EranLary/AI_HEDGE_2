@@ -36,10 +36,10 @@ export default async function ObservabilityRunsPage() {
           style={{
             border: "1px solid var(--color-border)",
             borderRadius: 8,
-            overflow: "hidden",
+            overflow: "auto",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 720 }}>
             <thead>
               <tr style={{ background: "var(--color-muted, rgba(0,0,0,0.04))" }}>
                 <Th>Ticker</Th>

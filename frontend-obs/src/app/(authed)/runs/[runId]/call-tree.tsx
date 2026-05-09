@@ -23,10 +23,12 @@ export function callLabel(call: ObsCallRow): string {
 export function CallTree({
   runId,
   nodes,
+  activeCallId,
   depth = 0,
 }: {
   runId: string;
   nodes: TreeNode[];
+  activeCallId?: string | null;
   depth?: number;
 }) {
   if (nodes.length === 0) return null;
@@ -35,9 +37,14 @@ export function CallTree({
     <ul className={className}>
       {nodes.map((node) => (
         <li key={node.call.id}>
-          <CallRow runId={runId} call={node.call} />
+          <CallRow runId={runId} call={node.call} active={node.call.id === activeCallId} />
           {node.children.length > 0 && (
-            <CallTree runId={runId} nodes={node.children} depth={depth + 1} />
+            <CallTree
+              runId={runId}
+              nodes={node.children}
+              activeCallId={activeCallId}
+              depth={depth + 1}
+            />
           )}
         </li>
       ))}
@@ -45,7 +52,15 @@ export function CallTree({
   );
 }
 
-function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
+function CallRow({
+  runId,
+  call,
+  active,
+}: {
+  runId: string;
+  call: ObsCallRow;
+  active: boolean;
+}) {
   const color = stageColor(call.stage);
   const label = callLabel(call);
   const showPersona = call.persona && call.persona !== label;
@@ -55,7 +70,12 @@ function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
     .slice(0, PROMPT_PREVIEW_CHARS);
 
   return (
-    <Link href={`/runs/${runId}/calls/${call.id}`} className="row-link">
+    <Link
+      href={`/runs/${runId}?call=${call.id}`}
+      className={active ? "row-link is-active" : "row-link"}
+      scroll={false}
+      prefetch={false}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span aria-hidden className="stage-dot" style={{ background: color }} />
         <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "var(--font-mono)" }}>
@@ -79,13 +99,17 @@ function CallRow({ runId, call }: { runId: string; call: ObsCallRow }) {
         </span>
         <StatusPill status={call.status} />
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
+        <span
+          className="call-row__metrics"
+          style={{ fontSize: 11, opacity: 0.6, fontVariantNumeric: "tabular-nums" }}
+        >
           {formatTokens(call.tokens_in)}↑ {formatTokens(call.tokens_out)}↓ ·{" "}
           {formatLatency(call.latency_ms)} · {formatCost(call.cost_usd, 4)}
         </span>
       </div>
       {preview && (
         <div
+          className="call-row__preview"
           style={{
             fontSize: 12,
             opacity: 0.55,

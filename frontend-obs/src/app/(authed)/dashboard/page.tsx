@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SpendTreemap } from "@/components/spend-treemap";
 import {
   type DailySeriesRow,
   type DashboardSummary,
@@ -8,6 +9,7 @@ import {
   getDailySeries,
   getDashboardSummary,
   getModelBreakdown,
+  getSpendBreakdown,
   getStageBreakdown,
   isObsDbEnabled,
 } from "@/lib/obs-db";
@@ -48,11 +50,12 @@ export default async function DashboardPage({
     );
   }
 
-  const [summary, stages, models, daily] = await Promise.all([
+  const [summary, stages, models, daily, spend] = await Promise.all([
     getDashboardSummary(days),
     getStageBreakdown(days),
     getModelBreakdown(days),
     getDailySeries(days),
+    getSpendBreakdown(days),
   ]);
 
   const successRate =
@@ -92,6 +95,8 @@ export default async function DashboardPage({
       <SummaryTiles summary={summary} successRate={successRate} />
 
       <DailyActivityCard rows={daily} days={days} />
+
+      <SpendTreemap rows={spend} />
 
       <StageTable rows={stages} />
 

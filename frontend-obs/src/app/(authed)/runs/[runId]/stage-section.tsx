@@ -20,10 +20,12 @@ export function StageSection({
   runId,
   group,
   defaultOpen,
+  activeCallId = null,
 }: {
   runId: string;
   group: StageGroup;
   defaultOpen: boolean;
+  activeCallId?: string | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const color = stageColor(group.stage);
@@ -45,6 +47,8 @@ export function StageSection({
           alignItems: "center",
           gap: 12,
           textAlign: "left",
+          flexWrap: "wrap",
+          rowGap: 6,
         }}
       >
         <Chevron open={open} />
@@ -85,7 +89,7 @@ export function StageSection({
 
       {open && (
         <div style={{ padding: "0 12px 12px 12px" }}>
-          <CallTree runId={runId} nodes={tree} />
+          <CallTree runId={runId} nodes={tree} activeCallId={activeCallId} />
         </div>
       )}
     </section>

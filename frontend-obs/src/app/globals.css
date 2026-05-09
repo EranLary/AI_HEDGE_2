@@ -509,9 +509,10 @@ html[data-theme="light"] .hib-logo-light { display: block; }
   outline: 1px solid var(--color-accent);
 }
 
-/* Resizable panel handle: sits inside the 16px gap between main and panel,
-   centered. Container is non-interactive so it doesn't block clicks; only
-   the visible notch in the middle responds to pointer events. */
+/* Resizable panel handle: the entire 16px gap between main and panel
+   is the hit zone (so the user doesn't have to aim for a thin bar).
+   The visible notch is purely decorative; pointer events stay on the
+   wrapper so the whole strip is draggable. */
 .panel-resize-handle {
   position: absolute;
   top: 0;
@@ -522,29 +523,26 @@ html[data-theme="light"] .hib-logo-light { display: block; }
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: default;
+  cursor: col-resize;
   touch-action: none;
-  pointer-events: none;
+  user-select: none;
 }
 
 .panel-resize-handle__notch {
-  width: 4px;
-  height: 44px;
-  border-radius: 3px;
-  background: var(--color-border);
-  cursor: col-resize;
+  width: 5px;
+  height: 64px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+  pointer-events: none;
   transition: background 120ms ease, transform 120ms ease, height 120ms ease;
-  pointer-events: auto;
 }
 
-.panel-resize-handle:hover .panel-resize-handle__notch {
-  background: var(--color-accent);
-  height: 56px;
-  transform: scaleX(1.5);
-}
-
+.panel-resize-handle:hover .panel-resize-handle__notch,
+.panel-resize-handle:focus-visible .panel-resize-handle__notch,
 .panel-resize-handle:active .panel-resize-handle__notch {
   background: var(--color-accent);
+  height: 84px;
+  transform: scaleX(1.4);
 }
 
 /* Hide native scrollbars across the app — content still scrolls. */

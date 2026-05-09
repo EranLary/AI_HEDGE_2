@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ObsCallRow } from "@/lib/obs-db";
 import { formatCost, formatTokens } from "@/lib/obs-format";
+import { stageDisplayName } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 import { buildTree, CallTree } from "./call-tree";
@@ -53,7 +54,7 @@ export function StageSection({
       >
         <Chevron open={open} />
         <span aria-hidden className="stage-dot" style={{ background: color }} />
-        <span style={{ fontWeight: 700, fontSize: 14 }}>{group.stage}</span>
+        <span style={{ fontWeight: 700, fontSize: 14 }}>{stageDisplayName(group.stage)}</span>
         <span
           style={{
             fontSize: 11,

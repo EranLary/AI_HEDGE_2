@@ -12,7 +12,7 @@ import {
   formatLatency,
   formatTokens,
 } from "@/lib/obs-format";
-import { callLabel, callTitle } from "@/lib/obs-labels";
+import { callLabel, callTitle, stageDisplayName } from "@/lib/obs-labels";
 import { stageColor } from "@/lib/obs-styles";
 
 export async function CallPanelContent({
@@ -36,62 +36,62 @@ export async function CallPanelContent({
     listChildCalls(call.id),
   ]);
 
-  const color = stageColor(call.stage);
-  const title = callTitle(call);
+  const stageLabel = stageDisplayName(call.stage);
   const technical = callLabel(call);
-  const showSubtitle = technical && technical !== title;
+  const subtitleParts: string[] = [stageLabel];
+  if (call.persona && call.persona !== technical) subtitleParts.push(call.persona);
+  if (technical && technical !== stageLabel)
+    subtitleParts.push(technical);
+  else subtitleParts.push(`#${call.sequence}`);
+  subtitleParts.push(call.model_actual ?? call.model_requested);
+  subtitleParts.push(`temp ${call.temperature}`);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span aria-hidden className="stage-dot" style={{ background: color }} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <StatusPill status={call.status} />
         <span
           style={{
-            fontSize: 11,
-            opacity: 0.85,
-            textTransform: "uppercase",
-            letterSpacing: 0.4,
-            fontWeight: 600,
+            fontSize: 11.5,
+            opacity: 0.7,
+            fontFamily: "var(--font-mono)",
+            wordBreak: "break-word",
           }}
         >
-          {call.stage}
+          {subtitleParts.join(" · ")}
         </span>
-        {call.persona && (
-          <span style={{ opacity: 0.7, fontSize: 12 }}>· {call.persona}</span>
-        )}
-        <StatusPill status={call.status} />
         <span style={{ flex: 1 }} />
         <Link
           href={`/runs/${runId}/calls/${call.id}`}
-          className="btn-ghost"
-          style={{ fontSize: 11, padding: "3px 8px" }}
+          className="btn-ghost btn-ghost--icon"
+          style={{ padding: "4px 6px" }}
+          title="Open full page"
+          aria-label="Open full page"
         >
-          Open full page
+          <svg
+            width={13}
+            height={13}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M3 6V3h3" />
+            <path d="M13 6V3h-3" />
+            <path d="M3 10v3h3" />
+            <path d="M13 10v3h-3" />
+          </svg>
         </Link>
-      </div>
-
-      <div>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 600,
-            wordBreak: "break-word",
-            lineHeight: 1.3,
-          }}
-        >
-          {title}
-        </div>
-        <div
-          style={{
-            opacity: 0.6,
-            fontSize: 11.5,
-            marginTop: 3,
-            fontFamily: showSubtitle ? "var(--font-mono)" : undefined,
-          }}
-        >
-          {showSubtitle ? `${technical} · ` : ""}#{call.sequence} ·{" "}
-          {call.model_actual ?? call.model_requested} · temp {call.temperature}
-        </div>
       </div>
 
       <div

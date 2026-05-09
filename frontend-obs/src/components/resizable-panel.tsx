@@ -133,7 +133,9 @@ export function ResizablePanel({
         borderRadius: 10,
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        // Note: no overflow:hidden on desktop — that clips the resize
+        // handle that pokes out to the left into the gap. The inner
+        // body has its own overflow scroll.
       };
 
   return (
@@ -152,18 +154,18 @@ export function ResizablePanel({
       )}
       <aside style={asideStyle} aria-label="Call detail">
         {!isMobile && (
-          <div className="panel-resize-handle" aria-hidden>
-            <div
-              className="panel-resize-handle__notch"
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize panel"
-              tabIndex={0}
-            />
+          <div
+            className="panel-resize-handle"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+            tabIndex={0}
+          >
+            <div className="panel-resize-handle__notch" aria-hidden />
           </div>
         )}
         {isMobile && (

@@ -21,6 +21,8 @@ env:
   FLY_REGION: fra
   FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
   PREVIEW_APP: pr-${{ github.event.pull_request.number }}-hedge-in-a-box-obs
+  NEON_BRANCH_NAME: pr-${{ github.event.pull_request.number }}
+  NEON_PARENT_BRANCH: production
 
 jobs:
   deploy:
@@ -69,17 +71,47 @@ jobs:
             flyctl apps create "${{ env.PREVIEW_APP }}" --org "${{ env.FLY_ORG }}"
           fi
 
+      - name: Create or reuse Neon branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID_OBS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "::error::NEON_API_KEY and NEON_PROJECT_ID_OBS must be set."
+            exit 1
+          fi
+
+          npm install -g neonctl@latest >/dev/null
+
+          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json \
+             | jq -e --arg n "$NEON_BRANCH_NAME" '.[] | select(.name==$n)' >/dev/null; then
+            echo "Reusing existing Neon branch $NEON_BRANCH_NAME"
+          else
+            echo "Creating Neon branch $NEON_BRANCH_NAME off $NEON_PARENT_BRANCH"
+            neonctl branches create \
+              --project-id "$NEON_PROJECT_ID" \
+              --name "$NEON_BRANCH_NAME" \
+              --parent "$NEON_PARENT_BRANCH" \
+              >/dev/null 2>&1
+          fi
+
+          UNPOOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID")
+          echo "::add-mask::$UNPOOLED"
+          echo "PR_OBS_DATABASE_URL=$UNPOOLED" >> "$GITHUB_ENV"
+
       - name: Stage preview secrets
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
-          OBS_DATABASE_URL: ${{ secrets.OBS_DATABASE_URL }}
+          OBS_DATABASE_URL: ${{ env.PR_OBS_DATABASE_URL }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
         run: |
           args=(
             "AUTH_BYPASS_PREVIEW=1"
           )
           if [ -z "$OBS_DATABASE_URL" ]; then
-            echo "::warning::OBS_DATABASE_URL secret not set - preview will show no run data."
+            echo "::error::PR_OBS_DATABASE_URL not produced by Neon branch step."
+            exit 1
           else
             args+=("OBS_DATABASE_URL=$OBS_DATABASE_URL")
           fi
@@ -132,12 +164,11 @@ jobs:
 
             ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
             redirect URIs for `pr-*` hostnames, so the preview hands out admin access
-            to anyone with the URL. Don't share it externally. The preview reads from
-            the same `OBS_DATABASE_URL` as prod (read-only views), so what you see is
-            real production data.
+            to anyone with the URL. Don't share it externally.
 
+            - DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
             - Machine auto-stops when idle, auto-starts on request.
-            - Tear-down runs automatically when this PR is closed.
+            - Tear-down (Fly app + Neon branch) runs automatically when this PR is closed.
 
   teardown:
     if: github.event.action == 'closed'
@@ -167,6 +198,25 @@ jobs:
             flyctl apps destroy "${{ env.PREVIEW_APP }}" --yes
           else
             echo "App ${{ env.PREVIEW_APP }} already gone — nothing to destroy."
+          fi
+
+      - name: Delete Neon branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID_OBS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "Neon credentials missing — skipping branch delete."
+            exit 0
+          fi
+          npm install -g neonctl@latest >/dev/null
+          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json \
+             | jq -e --arg n "$NEON_BRANCH_NAME" '.[] | select(.name==$n)' >/dev/null; then
+            echo "Deleting Neon branch $NEON_BRANCH_NAME"
+            neonctl branches delete "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" >/dev/null
+          else
+            echo "Neon branch $NEON_BRANCH_NAME already gone — nothing to delete."
           fi
 
       - name: Update sticky comment

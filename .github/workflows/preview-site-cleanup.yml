@@ -73,3 +73,46 @@ jobs:
               echo "$name: created $created — keeping."
             fi
           done
+
+      - name: Destroy stale Neon branches
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID_SITE: ${{ secrets.NEON_PROJECT_ID_SITE }}
+          NEON_PROJECT_ID_OBS: ${{ secrets.NEON_PROJECT_ID_OBS }}
+        run: |
+          set -u
+          if [ -z "$NEON_API_KEY" ]; then
+            echo "NEON_API_KEY not set — skipping Neon cleanup."
+            exit 0
+          fi
+          npm install -g neonctl@latest >/dev/null
+
+          cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
+          echo "Cutoff: $(date -u -d "@$cutoff") (Neon branches older than this will be deleted)"
+
+          for project in "$NEON_PROJECT_ID_SITE" "$NEON_PROJECT_ID_OBS"; do
+            [ -z "$project" ] && continue
+            echo "::group::Project $project"
+
+            mapfile -t entries < <(neonctl branches list --project-id "$project" --output json \
+              | jq -r '.[] | select(.name | test("^pr-[0-9]+$")) | "\(.name)\t\(.created_at)"')
+
+            if [ "${#entries[@]}" -eq 0 ]; then
+              echo "No pr-* branches in $project."
+              echo "::endgroup::"
+              continue
+            fi
+
+            for entry in "${entries[@]}"; do
+              name="${entry%%$'\t'*}"
+              created="${entry#*$'\t'}"
+              created_ts=$(date -u -d "$created" +%s 2>/dev/null || echo 0)
+              if [ "$created_ts" -gt 0 ] && [ "$created_ts" -lt "$cutoff" ]; then
+                echo "$project/$name: created $created — deleting (stale)."
+                neonctl branches delete "$name" --project-id "$project" >/dev/null || true
+              else
+                echo "$project/$name: created $created — keeping."
+              fi
+            done
+            echo "::endgroup::"
+          done

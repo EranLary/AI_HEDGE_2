@@ -20,6 +20,17 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _append_progress_line(progress_file: str, message: str) -> None:
+    try:
+        progress_path = Path(progress_file)
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        with progress_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{str(message).strip()}\n")
+    except Exception:
+        # best-effort diagnostics only
+        pass
+
+
 def _job_id_from_status(existing_status: Dict[str, Any], output_dir: str) -> str:
     from_status = str(existing_status.get("job_id", "") or "").strip()
     if from_status:
@@ -190,11 +201,13 @@ def main() -> int:
                     "error": persistence_error or "DB persistence failed.",
                 }
                 _write_json(status_file, failed_payload)
+                _append_progress_line(progress_file, "Site Run Finalized: failed")
                 legacy_port._deepseek_simple_full = original_full
                 legacy_port.deepseek_simple_text = original_deepseek
                 return 1
 
             _write_json(status_file, completed_with_warning)
+            _append_progress_line(progress_file, "Site Run Finalized: completed")
             legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
             return 0
@@ -209,6 +222,7 @@ def main() -> int:
             "report_id": report_id,
         }
         _write_json(status_file, completed_payload)
+        _append_progress_line(progress_file, "Site Run Finalized: completed")
         legacy_port._deepseek_simple_full = original_full
         legacy_port.deepseek_simple_text = original_deepseek
         return 0
@@ -223,6 +237,7 @@ def main() -> int:
             "traceback": traceback.format_exc(limit=6),
         }
         _write_json(status_file, failed_payload)
+        _append_progress_line(progress_file, "Site Run Finalized: failed")
         return 1
 
 

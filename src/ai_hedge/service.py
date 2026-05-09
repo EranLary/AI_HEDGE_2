@@ -1009,6 +1009,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         "dashboard_json": "",
         "f_score_text": "",
         "errors": errors,
+        "r2_keys": None,
     }
 
     if not is_valid_ticker(ticker_u):
@@ -1101,6 +1102,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         result["f_score_text"] = str(full_out.get("f_score_text", "") or "")
         result["sec_fallback_used"] = bool(full_out.get("sec_fallback_used", False))
         result["sec_fallback_message"] = str(full_out.get("sec_fallback_message", "") or "")
+        result["r2_keys"] = full_out.get("r2_keys")
 
         generated_count = (
             int(copied_analysis)

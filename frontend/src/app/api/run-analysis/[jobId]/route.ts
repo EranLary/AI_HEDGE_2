@@ -18,6 +18,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RUN_FINALIZED_MARKER = "site run finalized:";
 
 function writeStatusSafe(status: RunStatusPayload): void {
   try {
@@ -119,6 +120,7 @@ function shouldPromoteRunningToCompleted(status: RunStatusPayload, progressLines
   if (!hasCompletionArtifacts(status)) return false;
 
   const joined = progressLines.join("\n").toLowerCase();
+  if (!joined.includes(RUN_FINALIZED_MARKER)) return false;
   const reachedFinalPhase =
     joined.includes("finished technical analysis") || joined.includes("finished valuations");
   const llmPct = typeof status.llm_progress_pct === "number" ? status.llm_progress_pct : 0;

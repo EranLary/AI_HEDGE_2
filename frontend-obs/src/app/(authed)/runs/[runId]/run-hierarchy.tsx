@@ -2,12 +2,12 @@
 
 import { useMemo } from "react";
 
-import type { ObsCallRow } from "@/lib/obs-db";
+import type { ObsCallSummaryRow } from "@/lib/obs-db";
 import { STAGE_ORDER } from "@/lib/obs-styles";
 
 import { StageSection, type StageGroup } from "./stage-section";
 
-function groupByStage(calls: ObsCallRow[]): StageGroup[] {
+function groupByStage(calls: ObsCallSummaryRow[]): StageGroup[] {
   const map = new Map<string, StageGroup>();
   for (const c of calls) {
     const key = c.stage || "unknown";
@@ -39,7 +39,7 @@ export function RunHierarchy({
   activeCallId,
 }: {
   runId: string;
-  calls: ObsCallRow[];
+  calls: ObsCallSummaryRow[];
   activeCallId?: string | null;
 }) {
   const groups = useMemo(() => groupByStage(calls), [calls]);

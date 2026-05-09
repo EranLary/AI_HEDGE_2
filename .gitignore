@@ -27,6 +27,9 @@ analysis.txt
 *.html
 *.pptx
 
+# Allow specific HTML assets that ship with the obs frontend bundle.
+!frontend-obs/public/warming.html
+
 # OS/IDE
 .DS_Store
 Thumbs.db

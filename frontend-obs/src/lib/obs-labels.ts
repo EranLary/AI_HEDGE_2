@@ -1,6 +1,6 @@
-import type { ObsCallRow } from "@/lib/obs-db";
+import type { ObsCallSummaryRow } from "@/lib/obs-db";
 
-export function callLabel(call: ObsCallRow): string {
+export function callLabel(call: ObsCallSummaryRow): string {
   if (call.call_site) return call.call_site;
   if (call.persona) return call.persona;
   return `${call.stage} #${call.sequence}`;
@@ -178,7 +178,7 @@ export function classifyPrompt(
 
 /** Preferred display name for a call: domain classifier first, then prompt heading,
  * then first-sentence extraction, then the technical callLabel. */
-export function callTitle(call: ObsCallRow): string {
+export function callTitle(call: ObsCallSummaryRow): string {
   const classified = classifyPrompt(call.stage, call.prompt);
   if (classified) return classified;
   const fromPrompt = derivePromptTitle(call.prompt);

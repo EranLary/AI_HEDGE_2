@@ -5,7 +5,7 @@ import { StatusPill } from "@/components/status-pill";
 import {
   getCall,
   listChildCalls,
-  type ObsCallRow,
+  type ObsCallSummaryRow,
 } from "@/lib/obs-db";
 import {
   formatCost,
@@ -156,8 +156,8 @@ function PanelHierarchy({
   children,
 }: {
   runId: string;
-  parent: ObsCallRow | null;
-  children: ObsCallRow[];
+  parent: ObsCallSummaryRow | null;
+  children: ObsCallSummaryRow[];
 }) {
   if (!parent && children.length === 0) return null;
   return (
@@ -204,7 +204,7 @@ function PanelHierarchy({
   );
 }
 
-function PanelCallSummary({ call }: { call: ObsCallRow }) {
+function PanelCallSummary({ call }: { call: ObsCallSummaryRow }) {
   const color = stageColor(call.stage);
   const title = callTitle(call);
   return (

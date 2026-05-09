@@ -18,7 +18,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 
-import type { ObsCallRow } from "@/lib/obs-db";
+import type { ObsCallSummaryRow } from "@/lib/obs-db";
 import { formatCost, formatLatency } from "@/lib/obs-format";
 import { stageColor } from "@/lib/obs-styles";
 
@@ -33,7 +33,7 @@ type Direction = "TB" | "LR";
 
 type LaidOut = { nodes: Node[]; edges: Edge[] };
 
-function buildGraph(calls: ObsCallRow[], dir: Direction): LaidOut {
+function buildGraph(calls: ObsCallSummaryRow[], dir: Direction): LaidOut {
   const ids = new Set(calls.map((c) => c.id));
   const hasRoots = calls.some((c) => !c.parent_id || !ids.has(c.parent_id));
   const multipleRoots =
@@ -216,7 +216,7 @@ function readSavedDir(): Direction {
   return raw === "LR" ? "LR" : "TB";
 }
 
-function FlowInner({ runId, calls }: { runId: string; calls: ObsCallRow[] }) {
+function FlowInner({ runId, calls }: { runId: string; calls: ObsCallSummaryRow[] }) {
   const router = useRouter();
   const [dir, setDir] = useState<Direction>("TB");
   useEffect(() => {
@@ -320,7 +320,7 @@ export default function RunFlowClient({
   calls,
 }: {
   runId: string;
-  calls: ObsCallRow[];
+  calls: ObsCallSummaryRow[];
 }) {
   return (
     <ReactFlowProvider>

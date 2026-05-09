@@ -1,7 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
 
 import { ResizablePanel } from "@/components/resizable-panel";
-import { getRun, listCallsForRun } from "@/lib/obs-db";
+import { getRun, listCallsForRun, type ObsRunRow } from "@/lib/obs-db";
 import { formatCost, formatDuration, formatTokens } from "@/lib/obs-format";
 import { callTitle } from "@/lib/obs-labels";
 
@@ -24,7 +25,7 @@ export default async function RunDetailPage({
   const view: "flow" | "hierarchy" = sp.view === "flow" ? "flow" : "hierarchy";
   const activeCallId = sp.call ?? null;
 
-  const [run, calls] = await Promise.all([getRun(runId), listCallsForRun(runId)]);
+  const run = await getRun(runId);
 
   if (!run) {
     return (
@@ -40,73 +41,114 @@ export default async function RunDetailPage({
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Link href="/runs" style={{ fontSize: 14 }}>
-          ← All runs
-        </Link>
-        <h1 style={{ fontSize: 24, marginTop: 8 }}>
-          {run.ticker}{" "}
-          <span style={{ opacity: 0.5, fontSize: 14, fontWeight: 400 }}>
-            · {new Date(run.started_at).toLocaleString()}
-          </span>
-        </h1>
-        <div style={{ display: "flex", gap: 24, fontSize: 13, opacity: 0.8, marginTop: 8, flexWrap: "wrap" }}>
-          <span>Status: <strong>{run.status}</strong></span>
-          <span>Calls: <strong>{run.total_calls}</strong></span>
-          <span>Tokens: <strong>{formatTokens(run.total_tokens_in)}↑ / {formatTokens(run.total_tokens_out)}↓</strong></span>
-          <span>Cost: <strong>{formatCost(run.total_cost_usd)}</strong></span>
-          <span>Duration: <strong>{formatDuration(run.duration_ms)}</strong></span>
-        </div>
-        {run.error_message && (
-          <pre
-            style={{
-              marginTop: 8,
-              padding: 12,
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 6,
-              fontSize: 12,
-              whiteSpace: "pre-wrap",
-              maxHeight: 120,
-              overflow: "auto",
-            }}
-          >
-            {run.error_message}
-          </pre>
-        )}
-      </div>
-
+      <RunHeader run={run} />
       <RunTabs activeView={view} />
+      <Suspense
+        key={`${runId}-${view}-${activeCallId ?? ""}`}
+        fallback={<RunBodySkeleton />}
+      >
+        <RunBodyAsync runId={runId} view={view} activeCallId={activeCallId} />
+      </Suspense>
+    </div>
+  );
+}
 
-      <div className="run-layout">
-        <div className="run-layout__main">
-          {view === "flow" ? (
-            <RunFlowClient runId={runId} calls={calls} />
-          ) : (
-            <RunHierarchy runId={runId} calls={calls} activeCallId={activeCallId} />
-          )}
-        </div>
+function RunHeader({ run }: { run: ObsRunRow }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Link href="/runs" style={{ fontSize: 14 }}>
+        ← All runs
+      </Link>
+      <h1 style={{ fontSize: 24, marginTop: 8 }}>
+        {run.ticker}{" "}
+        <span style={{ opacity: 0.5, fontSize: 14, fontWeight: 400 }}>
+          · {new Date(run.started_at).toLocaleString()}
+        </span>
+      </h1>
+      <div style={{ display: "flex", gap: 24, fontSize: 13, opacity: 0.8, marginTop: 8, flexWrap: "wrap" }}>
+        <span>Status: <strong>{run.status}</strong></span>
+        <span>Calls: <strong>{run.total_calls}</strong></span>
+        <span>Tokens: <strong>{formatTokens(run.total_tokens_in)}↑ / {formatTokens(run.total_tokens_out)}↓</strong></span>
+        <span>Cost: <strong>{formatCost(run.total_cost_usd)}</strong></span>
+        <span>Duration: <strong>{formatDuration(run.duration_ms)}</strong></span>
+      </div>
+      {run.error_message && (
+        <pre
+          style={{
+            marginTop: 8,
+            padding: 12,
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 6,
+            fontSize: 12,
+            whiteSpace: "pre-wrap",
+            maxHeight: 120,
+            overflow: "auto",
+          }}
+        >
+          {run.error_message}
+        </pre>
+      )}
+    </div>
+  );
+}
 
-        {activeCallId && (
-          <ResizablePanel
-            closeHref={`/runs/${runId}${view === "flow" ? "?view=flow" : ""}`}
-            title={
-              <PanelTitle
-                label={
-                  calls.find((c) => c.id === activeCallId)
-                    ? callTitle(calls.find((c) => c.id === activeCallId)!)
-                    : "Call"
-                }
-                stage={
-                  calls.find((c) => c.id === activeCallId)?.stage ?? "unknown"
-                }
-              />
-            }
-          >
-            <CallPanelContent runId={runId} callId={activeCallId} />
-          </ResizablePanel>
+function RunBodySkeleton() {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 32,
+        opacity: 0.6,
+        fontSize: 13,
+        textAlign: "center",
+        minHeight: 240,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      aria-busy="true"
+    >
+      Loading calls…
+    </div>
+  );
+}
+
+async function RunBodyAsync({
+  runId,
+  view,
+  activeCallId,
+}: {
+  runId: string;
+  view: "flow" | "hierarchy";
+  activeCallId: string | null;
+}) {
+  const calls = await listCallsForRun(runId);
+  const activeCall = activeCallId ? calls.find((c) => c.id === activeCallId) : null;
+
+  return (
+    <div className="run-layout">
+      <div className="run-layout__main">
+        {view === "flow" ? (
+          <RunFlowClient runId={runId} calls={calls} />
+        ) : (
+          <RunHierarchy runId={runId} calls={calls} activeCallId={activeCallId} />
         )}
       </div>
+
+      {activeCallId && (
+        <ResizablePanel
+          closeHref={`/runs/${runId}${view === "flow" ? "?view=flow" : ""}`}
+          title={
+            <PanelTitle
+              label={activeCall ? callTitle(activeCall) : "Call"}
+              stage={activeCall?.stage ?? "unknown"}
+            />
+          }
+        >
+          <CallPanelContent runId={runId} callId={activeCallId} />
+        </ResizablePanel>
+      )}
     </div>
   );
 }

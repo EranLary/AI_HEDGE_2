@@ -204,6 +204,7 @@ def ticker_dir_to_row(
         "analysis_md": analysis_md,
         "prices_explain_md": prices_explain_md,
         "analysis_md_source": analysis_source,
+        "r2_keys": None,
     }
 
     return {

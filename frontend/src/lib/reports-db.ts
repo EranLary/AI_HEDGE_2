@@ -25,6 +25,7 @@ export interface DbReportFull extends DbReportSummary {
   analysis_md: string;
   prices_explain_md: string | null;
   analysis_md_source: "txt" | "html" | "pdf";
+  r2_keys: Record<string, string> | null;
 }
 
 export interface DbTickerRow {
@@ -55,7 +56,8 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
-           a.analysis_md_source
+           a.analysis_md_source,
+           a.r2_keys
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
      WHERE r.ticker = ${ticker.toUpperCase()}
@@ -85,7 +87,8 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
-           a.analysis_md_source
+           a.analysis_md_source,
+           a.r2_keys
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
      WHERE r.id = ${id}::uuid

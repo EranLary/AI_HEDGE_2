@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { canonicalModelName } from "@/lib/method-display";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
@@ -32,7 +33,7 @@ export type CurrencyContext = {
 
 const METHOD_METRIC_LABELS: Record<string, string> = {
   fcf_next_year: "FCF (Next Year)",
-  growth_rate: "Growth Rate",
+  growth_rate: "Growth Rate (G)",
   wacc: "WACC",
   terminal_growth: "Terminal Value Growth",
   net_income_3y: "Net Income (3Y)",
@@ -40,12 +41,6 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   revenue_3y: "Revenue (3Y)",
   ev_sales_multiple: "EV/Sales Multiple",
   target_market_cap: "Target Market Cap",
-  bull_target_market_cap: "Bull Target Market Cap",
-  base_target_market_cap: "Base Target Market Cap",
-  bear_target_market_cap: "Bear Target Market Cap",
-  bull_net_income: "Bull Net Income",
-  base_net_income: "Base Net Income",
-  bear_net_income: "Bear Net Income",
   bull_probability: "Bull Probability",
   base_probability: "Base Probability",
   bear_probability: "Bear Probability",
@@ -56,14 +51,13 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
-  "Intrinsic DCF": "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
   "Scenario DCF": "Scenario DCF runs a full Bull/Base/Bear discounted-cash-flow map with explicit probabilities for each path. Instead of one fragile set of assumptions, it blends three coherent operating realities into one weighted intrinsic value.",
-  "Earnings Multiple": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
-  "Revenue Multiple": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
   "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",
   "Target Scenario": "This framework forces a full scenario map: Bull, Base, and Bear cases with explicit probabilities. It helps separate upside story from downside risk and gives a weighted target grounded in all three paths.",
   "Earnings Scenario": "This is the scenario version of earnings-based valuation: each Bull/Base/Bear case gets its own net income and P/E assumptions. The final target reflects both business outcomes and changing market sentiment across scenarios.",
-  "Composite Logic": "Composite Logic is a pragmatic synthesis model that blends growth, profitability, and financing realism into one decision-friendly output. It is designed to stay intuitive while still stress-testing the assumptions that usually break valuation models.",
+  "Revenue Scenario": "This scenario model underwrites Bull/Base/Bear revenue outcomes with explicit probabilities, then applies one shared long-term EV/S multiple to convert weighted operating reality into target price.",
+  "Composite Scenario": "Composite Scenario is a full Bull/Base/Bear synthesis of growth, margin, financing, tax, and valuation multiple assumptions, producing a probability-weighted target that stress-tests execution and cycle risk.",
+  "SOTP Scenario": "SOTP Scenario values each business segment separately in Bull/Base/Bear configurations, then combines scenario probabilities to produce a weighted equity value target.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -84,6 +78,85 @@ const ASSUMPTION_MONEY_LABELS = new Set([
   "representative earnings",
   "representative fcf",
 ]);
+const PROBABILITY_METRIC_KEYS = new Set([
+  "bull_probability",
+  "base_probability",
+  "bear_probability",
+]);
+const DECIMAL_PERCENT_METRIC_KEYS = new Set([
+  "growth_rate",
+  "terminal_growth",
+  "wacc",
+  "revenue_growth_3y_avg",
+  "operating_margin",
+  "tax_rate",
+]);
+const METHOD_METRIC_ORDER: Record<string, string[]> = {
+  "Scenario DCF": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "fcf_next_year",
+    "growth_rate",
+    "wacc",
+    "terminal_growth",
+  ],
+  "Target Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "target_market_cap",
+  ],
+  "Earnings Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "pe_multiple",
+    "net_income_3y",
+  ],
+  "Revenue Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "ev_sales_multiple",
+    "revenue_3y",
+  ],
+  "Composite Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "revenue_growth_3y_avg",
+    "operating_margin",
+    "net_financing_result",
+    "tax_rate",
+    "pe_multiple",
+  ],
+  "SOTP Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "target_market_cap",
+  ],
+  "Dream Team": [
+    "target_market_cap",
+  ],
+};
+
+const ACTIVE_SCENARIO_METHOD_NAMES = new Set([
+  "Scenario DCF",
+  "Target Scenario",
+  "Earnings Scenario",
+  "Revenue Scenario",
+  "Composite Scenario",
+  "SOTP Scenario",
+  "Dream Team",
+]);
+
+type MethodMetricItem = {
+  key: string;
+  label: string;
+  value: number;
+};
 
 export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
   const isIsraeli = String(data?.ticker || "").toUpperCase().endsWith(".TA");
@@ -213,7 +286,14 @@ function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "
 
 function formatMethodMetric(metricKey: string, value: number | null | undefined, ctx: CurrencyContext): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
-  if (MONEY_METRIC_KEYS.has(String(metricKey || "").trim().toLowerCase())) {
+  const normalizedKey = String(metricKey || "").trim().toLowerCase();
+  if (PROBABILITY_METRIC_KEYS.has(normalizedKey)) {
+    return `${(value * 100).toFixed(1)}%`;
+  }
+  if (DECIMAL_PERCENT_METRIC_KEYS.has(normalizedKey)) {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (MONEY_METRIC_KEYS.has(normalizedKey)) {
     return fmtMoneyCompact(value, ctx, "financial");
   }
   return fmtLargeAware(value);
@@ -581,6 +661,32 @@ function prettyMetricName(raw: string): string {
     .join(" ");
 }
 
+function orderedMethodMetrics(methodName: string, keyMetricMeans: Record<string, number>): MethodMetricItem[] {
+  const entries = Object.entries(keyMetricMeans || {}).filter(
+    ([, v]) => typeof v === "number" && Number.isFinite(v),
+  );
+  if (!entries.length) return [];
+
+  const preferredOrder = METHOD_METRIC_ORDER[String(methodName || "").trim()] || [];
+  const entryMap = new Map(entries.map(([k, v]) => [String(k), Number(v)]));
+  const orderedKeys: string[] = [];
+
+  for (const key of preferredOrder) {
+    if (entryMap.has(key)) orderedKeys.push(key);
+  }
+  for (const [key] of entries) {
+    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+  }
+
+  return orderedKeys
+    .map((key) => {
+      const value = entryMap.get(key);
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      return { key, label: prettyMetricName(key), value };
+    })
+    .filter((row): row is MethodMetricItem => row !== null);
+}
+
 function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
   if (v <= -20) return { label: "Strong Sell", tone: "negative" };
@@ -780,10 +886,51 @@ export function HedgeDashboard({
 
   const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
   const consensus = data?.valuation_hub?.consensus;
-  const methodTabs = useMemo(
-    () => data?.valuation_hub?.method_tabs || [],
-    [data?.valuation_hub?.method_tabs],
-  );
+  const methodTabs = useMemo(() => {
+    const rawTabs = Array.isArray(data?.valuation_hub?.method_tabs) ? data.valuation_hub.method_tabs : [];
+    const normalized = rawTabs.map((tab) => ({
+      ...tab,
+      name: canonicalModelName(String(tab.name || "").trim()),
+    }));
+    const hasScenarioSet = normalized.some((tab) => ACTIVE_SCENARIO_METHOD_NAMES.has(tab.name));
+    const filtered = hasScenarioSet
+      ? normalized.filter((tab) => ACTIVE_SCENARIO_METHOD_NAMES.has(tab.name))
+      : normalized;
+    const deduped = new Map<string, DashboardMethodTab>();
+    for (const tab of filtered) {
+      const existing = deduped.get(tab.name);
+      if (!existing) {
+        deduped.set(tab.name, tab);
+        continue;
+      }
+      const existingScore =
+        (Array.isArray(existing.outputs) ? existing.outputs.length : 0) +
+        Object.keys(existing.key_metric_means || {}).length;
+      const nextScore =
+        (Array.isArray(tab.outputs) ? tab.outputs.length : 0) +
+        Object.keys(tab.key_metric_means || {}).length;
+      if (nextScore > existingScore) {
+        deduped.set(tab.name, tab);
+      }
+    }
+    const order = [
+      "Scenario DCF",
+      "Target Scenario",
+      "Earnings Scenario",
+      "Revenue Scenario",
+      "Composite Scenario",
+      "SOTP Scenario",
+      "Dream Team",
+    ];
+    return Array.from(deduped.values()).sort((a, b) => {
+      const ai = order.indexOf(a.name);
+      const bi = order.indexOf(b.name);
+      if (ai === -1 && bi === -1) return a.name.localeCompare(b.name);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
     const map = new Map<string, string>();
     for (const tab of methodTabs) {
@@ -802,6 +949,21 @@ export function HedgeDashboard({
   const selectedOutput = activeMethod
     ? activeMethod.outputs.find((o) => (o.persona || `Output ${o.output_id}`) === outputTab[activeMethod.name]) || activeMethod.outputs[0]
     : null;
+  const activeMethodMetricItems = useMemo(
+    () => orderedMethodMetrics(activeMethod?.name || "", activeMethod?.key_metric_means || {}),
+    [activeMethod?.name, activeMethod?.key_metric_means],
+  );
+  const activeMethodProbabilityItems = useMemo(
+    () => activeMethodMetricItems.filter((item) => PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase())),
+    [activeMethodMetricItems],
+  );
+  const activeMethodOtherMetricItems = useMemo(
+    () =>
+      activeMethodMetricItems.filter(
+        (item) => !PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase()),
+      ),
+    [activeMethodMetricItems],
+  );
   const consensusCurrent =
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
       ? Number(consensus.current_price)
@@ -829,6 +991,24 @@ export function HedgeDashboard({
   const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
   const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
   const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
+  const activeMethodTargetChangePct =
+    typeof activeMethod?.target_price === "number" &&
+    Number.isFinite(activeMethod.target_price) &&
+    typeof consensusCurrent === "number" &&
+    Number.isFinite(consensusCurrent) &&
+    Math.abs(consensusCurrent) > 1e-9
+      ? ((activeMethod.target_price - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const selectedOutputTargetChangePct =
+    typeof selectedOutput?.target_price === "number" &&
+    Number.isFinite(selectedOutput.target_price) &&
+    typeof consensusCurrent === "number" &&
+    Number.isFinite(consensusCurrent) &&
+    Math.abs(consensusCurrent) > 1e-9
+      ? ((selectedOutput.target_price - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const activeMethodTargetChangeClass = toneClassFromSign(activeMethodTargetChangePct);
+  const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
   const activeMethodTargetVerdict = verdictMark(
     targetDirectionWithFloor(activeMethod?.target_price ?? null, consensusCurrent),
     actualDirection,
@@ -860,7 +1040,35 @@ export function HedgeDashboard({
       typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
         ? Number(consensus.current_price)
         : null;
-    const rows = (data?.valuation_hub?.method_blocks || []).map((b) => {
+    const rawBlocks = Array.isArray(data?.valuation_hub?.method_blocks) ? data.valuation_hub.method_blocks : [];
+    const normalizedBlocks = rawBlocks.map((b) => ({
+      ...b,
+      name: canonicalModelName(String(b.name || "").trim()),
+    }));
+    const hasScenarioSet = normalizedBlocks.some((b) => ACTIVE_SCENARIO_METHOD_NAMES.has(String(b.name || "")));
+    const filteredBlocks = hasScenarioSet
+      ? normalizedBlocks.filter((b) => ACTIVE_SCENARIO_METHOD_NAMES.has(String(b.name || "")))
+      : normalizedBlocks;
+    const dedupedBlocks = new Map<string, (typeof filteredBlocks)[number]>();
+    for (const block of filteredBlocks) {
+      const key = String(block.name || "").trim();
+      if (!key) continue;
+      const existing = dedupedBlocks.get(key);
+      if (!existing) {
+        dedupedBlocks.set(key, block);
+        continue;
+      }
+      const existingScore =
+        (typeof existing.target_price === "number" && Number.isFinite(existing.target_price) ? 1 : 0) +
+        (typeof existing.investment_amount === "number" && Number.isFinite(existing.investment_amount) ? 1 : 0);
+      const nextScore =
+        (typeof block.target_price === "number" && Number.isFinite(block.target_price) ? 1 : 0) +
+        (typeof block.investment_amount === "number" && Number.isFinite(block.investment_amount) ? 1 : 0);
+      if (nextScore > existingScore) {
+        dedupedBlocks.set(key, block);
+      }
+    }
+    const rows = Array.from(dedupedBlocks.values()).map((b) => {
       const target =
         typeof b.target_price === "number" && Number.isFinite(Number(b.target_price))
           ? Number(b.target_price)
@@ -907,6 +1115,10 @@ export function HedgeDashboard({
   const assumptionsModelRows = useMemo(() => {
     const sourceRows = data?.valuation_hub.all_values?.metric_means || [];
     const rows: typeof sourceRows = [];
+    const hasBlendedProbabilities = sourceRows.some((row) => {
+      const mk = String(row.metric_key || "").trim().toLowerCase();
+      return mk === "bull_probability_blended" || mk === "base_probability_blended" || mk === "bear_probability_blended";
+    });
     const mergeBuckets: Record<
       string,
       {
@@ -960,6 +1172,13 @@ export function HedgeDashboard({
       const normalized = normalizeMetricLabel(baseLabel);
 
       if (normalized === "base 1" || normalized === "bear 1" || normalized === "bull 1") {
+        continue;
+      }
+      if (
+        hasBlendedProbabilities &&
+        (normalized === "base 0" || normalized === "bear 0" || normalized === "bull 0")
+      ) {
+        // Prefer explicit blended probability rows when present.
         continue;
       }
 
@@ -1350,15 +1569,18 @@ export function HedgeDashboard({
                       <p className="font-semibold">{activeMethod.name}</p>
                       <p className="text-sm text-zinc-400">
                         Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price, currencyContext)}</span>{" "}
+                        <span className={`text-xs font-semibold ${activeMethodTargetChangeClass}`}>
+                          ({typeof activeMethodTargetChangePct === "number" ? fmtPct(activeMethodTargetChangePct) : "N/A"})
+                        </span>{" "}
                         <span className="text-zinc-300">({activeMethodTargetVerdict})</span>
                       </p>
                       <p className="text-sm text-zinc-400">
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>{" "}
                         <span className="text-zinc-300">({activeMethodInvestmentVerdict})</span>
                       </p>
-                      {Object.entries(activeMethod.key_metric_means || {}).map(([k, v]) => (
-                        <p key={k} className="text-xs text-zinc-500">
-                          {prettyMetricName(k)}: {formatMethodMetric(k, v, currencyContext)}
+                      {[...activeMethodProbabilityItems, ...activeMethodOtherMetricItems].map((item) => (
+                        <p key={item.key} className="text-xs text-zinc-500">
+                          {item.label}: {formatMethodMetric(item.key, item.value, currencyContext)}
                         </p>
                       ))}
                       <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
@@ -1379,6 +1601,9 @@ export function HedgeDashboard({
                               <div className="space-y-1 text-sm text-zinc-400">
                                 <p>
                                   Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
+                                  <span className={`text-xs font-semibold ${selectedOutputTargetChangeClass}`}>
+                                    ({typeof selectedOutputTargetChangePct === "number" ? fmtPct(selectedOutputTargetChangePct) : "N/A"})
+                                  </span>{" "}
                                   <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>
                                 </p>
                                 <p>

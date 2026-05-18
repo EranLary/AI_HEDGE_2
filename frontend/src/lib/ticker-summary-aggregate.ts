@@ -228,6 +228,14 @@ function buildDashboardAssumptionMeans(payload: DashboardPayload): DashboardAssu
     : [];
 
   const rows: DashboardAssumptionMean[] = [];
+  const hasBlendedProbabilities = sourceRows.some((row) => {
+    const metricKey = String(row?.metric_key || "").trim().toLowerCase();
+    return (
+      metricKey === "bull_probability_blended" ||
+      metricKey === "base_probability_blended" ||
+      metricKey === "bear_probability_blended"
+    );
+  });
   const mergeBuckets: Record<
     string,
     {
@@ -275,6 +283,13 @@ function buildDashboardAssumptionMeans(payload: DashboardPayload): DashboardAssu
     const normalized = normalizeLabel(baseLabel);
 
     if (normalized === "base 1" || normalized === "bear 1" || normalized === "bull 1") {
+      continue;
+    }
+    if (
+      hasBlendedProbabilities &&
+      (normalized === "base 0" || normalized === "bear 0" || normalized === "bull 0")
+    ) {
+      // Prefer explicit blended probability rows when present.
       continue;
     }
 

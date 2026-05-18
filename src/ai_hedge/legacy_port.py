@@ -3738,6 +3738,108 @@ Rules:
 12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
+instructions_revenue_scenario = """Based on the input you receive, produce a probabilistic 3-scenario revenue outlook (Bull / Base / Bear) with one shared long-term EV/Sales multiple.
+
+Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+
+Output schema (must match exactly):
+{
+  "step_by_step_analysis": "string",
+  "bull": [number, number],
+  "bull_rationale": "string",
+  "base": [number, number],
+  "base_rationale": "string",
+  "bear": [number, number],
+  "bear_rationale": "string",
+  "ev_sales_multiple": number,
+  "ev_sales_rationale": "string",
+  "investment_amount": number,
+  "investment_rationale": "string"
+}
+
+Definitions:
+- "bull" / "base" / "bear" arrays are [probability, revenue_3y_normalized].
+- probability must be decimal in [0,1], and all scenario probabilities must sum to 1.0 (+/-0.001 tolerance).
+- revenue_3y_normalized must be absolute numeric revenue in full units (not percentages, not K/M abbreviations).
+- ev_sales_multiple must be one shared long-term EV/S multiple used across all scenarios.
+- "step_by_step_analysis" should justify scenario separation, probability weights, revenue normalization, and multiple discipline.
+- "investment_amount" must be in [-100000, 100000], and "investment_rationale" must explain the position size.
+
+Rules:
+1) Keep all rationale fields and step_by_step_analysis as single complete strings.
+2) Do not output null/NaN/strings in numeric arrays (except rationale fields).
+3) Do not output ranges for scenario revenue or EV/S multiple.
+4) Do not add nested objects or additional top-level keys.
+5) ZERO POLITENESS: output raw JSON only.
+"""
+
+instructions_composite_scenario = """Based on the input you receive, produce a probabilistic 3-scenario composite valuation model (Bull / Base / Bear).
+
+Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+
+Output schema (must match exactly):
+{
+  "step_by_step_analysis": "string",
+  "bull": [number, number, number, number, number, number],
+  "bull_rationale": "string",
+  "base": [number, number, number, number, number, number],
+  "base_rationale": "string",
+  "bear": [number, number, number, number, number, number],
+  "bear_rationale": "string",
+  "investment_amount": number,
+  "investment_rationale": "string"
+}
+
+Scenario tuple definition (fixed order):
+[probability, revenue_growth_3y_avg, operating_profitability_margin, net_financing_result, tax_rate, pe_multiple]
+
+Rules:
+1) Probabilities must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
+2) growth/margin/tax must be decimal ratios (for example 0.18, not 18).
+3) net_financing_result must be a full absolute numeric value (can be negative).
+4) pe_multiple must be numeric and single-value per scenario.
+5) Keep step_by_step_analysis and rationale fields as single complete strings.
+6) "investment_amount" must be in [-100000, 100000].
+7) Do not output ranges, null/NaN, nested objects, or extra top-level keys.
+8) ZERO POLITENESS: output raw JSON only.
+"""
+
+instructions_sotp_scenario = """Based on the input you receive, produce a probabilistic 3-scenario SOTP valuation (Bull / Base / Bear).
+
+Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+
+Output schema (must match exactly):
+{
+  "step_by_step_analysis": "string",
+  "bull": {
+    "probability": number,
+    "activities": {"<activity_name>": number}
+  },
+  "bull_rationale": "string",
+  "base": {
+    "probability": number,
+    "activities": {"<activity_name>": number}
+  },
+  "base_rationale": "string",
+  "bear": {
+    "probability": number,
+    "activities": {"<activity_name>": number}
+  },
+  "bear_rationale": "string",
+  "investment_amount": number,
+  "investment_rationale": "string"
+}
+
+Rules:
+1) bull/base/bear probability values must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
+2) Each activities map must be flat (no nested objects), and all values must be numeric.
+3) Activity values are intrinsic equity value components in full units.
+4) Keep step_by_step_analysis and rationale fields as single complete strings.
+5) "investment_amount" must be in [-100000, 100000].
+6) Do not output ranges, null/NaN in numeric fields, or any extra top-level keys.
+7) ZERO POLITENESS: output raw JSON only.
+"""
+
 instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, its REPRESENTATIVE effective tax rate, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
 
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
@@ -4220,6 +4322,148 @@ def extract_bbb_ni_pe_json(text: str) -> Dict[str, Any]:
         "investment_rationale": investment_rationale,
     }
 
+def extract_revenue_scenario_json(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+
+    json_str = match.group(0)
+    data = json.loads(json_str)
+    required_keys = {"bull", "base", "bear", "ev_sales_multiple"}
+    if required_keys - data.keys():
+        return {}
+    investment_fields = _extract_investment_fields(data)
+    if not investment_fields:
+        return {}
+    investment_amount, investment_rationale = investment_fields
+
+    if not isinstance(data["ev_sales_multiple"], (int, float)) or isinstance(data["ev_sales_multiple"], bool):
+        return {}
+    ev_sales_multiple = float(data["ev_sales_multiple"])
+
+    scenarios: Dict[str, Dict[str, float]] = {}
+    for scenario in ["bull", "base", "bear"]:
+        value = data.get(scenario)
+        if not isinstance(value, list) or len(value) != 2:
+            return {}
+        prob_raw, revenue_raw = value
+        if not isinstance(prob_raw, (int, float)) or isinstance(prob_raw, bool):
+            return {}
+        if not isinstance(revenue_raw, (int, float)) or isinstance(revenue_raw, bool):
+            return {}
+        prob = _normalize_probability(float(prob_raw))
+        if not (0.0 <= prob <= 1.0):
+            return {}
+        scenarios[scenario] = {
+            "probability": prob,
+            "revenue_3y": float(revenue_raw),
+        }
+
+    prob_sum = sum(v["probability"] for v in scenarios.values())
+    if abs(prob_sum - 1.0) > 0.001:
+        return {}
+
+    return {
+        "scenarios": scenarios,
+        "ev_sales_multiple": ev_sales_multiple,
+        "investment_amount": investment_amount,
+        "investment_rationale": investment_rationale,
+    }
+
+def extract_composite_scenario_json(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+
+    json_str = match.group(0)
+    data = json.loads(json_str)
+    required_keys = {"bull", "base", "bear"}
+    if required_keys - data.keys():
+        return {}
+    investment_fields = _extract_investment_fields(data)
+    if not investment_fields:
+        return {}
+    investment_amount, investment_rationale = investment_fields
+
+    scenarios: Dict[str, Dict[str, float]] = {}
+    for scenario in ["bull", "base", "bear"]:
+        value = data.get(scenario)
+        if not isinstance(value, list) or len(value) != 6:
+            return {}
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+            return {}
+        prob_raw, growth_raw, margin_raw, net_financing_raw, tax_raw, pe_raw = value
+        prob = _normalize_probability(float(prob_raw))
+        if not (0.0 <= prob <= 1.0):
+            return {}
+        scenarios[scenario] = {
+            "probability": prob,
+            "revenue_growth_3y_avg": _normalize_decimal_ratio(float(growth_raw)),
+            "operating_profitability_margin": _normalize_decimal_ratio(float(margin_raw)),
+            "net_financing_result": float(net_financing_raw),
+            "tax_rate": _normalize_decimal_ratio(float(tax_raw)),
+            "pe_multiple": float(pe_raw),
+        }
+
+    prob_sum = sum(v["probability"] for v in scenarios.values())
+    if abs(prob_sum - 1.0) > 0.001:
+        return {}
+
+    return {
+        "scenarios": scenarios,
+        "investment_amount": investment_amount,
+        "investment_rationale": investment_rationale,
+    }
+
+def extract_sotp_scenario_json(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+
+    json_str = match.group(0)
+    data = json.loads(json_str)
+    required_keys = {"bull", "base", "bear"}
+    if required_keys - data.keys():
+        return {}
+    investment_fields = _extract_investment_fields(data)
+    if not investment_fields:
+        return {}
+    investment_amount, investment_rationale = investment_fields
+
+    scenarios: Dict[str, Dict[str, Any]] = {}
+    for scenario in ["bull", "base", "bear"]:
+        payload = data.get(scenario)
+        if not isinstance(payload, dict):
+            return {}
+        prob_raw = payload.get("probability")
+        activities = payload.get("activities")
+        if not isinstance(prob_raw, (int, float)) or isinstance(prob_raw, bool):
+            return {}
+        prob = _normalize_probability(float(prob_raw))
+        if not (0.0 <= prob <= 1.0):
+            return {}
+        if not isinstance(activities, dict) or not activities:
+            return {}
+        clean_activities: Dict[str, float] = {}
+        for activity_name, activity_value in activities.items():
+            if not isinstance(activity_value, (int, float)) or isinstance(activity_value, bool):
+                return {}
+            clean_activities[str(activity_name)] = float(activity_value)
+        scenarios[scenario] = {
+            "probability": prob,
+            "activities": clean_activities,
+        }
+
+    prob_sum = sum(v["probability"] for v in scenarios.values())
+    if abs(prob_sum - 1.0) > 0.001:
+        return {}
+
+    return {
+        "scenarios": scenarios,
+        "investment_amount": investment_amount,
+        "investment_rationale": investment_rationale,
+    }
+
 def extract_forest_logic_json(text: str) -> Dict[str, Any]:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
@@ -4566,6 +4810,105 @@ def calculate_bbb_ni_pe(variable_dict, scenarios_dict, pe_multiple):
     return 0, ni
   return share_price, ni
 
+def calculate_revenue_scenario(variable_dict, scenarios_dict, ev_sales_multiple):
+  expected_revenue = 0.0
+  per_scenario_prices: Dict[str, float] = {}
+  for scenario_name in ["bear", "base", "bull"]:
+    payload = scenarios_dict.get(scenario_name, {})
+    prob = float(payload.get("probability", 0.0))
+    revenue_3y = float(payload.get("revenue_3y", 0.0))
+    scenario_price = float(calculate_ps(variable_dict, ev_sales_multiple, revenue_3y))
+    per_scenario_prices[scenario_name] = scenario_price
+    expected_revenue += prob * revenue_3y
+  expected_price = float(calculate_ps(variable_dict, ev_sales_multiple, expected_revenue))
+  if expected_price < 0:
+    expected_price = 0.0
+  return {
+      "expected_price": expected_price,
+      "expected_revenue_3y": expected_revenue,
+      "ev_sales_multiple": float(ev_sales_multiple),
+      "per_scenario_prices": per_scenario_prices,
+  }
+
+def calculate_composite_scenario(variable_dict, scenarios_dict):
+  expected_price = 0.0
+  expected_revenue = 0.0
+  expected_net_income = 0.0
+  expected_pe = 0.0
+  weighted_growth = 0.0
+  weighted_margin = 0.0
+  weighted_net_financing = 0.0
+  weighted_tax = 0.0
+  weighted_pe = 0.0
+  per_scenario_prices: Dict[str, float] = {}
+
+  for scenario_name in ["bear", "base", "bull"]:
+    payload = scenarios_dict.get(scenario_name, {})
+    prob = float(payload.get("probability", 0.0))
+    growth = float(payload.get("revenue_growth_3y_avg", 0.0))
+    margin = float(payload.get("operating_profitability_margin", 0.0))
+    net_financing = float(payload.get("net_financing_result", 0.0))
+    tax_rate = float(payload.get("tax_rate", 0.0))
+    pe = float(payload.get("pe_multiple", 0.0))
+    scenario_price, scenario_revenue, scenario_ni, _ = calculate_forest_logic(
+        variable_dict, growth, margin, net_financing, tax_rate, pe
+    )
+    per_scenario_prices[scenario_name] = float(scenario_price)
+    expected_price += prob * float(scenario_price)
+    expected_revenue += prob * float(scenario_revenue)
+    expected_net_income += prob * float(scenario_ni)
+    expected_pe += prob * float(pe)
+    weighted_growth += prob * growth
+    weighted_margin += prob * margin
+    weighted_net_financing += prob * net_financing
+    weighted_tax += prob * tax_rate
+    weighted_pe += prob * pe
+
+  if expected_price < 0:
+    expected_price = 0.0
+  return {
+      "expected_price": expected_price,
+      "expected_revenue_3y": expected_revenue,
+      "expected_net_income_3y": expected_net_income,
+      "expected_pe_multiple": expected_pe,
+      "weighted_growth": weighted_growth,
+      "weighted_margin": weighted_margin,
+      "weighted_net_financing": weighted_net_financing,
+      "weighted_tax_rate": weighted_tax,
+      "weighted_pe_multiple": weighted_pe,
+      "per_scenario_prices": per_scenario_prices,
+  }
+
+def calculate_sotp_scenario(variable_dict, scenarios_dict):
+  expected_price = 0.0
+  per_scenario_prices: Dict[str, float] = {}
+  per_scenario_target_market_cap: Dict[str, float] = {}
+  weighted_target_market_cap = 0.0
+  shares = float(variable_dict["shares_outstanding"])
+
+  for scenario_name in ["bear", "base", "bull"]:
+    payload = scenarios_dict.get(scenario_name, {})
+    prob = float(payload.get("probability", 0.0))
+    activities = payload.get("activities", {})
+    scenario_market_cap = 0.0
+    if isinstance(activities, dict):
+      for _, activity_value in activities.items():
+        scenario_market_cap += float(activity_value)
+    per_scenario_target_market_cap[scenario_name] = float(scenario_market_cap)
+    scenario_price = float(max(0.0, scenario_market_cap / shares))
+    per_scenario_prices[scenario_name] = scenario_price
+    expected_price += prob * scenario_price
+    weighted_target_market_cap += prob * scenario_market_cap
+
+  if expected_price < 0:
+    expected_price = 0.0
+  return {
+      "expected_price": expected_price,
+      "weighted_target_market_cap": weighted_target_market_cap,
+      "per_scenario_prices": per_scenario_prices,
+      "per_scenario_target_market_cap": per_scenario_target_market_cap,
+  }
+
 def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe):
   revenue = variable_dict["revenue"]
   if revenue <= 0:
@@ -4698,6 +5041,36 @@ def get_bbb_ni_pe(bbb_ni_pe_json, variables_dict):
     return [price], [ni], [pe]
   else:
     return [], [ni], [pe]
+
+def get_revenue_scenario(revenue_scenario_json, variables_dict):
+  calc = calculate_revenue_scenario(
+      variables_dict,
+      revenue_scenario_json["scenarios"],
+      revenue_scenario_json["ev_sales_multiple"],
+  )
+  expected_price = float(calc["expected_price"])
+  expected_revenue = float(calc["expected_revenue_3y"])
+  ev_sales_multiple = float(calc["ev_sales_multiple"])
+  if expected_price > 0:
+    return [expected_price], [ev_sales_multiple], [expected_revenue], calc
+  return [], [ev_sales_multiple], [expected_revenue], calc
+
+def get_composite_scenario(composite_scenario_json, variables_dict):
+  calc = calculate_composite_scenario(variables_dict, composite_scenario_json["scenarios"])
+  expected_price = float(calc["expected_price"])
+  expected_revenue = float(calc["expected_revenue_3y"])
+  expected_net_income = float(calc["expected_net_income_3y"])
+  expected_pe = float(calc["expected_pe_multiple"])
+  if expected_price > 0:
+    return [expected_price], [expected_revenue], [expected_net_income], [expected_pe], calc
+  return [], [expected_revenue], [expected_net_income], [expected_pe], calc
+
+def get_sotp_scenario(sotp_scenario_json, variables_dict):
+  calc = calculate_sotp_scenario(variables_dict, sotp_scenario_json["scenarios"])
+  expected_price = float(calc["expected_price"])
+  if expected_price > 0:
+    return [expected_price], calc
+  return [], calc
 
 def get_forest_logic(forest_logic_json, variables_dict):
   # growth, op_margin, net_financing, tax_rate, pe
@@ -5366,6 +5739,15 @@ def scenario_dcf_full(
       raw_for_detail = raw_json if raw_json else {}
       if not isinstance(raw_for_detail, dict):
         raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        scenario_payload = scenario_dcf_json["scenarios"].get(scenario_name, {})
+        raw_for_detail[scenario_name] = [
+            float(scenario_payload.get("probability", 0.0)),
+            float(scenario_payload.get("fcf_next_year", 0.0)),
+            float(scenario_payload.get("g", 0.0)),
+            float(scenario_payload.get("wacc", 0.0)),
+            float(scenario_payload.get("terminal_g", 0.0)),
+        ]
       # Emit weighted assumptions under canonical DCF keys so assumptions UI can aggregate them directly.
       weighted_fcf = float(calc.get("weighted_fcf_next_year", 0.0))
       weighted_g = float(calc.get("weighted_g", 0.0))
@@ -5417,7 +5799,7 @@ def bbb_tp_full(
   )
   all_results = []
   details = []
-  name_of_eval = "Bull Base Bear Target Price Valuation"
+  name_of_eval = "Target Scenario Valuation"
   for answer in answers:
     raw_json_text = _extract_raw_json_text(answer)
     raw_json = _extract_raw_json_dict(answer)
@@ -5427,12 +5809,23 @@ def bbb_tp_full(
     prices = get_bbb_tp(target_price_json, vdict)
     all_results.extend(prices)
     if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, target_market_cap = target_price_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        raw_for_detail[scenario_name] = [float(prob), float(target_market_cap)]
+      weighted_target_market_cap = 0.0
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, target_market_cap = target_price_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        weighted_target_market_cap += float(prob) * float(target_market_cap)
+      raw_for_detail["target_market_cap"] = float(weighted_target_market_cap)
       details.append(
           {
               "target_price": float(prices[0]) if prices else None,
               "investment_amount": float(target_price_json.get("investment_amount")),
               "raw_json_text": raw_json_text,
-              "raw_json": raw_json if raw_json else dict(target_price_json),
+              "raw_json": raw_for_detail if raw_for_detail else dict(target_price_json),
           }
       )
 
@@ -5471,7 +5864,7 @@ def bbb_ni_pe_full(
   ni_results = []
   pe_results = []
   details = []
-  name_of_eval = "Bull Base Bear Net Income & P/E Valuation"
+  name_of_eval = "Earnings Scenario Valuation"
   for answer in answers:
     raw_json_text = _extract_raw_json_text(answer)
     raw_json = _extract_raw_json_dict(answer)
@@ -5483,12 +5876,21 @@ def bbb_ni_pe_full(
     ni_results.extend(ni)
     pe_results.extend(pe)
     if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, net_income = bbb_ni_pe_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        raw_for_detail[scenario_name] = [float(prob), float(net_income)]
+      weighted_net_income = float(ni[0]) if ni else 0.0
+      raw_for_detail["net_income_3y"] = float(weighted_net_income)
+      raw_for_detail["pe_multiple"] = float(bbb_ni_pe_json.get("pe_multiple", 0.0))
       details.append(
           {
               "target_price": float(price[0]) if price else None,
               "investment_amount": float(bbb_ni_pe_json.get("investment_amount")),
               "raw_json_text": raw_json_text,
-              "raw_json": raw_json if raw_json else dict(bbb_ni_pe_json),
+              "raw_json": raw_for_detail if raw_for_detail else dict(bbb_ni_pe_json),
           }
       )
 
@@ -5502,6 +5904,208 @@ def bbb_ni_pe_full(
   if collect_details:
     return [], ni_results, pe_results, summary_text, details
   return [], ni_results, pe_results, summary_text
+
+def revenue_scenario_full(
+    financial_dict,
+    text,
+    num_iterations=3,
+    llm_workers=6,
+    runtime_context=None,
+    variables_dict_input=None,
+    ticker_input=None,
+    model="deepseek-chat",
+    collect_details: bool = False,
+):
+  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
+  prompt = build_prompt(tk, financial_dict, instructions_revenue_scenario, text)
+  answers = llm_n_answers_parallel(
+      api_key=DEEPSEEK_API_KEY,
+      prompt=prompt,
+      n=num_iterations,
+      max_workers=llm_workers,
+      model=model,
+  )
+  all_results = []
+  ps_results = []
+  revenue_results = []
+  details = []
+  name_of_eval = "Revenue Scenario Valuation"
+  for answer in answers:
+    raw_json_text = _extract_raw_json_text(answer)
+    raw_json = _extract_raw_json_dict(answer)
+    revenue_json = extract_revenue_scenario_json(answer)
+    if not revenue_json:
+      continue
+    price, ps_vals, rev_vals, calc = get_revenue_scenario(revenue_json, vdict)
+    all_results.extend(price)
+    ps_results.extend(ps_vals)
+    revenue_results.extend(rev_vals)
+    if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        scenario_payload = revenue_json["scenarios"].get(scenario_name, {})
+        raw_for_detail[scenario_name] = [
+            float(scenario_payload.get("probability", 0.0)),
+            float(scenario_payload.get("revenue_3y", 0.0)),
+        ]
+      raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
+      ev_sales_multiple = float(revenue_json.get("ev_sales_multiple", 0.0))
+      raw_for_detail["ev_sales_multiple"] = [ev_sales_multiple, ev_sales_multiple]
+      details.append(
+          {
+              "target_price": float(price[0]) if price else None,
+              "investment_amount": float(revenue_json.get("investment_amount")),
+              "raw_json_text": raw_json_text,
+              "raw_json": raw_for_detail if raw_for_detail else dict(revenue_json),
+          }
+      )
+  if all_results:
+    summary_text = plot_results(all_results, name_of_eval)
+    if collect_details:
+      return all_results, ps_results, revenue_results, summary_text, details
+    return all_results, ps_results, revenue_results, summary_text
+  summary_text = ("\nNo results\n\n", name_of_eval)
+  if collect_details:
+    return [], ps_results, revenue_results, summary_text, details
+  return [], ps_results, revenue_results, summary_text
+
+def composite_scenario_full(
+    financial_dict,
+    text,
+    num_iterations=3,
+    llm_workers=6,
+    runtime_context=None,
+    variables_dict_input=None,
+    ticker_input=None,
+    model="deepseek-chat",
+    collect_details: bool = False,
+):
+  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
+  prompt = build_prompt(tk, financial_dict, instructions_composite_scenario, text)
+  answers = llm_n_answers_parallel(
+      api_key=DEEPSEEK_API_KEY,
+      prompt=prompt,
+      n=num_iterations,
+      max_workers=llm_workers,
+      model=model,
+  )
+  all_results = []
+  rev_results = []
+  ni_results = []
+  pe_results = []
+  details = []
+  name_of_eval = "Composite Scenario Valuation"
+  for answer in answers:
+    raw_json_text = _extract_raw_json_text(answer)
+    raw_json = _extract_raw_json_dict(answer)
+    composite_json = extract_composite_scenario_json(answer)
+    if not composite_json:
+      continue
+    price, rev, ni, pe, calc = get_composite_scenario(composite_json, vdict)
+    all_results.extend(price)
+    rev_results.extend(rev)
+    ni_results.extend(ni)
+    pe_results.extend(pe)
+    if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        scenario_payload = composite_json["scenarios"].get(scenario_name, {})
+        raw_for_detail[scenario_name] = [
+            float(scenario_payload.get("probability", 0.0)),
+            float(scenario_payload.get("revenue_growth_3y_avg", 0.0)),
+            float(scenario_payload.get("operating_profitability_margin", 0.0)),
+            float(scenario_payload.get("net_financing_result", 0.0)),
+            float(scenario_payload.get("tax_rate", 0.0)),
+            float(scenario_payload.get("pe_multiple", 0.0)),
+        ]
+      raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
+      raw_for_detail["net_income_3y"] = float(calc.get("expected_net_income_3y", 0.0))
+      raw_for_detail["revenue_growth_3y_avg"] = float(calc.get("weighted_growth", 0.0))
+      raw_for_detail["operating_profitability_margin"] = float(calc.get("weighted_margin", 0.0))
+      raw_for_detail["net_financing_result"] = float(calc.get("weighted_net_financing", 0.0))
+      raw_for_detail["tax_rate"] = float(calc.get("weighted_tax_rate", 0.0))
+      raw_for_detail["pe_multiple"] = float(calc.get("weighted_pe_multiple", 0.0))
+      details.append(
+          {
+              "target_price": float(price[0]) if price else None,
+              "investment_amount": float(composite_json.get("investment_amount")),
+              "raw_json_text": raw_json_text,
+              "raw_json": raw_for_detail if raw_for_detail else dict(composite_json),
+          }
+      )
+  if all_results:
+    summary_text = plot_results(all_results, name_of_eval)
+    if collect_details:
+      return all_results, rev_results, ni_results, pe_results, summary_text, details
+    return all_results, rev_results, ni_results, pe_results, summary_text
+  summary_text = ("\nNo results\n\n", name_of_eval)
+  if collect_details:
+    return [], rev_results, ni_results, pe_results, summary_text, details
+  return [], rev_results, ni_results, pe_results, summary_text
+
+def sotp_scenario_full(
+    financial_dict,
+    text,
+    num_iterations=3,
+    llm_workers=6,
+    runtime_context=None,
+    variables_dict_input=None,
+    ticker_input=None,
+    model="deepseek-chat",
+    collect_details: bool = False,
+):
+  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
+  prompt = build_prompt(tk, financial_dict, instructions_sotp_scenario, text)
+  answers = llm_n_answers_parallel(
+      api_key=DEEPSEEK_API_KEY,
+      prompt=prompt,
+      n=num_iterations,
+      max_workers=llm_workers,
+      model=model,
+  )
+  all_results = []
+  details = []
+  name_of_eval = "SOTP Scenario Valuation"
+  for answer in answers:
+    raw_json_text = _extract_raw_json_text(answer)
+    raw_json = _extract_raw_json_dict(answer)
+    sotp_json = extract_sotp_scenario_json(answer)
+    if not sotp_json:
+      continue
+    prices, calc = get_sotp_scenario(sotp_json, vdict)
+    all_results.extend(prices)
+    if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        scenario_payload = sotp_json["scenarios"].get(scenario_name, {})
+        raw_for_detail[scenario_name] = [
+            float(scenario_payload.get("probability", 0.0)),
+            float(calc.get("per_scenario_target_market_cap", {}).get(scenario_name, 0.0)),
+        ]
+      raw_for_detail["target_market_cap"] = float(calc.get("weighted_target_market_cap", 0.0))
+      details.append(
+          {
+              "target_price": float(prices[0]) if prices else None,
+              "investment_amount": float(sotp_json.get("investment_amount")),
+              "raw_json_text": raw_json_text,
+              "raw_json": raw_for_detail if raw_for_detail else dict(sotp_json),
+          }
+      )
+  if all_results:
+    summary_text = plot_results(all_results, name_of_eval)
+    if collect_details:
+      return all_results, summary_text, details
+    return all_results, summary_text
+  summary_text = ("\nNo results\n\n", name_of_eval)
+  if collect_details:
+    return [], summary_text, details
+  return [], summary_text
 
 def forest_logic_full(
     financial_dict,
@@ -5658,13 +6262,12 @@ def run_valuations(
     collect_details_for_metrics = True
     method_details = {
         "Scenario DCF": [],
-        "DCF": [],
-        "Net Income & P/E": [],
-        "Revenue & EV/S": [],
+        "Target Scenario": [],
+        "Earnings Scenario": [],
+        "Revenue Scenario": [],
+        "Composite Scenario": [],
+        "SOTP Scenario": [],
         "Dream Team": [],
-        "BBB Target": [],
-        "BBB NI & P/E": [],
-        "Lary's Logic": [],
     }
     def _collect_investment_values(items):
         out = []
@@ -5739,104 +6342,9 @@ def run_valuations(
             summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
-    def _run_intrinsic_dcf_mixed():
+    def _run_target_scenario_mixed():
         all_results = []
-        summary_name = "DCF Range Price Valuation"
-        details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = dcf_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = dcf_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
-        return all_results, _plot_summary_or_empty(all_results, summary_name), details
-
-    def _run_profit_pe_mixed():
-        all_results = []
-        pe_results = []
-        ni_results = []
-        summary_name = "P/E & Earnings Range Price Valuation"
-        details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_pe, ctx_ni, ctx_summary, ctx_details = profit_pe_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_pe, ctx_ni, ctx_summary = profit_pe_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            pe_results.extend(ctx_pe)
-            ni_results.extend(ctx_ni)
-            summary_name = ctx_summary[1]
-        return all_results, pe_results, ni_results, _plot_summary_or_empty(all_results, summary_name), details
-
-    def _run_revenue_ps_mixed():
-        all_results = []
-        ps_results = []
-        revenue_results = []
-        summary_name = "Revenue & EV/S Range Price Valuation"
-        details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_ps_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_ps_range_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            ps_results.extend(ctx_ps)
-            revenue_results.extend(ctx_rev)
-            summary_name = ctx_summary[1]
-        return all_results, ps_results, revenue_results, _plot_summary_or_empty(all_results, summary_name), details
-
-    def _run_bbb_tp_mixed():
-        all_results = []
-        summary_name = "Bull Base Bear Target Price Valuation"
+        summary_name = "Target Scenario Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5863,11 +6371,11 @@ def run_valuations(
             summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
-    def _run_bbb_ni_pe_mixed():
+    def _run_earnings_scenario_mixed():
         all_results = []
         ni_results = []
         pe_results = []
-        summary_name = "Bull Base Bear Net Income & P/E Valuation"
+        summary_name = "Earnings Scenario Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
@@ -5896,16 +6404,15 @@ def run_valuations(
             summary_name = ctx_summary[1]
         return all_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
 
-    def _run_forest_logic_mixed():
+    def _run_revenue_scenario_mixed():
         all_results = []
-        rev_results = []
-        ni_results = []
-        pe_results = []
-        summary_name = "Forest Logic Valuation"
+        ps_results = []
+        revenue_results = []
+        summary_name = "Revenue Scenario Valuation"
         details = []
         for ctx_text, iter_count, model_name in _context_runs():
             if collect_details_for_metrics:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = forest_logic_full(
+                ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_scenario_full(
                     financial_dict,
                     ctx_text,
                     num_iterations=iter_count,
@@ -5916,7 +6423,7 @@ def run_valuations(
                 )
                 details.extend(ctx_details)
             else:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = forest_logic_full(
+                ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_scenario_full(
                     financial_dict,
                     ctx_text,
                     num_iterations=iter_count,
@@ -5925,11 +6432,74 @@ def run_valuations(
                     runtime_context=runtime_context,
                 )
             all_results.extend(ctx_all)
-            rev_results.extend(ctx_rev)
+            ps_results.extend(ctx_ps)
+            revenue_results.extend(ctx_rev)
+            summary_name = ctx_summary[1]
+        return all_results, ps_results, revenue_results, _plot_summary_or_empty(all_results, summary_name), details
+
+    def _run_composite_scenario_mixed():
+        all_results = []
+        revenue_results = []
+        ni_results = []
+        pe_results = []
+        summary_name = "Composite Scenario Valuation"
+        details = []
+        for ctx_text, iter_count, model_name in _context_runs():
+            if collect_details_for_metrics:
+                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = composite_scenario_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                    collect_details=True,
+                )
+                details.extend(ctx_details)
+            else:
+                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = composite_scenario_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                )
+            all_results.extend(ctx_all)
+            revenue_results.extend(ctx_rev)
             ni_results.extend(ctx_ni)
             pe_results.extend(ctx_pe)
             summary_name = ctx_summary[1]
-        return all_results, rev_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
+        return all_results, revenue_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
+
+    def _run_sotp_scenario_mixed():
+        all_results = []
+        summary_name = "SOTP Scenario Valuation"
+        details = []
+        for ctx_text, iter_count, model_name in _context_runs():
+            if collect_details_for_metrics:
+                ctx_results, ctx_summary, ctx_details = sotp_scenario_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                    collect_details=True,
+                )
+                details.extend(ctx_details)
+            else:
+                ctx_results, ctx_summary = sotp_scenario_full(
+                    financial_dict,
+                    ctx_text,
+                    num_iterations=iter_count,
+                    llm_workers=llm_workers_each_block,
+                    model=model_name,
+                    runtime_context=runtime_context,
+                )
+            all_results.extend(ctx_results)
+            summary_name = ctx_summary[1]
+        return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_dream_mixed():
         all_results = []
@@ -5998,15 +6568,12 @@ def run_valuations(
     # Launch all blocks in parallel
     with ThreadPoolExecutor(max_workers=blocks_workers) as ex:
         fut_dcf = ex.submit(_run_dcf_mixed)
-        fut_intrinsic_dcf = ex.submit(_run_intrinsic_dcf_mixed)
-        fut_pe = ex.submit(_run_profit_pe_mixed)
-        fut_ps = ex.submit(_run_revenue_ps_mixed)
-        # fut_target = ex.submit(target_price_full, financial_dict, text, n, llm_workers_each_block)
+        fut_target_scenario = ex.submit(_run_target_scenario_mixed)
+        fut_earnings_scenario = ex.submit(_run_earnings_scenario_mixed)
+        fut_revenue_scenario = ex.submit(_run_revenue_scenario_mixed)
+        fut_composite_scenario = ex.submit(_run_composite_scenario_mixed)
+        fut_sotp_scenario = ex.submit(_run_sotp_scenario_mixed)
         fut_dream = ex.submit(_run_dream_mixed)
-        # fut_sotp = ex.submit(sotp_full, financial_dict, text, n, llm_workers_each_block)
-        fut_bbb_tp = ex.submit(_run_bbb_tp_mixed)
-        fut_bbb_ni_pe = ex.submit(_run_bbb_ni_pe_mixed)
-        fut_forest_logic = ex.submit(_run_forest_logic_mixed)
 
         dcf_result = _safe_future_result(
             fut_dcf,
@@ -6016,35 +6583,49 @@ def run_valuations(
         dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "Scenario DCF block")
         all_results_dcf, text_dcf, details_dcf = dcf_result
 
-        intrinsic_dcf_result = _safe_future_result(
-            fut_intrinsic_dcf,
-            ([], ("\nNo results\n\n", "DCF Range Price Valuation"), []),
-            "DCF block",
+        target_result = _safe_future_result(
+            fut_target_scenario,
+            ([], ("\nNo results\n\n", "Target Scenario Valuation"), []),
+            "Target Scenario block",
         )
-        intrinsic_dcf_result = _retry_block_once_if_empty(
-            intrinsic_dcf_result,
-            _run_intrinsic_dcf_mixed,
-            "DCF block",
-        )
-        all_results_intrinsic_dcf, text_intrinsic_dcf, details_intrinsic_dcf = intrinsic_dcf_result
+        target_result = _retry_block_once_if_empty(target_result, _run_target_scenario_mixed, "Target Scenario block")
+        all_results_target_scenario, text_target_scenario, details_target_scenario = target_result
 
-        pe_result = _safe_future_result(
-            fut_pe,
-            ([], [], [], ("\nNo results\n\n", "P/E & Earnings Range Price Valuation"), []),
-            "P/E & Earnings block",
+        earnings_result = _safe_future_result(
+            fut_earnings_scenario,
+            ([], [], [], ("\nNo results\n\n", "Earnings Scenario Valuation"), []),
+            "Earnings Scenario block",
         )
-        pe_result = _retry_block_once_if_empty(pe_result, _run_profit_pe_mixed, "P/E & Earnings block")
-        all_results_profit_pe, pe_results_profit_pe, ni_results_profit_pe, text_pe, details_pe = pe_result
-
-        ps_result = _safe_future_result(
-            fut_ps,
-            ([], [], [], ("\nNo results\n\n", "Revenue & EV/S Range Price Valuation"), []),
-            "Revenue & EV/S block",
+        earnings_result = _retry_block_once_if_empty(
+            earnings_result,
+            _run_earnings_scenario_mixed,
+            "Earnings Scenario block",
         )
-        ps_result = _retry_block_once_if_empty(ps_result, _run_revenue_ps_mixed, "Revenue & EV/S block")
-        all_results_revenue_ps, ps_results_revenue_ps, revenue_results_revenue_ps, text_ps, details_ps = ps_result
+        (
+            all_results_earnings_scenario,
+            ni_results_earnings_scenario,
+            pe_results_earnings_scenario,
+            text_earnings_scenario,
+            details_earnings_scenario,
+        ) = earnings_result
 
-        # all_results_target, text_target = fut_target.result()
+        revenue_result = _safe_future_result(
+            fut_revenue_scenario,
+            ([], [], [], ("\nNo results\n\n", "Revenue Scenario Valuation"), []),
+            "Revenue Scenario block",
+        )
+        revenue_result = _retry_block_once_if_empty(
+            revenue_result,
+            _run_revenue_scenario_mixed,
+            "Revenue Scenario block",
+        )
+        (
+            all_results_revenue_scenario,
+            ps_results_revenue_scenario,
+            revenue_results_revenue_scenario,
+            text_revenue_scenario,
+            details_revenue_scenario,
+        ) = revenue_result
 
         dream_result = _safe_future_result(
             fut_dream,
@@ -6054,47 +6635,40 @@ def run_valuations(
         dream_result = _retry_block_once_if_empty(dream_result, _run_dream_mixed, "Dream Team block")
         all_results_dream, text_dream, details_dream = dream_result
 
-        # all_results_sotp, text_sotp = fut_sotp.result()
-
-        bbb_tp_result = _safe_future_result(
-            fut_bbb_tp,
-            ([], ("\nNo results\n\n", "Bull Base Bear Target Price Valuation"), []),
-            "BBB Target block",
+        composite_result = _safe_future_result(
+            fut_composite_scenario,
+            ([], [], [], [], ("\nNo results\n\n", "Composite Scenario Valuation"), []),
+            "Composite Scenario block",
         )
-        bbb_tp_result = _retry_block_once_if_empty(bbb_tp_result, _run_bbb_tp_mixed, "BBB Target block")
-        all_results_bbb_tp, text_bbb_tp, details_bbb_tp = bbb_tp_result
-
-        bbb_ni_pe_result = _safe_future_result(
-            fut_bbb_ni_pe,
-            ([], [], [], ("\nNo results\n\n", "Bull Base Bear Net Income & P/E Valuation"), []),
-            "BBB NI & P/E block",
+        composite_result = _retry_block_once_if_empty(
+            composite_result,
+            _run_composite_scenario_mixed,
+            "Composite Scenario block",
         )
-        bbb_ni_pe_result = _retry_block_once_if_empty(bbb_ni_pe_result, _run_bbb_ni_pe_mixed, "BBB NI & P/E block")
-        all_results_bbb_ni_pe, ni_results_bbb_ni_pe, pe_results_bbb_ni_pe, text_bbb_ni_pe, details_bbb_ni_pe = bbb_ni_pe_result
-
-        forest_result = _safe_future_result(
-            fut_forest_logic,
-            ([], [], [], [], ("\nNo results\n\n", "Forest Logic Valuation"), []),
-            "Forest Logic block",
-        )
-        forest_result = _retry_block_once_if_empty(forest_result, _run_forest_logic_mixed, "Forest Logic block")
         (
-            all_results_forest_logic,
-            revenue_results_forest_logic,
-            ni_results_forest_logic,
-            pe_results_forest_logic,
-            text_forest_logic,
-            details_forest_logic,
-        ) = forest_result
+            all_results_composite_scenario,
+            revenue_results_composite_scenario,
+            ni_results_composite_scenario,
+            pe_results_composite_scenario,
+            text_composite_scenario,
+            details_composite_scenario,
+        ) = composite_result
+
+        sotp_result = _safe_future_result(
+            fut_sotp_scenario,
+            ([], ("\nNo results\n\n", "SOTP Scenario Valuation"), []),
+            "SOTP Scenario block",
+        )
+        sotp_result = _retry_block_once_if_empty(sotp_result, _run_sotp_scenario_mixed, "SOTP Scenario block")
+        all_results_sotp_scenario, text_sotp_scenario, details_sotp_scenario = sotp_result
 
     method_details["Scenario DCF"] = details_dcf
-    method_details["DCF"] = details_intrinsic_dcf
-    method_details["Net Income & P/E"] = details_pe
-    method_details["Revenue & EV/S"] = details_ps
+    method_details["Target Scenario"] = details_target_scenario
+    method_details["Earnings Scenario"] = details_earnings_scenario
+    method_details["Revenue Scenario"] = details_revenue_scenario
+    method_details["Composite Scenario"] = details_composite_scenario
+    method_details["SOTP Scenario"] = details_sotp_scenario
     method_details["Dream Team"] = details_dream
-    method_details["BBB Target"] = details_bbb_tp
-    method_details["BBB NI & P/E"] = details_bbb_ni_pe
-    method_details["Lary's Logic"] = details_forest_logic
 
     all_investment_values = []
     for method_name, items in method_details.items():
@@ -6118,13 +6692,12 @@ def run_valuations(
 
     aggregate_investments = {
         "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
-        "DCF": _mean_investment_for_method(method_details["DCF"]),
-        "Net Income & P/E": _mean_investment_for_method(method_details["Net Income & P/E"]),
-        "Revenue & EV/S": _mean_investment_for_method(method_details["Revenue & EV/S"]),
+        "Target Scenario": _mean_investment_for_method(method_details["Target Scenario"]),
+        "Earnings Scenario": _mean_investment_for_method(method_details["Earnings Scenario"]),
+        "Revenue Scenario": _mean_investment_for_method(method_details["Revenue Scenario"]),
+        "Composite Scenario": _mean_investment_for_method(method_details["Composite Scenario"]),
+        "SOTP Scenario": _mean_investment_for_method(method_details["SOTP Scenario"]),
         "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
-        "BBB Target": _mean_investment_for_method(method_details["BBB Target"]),
-        "BBB NI & P/E": _mean_investment_for_method(method_details["BBB NI & P/E"]),
-        "Lary's Logic": _mean_investment_for_method(method_details["Lary's Logic"]),
     }
     aggregate_investment_percents = {
         method_name: (
@@ -6138,15 +6711,12 @@ def run_valuations(
     # Build final_dict (same logic as your original)
     all_results_list = [
         (all_results_dcf, "Scenario DCF"),
-        (all_results_intrinsic_dcf, "DCF"),
-        (all_results_profit_pe, "Net Income & P/E"),
-        (all_results_revenue_ps, "Revenue & EV/S"),
-        # (all_results_target, "LLM Target"),
+        (all_results_target_scenario, "Target Scenario"),
+        (all_results_earnings_scenario, "Earnings Scenario"),
+        (all_results_revenue_scenario, "Revenue Scenario"),
+        (all_results_composite_scenario, "Composite Scenario"),
+        (all_results_sotp_scenario, "SOTP Scenario"),
         (all_results_dream, "Dream Team"),
-        # (all_results_sotp, "SOTP"),
-        (all_results_bbb_tp, "BBB Target"),
-        (all_results_bbb_ni_pe, "BBB NI & P/E"),
-        (all_results_forest_logic, "Lary's Logic"),
     ]
 
     all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
@@ -6159,20 +6729,20 @@ def run_valuations(
     dict_of_prices["Investment Percents"] = aggregate_investment_percents
     final_dict["Prices"] = dict_of_prices
 
-    revenue_results = revenue_results_revenue_ps + revenue_results_forest_logic
+    revenue_results = revenue_results_revenue_scenario + revenue_results_composite_scenario
     revenue_results_currency = [x * financial_currency for x in revenue_results]
     revenue_dict = make_dict_values(revenue_results_currency)
     revenue_dict["Current"] = current_revenue * financial_currency
     final_dict["Revenue"] = revenue_dict
 
-    ni_results = ni_results_profit_pe + ni_results_bbb_ni_pe + ni_results_forest_logic
+    ni_results = ni_results_earnings_scenario + ni_results_composite_scenario
     ni_results_currency = [x * financial_currency for x in ni_results]
     ni_dict = make_dict_values(ni_results_currency)
     mean_ni = ni_dict["Overall"][0] / financial_currency
     ni_dict["Current"] = current_ni * financial_currency
     final_dict["Net Income"] = ni_dict
 
-    pe_results = pe_results_profit_pe + pe_results_bbb_ni_pe + pe_results_forest_logic
+    pe_results = pe_results_earnings_scenario + pe_results_composite_scenario
     pe_dict = make_dict_values(pe_results)
     if mean_ni > 0:
       mc = variables_dict["market_cap"]
@@ -6193,15 +6763,12 @@ def run_valuations(
       append_text_to_file(text=f"Current Price: ${current_price}", two_rows_n=False)
 
       append_text_to_file(text = text_dcf[0], header = text_dcf[1])
-      append_text_to_file(text = text_intrinsic_dcf[0], header = text_intrinsic_dcf[1])
-      append_text_to_file(text = text_pe[0], header = text_pe[1])
-      append_text_to_file(text = text_ps[0], header = text_ps[1])
-      # append_text_to_file(text = text_target[0], header = text_target[1])
+      append_text_to_file(text = text_target_scenario[0], header = text_target_scenario[1])
+      append_text_to_file(text = text_earnings_scenario[0], header = text_earnings_scenario[1])
+      append_text_to_file(text = text_revenue_scenario[0], header = text_revenue_scenario[1])
+      append_text_to_file(text = text_composite_scenario[0], header = text_composite_scenario[1])
+      append_text_to_file(text = text_sotp_scenario[0], header = text_sotp_scenario[1])
       append_text_to_file(text = text_dream[0], header = text_dream[1])
-      # append_text_to_file(text = text_sotp[0], header = text_sotp[1])
-      append_text_to_file(text = text_bbb_tp[0], header = text_bbb_tp[1])
-      append_text_to_file(text = text_bbb_ni_pe[0], header = text_bbb_ni_pe[1])
-      append_text_to_file(text = text_forest_logic[0], header = text_forest_logic[1])
 
       # If you still want the "overall_valuation" sections written to file, keep it here (sequential)
       all_results = [x / price_currency for x in all_results_currency]
@@ -6220,13 +6787,12 @@ def run_valuations(
               "lmil": lmil,
               "aggregate_targets": {
                   "Scenario DCF": float(all_results_dcf[0]) if all_results_dcf else None,
-                  "DCF": float(all_results_intrinsic_dcf[0]) if all_results_intrinsic_dcf else None,
-                  "Net Income & P/E": float(all_results_profit_pe[0]) if all_results_profit_pe else None,
-                  "Revenue & EV/S": float(all_results_revenue_ps[0]) if all_results_revenue_ps else None,
+                  "Target Scenario": float(all_results_target_scenario[0]) if all_results_target_scenario else None,
+                  "Earnings Scenario": float(all_results_earnings_scenario[0]) if all_results_earnings_scenario else None,
+                  "Revenue Scenario": float(all_results_revenue_scenario[0]) if all_results_revenue_scenario else None,
+                  "Composite Scenario": float(all_results_composite_scenario[0]) if all_results_composite_scenario else None,
+                  "SOTP Scenario": float(all_results_sotp_scenario[0]) if all_results_sotp_scenario else None,
                   "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
-                  "BBB Target": float(all_results_bbb_tp[0]) if all_results_bbb_tp else None,
-                  "BBB NI & P/E": float(all_results_bbb_ni_pe[0]) if all_results_bbb_ni_pe else None,
-                  "Lary's Logic": float(all_results_forest_logic[0]) if all_results_forest_logic else None,
               },
               "aggregate_investments": aggregate_investments,
               "aggregate_investment_percents": aggregate_investment_percents,
@@ -7284,13 +7850,13 @@ def plot_all_three(
         xlabel="Price",
         thousands=False,
         include_keys=[
-            "DCF",
-            "Net Income & P/E",
-            "Revenue & EV/S",
+            "Target Scenario",
+            "Earnings Scenario",
+            "Revenue Scenario",
+            "Composite Scenario",
+            "SOTP Scenario",
             "Dream Team",
-            "BBB Target",
-            "BBB NI & P/E",
-            "Lary's Logic",
+            "Scenario DCF",
             "Overall",
         ],
         extra_text=extra_price_text,

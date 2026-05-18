@@ -33,21 +33,21 @@ export type CurrencyContext = {
 
 const METHOD_METRIC_LABELS: Record<string, string> = {
   fcf_next_year: "FCF (Next Year)",
-  growth_rate: "Weighted Growth Rate (G)",
-  wacc: "Weighted WACC",
-  terminal_growth: "Weighted Terminal Value Growth",
-  net_income_3y: "Weighted Net Income (3Y)",
-  pe_multiple: "Weighted P/E Multiple",
-  revenue_3y: "Weighted Revenue (3Y)",
-  ev_sales_multiple: "Weighted EV/Sales Multiple",
-  target_market_cap: "Weighted Target Market Cap",
+  growth_rate: "Growth Rate (G)",
+  wacc: "WACC",
+  terminal_growth: "Terminal Value Growth",
+  net_income_3y: "Net Income (3Y)",
+  pe_multiple: "P/E Multiple",
+  revenue_3y: "Revenue (3Y)",
+  ev_sales_multiple: "EV/Sales Multiple",
+  target_market_cap: "Target Market Cap",
   bull_probability: "Bull Probability",
   base_probability: "Base Probability",
   bear_probability: "Bear Probability",
-  revenue_growth_3y_avg: "Weighted Revenue Growth (3Y Avg)",
-  operating_margin: "Weighted EBIT Margin",
-  net_financing_result: "Weighted Net Financing Result",
-  tax_rate: "Weighted Tax Rate",
+  revenue_growth_3y_avg: "Revenue Growth (3Y Avg)",
+  operating_margin: "EBIT Margin",
+  net_financing_result: "Net Financing Result",
+  tax_rate: "Tax Rate",
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {

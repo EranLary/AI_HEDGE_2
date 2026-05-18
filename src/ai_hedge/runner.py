@@ -236,6 +236,14 @@ def _fmt_signed_pct(value: Any, decimals: int = 2) -> str:
     return f"{num:+.{decimals}f}%"
 
 
+def _fmt_pct(value: Any, decimals: int = 2) -> str:
+    try:
+        num = float(value)
+    except Exception:
+        return "N/A"
+    return f"{num * 100:.{decimals}f}%"
+
+
 def _currency_symbol(currency_code: Any) -> str:
     code = str(currency_code or "").strip().upper()
     if code == "ILS":

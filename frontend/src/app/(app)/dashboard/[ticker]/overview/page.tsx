@@ -1,5 +1,4 @@
 import { DashboardError } from "@/components/dashboard-chrome";
-import { LivePerformanceIsland } from "@/components/overview/live-performance";
 import { getLivePerformance, loadTickerData } from "@/lib/dashboard-server";
 
 import { OverviewClient } from "./overview-client";
@@ -36,12 +35,6 @@ export default async function DashboardOverviewPage({
       reportsForTicker={reportsForTicker}
       resolvedReportId={resolvedReportId}
       liveCurrentPrice={typeof live?.current_price === "number" ? live.current_price : null}
-      livePerformanceSlot={
-        <LivePerformanceIsland
-          ticker={upper}
-          fallback={data.header?.price_performance_pct ?? null}
-        />
-      }
     />
   );
 }

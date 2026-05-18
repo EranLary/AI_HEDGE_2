@@ -46,6 +46,9 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   bull_net_income: "Bull Net Income",
   base_net_income: "Base Net Income",
   bear_net_income: "Bear Net Income",
+  bull_revenue_3y: "Bull Revenue (3Y)",
+  base_revenue_3y: "Base Revenue (3Y)",
+  bear_revenue_3y: "Bear Revenue (3Y)",
   bull_probability: "Bull Probability",
   base_probability: "Base Probability",
   bear_probability: "Bear Probability",
@@ -56,14 +59,13 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
-  "Intrinsic DCF": "DCF projects the cash this business can generate in future years, then discounts it back to today's value. It answers one simple question: what are those future dollars worth right now after accounting for risk and time.",
   "Scenario DCF": "Scenario DCF runs a full Bull/Base/Bear discounted-cash-flow map with explicit probabilities for each path. Instead of one fragile set of assumptions, it blends three coherent operating realities into one weighted intrinsic value.",
-  "Earnings Multiple": "This model starts from expected earnings and applies a valuation multiple similar companies trade at. It is a market-style lens that is easy to compare with how investors usually price profitable businesses.",
-  "Revenue Multiple": "When earnings are volatile or early-stage, revenue can be a cleaner anchor than profit. This approach applies an EV/Sales multiple to expected revenue to estimate enterprise value, then translates that into target price.",
   "Dream Team": "Multiple investor personas analyze the same stock independently, each with a different style and risk appetite. Their outputs are aggregated so you can see a balanced, multi-angle view instead of relying on one voice.",
   "Target Scenario": "This framework forces a full scenario map: Bull, Base, and Bear cases with explicit probabilities. It helps separate upside story from downside risk and gives a weighted target grounded in all three paths.",
   "Earnings Scenario": "This is the scenario version of earnings-based valuation: each Bull/Base/Bear case gets its own net income and P/E assumptions. The final target reflects both business outcomes and changing market sentiment across scenarios.",
-  "Composite Logic": "Composite Logic is a pragmatic synthesis model that blends growth, profitability, and financing realism into one decision-friendly output. It is designed to stay intuitive while still stress-testing the assumptions that usually break valuation models.",
+  "Revenue Scenario": "This scenario model underwrites Bull/Base/Bear revenue outcomes with explicit probabilities, then applies one shared long-term EV/S multiple to convert weighted operating reality into target price.",
+  "Composite Scenario": "Composite Scenario is a full Bull/Base/Bear synthesis of growth, margin, financing, tax, and valuation multiple assumptions, producing a probability-weighted target that stress-tests execution and cycle risk.",
+  "SOTP Scenario": "SOTP Scenario values each business segment separately in Bull/Base/Bear configurations, then combines scenario probabilities to produce a weighted equity value target.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -907,6 +909,10 @@ export function HedgeDashboard({
   const assumptionsModelRows = useMemo(() => {
     const sourceRows = data?.valuation_hub.all_values?.metric_means || [];
     const rows: typeof sourceRows = [];
+    const hasBlendedProbabilities = sourceRows.some((row) => {
+      const mk = String(row.metric_key || "").trim().toLowerCase();
+      return mk === "bull_probability_blended" || mk === "base_probability_blended" || mk === "bear_probability_blended";
+    });
     const mergeBuckets: Record<
       string,
       {
@@ -960,6 +966,13 @@ export function HedgeDashboard({
       const normalized = normalizeMetricLabel(baseLabel);
 
       if (normalized === "base 1" || normalized === "bear 1" || normalized === "bull 1") {
+        continue;
+      }
+      if (
+        hasBlendedProbabilities &&
+        (normalized === "base 0" || normalized === "bear 0" || normalized === "bull 0")
+      ) {
+        // Prefer explicit blended probability rows when present.
         continue;
       }
 

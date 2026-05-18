@@ -44,6 +44,19 @@ type SummaryPayload = {
   assumptions: AssumptionRow[];
 };
 
+type ReturnsMap = {
+  "1D"?: number | null;
+  "1W"?: number | null;
+  "1M"?: number | null;
+  "3M"?: number | null;
+  "6M"?: number | null;
+  "1Y"?: number | null;
+  "3Y"?: number | null;
+  "5Y"?: number | null;
+};
+
+const RETURN_COLUMNS = ["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const;
+
 const WINDOW_OPTIONS: Array<{ key: SummaryWindow; label: string }> = [
   { key: "all", label: "All" },
   { key: "1y", label: "Last Year" },
@@ -146,6 +159,48 @@ function decisionClass(tone: "buy" | "sell" | "hold"): string {
   if (tone === "buy") return "hib-signal-buy";
   if (tone === "sell") return "hib-signal-sell";
   return "hib-signal-hold";
+}
+
+function ReturnsGrid({
+  rows,
+  loading,
+}: {
+  rows: ReturnsMap | null;
+  loading: boolean;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">Price Performance</h2>
+      <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4 xl:grid-cols-8">
+        {RETURN_COLUMNS.map((key) => {
+          const value = rows?.[key];
+          return (
+            <div key={key} className="hib-perf-cell rounded-md bg-black/30 px-2 py-1.5">
+              <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{key}</span>
+              {loading ? (
+                <span className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400">
+                  <span className="h-2.5 w-2.5 animate-spin rounded-full border border-zinc-500 border-t-transparent" />
+                  Loading
+                </span>
+              ) : (
+                <span
+                  className={`mt-1 block text-sm font-semibold ${
+                    typeof value === "number" && Number.isFinite(value) && Math.abs(value) > 1e-9
+                      ? value > 0
+                        ? "hib-target-up"
+                        : "hib-target-down"
+                      : "text-zinc-200"
+                  }`}
+                >
+                  {typeof value === "number" && Number.isFinite(value) ? fmtPct(value) : "N/A"}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 function MeanTable({
@@ -284,8 +339,10 @@ export default function DashboardSummaryPage({
   const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
   const [windowKey, setWindowKey] = useState<SummaryWindow>("all");
   const [loading, setLoading] = useState(true);
+  const [performanceLoading, setPerformanceLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
   const [data, setData] = useState<SummaryPayload | null>(null);
+  const [returnsMap, setReturnsMap] = useState<ReturnsMap | null>(null);
 
   const reportId = search?.get("report") || "";
 
@@ -313,6 +370,35 @@ export default function DashboardSummaryPage({
       cancelled = true;
     };
   }, [upper, windowKey, refreshToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setPerformanceLoading(true);
+      try {
+        const res = await fetch(
+          `/api/performance/${encodeURIComponent(upper)}?refresh=${Date.now()}-${refreshToken}`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as { returns_pct?: ReturnsMap };
+        if (!cancelled) {
+          setReturnsMap(json?.returns_pct || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setReturnsMap(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setPerformanceLoading(false);
+        }
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [upper, refreshToken]);
 
   const coverageText = useMemo(() => {
     if (!data) return "";
@@ -395,6 +481,7 @@ export default function DashboardSummaryPage({
           <p className="text-sm text-zinc-400">
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
+          <ReturnsGrid rows={returnsMap} loading={performanceLoading} />
 
           <section className="grid gap-4 md:grid-cols-5">
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">

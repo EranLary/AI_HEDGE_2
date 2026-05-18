@@ -238,10 +238,12 @@ def _fmt_signed_pct(value: Any, decimals: int = 2) -> str:
 
 def _fmt_pct(value: Any, decimals: int = 2) -> str:
     try:
-        num = float(value)
+        num = float(value) * 100.0
     except Exception:
         return "N/A"
-    return f"{num * 100:.{decimals}f}%"
+    if abs(num) < 1e-9:
+        return f"{0:.{decimals}f}%"
+    return f"{num:.{decimals}f}%"
 
 
 def _currency_symbol(currency_code: Any) -> str:
@@ -383,22 +385,16 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
         )
 
     methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
-    scenario_items = methods.get("Scenario DCF", []) if isinstance(methods, dict) else []
-    dcf_items = methods.get("DCF", []) if isinstance(methods, dict) else []
+    scenario_dcf_items = methods.get("Scenario DCF", []) if isinstance(methods, dict) else []
     dcf_assumption_items: List[Dict[str, Any]] = []
-    if isinstance(scenario_items, list):
-        dcf_assumption_items.extend(item for item in scenario_items if isinstance(item, dict))
-    if isinstance(dcf_items, list):
-        dcf_assumption_items.extend(item for item in dcf_items if isinstance(item, dict))
+    if isinstance(scenario_dcf_items, list):
+        dcf_assumption_items.extend(item for item in scenario_dcf_items if isinstance(item, dict))
 
-    if dcf_assumption_items:
+    if dcf_assumption_items or isinstance(methods, dict):
         weighted_fcf_vals: List[float] = []
         weighted_g_vals: List[float] = []
         weighted_wacc_vals: List[float] = []
         weighted_terminal_vals: List[float] = []
-        bull_prob_vals: List[float] = []
-        base_prob_vals: List[float] = []
-        bear_prob_vals: List[float] = []
 
         def _parse_raw(item: Dict[str, Any]) -> Dict[str, Any]:
             raw = item.get("raw_json", {})
@@ -441,27 +437,73 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
             if terminal_mid is not None:
                 weighted_terminal_vals.append(terminal_mid)
 
-            # Scenario DCF contributes probability fields; intrinsic DCF does not.
-            for label, bucket in [("bull", bull_prob_vals), ("base", base_prob_vals), ("bear", bear_prob_vals)]:
-                arr = raw.get(label)
-                if isinstance(arr, (list, tuple)) and len(arr) >= 1:
-                    p = _first_float(arr[0])
-                    if p is not None:
-                        bucket.append(float(p))
-
         def _avg(vals: List[float]) -> Optional[float]:
             if not vals:
                 return None
             return float(sum(vals) / len(vals))
 
+        def _normalized_prob(value: Any) -> Optional[float]:
+            p = _first_float(value)
+            if p is None:
+                return None
+            if p > 1.0 and p <= 100.0:
+                p = p / 100.0
+            if p < 0.0 or p > 1.0:
+                return None
+            return float(p)
+
+        def _scenario_entry(raw: Dict[str, Any], label: str) -> Any:
+            scenarios = raw.get("scenarios")
+            if isinstance(scenarios, dict) and label in scenarios:
+                return scenarios.get(label)
+            return raw.get(label)
+
+        def _scenario_probability(raw: Dict[str, Any], label: str) -> Optional[float]:
+            entry = _scenario_entry(raw, label)
+            if isinstance(entry, (list, tuple)) and len(entry) >= 1:
+                return _normalized_prob(entry[0])
+            if isinstance(entry, dict):
+                return _normalized_prob(entry.get("probability"))
+            return None
+
+        scenario_methods = [
+            "Scenario DCF",
+            "Target Scenario",
+            "Earnings Scenario",
+            "Revenue Scenario",
+            "Composite Scenario",
+            "SOTP Scenario",
+        ]
+        blended_prob_values: Dict[str, List[float]] = {"bull": [], "base": [], "bear": []}
+        for method_name in scenario_methods:
+            raw_items = methods.get(method_name, []) if isinstance(methods, dict) else []
+            if not isinstance(raw_items, list) or not raw_items:
+                continue
+            per_method_probs: Dict[str, List[float]] = {"bull": [], "base": [], "bear": []}
+            for item in raw_items:
+                if not isinstance(item, dict):
+                    continue
+                raw = _parse_raw(item)
+                if not raw:
+                    continue
+                for label in ["bull", "base", "bear"]:
+                    p = _scenario_probability(raw, label)
+                    if p is not None:
+                        per_method_probs[label].append(float(p))
+            for label in ["bull", "base", "bear"]:
+                if per_method_probs[label]:
+                    method_mean = _avg(per_method_probs[label])
+                    if method_mean is not None:
+                        blended_prob_values[label].append(method_mean)
+
         scenario_lines = [
-            ("Bull Probability", _avg(bull_prob_vals), "pct"),
-            ("Base Probability", _avg(base_prob_vals), "pct"),
-            ("Bear Probability", _avg(bear_prob_vals), "pct"),
-            ("Growth Rate (G) [DCF + Scenario DCF]", _avg(weighted_g_vals), "pct"),
-            ("Representative FCF [DCF + Scenario DCF]", _avg(weighted_fcf_vals), "num"),
-            ("Terminal Value Growth [DCF + Scenario DCF]", _avg(weighted_terminal_vals), "pct"),
-            ("WACC [DCF + Scenario DCF]", _avg(weighted_wacc_vals), "pct"),
+            ("Bull Probability", _avg(blended_prob_values["bull"]), "pct"),
+            ("Base Probability", _avg(blended_prob_values["base"]), "pct"),
+            ("Bear Probability", _avg(blended_prob_values["bear"]), "pct"),
+            ("Growth Rate (G) [Scenario DCF]", _avg(weighted_g_vals), "pct"),
+            ("Representative FCF [Scenario DCF]", _avg(weighted_fcf_vals), "num"),
+            ("Terminal Value Growth [Scenario DCF]", _avg(weighted_terminal_vals), "pct"),
+            ("WACC [Scenario DCF]", _avg(weighted_wacc_vals), "pct"),
         ]
         for label, value, kind in scenario_lines:
             if value is None:

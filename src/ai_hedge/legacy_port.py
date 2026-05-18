@@ -5815,6 +5815,11 @@ def bbb_tp_full(
       for scenario_name in ["bull", "base", "bear"]:
         prob, target_market_cap = target_price_json["scenarios"].get(scenario_name, (0.0, 0.0))
         raw_for_detail[scenario_name] = [float(prob), float(target_market_cap)]
+      weighted_target_market_cap = 0.0
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, target_market_cap = target_price_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        weighted_target_market_cap += float(prob) * float(target_market_cap)
+      raw_for_detail["target_market_cap"] = float(weighted_target_market_cap)
       details.append(
           {
               "target_price": float(prices[0]) if prices else None,
@@ -5877,6 +5882,8 @@ def bbb_ni_pe_full(
       for scenario_name in ["bull", "base", "bear"]:
         prob, net_income = bbb_ni_pe_json["scenarios"].get(scenario_name, (0.0, 0.0))
         raw_for_detail[scenario_name] = [float(prob), float(net_income)]
+      weighted_net_income = float(ni[0]) if ni else 0.0
+      raw_for_detail["net_income_3y"] = float(weighted_net_income)
       raw_for_detail["pe_multiple"] = float(bbb_ni_pe_json.get("pe_multiple", 0.0))
       details.append(
           {
@@ -5943,6 +5950,7 @@ def revenue_scenario_full(
             float(scenario_payload.get("probability", 0.0)),
             float(scenario_payload.get("revenue_3y", 0.0)),
         ]
+      raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
       ev_sales_multiple = float(revenue_json.get("ev_sales_multiple", 0.0))
       raw_for_detail["ev_sales_multiple"] = [ev_sales_multiple, ev_sales_multiple]
       details.append(
@@ -6014,6 +6022,8 @@ def composite_scenario_full(
             float(scenario_payload.get("tax_rate", 0.0)),
             float(scenario_payload.get("pe_multiple", 0.0)),
         ]
+      raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
+      raw_for_detail["net_income_3y"] = float(calc.get("expected_net_income_3y", 0.0))
       raw_for_detail["revenue_growth_3y_avg"] = float(calc.get("weighted_growth", 0.0))
       raw_for_detail["operating_profitability_margin"] = float(calc.get("weighted_margin", 0.0))
       raw_for_detail["net_financing_result"] = float(calc.get("weighted_net_financing", 0.0))

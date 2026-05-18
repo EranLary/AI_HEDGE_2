@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { canonicalModelName } from "@/lib/method-display";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
@@ -32,30 +33,21 @@ export type CurrencyContext = {
 
 const METHOD_METRIC_LABELS: Record<string, string> = {
   fcf_next_year: "FCF (Next Year)",
-  growth_rate: "Growth Rate",
-  wacc: "WACC",
-  terminal_growth: "Terminal Value Growth",
-  net_income_3y: "Net Income (3Y)",
-  pe_multiple: "P/E Multiple",
-  revenue_3y: "Revenue (3Y)",
-  ev_sales_multiple: "EV/Sales Multiple",
-  target_market_cap: "Target Market Cap",
-  bull_target_market_cap: "Bull Target Market Cap",
-  base_target_market_cap: "Base Target Market Cap",
-  bear_target_market_cap: "Bear Target Market Cap",
-  bull_net_income: "Bull Net Income",
-  base_net_income: "Base Net Income",
-  bear_net_income: "Bear Net Income",
-  bull_revenue_3y: "Bull Revenue (3Y)",
-  base_revenue_3y: "Base Revenue (3Y)",
-  bear_revenue_3y: "Bear Revenue (3Y)",
+  growth_rate: "Weighted Growth Rate (G)",
+  wacc: "Weighted WACC",
+  terminal_growth: "Weighted Terminal Value Growth",
+  net_income_3y: "Weighted Net Income (3Y)",
+  pe_multiple: "Weighted P/E Multiple",
+  revenue_3y: "Weighted Revenue (3Y)",
+  ev_sales_multiple: "Weighted EV/Sales Multiple",
+  target_market_cap: "Weighted Target Market Cap",
   bull_probability: "Bull Probability",
   base_probability: "Base Probability",
   bear_probability: "Bear Probability",
-  revenue_growth_3y_avg: "Revenue Growth (3Y Avg)",
-  operating_margin: "EBIT Margin",
-  net_financing_result: "Net Financing Result",
-  tax_rate: "Tax Rate",
+  revenue_growth_3y_avg: "Weighted Revenue Growth (3Y Avg)",
+  operating_margin: "Weighted EBIT Margin",
+  net_financing_result: "Weighted Net Financing Result",
+  tax_rate: "Weighted Tax Rate",
 };
 
 const MODEL_EXPLANATIONS: Record<string, string> = {
@@ -113,27 +105,21 @@ const METHOD_METRIC_ORDER: Record<string, string[]> = {
     "bull_probability",
     "base_probability",
     "bear_probability",
-    "bull_target_market_cap",
-    "base_target_market_cap",
-    "bear_target_market_cap",
+    "target_market_cap",
   ],
   "Earnings Scenario": [
     "bull_probability",
     "base_probability",
     "bear_probability",
     "pe_multiple",
-    "bull_net_income",
-    "base_net_income",
-    "bear_net_income",
+    "net_income_3y",
   ],
   "Revenue Scenario": [
     "bull_probability",
     "base_probability",
     "bear_probability",
     "ev_sales_multiple",
-    "bull_revenue_3y",
-    "base_revenue_3y",
-    "bear_revenue_3y",
+    "revenue_3y",
   ],
   "Composite Scenario": [
     "bull_probability",
@@ -149,14 +135,22 @@ const METHOD_METRIC_ORDER: Record<string, string[]> = {
     "bull_probability",
     "base_probability",
     "bear_probability",
-    "bull_target_market_cap",
-    "base_target_market_cap",
-    "bear_target_market_cap",
+    "target_market_cap",
   ],
   "Dream Team": [
     "target_market_cap",
   ],
 };
+
+const ACTIVE_SCENARIO_METHOD_NAMES = new Set([
+  "Scenario DCF",
+  "Target Scenario",
+  "Earnings Scenario",
+  "Revenue Scenario",
+  "Composite Scenario",
+  "SOTP Scenario",
+  "Dream Team",
+]);
 
 type MethodMetricItem = {
   key: string;
@@ -693,15 +687,6 @@ function orderedMethodMetrics(methodName: string, keyMetricMeans: Record<string,
     .filter((row): row is MethodMetricItem => row !== null);
 }
 
-function isScenarioCaseMetric(key: string): boolean {
-  const k = String(key || "").trim().toLowerCase();
-  return (
-    k.startsWith("bull_") ||
-    k.startsWith("base_") ||
-    k.startsWith("bear_")
-  ) && !PROBABILITY_METRIC_KEYS.has(k);
-}
-
 function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
   if (v <= -20) return { label: "Strong Sell", tone: "negative" };
@@ -901,10 +886,51 @@ export function HedgeDashboard({
 
   const currencyContext = useMemo(() => buildCurrencyContext(data), [data]);
   const consensus = data?.valuation_hub?.consensus;
-  const methodTabs = useMemo(
-    () => data?.valuation_hub?.method_tabs || [],
-    [data?.valuation_hub?.method_tabs],
-  );
+  const methodTabs = useMemo(() => {
+    const rawTabs = Array.isArray(data?.valuation_hub?.method_tabs) ? data.valuation_hub.method_tabs : [];
+    const normalized = rawTabs.map((tab) => ({
+      ...tab,
+      name: canonicalModelName(String(tab.name || "").trim()),
+    }));
+    const hasScenarioSet = normalized.some((tab) => ACTIVE_SCENARIO_METHOD_NAMES.has(tab.name));
+    const filtered = hasScenarioSet
+      ? normalized.filter((tab) => ACTIVE_SCENARIO_METHOD_NAMES.has(tab.name))
+      : normalized;
+    const deduped = new Map<string, DashboardMethodTab>();
+    for (const tab of filtered) {
+      const existing = deduped.get(tab.name);
+      if (!existing) {
+        deduped.set(tab.name, tab);
+        continue;
+      }
+      const existingScore =
+        (Array.isArray(existing.outputs) ? existing.outputs.length : 0) +
+        Object.keys(existing.key_metric_means || {}).length;
+      const nextScore =
+        (Array.isArray(tab.outputs) ? tab.outputs.length : 0) +
+        Object.keys(tab.key_metric_means || {}).length;
+      if (nextScore > existingScore) {
+        deduped.set(tab.name, tab);
+      }
+    }
+    const order = [
+      "Scenario DCF",
+      "Target Scenario",
+      "Earnings Scenario",
+      "Revenue Scenario",
+      "Composite Scenario",
+      "SOTP Scenario",
+      "Dream Team",
+    ];
+    return Array.from(deduped.values()).sort((a, b) => {
+      const ai = order.indexOf(a.name);
+      const bi = order.indexOf(b.name);
+      if (ai === -1 && bi === -1) return a.name.localeCompare(b.name);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
     const map = new Map<string, string>();
     for (const tab of methodTabs) {
@@ -931,26 +957,13 @@ export function HedgeDashboard({
     () => activeMethodMetricItems.filter((item) => PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase())),
     [activeMethodMetricItems],
   );
-  const activeMethodScenarioCaseItems = useMemo(
-    () => activeMethodMetricItems.filter((item) => isScenarioCaseMetric(item.key)),
-    [activeMethodMetricItems],
-  );
   const activeMethodOtherMetricItems = useMemo(
     () =>
       activeMethodMetricItems.filter(
-        (item) =>
-          !PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase()) &&
-          !isScenarioCaseMetric(item.key),
+        (item) => !PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase()),
       ),
     [activeMethodMetricItems],
   );
-  const selectedOutputMetricItems = useMemo(() => {
-    const rows = Array.isArray(selectedOutput?.key_numeric_values) ? selectedOutput.key_numeric_values : [];
-    return rows
-      .filter((row) => typeof row?.value === "number" && Number.isFinite(row.value))
-      .sort((a, b) => String(a.label || a.metric_key || a.path).localeCompare(String(b.label || b.metric_key || b.path)))
-      .slice(0, 30);
-  }, [selectedOutput?.key_numeric_values]);
   const consensusCurrent =
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
       ? Number(consensus.current_price)
@@ -1009,7 +1022,35 @@ export function HedgeDashboard({
       typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
         ? Number(consensus.current_price)
         : null;
-    const rows = (data?.valuation_hub?.method_blocks || []).map((b) => {
+    const rawBlocks = Array.isArray(data?.valuation_hub?.method_blocks) ? data.valuation_hub.method_blocks : [];
+    const normalizedBlocks = rawBlocks.map((b) => ({
+      ...b,
+      name: canonicalModelName(String(b.name || "").trim()),
+    }));
+    const hasScenarioSet = normalizedBlocks.some((b) => ACTIVE_SCENARIO_METHOD_NAMES.has(String(b.name || "")));
+    const filteredBlocks = hasScenarioSet
+      ? normalizedBlocks.filter((b) => ACTIVE_SCENARIO_METHOD_NAMES.has(String(b.name || "")))
+      : normalizedBlocks;
+    const dedupedBlocks = new Map<string, (typeof filteredBlocks)[number]>();
+    for (const block of filteredBlocks) {
+      const key = String(block.name || "").trim();
+      if (!key) continue;
+      const existing = dedupedBlocks.get(key);
+      if (!existing) {
+        dedupedBlocks.set(key, block);
+        continue;
+      }
+      const existingScore =
+        (typeof existing.target_price === "number" && Number.isFinite(existing.target_price) ? 1 : 0) +
+        (typeof existing.investment_amount === "number" && Number.isFinite(existing.investment_amount) ? 1 : 0);
+      const nextScore =
+        (typeof block.target_price === "number" && Number.isFinite(block.target_price) ? 1 : 0) +
+        (typeof block.investment_amount === "number" && Number.isFinite(block.investment_amount) ? 1 : 0);
+      if (nextScore > existingScore) {
+        dedupedBlocks.set(key, block);
+      }
+    }
+    const rows = Array.from(dedupedBlocks.values()).map((b) => {
       const target =
         typeof b.target_price === "number" && Number.isFinite(Number(b.target_price))
           ? Number(b.target_price)
@@ -1546,21 +1587,6 @@ export function HedgeDashboard({
                           </div>
                         </div>
                       ) : null}
-                      {activeMethodScenarioCaseItems.length ? (
-                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
-                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Scenario Case Inputs</p>
-                          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                            {activeMethodScenarioCaseItems.map((item) => (
-                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
-                                <p className="text-[11px] text-zinc-400">{item.label}</p>
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  {formatMethodMetric(item.key, item.value, currencyContext)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
                       <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
                         {modelExplanation(activeMethod.name)}
                       </p>
@@ -1586,21 +1612,6 @@ export function HedgeDashboard({
                                   <span className="text-zinc-300">({selectedOutputInvestmentVerdict})</span>
                                 </p>
                               </div>
-                              {selectedOutputMetricItems.length ? (
-                                <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
-                                  <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Available Output Metrics</p>
-                                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                                    {selectedOutputMetricItems.map((metric) => (
-                                      <div key={`${metric.path}-${metric.metric_key}`} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
-                                        <p className="text-[11px] text-zinc-400">{prettyMetricName(metric.metric_key || metric.label)}</p>
-                                        <p className="text-sm font-semibold text-zinc-100">
-                                          {formatMethodMetric(metric.metric_key || metric.label, metric.value, currencyContext)}
-                                        </p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : null}
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
                                 {selectedOutput.reason_sections.length ? (
                                   selectedOutput.reason_sections.map((r) => (

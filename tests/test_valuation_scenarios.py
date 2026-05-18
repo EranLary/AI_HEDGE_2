@@ -193,6 +193,4 @@ def test_method_metric_snapshot_reads_sotp_scenario_activity_sums():
     assert abs(snapshot["bull_probability"] - 0.2) < 1e-9
     assert abs(snapshot["base_probability"] - 0.5) < 1e-9
     assert abs(snapshot["bear_probability"] - 0.3) < 1e-9
-    assert abs(snapshot["bull_target_market_cap"] - 90.0) < 1e-9
-    assert abs(snapshot["base_target_market_cap"] - 85.0) < 1e-9
-    assert abs(snapshot["bear_target_market_cap"] - 55.0) < 1e-9
+    assert abs(snapshot["target_market_cap"] - 77.0) < 1e-9

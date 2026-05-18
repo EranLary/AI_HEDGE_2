@@ -527,6 +527,29 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
                 vals.append(n)
         return _mean(vals)
 
+    def avg_weighted_scenario_value(idx: int) -> Optional[float]:
+        vals: List[float] = []
+        for raw in raw_list:
+            weighted = 0.0
+            has_any = False
+            for scenario in ["bull", "base", "bear"]:
+                entry = _scenario_entry(raw, scenario)
+                prob = _scenario_value_from_entry(entry, 0)
+                val = _scenario_value_from_entry(entry, idx)
+                if prob is None or val is None:
+                    continue
+                weighted += float(prob) * float(val)
+                has_any = True
+            if has_any:
+                vals.append(weighted)
+        return _mean(vals)
+
+    def coalesce(*values: Optional[float]) -> Optional[float]:
+        for value in values:
+            if isinstance(value, (int, float)):
+                return float(value)
+        return None
+
     metrics: Dict[str, Optional[float]] = {}
     if method_name == "Scenario DCF":
         metrics = {
@@ -543,18 +566,14 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
-            "bull_target_market_cap": avg_scenario_value("bull", 1),
-            "base_target_market_cap": avg_scenario_value("base", 1),
-            "bear_target_market_cap": avg_scenario_value("bear", 1),
+            "target_market_cap": coalesce(avg_num("target_market_cap"), avg_weighted_scenario_value(1)),
         }
     elif method_name == "Earnings Scenario":
         metrics = {
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
-            "bull_net_income": avg_scenario_value("bull", 1),
-            "base_net_income": avg_scenario_value("base", 1),
-            "bear_net_income": avg_scenario_value("bear", 1),
+            "net_income_3y": coalesce(avg_num("net_income_3y"), avg_weighted_scenario_value(1)),
             "pe_multiple": avg_num("pe_multiple"),
         }
     elif method_name == "Revenue Scenario":
@@ -562,9 +581,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
-            "bull_revenue_3y": avg_scenario_value("bull", 1),
-            "base_revenue_3y": avg_scenario_value("base", 1),
-            "bear_revenue_3y": avg_scenario_value("bear", 1),
+            "revenue_3y": coalesce(avg_num("revenue_3y"), avg_weighted_scenario_value(1)),
             "ev_sales_multiple": avg_mid("ev_sales_multiple"),
         }
     elif method_name == "Composite Scenario":
@@ -583,9 +600,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
-            "bull_target_market_cap": avg_scenario_value("bull", 1),
-            "base_target_market_cap": avg_scenario_value("base", 1),
-            "bear_target_market_cap": avg_scenario_value("bear", 1),
+            "target_market_cap": coalesce(avg_num("target_market_cap"), avg_weighted_scenario_value(1)),
         }
     elif method_name == "Dream Team":
         metrics = {

@@ -86,6 +86,83 @@ const ASSUMPTION_MONEY_LABELS = new Set([
   "representative earnings",
   "representative fcf",
 ]);
+const PROBABILITY_METRIC_KEYS = new Set([
+  "bull_probability",
+  "base_probability",
+  "bear_probability",
+]);
+const DECIMAL_PERCENT_METRIC_KEYS = new Set([
+  "growth_rate",
+  "terminal_growth",
+  "wacc",
+  "revenue_growth_3y_avg",
+  "operating_margin",
+  "tax_rate",
+]);
+const METHOD_METRIC_ORDER: Record<string, string[]> = {
+  "Scenario DCF": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "fcf_next_year",
+    "growth_rate",
+    "wacc",
+    "terminal_growth",
+  ],
+  "Target Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "bull_target_market_cap",
+    "base_target_market_cap",
+    "bear_target_market_cap",
+  ],
+  "Earnings Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "pe_multiple",
+    "bull_net_income",
+    "base_net_income",
+    "bear_net_income",
+  ],
+  "Revenue Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "ev_sales_multiple",
+    "bull_revenue_3y",
+    "base_revenue_3y",
+    "bear_revenue_3y",
+  ],
+  "Composite Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "revenue_growth_3y_avg",
+    "operating_margin",
+    "net_financing_result",
+    "tax_rate",
+    "pe_multiple",
+  ],
+  "SOTP Scenario": [
+    "bull_probability",
+    "base_probability",
+    "bear_probability",
+    "bull_target_market_cap",
+    "base_target_market_cap",
+    "bear_target_market_cap",
+  ],
+  "Dream Team": [
+    "target_market_cap",
+  ],
+};
+
+type MethodMetricItem = {
+  key: string;
+  label: string;
+  value: number;
+};
 
 export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
   const isIsraeli = String(data?.ticker || "").toUpperCase().endsWith(".TA");
@@ -215,7 +292,14 @@ function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "
 
 function formatMethodMetric(metricKey: string, value: number | null | undefined, ctx: CurrencyContext): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
-  if (MONEY_METRIC_KEYS.has(String(metricKey || "").trim().toLowerCase())) {
+  const normalizedKey = String(metricKey || "").trim().toLowerCase();
+  if (PROBABILITY_METRIC_KEYS.has(normalizedKey)) {
+    return `${(value * 100).toFixed(1)}%`;
+  }
+  if (DECIMAL_PERCENT_METRIC_KEYS.has(normalizedKey)) {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (MONEY_METRIC_KEYS.has(normalizedKey)) {
     return fmtMoneyCompact(value, ctx, "financial");
   }
   return fmtLargeAware(value);
@@ -583,6 +667,41 @@ function prettyMetricName(raw: string): string {
     .join(" ");
 }
 
+function orderedMethodMetrics(methodName: string, keyMetricMeans: Record<string, number>): MethodMetricItem[] {
+  const entries = Object.entries(keyMetricMeans || {}).filter(
+    ([, v]) => typeof v === "number" && Number.isFinite(v),
+  );
+  if (!entries.length) return [];
+
+  const preferredOrder = METHOD_METRIC_ORDER[String(methodName || "").trim()] || [];
+  const entryMap = new Map(entries.map(([k, v]) => [String(k), Number(v)]));
+  const orderedKeys: string[] = [];
+
+  for (const key of preferredOrder) {
+    if (entryMap.has(key)) orderedKeys.push(key);
+  }
+  for (const [key] of entries) {
+    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+  }
+
+  return orderedKeys
+    .map((key) => {
+      const value = entryMap.get(key);
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      return { key, label: prettyMetricName(key), value };
+    })
+    .filter((row): row is MethodMetricItem => row !== null);
+}
+
+function isScenarioCaseMetric(key: string): boolean {
+  const k = String(key || "").trim().toLowerCase();
+  return (
+    k.startsWith("bull_") ||
+    k.startsWith("base_") ||
+    k.startsWith("bear_")
+  ) && !PROBABILITY_METRIC_KEYS.has(k);
+}
+
 function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
   const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
   if (v <= -20) return { label: "Strong Sell", tone: "negative" };
@@ -804,6 +923,34 @@ export function HedgeDashboard({
   const selectedOutput = activeMethod
     ? activeMethod.outputs.find((o) => (o.persona || `Output ${o.output_id}`) === outputTab[activeMethod.name]) || activeMethod.outputs[0]
     : null;
+  const activeMethodMetricItems = useMemo(
+    () => orderedMethodMetrics(activeMethod?.name || "", activeMethod?.key_metric_means || {}),
+    [activeMethod?.name, activeMethod?.key_metric_means],
+  );
+  const activeMethodProbabilityItems = useMemo(
+    () => activeMethodMetricItems.filter((item) => PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase())),
+    [activeMethodMetricItems],
+  );
+  const activeMethodScenarioCaseItems = useMemo(
+    () => activeMethodMetricItems.filter((item) => isScenarioCaseMetric(item.key)),
+    [activeMethodMetricItems],
+  );
+  const activeMethodOtherMetricItems = useMemo(
+    () =>
+      activeMethodMetricItems.filter(
+        (item) =>
+          !PROBABILITY_METRIC_KEYS.has(String(item.key || "").toLowerCase()) &&
+          !isScenarioCaseMetric(item.key),
+      ),
+    [activeMethodMetricItems],
+  );
+  const selectedOutputMetricItems = useMemo(() => {
+    const rows = Array.isArray(selectedOutput?.key_numeric_values) ? selectedOutput.key_numeric_values : [];
+    return rows
+      .filter((row) => typeof row?.value === "number" && Number.isFinite(row.value))
+      .sort((a, b) => String(a.label || a.metric_key || a.path).localeCompare(String(b.label || b.metric_key || b.path)))
+      .slice(0, 30);
+  }, [selectedOutput?.key_numeric_values]);
   const consensusCurrent =
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
       ? Number(consensus.current_price)
@@ -1369,11 +1516,51 @@ export function HedgeDashboard({
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>{" "}
                         <span className="text-zinc-300">({activeMethodInvestmentVerdict})</span>
                       </p>
-                      {Object.entries(activeMethod.key_metric_means || {}).map(([k, v]) => (
-                        <p key={k} className="text-xs text-zinc-500">
-                          {prettyMetricName(k)}: {formatMethodMetric(k, v, currencyContext)}
-                        </p>
-                      ))}
+                      {activeMethodProbabilityItems.length ? (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Scenario Probabilities</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                            {activeMethodProbabilityItems.map((item) => (
+                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
+                                <p className="text-[11px] text-zinc-400">{item.label}</p>
+                                <p className="text-sm font-semibold text-zinc-100">
+                                  {formatMethodMetric(item.key, item.value, currencyContext)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {activeMethodOtherMetricItems.length ? (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Core Inputs</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {activeMethodOtherMetricItems.map((item) => (
+                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
+                                <p className="text-[11px] text-zinc-400">{item.label}</p>
+                                <p className="text-sm font-semibold text-zinc-100">
+                                  {formatMethodMetric(item.key, item.value, currencyContext)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {activeMethodScenarioCaseItems.length ? (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Scenario Case Inputs</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                            {activeMethodScenarioCaseItems.map((item) => (
+                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
+                                <p className="text-[11px] text-zinc-400">{item.label}</p>
+                                <p className="text-sm font-semibold text-zinc-100">
+                                  {formatMethodMetric(item.key, item.value, currencyContext)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
                         {modelExplanation(activeMethod.name)}
                       </p>
@@ -1399,6 +1586,21 @@ export function HedgeDashboard({
                                   <span className="text-zinc-300">({selectedOutputInvestmentVerdict})</span>
                                 </p>
                               </div>
+                              {selectedOutputMetricItems.length ? (
+                                <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
+                                  <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Available Output Metrics</p>
+                                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                    {selectedOutputMetricItems.map((metric) => (
+                                      <div key={`${metric.path}-${metric.metric_key}`} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
+                                        <p className="text-[11px] text-zinc-400">{prettyMetricName(metric.metric_key || metric.label)}</p>
+                                        <p className="text-sm font-semibold text-zinc-100">
+                                          {formatMethodMetric(metric.metric_key || metric.label, metric.value, currencyContext)}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
                                 {selectedOutput.reason_sections.length ? (
                                   selectedOutput.reason_sections.map((r) => (

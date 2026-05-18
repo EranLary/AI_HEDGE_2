@@ -5739,6 +5739,15 @@ def scenario_dcf_full(
       raw_for_detail = raw_json if raw_json else {}
       if not isinstance(raw_for_detail, dict):
         raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        scenario_payload = scenario_dcf_json["scenarios"].get(scenario_name, {})
+        raw_for_detail[scenario_name] = [
+            float(scenario_payload.get("probability", 0.0)),
+            float(scenario_payload.get("fcf_next_year", 0.0)),
+            float(scenario_payload.get("g", 0.0)),
+            float(scenario_payload.get("wacc", 0.0)),
+            float(scenario_payload.get("terminal_g", 0.0)),
+        ]
       # Emit weighted assumptions under canonical DCF keys so assumptions UI can aggregate them directly.
       weighted_fcf = float(calc.get("weighted_fcf_next_year", 0.0))
       weighted_g = float(calc.get("weighted_g", 0.0))
@@ -5800,12 +5809,18 @@ def bbb_tp_full(
     prices = get_bbb_tp(target_price_json, vdict)
     all_results.extend(prices)
     if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, target_market_cap = target_price_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        raw_for_detail[scenario_name] = [float(prob), float(target_market_cap)]
       details.append(
           {
               "target_price": float(prices[0]) if prices else None,
               "investment_amount": float(target_price_json.get("investment_amount")),
               "raw_json_text": raw_json_text,
-              "raw_json": raw_json if raw_json else dict(target_price_json),
+              "raw_json": raw_for_detail if raw_for_detail else dict(target_price_json),
           }
       )
 
@@ -5856,12 +5871,19 @@ def bbb_ni_pe_full(
     ni_results.extend(ni)
     pe_results.extend(pe)
     if collect_details:
+      raw_for_detail = raw_json if raw_json else {}
+      if not isinstance(raw_for_detail, dict):
+        raw_for_detail = {}
+      for scenario_name in ["bull", "base", "bear"]:
+        prob, net_income = bbb_ni_pe_json["scenarios"].get(scenario_name, (0.0, 0.0))
+        raw_for_detail[scenario_name] = [float(prob), float(net_income)]
+      raw_for_detail["pe_multiple"] = float(bbb_ni_pe_json.get("pe_multiple", 0.0))
       details.append(
           {
               "target_price": float(price[0]) if price else None,
               "investment_amount": float(bbb_ni_pe_json.get("investment_amount")),
               "raw_json_text": raw_json_text,
-              "raw_json": raw_json if raw_json else dict(bbb_ni_pe_json),
+              "raw_json": raw_for_detail if raw_for_detail else dict(bbb_ni_pe_json),
           }
       )
 

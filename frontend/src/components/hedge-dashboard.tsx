@@ -991,6 +991,24 @@ export function HedgeDashboard({
   const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
   const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
   const selectedOutputInvestmentClass = toneClassFromSign(selectedOutput?.investment_amount);
+  const activeMethodTargetChangePct =
+    typeof activeMethod?.target_price === "number" &&
+    Number.isFinite(activeMethod.target_price) &&
+    typeof consensusCurrent === "number" &&
+    Number.isFinite(consensusCurrent) &&
+    Math.abs(consensusCurrent) > 1e-9
+      ? ((activeMethod.target_price - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const selectedOutputTargetChangePct =
+    typeof selectedOutput?.target_price === "number" &&
+    Number.isFinite(selectedOutput.target_price) &&
+    typeof consensusCurrent === "number" &&
+    Number.isFinite(consensusCurrent) &&
+    Math.abs(consensusCurrent) > 1e-9
+      ? ((selectedOutput.target_price - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const activeMethodTargetChangeClass = toneClassFromSign(activeMethodTargetChangePct);
+  const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
   const activeMethodTargetVerdict = verdictMark(
     targetDirectionWithFloor(activeMethod?.target_price ?? null, consensusCurrent),
     actualDirection,
@@ -1551,42 +1569,20 @@ export function HedgeDashboard({
                       <p className="font-semibold">{activeMethod.name}</p>
                       <p className="text-sm text-zinc-400">
                         Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price, currencyContext)}</span>{" "}
+                        <span className={`font-semibold ${activeMethodTargetChangeClass}`}>
+                          ({typeof activeMethodTargetChangePct === "number" ? fmtPct(activeMethodTargetChangePct) : "N/A"})
+                        </span>{" "}
                         <span className="text-zinc-300">({activeMethodTargetVerdict})</span>
                       </p>
                       <p className="text-sm text-zinc-400">
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>{" "}
                         <span className="text-zinc-300">({activeMethodInvestmentVerdict})</span>
                       </p>
-                      {activeMethodProbabilityItems.length ? (
-                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
-                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Scenario Probabilities</p>
-                          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                            {activeMethodProbabilityItems.map((item) => (
-                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
-                                <p className="text-[11px] text-zinc-400">{item.label}</p>
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  {formatMethodMetric(item.key, item.value, currencyContext)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                      {activeMethodOtherMetricItems.length ? (
-                        <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-2">
-                          <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-400">Core Inputs</p>
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                            {activeMethodOtherMetricItems.map((item) => (
-                              <div key={item.key} className="rounded-md border border-white/10 bg-black/30 px-2 py-1">
-                                <p className="text-[11px] text-zinc-400">{item.label}</p>
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  {formatMethodMetric(item.key, item.value, currencyContext)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
+                      {[...activeMethodProbabilityItems, ...activeMethodOtherMetricItems].map((item) => (
+                        <p key={item.key} className="text-xs text-zinc-500">
+                          {item.label}: {formatMethodMetric(item.key, item.value, currencyContext)}
+                        </p>
+                      ))}
                       <p className="mt-3 rounded border border-white/10 bg-black/30 p-2 text-xs leading-relaxed text-zinc-300">
                         {modelExplanation(activeMethod.name)}
                       </p>
@@ -1605,6 +1601,9 @@ export function HedgeDashboard({
                               <div className="space-y-1 text-sm text-zinc-400">
                                 <p>
                                   Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
+                                  <span className={`font-semibold ${selectedOutputTargetChangeClass}`}>
+                                    ({typeof selectedOutputTargetChangePct === "number" ? fmtPct(selectedOutputTargetChangePct) : "N/A"})
+                                  </span>{" "}
                                   <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>
                                 </p>
                                 <p>

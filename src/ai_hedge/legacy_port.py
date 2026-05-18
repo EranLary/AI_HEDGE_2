@@ -3564,13 +3564,15 @@ Definitions:
 Rules:
 1) "step_by_step_analysis" and "target_market_cap_rationale" fields must be single comprehensive strings.
 2) "target_market_cap" must be a single numeric value, expressed as total equity value (not enterprise value).
-3) Use an absolute numeric value in full currency units (not percentages, not thousands, and not millions).
-4) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, or ranges.
-5) Your step_by_step_analysis should reference your valuation framework, earnings or revenue normalization, multiple selection, risk factors, capital structure adjustments (net debt, dilution, minority interests), and assumption discipline.
-6) If the input is missing critical information, still produce a best-effort target market cap and explicitly state assumptions in "step_by_step_analysis".
-7) "investment_amount" must be a single numeric value in [-100000, 100000].
-8) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-9) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+3) Use an absolute numeric value in full currency units (not percentages, not thousands, and not millions), with no scale abbreviations.
+4) Use full-unit numeric scale for total equity value. Example: if you mean 53 billion dollars, output 53000000000.
+5) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, or ranges.
+6) Your step_by_step_analysis should reference your valuation framework, earnings or revenue normalization, multiple selection, risk factors, capital structure adjustments (net debt, dilution, minority interests), and assumption discipline.
+7) Before finalizing, run an internal unit sanity check: ensure "target_market_cap" is total equity value scale (company-level), not per-share value or a ratio.
+8) If the input is missing critical information, still produce a best-effort target market cap and explicitly state assumptions in "step_by_step_analysis".
+9) "investment_amount" must be a single numeric value in [-100000, 100000].
+10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
 instructions_sotp = """Based on the input you receive, perform a Sum-Of-The-Parts (SOTP) valuation as a professional equity analyst would.
@@ -3596,6 +3598,7 @@ Output schema (must match exactly):
 Definitions:
 - "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out your step-by-step evaluation of the SOTP valuation. This is your internal scratchpad. Focus strictly on how you define the segments, the valuation method used per segment, the handling of shared costs/overhead, and the allocation of net debt/cash and non-operating assets or liabilities.
 - Each activity value is the estimated intrinsic EQUITY VALUE attributable to common shareholders for that activity, in absolute full units (not thousands, not millions), in the same currency as the input. This value should be expressed in U.S. dollars.
+- Use full-unit numeric scale for activity values. Example: if you mean 53 billion dollars for an activity, output 53000000000.
 - "activity_name" must be a concise, human-readable segment label (e.g., "Subscription Software", "Services", "Consumer Lending", "Israel P&C Insurance", "Net Cash / (Debt)", "Corporate Overhead", etc.).
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
@@ -3605,7 +3608,7 @@ Definitions:
 Rules:
 1) "step_by_step_analysis" must be a single comprehensive string and MUST be the first key in the JSON.
 2) Each activity value must be a single numeric value (no ranges), expressed in absolute full units (not percentages, not thousands, not millions).
-3) Do NOT include null, NaN, or strings for numeric values.
+3) Do NOT include null, NaN, strings, scale abbreviations, or scientific notation for numeric values.
 4) Do NOT add any nested objects. All activities must be top-level keys.
 5) Your step_by_step_analysis must explicitly mention:
    - how segments were defined,
@@ -3613,15 +3616,16 @@ Rules:
    - how you handled shared costs/overhead allocation,
    - how you treated net debt/cash and non-operating assets or liabilities (and where you allocated them),
    - any critical assumptions and normalization choices.
-6) If the input is missing critical information (segment financials, margins, allocation details, capital structure),
+6) Before finalizing, run an internal unit sanity check: each activity must be company-level equity value contribution, not per-share value, multiple, or percentage.
+7) If the input is missing critical information (segment financials, margins, allocation details, capital structure),
    still produce a best-effort SOTP:
    - infer segments from qualitative description if needed,
    - use reasonable proxy margins/multiples,
    - and state the assumptions explicitly in "step_by_step_analysis".
-7) Do NOT include a "total" key and do NOT include a per-share target price in this output.
-8) "investment_amount" must be a single numeric value in [-100000, 100000].
-9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+8) Do NOT include a "total" key and do NOT include a per-share target price in this output.
+9) "investment_amount" must be a single numeric value in [-100000, 100000].
+10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
 instructions_bull_base_bear_target = """Based on the input you receive, produce a probabilistic 3-scenario investment thesis (Bull / Base / Bear) as a professional equity analyst would.
@@ -3655,6 +3659,7 @@ Definitions:
   [probability, target_market_cap]
 - probability must be a single numeric value in [0, 1] (decimal, not a percentage).
 - target_market_cap is the intrinsic TOTAL MARKET CAPITALIZATION for common equity, expressed in absolute U.S. dollars (equity value, not enterprise value).
+- Use full-unit numeric scale for target_market_cap values. Example: if you mean 53 billion dollars, output 53000000000.
 - "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
@@ -3664,14 +3669,15 @@ Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
 2) bull, base, and bear must each be present exactly once and each must be a 2-item array: [probability, target_market_cap].
 3) Do NOT output ranges. Each probability and target market cap must be a single number.
-4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, or formatted numbers inside the arrays.
+4) Do NOT output null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, scale abbreviations, or scientific notation inside the arrays.
 5) Do NOT add nested objects. No additional top-level keys beyond step_by_step_analysis, bull, base, bear, and their corresponding rationales.
 6) Probabilities must be internally consistent and sum to exactly 1.0 (within rounding tolerance of +/-0.001).
 7) Your step_by_step_analysis must justify the differentiation between scenarios, the valuation methods, assumptions regarding net debt/cash, share count/dilution impacts on equity value, and explicitly state any proxy assumptions used due to missing inputs.
-8) Do NOT include a "total" key, do NOT include per-share price outputs, and do NOT include scenario narratives outside "step_by_step_analysis" and the rationales.
-9) "investment_amount" must be a single numeric value in [-100000, 100000].
-10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+8) Before finalizing, run an internal unit sanity check: each target_market_cap must be company-level total equity value, not per-share value, EV multiple, or a ratio.
+9) Do NOT include a "total" key, do NOT include per-share price outputs, and do NOT include scenario narratives outside "step_by_step_analysis" and the rationales.
+10) "investment_amount" must be a single numeric value in [-100000, 100000].
+11) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
 """
 
 instructions_bull_base_bear_ni_pe = """Based on the input you receive, produce a probabilistic 3-scenario fundamental earnings outlook (Bull / Base / Bear) and a single carefully underwritten long-term P/E multiple as a professional equity analyst would.
@@ -3834,10 +3840,13 @@ Rules:
 1) bull/base/bear probability values must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
 2) Each activities map must be flat (no nested objects), and all values must be numeric.
 3) Activity values are intrinsic equity value components in full units.
-4) Keep step_by_step_analysis and rationale fields as single complete strings.
-5) "investment_amount" must be in [-100000, 100000].
-6) Do not output ranges, null/NaN in numeric fields, or any extra top-level keys.
-7) ZERO POLITENESS: output raw JSON only.
+4) Use full-unit numeric scale for activity values. Example: if you mean 53 billion dollars for an activity, output 53000000000.
+5) Do not output scale abbreviations or scientific notation in activity values.
+6) Keep step_by_step_analysis and rationale fields as single complete strings.
+7) Before finalizing, run an internal unit sanity check: each scenario activity value must be total equity-value contribution, not per-share or percentage.
+8) "investment_amount" must be in [-100000, 100000].
+9) Do not output ranges, null/NaN in numeric fields, or any extra top-level keys.
+10) ZERO POLITENESS: output raw JSON only.
 """
 
 instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, its REPRESENTATIVE effective tax rate, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
@@ -3938,13 +3947,15 @@ def build_prompt_dream_valuation(name):
     1) "step_by_step_analysis" and "target_market_cap_rationale" fields must be single comprehensive strings.
     2) "target_market_cap" must be a single numeric value, expressed as total equity value (not enterprise value).
     3) Use an absolute numeric value in full currency units (not percentages, not thousands, and not millions).
-    4) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), or formatted numbers for numeric values.
-    5) Your step_by_step_analysis should explicitly reference {name}'s valuation framework, the specific adjustments made (or ignored), and how the margin of safety or other core principles were applied to reach the target.
-    6) Do NOT add any other fields, nested objects, comments, or trailing text outside the JSON.
-    7) "investment_amount" must be a single numeric value in [-100000, 100000].
-    8) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-    9) If the input is missing critical information, still produce a best-effort target market cap and explicitly state assumptions in "step_by_step_analysis" exactly as {name} would reason through missing data.
-    10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+    4) Use full-unit numeric scale for total equity value. Example: if you mean 53 billion dollars, output 53000000000.
+    5) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), formatted numbers, scale abbreviations, or scientific notation for numeric values.
+    6) Your step_by_step_analysis should explicitly reference {name}'s valuation framework, the specific adjustments made (or ignored), and how the margin of safety or other core principles were applied to reach the target.
+    7) Before finalizing, run an internal unit sanity check: ensure "target_market_cap" is total equity-value scale (company-level), not per-share value or a ratio.
+    8) Do NOT add any other fields, nested objects, comments, or trailing text outside the JSON.
+    9) "investment_amount" must be a single numeric value in [-100000, 100000].
+    10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
+    11) If the input is missing critical information, still produce a best-effort target market cap and explicitly state assumptions in "step_by_step_analysis" exactly as {name} would reason through missing data.
+    12) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
     """
 
     return instructions_dream_team
@@ -4883,6 +4894,8 @@ def calculate_sotp_scenario(variable_dict, scenarios_dict):
   expected_price = 0.0
   per_scenario_prices: Dict[str, float] = {}
   per_scenario_target_market_cap: Dict[str, float] = {}
+  per_scenario_activities: Dict[str, Dict[str, float]] = {}
+  weighted_activity_market_cap: Dict[str, float] = {}
   weighted_target_market_cap = 0.0
   shares = float(variable_dict["shares_outstanding"])
 
@@ -4891,9 +4904,19 @@ def calculate_sotp_scenario(variable_dict, scenarios_dict):
     prob = float(payload.get("probability", 0.0))
     activities = payload.get("activities", {})
     scenario_market_cap = 0.0
+    clean_activities: Dict[str, float] = {}
     if isinstance(activities, dict):
-      for _, activity_value in activities.items():
-        scenario_market_cap += float(activity_value)
+      for activity_name, activity_value in activities.items():
+        activity_value_f = float(activity_value)
+        scenario_market_cap += activity_value_f
+        activity_name_s = str(activity_name or "").strip()
+        if not activity_name_s:
+          continue
+        clean_activities[activity_name_s] = activity_value_f
+        weighted_activity_market_cap[activity_name_s] = (
+          float(weighted_activity_market_cap.get(activity_name_s, 0.0)) + (prob * activity_value_f)
+        )
+    per_scenario_activities[scenario_name] = clean_activities
     per_scenario_target_market_cap[scenario_name] = float(scenario_market_cap)
     scenario_price = float(max(0.0, scenario_market_cap / shares))
     per_scenario_prices[scenario_name] = scenario_price
@@ -4907,6 +4930,8 @@ def calculate_sotp_scenario(variable_dict, scenarios_dict):
       "weighted_target_market_cap": weighted_target_market_cap,
       "per_scenario_prices": per_scenario_prices,
       "per_scenario_target_market_cap": per_scenario_target_market_cap,
+      "per_scenario_activities": per_scenario_activities,
+      "weighted_activity_market_cap": weighted_activity_market_cap,
   }
 
 def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe):
@@ -6084,11 +6109,13 @@ def sotp_scenario_full(
         raw_for_detail = {}
       for scenario_name in ["bull", "base", "bear"]:
         scenario_payload = sotp_json["scenarios"].get(scenario_name, {})
-        raw_for_detail[scenario_name] = [
-            float(scenario_payload.get("probability", 0.0)),
-            float(calc.get("per_scenario_target_market_cap", {}).get(scenario_name, 0.0)),
-        ]
+        raw_for_detail[scenario_name] = {
+            "probability": float(scenario_payload.get("probability", 0.0)),
+            "target_market_cap": float(calc.get("per_scenario_target_market_cap", {}).get(scenario_name, 0.0)),
+            "activities": calc.get("per_scenario_activities", {}).get(scenario_name, {}),
+        }
       raw_for_detail["target_market_cap"] = float(calc.get("weighted_target_market_cap", 0.0))
+      raw_for_detail["weighted_activity_market_cap"] = calc.get("weighted_activity_market_cap", {})
       details.append(
           {
               "target_price": float(prices[0]) if prices else None,

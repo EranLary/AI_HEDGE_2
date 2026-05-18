@@ -550,6 +550,52 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
                 return float(value)
         return None
 
+    def _normalize_activity_metric_key(name: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(name or "").strip().lower())
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        return normalized or "unknown_activity"
+
+    def avg_weighted_activity_values() -> Dict[str, float]:
+        collected: Dict[str, List[float]] = {}
+        for raw in raw_list:
+            # Preferred path: precomputed weighted activity values from backend detail payload.
+            weighted_raw = raw.get("weighted_activity_market_cap")
+            if isinstance(weighted_raw, dict) and weighted_raw:
+                for activity_name, activity_value in weighted_raw.items():
+                    value = _safe_float(activity_value)
+                    if value is None:
+                        continue
+                    key = _normalize_activity_metric_key(str(activity_name))
+                    collected.setdefault(key, []).append(float(value))
+                continue
+
+            # Fallback path: compute weighted activity values from per-scenario activity maps.
+            per_raw_weighted: Dict[str, float] = {}
+            for scenario in ["bull", "base", "bear"]:
+                entry = _scenario_entry(raw, scenario)
+                if not isinstance(entry, dict):
+                    continue
+                prob = _normalize_probability_value(entry.get("probability"))
+                activities = entry.get("activities")
+                if prob is None or not isinstance(activities, dict):
+                    continue
+                for activity_name, activity_value in activities.items():
+                    value = _safe_float(activity_value)
+                    if value is None:
+                        continue
+                    key = _normalize_activity_metric_key(str(activity_name))
+                    per_raw_weighted[key] = float(per_raw_weighted.get(key, 0.0)) + (float(prob) * float(value))
+            for key, weighted_value in per_raw_weighted.items():
+                collected.setdefault(key, []).append(float(weighted_value))
+
+        out: Dict[str, float] = {}
+        for activity_key, values in collected.items():
+            mean_value = _mean(values)
+            if mean_value is None:
+                continue
+            out[f"weighted_activity_{activity_key}"] = float(mean_value)
+        return out
+
     metrics: Dict[str, Optional[float]] = {}
     if method_name == "Scenario DCF":
         metrics = {
@@ -602,6 +648,8 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bear_probability": avg_scenario_value("bear", 0),
             "target_market_cap": coalesce(avg_num("target_market_cap"), avg_weighted_scenario_value(1)),
         }
+        for activity_metric_key, activity_metric_value in avg_weighted_activity_values().items():
+            metrics[activity_metric_key] = activity_metric_value
     elif method_name == "Dream Team":
         metrics = {
             "target_market_cap": avg_num("target_market_cap"),

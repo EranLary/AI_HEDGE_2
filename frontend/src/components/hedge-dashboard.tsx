@@ -640,6 +640,13 @@ function prettyMetricName(raw: string): string {
   const key = String(raw || "").trim().toLowerCase();
   if (!key) return "Value";
   if (METHOD_METRIC_LABELS[key]) return METHOD_METRIC_LABELS[key];
+  if (key.startsWith("weighted_activity_")) {
+    const activity = key.replace(/^weighted_activity_/, "").replace(/_/g, " ").trim();
+    return activity
+      .split(" ")
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(" ");
+  }
 
   const tokenMap: Record<string, string> = {
     fcf: "FCF",

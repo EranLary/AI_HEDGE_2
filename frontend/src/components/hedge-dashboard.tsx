@@ -1569,7 +1569,7 @@ export function HedgeDashboard({
                       <p className="font-semibold">{activeMethod.name}</p>
                       <p className="text-sm text-zinc-400">
                         Mean Target: <span className={`font-semibold ${activeMethodTargetClass}`}>{fmtTargetOrFloor(activeMethod.target_price, currencyContext)}</span>{" "}
-                        <span className={`font-semibold ${activeMethodTargetChangeClass}`}>
+                        <span className={`text-xs font-semibold ${activeMethodTargetChangeClass}`}>
                           ({typeof activeMethodTargetChangePct === "number" ? fmtPct(activeMethodTargetChangePct) : "N/A"})
                         </span>{" "}
                         <span className="text-zinc-300">({activeMethodTargetVerdict})</span>
@@ -1601,7 +1601,7 @@ export function HedgeDashboard({
                               <div className="space-y-1 text-sm text-zinc-400">
                                 <p>
                                   Target: <span className={`font-semibold ${selectedOutputTargetClass}`}>{fmtTargetOrFloor(selectedOutput.target_price, currencyContext)}</span>{" "}
-                                  <span className={`font-semibold ${selectedOutputTargetChangeClass}`}>
+                                  <span className={`text-xs font-semibold ${selectedOutputTargetChangeClass}`}>
                                     ({typeof selectedOutputTargetChangePct === "number" ? fmtPct(selectedOutputTargetChangePct) : "N/A"})
                                   </span>{" "}
                                   <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>

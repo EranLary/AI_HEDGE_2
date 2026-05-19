@@ -34,6 +34,10 @@ function dedupeBySymbol(entries: TickerEntry[]): TickerEntry[] {
   return out;
 }
 
+type SuggestionItem =
+  | { kind: "entry"; entry: TickerEntry }
+  | { kind: "freeText"; symbol: string };
+
 export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
   const [catalog, setCatalog] = useState<TickerEntry[] | null>(null);
   const [query, setQuery] = useState("");
@@ -124,10 +128,24 @@ export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
     return dedupeBySymbol([...localResults, ...remoteResults]).slice(0, 10);
   }, [localResults, remoteResults]);
 
+  const normalizedQuery = query.trim().toUpperCase();
+  const hasExactSuggestion = useMemo(
+    () => merged.some((entry) => entry.s.toUpperCase() === normalizedQuery),
+    [merged, normalizedQuery],
+  );
+  const canUseFreeText = Boolean(normalizedQuery) && TICKER_RE.test(normalizedQuery) && !hasExactSuggestion;
+  const suggestionItems = useMemo<SuggestionItem[]>(
+    () => [
+      ...merged.map((entry) => ({ kind: "entry", entry }) as SuggestionItem),
+      ...(canUseFreeText ? [{ kind: "freeText", symbol: normalizedQuery } as SuggestionItem] : []),
+    ],
+    [merged, canUseFreeText, normalizedQuery],
+  );
+
   // Reset highlight when the merged list changes
   useEffect(() => {
     setHighlight(0);
-  }, [merged.length, query]);
+  }, [suggestionItems.length, query]);
 
   function pick(entry: TickerEntry) {
     onChange(entry);
@@ -149,14 +167,17 @@ export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setOpen(true);
-      setHighlight((h) => Math.min(h + 1, Math.max(0, merged.length - 1)));
+      setHighlight((h) => Math.min(h + 1, Math.max(0, suggestionItems.length - 1)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(0, h - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (merged[highlight]) {
-        pick(merged[highlight]);
+      const selectedItem = suggestionItems[highlight];
+      if (selectedItem?.kind === "entry") {
+        pick(selectedItem.entry);
+      } else if (selectedItem?.kind === "freeText") {
+        pickFreeText();
       } else if (query.trim()) {
         pickFreeText();
       }
@@ -238,10 +259,31 @@ export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
 
       {open && !value && query ? (
         <div className="hib-auth-menu absolute left-0 right-0 top-full z-50 mt-1 rounded-xl p-1.5 shadow-xl">
-          {merged.length ? (
+          {suggestionItems.length ? (
             <ul className="max-h-[280px] overflow-auto" role="listbox">
-              {merged.map((entry, i) => {
+              {suggestionItems.map((item, i) => {
                 const isHi = i === highlight;
+                if (item.kind === "freeText") {
+                  return (
+                    <li key={`free-text-${item.symbol}`}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={isHi}
+                        onMouseEnter={() => setHighlight(i)}
+                        onClick={() => pickFreeText()}
+                        className={`hib-auth-menu-item flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left ${
+                          isHi ? "bg-emerald-500/15" : ""
+                        }`}
+                      >
+                        <span className="truncate text-xs text-zinc-300">
+                          Use <span className="font-mono text-sm font-semibold text-zinc-100">{item.symbol}</span> anyway
+                        </span>
+                      </button>
+                    </li>
+                  );
+                }
+                const entry = item.entry;
                 return (
                   <li key={`${entry.s}-${i}`}>
                     <button
@@ -276,15 +318,6 @@ export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
           ) : (
             <div className="px-3 py-3 text-xs text-zinc-500">
               {catalog === null ? "Loading tickers..." : "No matches yet."}
-              {TICKER_RE.test(query.trim()) ? (
-                <button
-                  type="button"
-                  onClick={() => pickFreeText()}
-                  className="hib-auth-menu-item mt-2 block w-full rounded-md px-2 py-1.5 text-left text-xs"
-                >
-                  Use <span className="font-mono font-semibold">{query.trim()}</span> anyway
-                </button>
-              ) : null}
             </div>
           )}
         </div>

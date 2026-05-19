@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 
 ticker = "STRS.TA"
 
@@ -4897,6 +4898,25 @@ def _resolve_runtime_context(
     return tk, vdict
 
 
+@contextmanager
+def _obs_llm_context(stage: Optional[str] = None, persona: Optional[str] = None):
+    """Best-effort observability context wrapper.
+
+    Keeps legacy_port runnable in environments where ai_hedge.obs is unavailable.
+    """
+    try:
+        from ai_hedge import obs as _obs  # Lazy import to avoid hard dependency.
+    except Exception:
+        _obs = None
+
+    if _obs is None or not hasattr(_obs, "llm_context"):
+        yield
+        return
+
+    with _obs.llm_context(stage=stage, persona=persona):
+        yield
+
+
 def dream_valuation_full(
     financial_dict,
     text,
@@ -4916,13 +4936,14 @@ def dream_valuation_full(
         instruction = build_prompt_dream_valuation(name)
         prompt = build_prompt(tk, financial_dict, instruction, text)
         temp = 0.0 if str(model or "").strip().lower() == "deepseek-reasoner" else 0.6
-        answer = deepseek_simple_text(
-            api_key=DEEPSEEK_API_KEY,
-            prompt=prompt,
-            short_answer=False,
-            temperature=temp,
-            model=model,
-        )
+        with _obs_llm_context(stage="valuation.dream_team", persona=name):
+            answer = deepseek_simple_text(
+                api_key=DEEPSEEK_API_KEY,
+                prompt=prompt,
+                short_answer=False,
+                temperature=temp,
+                model=model,
+            )
         return name, answer
 
     all_results = []
@@ -5533,58 +5554,60 @@ def run_valuations(
         all_results = []
         summary_name = "Scenario DCF Price Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = scenario_dcf_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = scenario_dcf_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.scenario_dcf"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = scenario_dcf_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = scenario_dcf_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_target_scenario_mixed():
         all_results = []
         summary_name = "Target Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = bbb_tp_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = bbb_tp_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.target_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = bbb_tp_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = bbb_tp_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_earnings_scenario_mixed():
@@ -5593,31 +5616,32 @@ def run_valuations(
         pe_results = []
         summary_name = "Earnings Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_ni, ctx_pe, ctx_summary, ctx_details = bbb_ni_pe_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_ni, ctx_pe, ctx_summary = bbb_ni_pe_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            ni_results.extend(ctx_ni)
-            pe_results.extend(ctx_pe)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.earnings_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_ni, ctx_pe, ctx_summary, ctx_details = bbb_ni_pe_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_ni, ctx_pe, ctx_summary = bbb_ni_pe_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                ni_results.extend(ctx_ni)
+                pe_results.extend(ctx_pe)
+                summary_name = ctx_summary[1]
         return all_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_revenue_scenario_mixed():
@@ -5626,31 +5650,32 @@ def run_valuations(
         revenue_results = []
         summary_name = "Revenue Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            ps_results.extend(ctx_ps)
-            revenue_results.extend(ctx_rev)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.revenue_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                ps_results.extend(ctx_ps)
+                revenue_results.extend(ctx_rev)
+                summary_name = ctx_summary[1]
         return all_results, ps_results, revenue_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_composite_scenario_mixed():
@@ -5660,90 +5685,93 @@ def run_valuations(
         pe_results = []
         summary_name = "Composite Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = composite_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = composite_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            revenue_results.extend(ctx_rev)
-            ni_results.extend(ctx_ni)
-            pe_results.extend(ctx_pe)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.composite_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = composite_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = composite_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                revenue_results.extend(ctx_rev)
+                ni_results.extend(ctx_ni)
+                pe_results.extend(ctx_pe)
+                summary_name = ctx_summary[1]
         return all_results, revenue_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_sotp_scenario_mixed():
         all_results = []
         summary_name = "SOTP Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = sotp_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = sotp_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.sotp_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = sotp_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = sotp_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_dream_mixed():
         all_results = []
         summary_name = "Dream Team Target Price Valuation"
         details = []
-        for ctx_text, _, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = dream_valuation_full(
-                    financial_dict,
-                    ctx_text,
-                    dream_valuation_team,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = dream_valuation_full(
-                    financial_dict,
-                    ctx_text,
-                    dream_valuation_team,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.dream_team"):
+            for ctx_text, _, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = dream_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        dream_valuation_team,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = dream_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        dream_valuation_team,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         if all_results:
             all_results_mean = [sum(all_results) / len(all_results)]
         else:

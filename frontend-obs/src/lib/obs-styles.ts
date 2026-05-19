@@ -6,6 +6,13 @@ export const STAGE_ORDER = [
   "sec.short",
   "dashboard.extract",
   "valuations",
+  "valuation.scenario_dcf",
+  "valuation.target_scenario",
+  "valuation.earnings_scenario",
+  "valuation.revenue_scenario",
+  "valuation.composite_scenario",
+  "valuation.sotp_scenario",
+  "valuation.dream_team",
   "technical",
   "unknown",
 ];

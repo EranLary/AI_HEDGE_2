@@ -98,7 +98,7 @@ def run_lite_test(
     """
     Fast smoke test:
     - Runs only N text-maker agents (default: 3)
-    - Runs only 2 valuation blocks (DCF + P/E/Earnings)
+    - Runs only 2 active valuation blocks (Scenario DCF + Earnings Scenario)
     """
     _require_api_key()
     ticker = ticker.upper().strip()
@@ -138,14 +138,14 @@ def run_lite_test(
         text_input=text,
     )
 
-    dcf_prices, dcf_summary = legacy.dcf_range_full(
+    dcf_prices, dcf_summary = legacy.scenario_dcf_full(
         financial_dict,
         text,
         num_iterations=valuation_iterations,
         llm_workers=llm_workers,
         runtime_context=runtime_context,
     )
-    pe_prices, pe_values, ni_values, pe_summary = legacy.profit_pe_range_full(
+    earnings_prices, ni_values, pe_values, earnings_summary = legacy.bbb_ni_pe_full(
         financial_dict,
         text,
         num_iterations=valuation_iterations,
@@ -157,7 +157,7 @@ def run_lite_test(
         ticker=ticker,
         current_price=float(variables_dict.get("price", 0) or 0),
         dcf_prices=dcf_prices,
-        pe_prices=pe_prices,
+        pe_prices=earnings_prices,
         output_dir=out_dir,
         show_plot=show_plots,
     )
@@ -188,19 +188,19 @@ def run_lite_test(
         "ticker": ticker,
         "output_dir": str(out_dir.resolve()),
         "text_agents_ran": text_tasks,
-        "valuation_blocks_ran": ["dcf_range_full", "profit_pe_range_full"],
+        "valuation_blocks_ran": ["scenario_dcf_full", "bbb_ni_pe_full"],
         "metrics": {
             "current_price": variables_dict.get("price", 0),
             "dcf_count": len(dcf_prices),
             "dcf_mean": _mean(dcf_prices),
-            "pe_count": len(pe_prices),
-            "pe_price_mean": _mean(pe_prices),
+            "pe_count": len(earnings_prices),
+            "pe_price_mean": _mean(earnings_prices),
             "pe_mean": _mean(pe_values),
             "ni_mean": _mean(ni_values),
         },
         "summaries": {
             "dcf": {"text": dcf_summary[0], "header": dcf_summary[1]},
-            "pe": {"text": pe_summary[0], "header": pe_summary[1]},
+            "pe": {"text": earnings_summary[0], "header": earnings_summary[1]},
         },
         "analysis_txt": str(analysis_dst.resolve()),
         "analysis_pdf": pdf_dst,

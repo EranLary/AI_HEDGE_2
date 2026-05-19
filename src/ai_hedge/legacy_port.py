@@ -1,4 +1,5 @@
-﻿import os
+import os
+from contextlib import contextmanager
 
 ticker = "STRS.TA"
 
@@ -1827,6 +1828,12 @@ def load_text_from_file(file_path: str = "analysis.txt") -> str:
 
 from typing import Tuple
 
+ANALYZER_CALIBRATION_SENTENCE = (
+    "Use calibrated language: avoid absolute claims unless directly proven by the provided data; "
+    "when uncertainty exists, state it explicitly with probability-oriented wording "
+    "(for example: likely, may, could)."
+)
+
 def what_it_does_insights_result(info_dict) -> Tuple[str, str]:
     """
     Generate a clear, plain-language explanation of what the company actually does.
@@ -1857,6 +1864,7 @@ Guidelines:
 - Explain who the customers are and what problem the company solves.
 - Translate business jargon into plain, concrete language.
 - If multiple activities exist, explain the main one first and mention others briefly.
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Write 5-7 short sentences.
 """.strip()
@@ -1916,6 +1924,7 @@ Rules:
 - If valuation implies extreme expectations, articulate them clearly.
 - If governance, ownership, margins, growth, or capital structure stand out, explain the consequences.
 - Connect business model, financials, and market expectations into a single coherent story.
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Output format:
 - Bullet points only.
@@ -1994,6 +2003,7 @@ Output rules:
 - No headlines, no chronology, no PR language
 - Be concise, sharp, and opinionated
 - Focus on what actually matters for an investor
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {info_dict["short_name"]}
@@ -2071,6 +2081,7 @@ What to extract:
 - Whether the stock is treated as a story, growth platform, or cash-flow asset
 - Signals of speculative vs institutional behavior
 - What outcomes the market is overpaying or underpaying for
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 calls_df:
@@ -2153,6 +2164,7 @@ Output rules:
 - Prioritize depth, judgment, and interpretation
 - Be precise, skeptical, and professional
 - No generic textbook explanations
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Input:
 Name of company: {name_of_company}
@@ -2284,6 +2296,7 @@ Output rules:
 - Be direct and analytical
 - No generic explanations, no filler
 - If the JSONs are missing key context (e.g., dates, sample size), state how that limits confidence
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Price targets:
@@ -2414,6 +2427,7 @@ Output requirements:
 - Focus on insights, not raw numbers
 - Separate ownership structure, institutional behavior, and insider trading insights
 - No generic explanations
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Your goal is to understand who owns the company, how that is changing, and why it matters.
 """.strip()
@@ -2492,6 +2506,7 @@ Output rules:
 - No raw table repetition
 - No generic explanations
 - Be analytical and opinionated
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {company_name}
@@ -2609,6 +2624,7 @@ Output rules:
 - Do not mechanically repeat numbers without interpretation
 - Be direct, analytical, and opinionated
 - Prioritize insight over completeness
+- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {company_name}
@@ -2752,7 +2768,8 @@ def swot_analysis(ticker):
   * Be analytical, not descriptive.
   * Avoid repeating the input text verbatim.
   * Prioritize insight over completeness.
-  * Assume the reader is sophisticated and time-constrained."""
+  * Assume the reader is sophisticated and time-constrained.
+  * {ANALYZER_CALIBRATION_SENTENCE}"""
 
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -2838,6 +2855,7 @@ def market_analyst(ticker):
   - Avoid generic market descriptions.
   - Avoid repeating the input text verbatim.
   - Prioritize clarity, depth, and economic relevance over length.
+  - {ANALYZER_CALIBRATION_SENTENCE}
 
   The final output should read as a **decision-grade market characterization**, not a generic industry overview.
   """
@@ -2893,6 +2911,7 @@ def bear_vs_bull_insights(ticker):
   - Be specific, causal, and thoughtful.
   - Write as if presenting to a skeptical investment committee.
   - The goal is not balance, but clarity of scenarios.
+  - {ANALYZER_CALIBRATION_SENTENCE}
 
   Your objective is to define the upside and downside boundaries of reality for this company.
   """
@@ -2976,6 +2995,7 @@ def change_up_anaysis(ticker, change):
 
   Reason step by step and explain your reasoning clearly.
   Deliver a deep analytical narrative, not a summary.
+  {ANALYZER_CALIBRATION_SENTENCE}
   """
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -3059,6 +3079,7 @@ def change_down_anaysis(ticker, change):
 
   Reason step by step and explain your reasoning clearly.
   Deliver a rigorous analytical narrative, not a summary.
+  {ANALYZER_CALIBRATION_SENTENCE}
   """
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -3106,6 +3127,7 @@ def for_value_insights(financial_dict, ticker):
   Each bullet should reflect a real analytical insight, not a summary or a restatement.
 
   Avoid generic language, boilerplate finance phrases, or mechanical checklists.
+  {ANALYZER_CALIBRATION_SENTENCE}
 
   Do not explain the company. Do not explain valuation methods.
   Just extract the truths that matter most for valuation.
@@ -3353,62 +3375,6 @@ def make_analysis_file(
     return info_dict, files_dict, financial_dict, variables_dict
 
 
-instructions_dcf_range = """Based on the input you receive, estimate the following valuation assumptions for DCF and return them in STRICT JSON.
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
-
-Output schema (must match exactly):
-{
-  "step_by_step_analysis": "string",
-  "fcf_next_year": [lower, upper],
-  "fcf_rationale": "string",
-  "g": [lower, upper],
-  "g_rationale": "string",
-  "WACC": [lower, upper],
-  "wacc_rationale": "string",
-  "TERMINAL": [lower, upper],
-  "terminal_rationale": "string",
-  "investment_amount": number,
-  "investment_rationale": "string"
-}
-
-Definitions:
-- "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out a high-level summary of your evaluation of the valuation. Focus strictly on the critical drivers and constraints that directly inform your specific numeric estimates for the DCF model below.
-- "*_rationale" fields: For each numerical range estimate, you MUST provide a concise justification in its corresponding '_rationale' field. You MUST explicitly cite the specific historical figures, margins, or data points from the provided text or CSV that mathematically bridge your logic to your final estimate.
-- "fcf_next_year" represents a realistic, normalized, and sustainable Free Cash Flow for the next fiscal year under normal operating conditions.
-  It should reflect a year of full, ongoing business activity, excluding one-off or non-recurring items, temporary working capital distortions, extraordinary capital expenditures, or artificial margin assumptions.
-  The value should capture the company's true representative cash-generating capacity assuming the business is operating normally, efficiently, and at a steady-state level, without unusual shocks or temporary effects.
-  This value should be expressed in U.S. dollars.
-- "g" represents the range of sustainable annual growth rates in Free Cash Flow during the explicit forecast period.
-  The range should reflect economically plausible growth based on the company's industry, competitive position, reinvestment capacity, and market maturity.
-  Exclude short-term rebounds, cyclical spikes, or speculative growth assumptions.
-  Growth must be consistent with realistic margins and capital intensity, and sustainable without assuming persistent efficiency gains beyond normal operations.
-- "WACC" represents the range of appropriate Weighted Average Cost of Capital used to discount future cash flows.
-  The range should reflect the company's fundamental business risk, capital structure, geographic exposure, and prevailing macroeconomic conditions.
-  Assumptions must be internally consistent with leverage, cash flow stability, and cyclicality.
-  Avoid artificially low discount rates that would mechanically inflate intrinsic value.
-- "TERMINAL" represents the range of sustainable perpetual growth rates used in the terminal value calculation.
-  The range should reflect long-term economic reality, typically converging toward long-term nominal GDP growth or lower.
-  Assume a mature, steady-state business with stable margins and reinvestment needs.
-  Exclude assumptions of perpetual excess returns, structural margin expansion, or growth materially above the overall economy.
-- "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
-  It must be a single number in the range [-100000, 100000].
-  Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
-
-Rules:
-1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "fcf_next_year", "g", "WACC", and "TERMINAL" must each be a list of exactly 2 numbers: [lower, upper].
-3) The lower value must be <= the upper value.
-4) Use absolute numeric values for FCF, expressed in full units (not percentages, not thousands, and not millions). Example: one million should be written as 1000000, not 1M.
-5) Use decimals, not percent strings, for "g", "WACC", and "TERMINAL". Example: 0.1 means 10%.
-6) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, or ranges inside the arrays.
-7) If the input is missing critical information, still produce best-effort ranges, and use "step_by_step_analysis" to state what was missing and how you handled it.
-8) "investment_amount" must be a single numeric value in [-100000, 100000].
-9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-10) Your task is to apply informed analyst judgment to select the assumptions that yield the most robust, defensible, and economically coherent DCF valuation for the company.
-11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
-"""
-
 instructions_scenario_dcf = """Based on the input you receive, produce a probabilistic 3-scenario DCF (Bull / Base / Bear) as a professional equity analyst would.
 
 You must:
@@ -3457,88 +3423,6 @@ Rules:
 8) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON.
 """
 
-instructions_profit_pe_range = """Based on the input you receive, estimate the company's REPRESENTATIVE steady-state earnings power in 3 years and its REPRESENTATIVE valuation multiple, and return them in STRICT JSON.
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
-
-Output schema (must match exactly):
-{
-  "step_by_step_analysis": "string",
-  "net_income_3y": [lower, upper],
-  "net_income_rationale": "string",
-  "pe_multiple": [lower, upper],
-  "pe_rationale": "string",
-  "investment_amount": number,
-  "investment_rationale": "string"
-}
-
-Definitions:
-- "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out your step-by-step evaluation of the valuation. This is your internal scratchpad to formulate a robust thesis. Focus strictly on the critical drivers and constraints that directly inform your specific numeric estimates for net income and the P/E multiple below.
-- "*_rationale" fields: For each numerical range estimate, you MUST provide a concise justification in its corresponding '_rationale' field. You MUST explicitly cite the specific historical figures, margins, or data points from the provided text or CSV that mathematically bridge your logic to your final estimate.
-- "net_income_3y" represents the real, normal, sustainable annual net income the company could generate in year 3,
-  excluding one-offs, temporary margins, or unrealistic assumptions. This value should be expressed in U.S. dollars.
-- "pe_multiple" represents a carefully underwritten, long-term P/E (Price to Earnings) multiple that reflects the company's true business quality and earnings power.
-  It should be derived with deep investor judgment and incorporate earnings quality and sustainability, growth durability,
-  competitive position and moat (including the intensity and trajectory of competition), cyclicality and downside risk, capital intensity and reinvestment requirements,
-  capital allocation and return profile, and the overall risk profile (including macro, regulatory, and execution risk).
-  The chosen multiple must represent a realistic, through-cycle valuation anchor based on durable fundamentals rather than short-term sentiment,
-  and should explicitly account for how competitive dynamics and reinvestment needs can strengthen or erode long-term returns.
-- "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
-  It must be a single number in the range [-100000, 100000].
-  Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
-
-Rules:
-1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "net_income_3y" and "pe_multiple" must each be a list of exactly 2 numbers: [lower, upper].
-3) The lower value must be <= the upper value.
-4) Use absolute numeric values for net income, expressed in full units (not percentages, not thousands, and not millions). For example: one million should be written as 1000000, not 1M.
-5) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, or ranges inside the arrays.
-6) Your step_by_step_analysis should reference business fundamentals, scalability, margins, growth durability, cyclicality, risk, and realism.
-7) If the input is missing critical information, still produce best-effort ranges and explicitly state assumptions in "step_by_step_analysis".
-8) "investment_amount" must be a single numeric value in [-100000, 100000].
-9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
-"""
-
-instructions_revenue_ev_sales_range = """Based on the input you receive, estimate the company's REPRESENTATIVE normalized revenue level in 3 years and its REPRESENTATIVE EV/Sales valuation multiple, and return them in STRICT JSON.
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
-
-Output schema (must match exactly):
-{
-  "step_by_step_analysis": "string",
-  "revenue_3y": [lower, upper],
-  "revenue_rationale": "string",
-  "ev_sales_multiple": [lower, upper],
-  "ev_sales_rationale": "string",
-  "investment_amount": number,
-  "investment_rationale": "string"
-}
-
-Definitions:
-- "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out your step-by-step evaluation of the valuation. This is your internal scratchpad to formulate a robust thesis. Focus strictly on the critical drivers and constraints that directly inform your specific numeric estimates for revenue and the EV/Sales multiple below.
-- "*_rationale" fields: For each numerical range estimate, you MUST provide a concise justification in its corresponding '_rationale' field. You MUST explicitly cite the specific historical figures, margins, or data points from the provided text or CSV that mathematically bridge your logic to your final estimate.
-- "revenue_3y" represents the REAL, NORMALIZED, sustainable annual revenue the company could generate in year 3,
-  excluding one-offs, temporary pricing, or unrealistic ramp assumptions. This value should be expressed in U.S. dollars.
-- "ev_sales_multiple" represents a reasonable, long-term EV/Sales (Enterprise Value to Sales) multiple reflecting
-  gross margin potential, growth durability, competitive position, balance sheet risk, cyclicality, and capital intensity.
-- "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
-  It must be a single number in the range [-100000, 100000].
-  Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
-
-Rules:
-1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "revenue_3y" and "ev_sales_multiple" must each be a list of exactly 2 numbers: [lower, upper].
-3) The lower value must be <= the upper value.
-4) Use absolute numeric values for revenue, expressed in full units (not percentages, not thousands, and not millions). For example: one million should be written as 1000000, not 1M.
-5) Do NOT include null, NaN, strings (except for step_by_step_analysis and rationales), percentages, formatted numbers, or ranges inside the arrays.
-6) Your step_by_step_analysis should reference unit economics, TAM realism, growth constraints, go-to-market velocity, pricing, churn/retention (if applicable), cyclicality, competitive dynamics, and capital structure considerations when interpreting EV versus equity value.
-7) If the input is missing critical information, still produce best-effort ranges and explicitly state assumptions in "step_by_step_analysis".
-8) "investment_amount" must be a single numeric value in [-100000, 100000].
-9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
-"""
-
 instructions_target_market_cap = """Based on the input you receive, estimate a reasonable TARGET MARKET CAPITALIZATION for the company's common equity, as a professional equity analyst would, and return it in STRICT JSON.
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3570,59 +3454,6 @@ Rules:
 6) Your step_by_step_analysis should reference your valuation framework, earnings or revenue normalization, multiple selection, risk factors, capital structure adjustments (net debt, dilution, minority interests), and assumption discipline.
 7) Before finalizing, run an internal unit sanity check: ensure "target_market_cap" is total equity value scale (company-level), not per-share value or a ratio.
 8) If the input is missing critical information, still produce a best-effort target market cap and explicitly state assumptions in "step_by_step_analysis".
-9) "investment_amount" must be a single numeric value in [-100000, 100000].
-10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
-"""
-
-instructions_sotp = """Based on the input you receive, perform a Sum-Of-The-Parts (SOTP) valuation as a professional equity analyst would.
-
-You must:
-1) Identify the company's distinct business activities/segments (including any material sub-activities if relevant).
-2) Estimate the intrinsic equity value of EACH activity separately (standalone), using appropriate valuation logic per activity.
-3) Return the result in STRICT JSON only.
-
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
-
-Output schema (must match exactly):
-{
-  "step_by_step_analysis": "string",
-  "<activity_name_1>": number,
-  "<activity_name_2>": number,
-  "<activity_name_3>": number,
-  "...": number,
-  "investment_amount": number,
-  "investment_rationale": "string"
-}
-
-Definitions:
-- "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out your step-by-step evaluation of the SOTP valuation. This is your internal scratchpad. Focus strictly on how you define the segments, the valuation method used per segment, the handling of shared costs/overhead, and the allocation of net debt/cash and non-operating assets or liabilities.
-- Each activity value is the estimated intrinsic EQUITY VALUE attributable to common shareholders for that activity, in absolute full units (not thousands, not millions), in the same currency as the input. This value should be expressed in U.S. dollars.
-- Use full-unit numeric scale for activity values. Example: if you mean 53 billion dollars for an activity, output 53000000000.
-- "activity_name" must be a concise, human-readable segment label (e.g., "Subscription Software", "Services", "Consumer Lending", "Israel P&C Insurance", "Net Cash / (Debt)", "Corporate Overhead", etc.).
-- "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
-  It must be a single number in the range [-100000, 100000].
-  Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
-
-Rules:
-1) "step_by_step_analysis" must be a single comprehensive string and MUST be the first key in the JSON.
-2) Each activity value must be a single numeric value (no ranges), expressed in absolute full units (not percentages, not thousands, not millions).
-3) Do NOT include null, NaN, strings, scale abbreviations, or scientific notation for numeric values.
-4) Do NOT add any nested objects. All activities must be top-level keys.
-5) Your step_by_step_analysis must explicitly mention:
-   - how segments were defined,
-   - which valuation method(s) were used per segment (e.g., EV/Sales, EV/EBIT, P/E, DCF, book/float-based, sum of investments, etc.),
-   - how you handled shared costs/overhead allocation,
-   - how you treated net debt/cash and non-operating assets or liabilities (and where you allocated them),
-   - any critical assumptions and normalization choices.
-6) Before finalizing, run an internal unit sanity check: each activity must be company-level equity value contribution, not per-share value, multiple, or percentage.
-7) If the input is missing critical information (segment financials, margins, allocation details, capital structure),
-   still produce a best-effort SOTP:
-   - infer segments from qualitative description if needed,
-   - use reasonable proxy margins/multiples,
-   - and state the assumptions explicitly in "step_by_step_analysis".
-8) Do NOT include a "total" key and do NOT include a per-share target price in this output.
 9) "investment_amount" must be a single numeric value in [-100000, 100000].
 10) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
 11) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
@@ -3812,7 +3643,7 @@ Rules:
 
 instructions_sotp_scenario = """Based on the input you receive, produce a probabilistic 3-scenario SOTP valuation (Bull / Base / Bear).
 
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+Return EXACTLY one valid JSON object and nothing else (no markdown, no explanations outside the JSON, no comments, no extra keys).
 
 Output schema (must match exactly):
 {
@@ -3839,77 +3670,29 @@ Output schema (must match exactly):
 Rules:
 1) bull/base/bear probability values must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
 2) Each activities map must be flat (no nested objects), and all values must be numeric.
-3) Activity values are intrinsic equity value components in full units.
-4) Use full-unit numeric scale for activity values. Example: if you mean 53 billion dollars for an activity, output 53000000000.
-5) Do not output scale abbreviations or scientific notation in activity values.
-6) Keep step_by_step_analysis and rationale fields as single complete strings.
-7) Before finalizing, run an internal unit sanity check: each scenario activity value must be total equity-value contribution, not per-share or percentage.
-8) "investment_amount" must be in [-100000, 100000].
-9) Do not output ranges, null/NaN in numeric fields, or any extra top-level keys.
-10) ZERO POLITENESS: output raw JSON only.
-"""
-
-instructions_forest_logic = """Based on the input you receive, estimate the company's REPRESENTATIVE average annual revenue growth over the next 3 years, its REPRESENTATIVE normalized EBIT margin, its REPRESENTATIVE normalized annual net financing result, its REPRESENTATIVE effective tax rate, and its REPRESENTATIVE fair long-term P/E multiple, and return them in STRICT JSON.
-
-Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
-
-Output schema (must match exactly):
-{
-  "step_by_step_analysis": "string",
-  "revenue_growth_3y_avg": number,
-  "revenue_growth_rationale": "string",
-  "operating_profitability_margin": number,
-  "margin_rationale": "string",
-  "net_financing_result": number,
-  "financing_rationale": "string",
-  "tax_rate": number,
-  "tax_rationale": "string",
-  "pe_multiple": number,
-  "pe_rationale": "string",
-  "investment_amount": number,
-  "investment_rationale": "string"
-}
-
-Definitions:
-- "step_by_step_analysis": Take a deep breath. Before providing the final numbers, use this field to write out your step-by-step evaluation of the business, economics, financials, and risks. This is your internal scratchpad to formulate a robust thesis. Focus strictly on the critical drivers and constraints that directly inform your specific numeric estimates for growth, margins, financing, and valuation below.
-- "*_rationale" fields: For each numerical estimate, you MUST provide a concise justification in its corresponding '_rationale' field. You MUST explicitly cite the specific historical figures, margins, or data points from the provided text or CSV that mathematically bridge your logic to your final estimate.
-- "revenue_growth_3y_avg" represents the REALISTIC, normalized average annual revenue growth rate expected over the next 3 years.
-  It must be expressed as a numeric decimal ratio (for example 0.20 for 20% annual growth).
-  It should reflect sustainable growth, excluding temporary rebounds, one-off contracts, or unrealistic TAM assumptions.
-  It can also be negative if you believe the revenue will decline over the years.
-- "operating_profitability_margin" represents the NORMALIZED, sustainable EBIT margin (operating income / revenue),
-  expressed as a numeric decimal ratio (for example 0.18 for 18%).
-  Exclude temporary cost cuts, peak-cycle margins, accounting distortions, or unusually high incentive adjustments.
-- "net_financing_result" represents the expected normalized annual financing result in absolute U.S. dollars.
-  If the company is expected to generate net financing income, return a positive number.
-  If it is expected to incur net financing expenses, return a negative number.
-  This must be expressed as a full absolute value (not in thousands or millions).
-  For example: negative fifty million dollars must be written as -50000000.
-- "tax_rate" represents the normalized effective tax rate applied to pre-tax earnings to derive after-tax earnings power.
-  It must be expressed as a decimal ratio (for example 0.23 for 23%), not a percentage string.
-  Derive it from the company's jurisdiction mix, historical effective tax behavior, structural tax profile, and realistic normalization assumptions.
-  If current taxes are distorted by one-off items, loss carryforwards, valuation allowances, or temporary accounting effects, normalize to a sustainable through-cycle rate and explain why.
-- "pe_multiple" represents a carefully underwritten, long-term fair P/E multiple reflecting durable earnings power.
-  It must incorporate earnings quality, cyclicality, competitive intensity and trajectory,
-  reinvestment requirements, capital structure risk, regulatory and macro sensitivity,
-  capital allocation discipline, and the sustainability of returns on invested capital.
-  This multiple should represent a realistic through-cycle anchor rather than short-term sentiment or peak optimism.
-- "investment_amount" represents how much capital you would allocate to this stock out of a $100,000 notional budget.
-  It must be a single number in the range [-100000, 100000].
-  Negative values mean a short position, 0 means no position, positive values mean a long position.
-- "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
-
-Rules:
-1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
-2) "revenue_growth_3y_avg", "operating_profitability_margin", "net_financing_result", "tax_rate", and "pe_multiple" must each be a single numeric value (not a list, not a range).
-3) Growth, margins, and tax rate must be numeric decimal ratios, not percentages.
-4) Financing result must be expressed as a full absolute numeric value in U.S. dollars (no abbreviations).
-5) tax_rate must be numeric and decimal-form. If you internally think in percent terms, convert before output (example: 23% -> 0.23, -5% -> -0.05).
-6) Do NOT include null, NaN, percentages, formatted numbers, or ranges in the numerical fields.
-7) Your step_by_step_analysis must reference growth durability, TAM realism, competitive dynamics, pricing power, operating leverage, cost structure, capital intensity, balance sheet strength, refinancing risk, interest rate sensitivity, cyclicality, and tax normalization logic where relevant.
-8) "investment_amount" must be a single numeric value in [-100000, 100000].
-9) "investment_rationale" must be a single comprehensive string tied directly to your chosen position size.
-10) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON. You will be penalized for generating anything other than the raw JSON object.
+3) The same activity names must appear in bull, base, and bear activities.
+4) Activity values must represent enterprise value (EV) components in USD, in full monetary units.
+5) Include one additional activity named exactly "Equity Adjustments" in every scenario.
+6) "Equity Adjustments" must capture the bridge from EV to equity value, including cash, net debt, minority interests, investments, dilution, corporate adjustments, or other equity-level adjustments when relevant.
+7) "Equity Adjustments" may be positive or negative. Use a positive value when the adjustment increases equity value and a negative value when it reduces equity value.
+8) The sum of all activities in a scenario, including "Equity Adjustments", represents total intrinsic equity value for that scenario.
+9) Use full-unit numeric scale for all activity values. Example: if you mean 50 billion USD for an activity, output 50000000000.
+10) Do not output scale abbreviations, commas inside numbers, or scientific notation in any numeric field. For example, output 50000000000, not "50B", "50 billion", "50,000,000,000", or 5e10.
+11) Keep step_by_step_analysis and rationale fields as single complete strings.
+12) step_by_step_analysis must provide a concise valuation summary covering the overall SOTP logic, major assumptions, scenario framing, and internal sanity checks. Do not include any content outside the JSON.
+13) bull_rationale, base_rationale, and bear_rationale must each explain and justify:
+   a) why that scenario received its probability;
+   b) why each activity received its specific EV value;
+   c) why the "Equity Adjustments" value is positive, negative, or zero;
+   d) the valuation logic used, including relevant assumptions, multiples, growth expectations, margins, risks, discounts, or qualitative evidence from the input.
+14) Rationales must be specific to the input and must not rely on generic boilerplate.
+15) Before finalizing, run an internal unit sanity check: each scenario activity value must be total EV or equity-adjustment contribution in full USD units, not per-share, percentage, multiple, revenue, or abbreviated scale.
+16) investment_amount must be in [-100000, 100000].
+17) investment_amount must be denominated in USD. Positive means recommended long exposure, negative means recommended short or avoid exposure, and 0 means no investment.
+18) investment_rationale must justify the investment_amount using the probability-weighted valuation, downside risk, upside potential, confidence level, and key scenario drivers.
+19) Do not output ranges, null, NaN, Infinity, strings for numeric fields, trailing commas, or any extra top-level keys.
+20) If the input is missing required valuation data, still return valid JSON. Do not invent unsupported company-specific facts. Make conservative assumptions only when necessary and clearly disclose those assumptions inside the rationale fields.
+21) ZERO POLITENESS: output raw JSON only.
 """
 
 def build_prompt_dream_valuation(name):
@@ -3980,38 +3763,6 @@ def _extract_investment_fields(data: Dict[str, Any]) -> Tuple[float, str] | None
     if not rationale:
         return None
     return amount_f, rationale
-
-def extract_dcf_range_json(text: str) -> Dict[str, Any]:
-    # Extract JSON block from text
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return {}
-
-    json_str = match.group(0)
-
-    # Parse JSON
-    data = json.loads(json_str)
-
-    # Basic validation of required keys
-    required_keys = ["fcf_next_year", "g", "WACC", "TERMINAL"]
-    for key in required_keys:
-        if key not in data:
-            return {}
-    investment_fields = _extract_investment_fields(data)
-    if not investment_fields:
-        return {}
-    investment_amount, investment_rationale = investment_fields
-
-    # Return structured data (tuples for ranges as in your original code)
-    return {
-        "fcf_next_year": tuple(data["fcf_next_year"]),
-        "g": tuple(data["g"]),
-        "WACC": tuple(data["WACC"]),
-        "TERMINAL": tuple(data["TERMINAL"]),
-        "investment_amount": investment_amount,
-        "investment_rationale": investment_rationale,
-    }
-
 
 def _normalize_decimal_ratio(x: float) -> float:
     xf = float(x)
@@ -4084,65 +3835,6 @@ def extract_scenario_dcf_json(text: str) -> Dict[str, Any]:
     }
 
 
-def extract_profit_pe_range_json(text: str) -> Dict[str, Any]:
-    # Extract JSON block from text
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return {}
-
-    json_str = match.group(0)
-
-    # Parse JSON
-    data = json.loads(json_str)
-
-    # Basic validation
-    required_keys = ["net_income_3y", "pe_multiple"]
-    for key in required_keys:
-        if key not in data:
-            return {}
-    investment_fields = _extract_investment_fields(data)
-    if not investment_fields:
-        return {}
-    investment_amount, investment_rationale = investment_fields
-
-
-    return {
-        "net_income_3y": tuple(data["net_income_3y"]),
-        "pe_multiple": tuple(data["pe_multiple"]),
-        "investment_amount": investment_amount,
-        "investment_rationale": investment_rationale,
-    }
-
-
-def extract_revenue_ev_sales_range_json(text: str) -> Dict[str, Any]:
-    # Extract JSON block from text
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return {}
-
-    json_str = match.group(0)
-
-    # Parse JSON
-    data = json.loads(json_str)
-
-    # Basic validation of required keys
-    required_keys = ["revenue_3y", "ev_sales_multiple"]
-    for key in required_keys:
-        if key not in data:
-            return {}
-    investment_fields = _extract_investment_fields(data)
-    if not investment_fields:
-        return {}
-    investment_amount, investment_rationale = investment_fields
-
-    # Return structured data (tuples for ranges)
-    return {
-        "revenue_3y": tuple(data["revenue_3y"]),
-        "ev_sales_multiple": tuple(data["ev_sales_multiple"]),
-        "investment_amount": investment_amount,
-        "investment_rationale": investment_rationale,
-    }
-
 def extract_target_market_cap_json(text: str) -> Dict[str, Any]:
     # Extract JSON block from text (best effort)
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -4189,39 +3881,6 @@ def extract_target_market_cap_json(text: str) -> Dict[str, Any]:
         "investment_rationale": investment_rationale,
     }
 
-
-def extract_sotp_json(text: str) -> Dict[str, Any]:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return {}
-
-    json_str = match.group(0)
-    data = json.loads(json_str)
-
-    investment_fields = _extract_investment_fields(data)
-    if not investment_fields:
-        return {}
-    investment_amount, investment_rationale = investment_fields
-
-    # All keys except metadata fields are assumed to be activity names
-    activities = {}
-    for key, value in data.items():
-        if key in {"step_by_step_analysis", "investment_amount", "investment_rationale"}:
-            continue
-
-        if not isinstance(value, (int, float)):
-            return {}
-
-        activities[key] = float(value)
-
-    if len(activities) == 0:
-        return {}
-
-    return {
-        "activities": activities,
-        "investment_amount": investment_amount,
-        "investment_rationale": investment_rationale,
-    }
 
 def extract_bbb_tp_json(text: str) -> Dict[str, Any]:
     # Extract JSON block from text
@@ -4475,49 +4134,6 @@ def extract_sotp_scenario_json(text: str) -> Dict[str, Any]:
         "investment_rationale": investment_rationale,
     }
 
-def extract_forest_logic_json(text: str) -> Dict[str, Any]:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return {}
-
-    json_str = match.group(0)
-    data = json.loads(json_str)
-
-    required_keys = [
-        "revenue_growth_3y_avg",
-        "operating_profitability_margin",
-        "net_financing_result",
-        "tax_rate",
-        "pe_multiple"
-    ]
-
-    for key in required_keys:
-        if key not in data:
-            return {}
-    investment_fields = _extract_investment_fields(data)
-    if not investment_fields:
-        return {}
-    investment_amount, investment_rationale = investment_fields
-    try:
-        tax_rate = float(data["tax_rate"])
-    except Exception:
-        return {}
-    # Normalize percent-style outputs into decimal form:
-    # 23 -> 0.23, -5 -> -0.05. Keep already-decimal values unchanged.
-    if abs(tax_rate) > 1.0:
-        tax_rate = tax_rate / 100.0
-
-    return {
-        "revenue_growth_3y_avg": float(data["revenue_growth_3y_avg"]),
-        "operating_profitability_margin": float(data["operating_profitability_margin"]),
-        "net_financing_result": float(data["net_financing_result"]),
-        "tax_rate": tax_rate,
-        "pe_multiple": float(data["pe_multiple"]),
-        "investment_amount": investment_amount,
-        "investment_rationale": investment_rationale,
-    }
-
-
 def _extract_raw_json_dict(text: str) -> Dict[str, Any]:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
@@ -4563,6 +4179,7 @@ def build_prompt(ticker, financial_dict, instruction, text):
   2) Financial data (structured)
   3) Company Profile Stats (structured)
   4) Explicit output instructions (strict JSON schema)
+  Treat the prepared analysis as analyst opinion, not truth. Structured financial data and primary-source excerpts override it.
 
   Analysis document:
   <Analysis_Document>
@@ -4750,14 +4367,6 @@ def calculate_scenario_dcf(variable_dict, scenarios_dict):
         "per_scenario_prices": per_scenario_prices,
     }
 
-def calculate_pe(variable_dict, pe, ni):
-    fmc = pe * ni
-    shares_outstanding = variable_dict["shares_outstanding"]
-    share_price = fmc / shares_outstanding
-    if share_price < 0:
-      return 0
-    return share_price
-
 def calculate_ps(variable_dict, ev_sales_multiple, revenue):
     diff = variable_dict["ev"] - variable_dict["market_cap"]
     ev = ev_sales_multiple * revenue
@@ -4767,16 +4376,6 @@ def calculate_ps(variable_dict, ev_sales_multiple, revenue):
     if share_price < 0:
       return 0
     return share_price
-
-def calculate_sotp(variable_dict, activities_dict):
-  shares_outstanding = variable_dict["shares_outstanding"]
-  mc = 0
-  for activity_name, activity_value in activities_dict.items():
-    mc += activity_value
-  share_price = mc / shares_outstanding
-  if share_price < 0:
-    return 0
-  return share_price
 
 def calculate_bbb_tp(variable_dict, scenarios_dict):
   price = 0
@@ -4953,97 +4552,12 @@ def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_
 import numpy as np
 import matplotlib.pyplot as plt
 
-def make_monte_carlo_dcf_range(dcf_range_json, variables_dict, num_simulations = 500000):
-  fcf_low = dcf_range_json["fcf_next_year"][0]
-  fcf_high = dcf_range_json["fcf_next_year"][1]
-  print("fcf0:", fcf_low, fcf_high)
-  g_low = dcf_range_json["g"][0]
-  g_high = dcf_range_json["g"][1]
-  print("g:", g_low, g_high)
-  wacc_low = dcf_range_json["WACC"][0]
-  wacc_high = dcf_range_json["WACC"][1]
-  print("wacc:", wacc_low, wacc_high)
-  terminal_low = dcf_range_json["TERMINAL"][0]
-  terminal_high = dcf_range_json["TERMINAL"][1]
-  print("terminal:", terminal_low, terminal_high)
-  results = []
-  fcf = (fcf_high+fcf_low)/2
-  g = (g_high+g_low)/2
-  wacc = (wacc_high+wacc_low)/2
-  terminal_g = (terminal_high+terminal_low)/2
-  share_price = calculate_dcf(variables_dict, fcf, wacc, g, terminal_g)
-  if share_price > 0:
-    results.append(share_price)
-
-  return results
-
-def make_monte_carlo_profit_pe_range(profit_pe_range_json, variables_dict, num_simulations = 500000):
-  pe_low = profit_pe_range_json["pe_multiple"][0]
-  pe_high = profit_pe_range_json["pe_multiple"][1]
-  print("pe:", pe_low, pe_high)
-  ni_low = profit_pe_range_json["net_income_3y"][0]
-  ni_high = profit_pe_range_json["net_income_3y"][1]
-  print("ni:", ni_low, ni_high)
-
-  pe_results = []
-  ni_results = []
-  results = []
-
-  pe = (pe_high+pe_low)/2
-  ni = (ni_high+ni_low)/2
-  pe_results.append(pe)
-  ni_results.append(ni)
-  share_price = calculate_pe(variables_dict, pe, ni)
-  if share_price > 0:
-    results.append(share_price)
-
-  return results, pe_results, ni_results
-
-def make_monte_carlo_revenue_ps_range(revenue_ps_range_json, variables_dict, num_simulations = 500000):
-  ev_sales_multiple_low = revenue_ps_range_json["ev_sales_multiple"][0]
-  ev_sales_multiple_high = revenue_ps_range_json["ev_sales_multiple"][1]
-  print("ev_sales_multiple:", ev_sales_multiple_low, ev_sales_multiple_high)
-  revenue_low = revenue_ps_range_json["revenue_3y"][0]
-  revenue_high = revenue_ps_range_json["revenue_3y"][1]
-  print("revenue:", revenue_low, revenue_high)
-
-  ev_sales_multiple_results = []
-  revenue_results = []
-  results = []
-
-
-  ev_sales_multiple = (ev_sales_multiple_high+ev_sales_multiple_low)/2
-  ev_sales_multiple_results.append(ev_sales_multiple)
-  revenue = (revenue_high+revenue_low)/2
-  revenue_results.append(revenue)
-  share_price = calculate_ps(variables_dict, ev_sales_multiple, revenue)
-  if share_price > 0:
-    results.append(share_price)
-
-  return results, ev_sales_multiple_results, revenue_results
-
-def get_target_price(target_price_json, variables_dict):
-  shares = variables_dict["shares_outstanding"]
-  mc = target_price_json["target_market_cap"]
-  price = mc / shares
-  print("target_price:", price)
-  return [price]
-
 def get_target_price_dreamteam(target_price_json, name, variables_dict):
   shares = variables_dict["shares_outstanding"]
   mc = target_price_json["target_market_cap"]
   price = mc / shares
   print(f"{name}:", price)
   return [price]
-
-def get_sotp(sotp_json, variables_dict):
-  for activity_name, activity_value in sotp_json["activities"].items():
-    print(f"{activity_name}: {activity_value}")
-  share_price = calculate_sotp(variables_dict, sotp_json["activities"])
-  if share_price > 0:
-    return [share_price]
-  else:
-    return []
 
 def get_bbb_tp(bbb_tp_json, variables_dict):
   share_price = calculate_bbb_tp(variables_dict, bbb_tp_json["scenarios"])
@@ -5096,25 +4610,6 @@ def get_sotp_scenario(sotp_scenario_json, variables_dict):
   if expected_price > 0:
     return [expected_price], calc
   return [], calc
-
-def get_forest_logic(forest_logic_json, variables_dict):
-  # growth, op_margin, net_financing, tax_rate, pe
-  growth = forest_logic_json["revenue_growth_3y_avg"]
-  print("growth:", growth)
-  op_margin = forest_logic_json["operating_profitability_margin"]
-  print("op_margin:", op_margin)
-  net_financing = forest_logic_json["net_financing_result"]
-  print("net_financing:", net_financing)
-  tax_rate = forest_logic_json["tax_rate"]
-  print("tax_rate:", tax_rate)
-  pe = forest_logic_json["pe_multiple"]
-  print("pe:", pe)
-  price, revenue, net_earnings, pe = calculate_forest_logic(variables_dict, growth, op_margin, net_financing, tax_rate, pe)
-  if price > 0:
-    return [price], [revenue], [net_earnings], [pe]
-  else:
-    return [], [], [], []
-
 
 def plot_results_old(results, name_of_eval, dollar_sign=True, thousands=False, bins=50):
     # Convert once to numpy for speed and convenience
@@ -5403,213 +4898,23 @@ def _resolve_runtime_context(
     return tk, vdict
 
 
-def dcf_range_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-    collect_details: bool = False,
-):
-    tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-    prompt = build_prompt(tk, financial_dict, instructions_dcf_range, text)
-    answers = llm_n_answers_parallel(
-        api_key=DEEPSEEK_API_KEY,
-        prompt=prompt,
-        n=num_iterations,
-        max_workers=llm_workers,
-        model=model,
-    )
+@contextmanager
+def _obs_llm_context(stage: Optional[str] = None, persona: Optional[str] = None):
+    """Best-effort observability context wrapper.
 
-    all_results = []
-    details = []
-    name_of_eval = "DCF Range Price Valuation"
+    Keeps legacy_port runnable in environments where ai_hedge.obs is unavailable.
+    """
+    try:
+        from ai_hedge import obs as _obs  # Lazy import to avoid hard dependency.
+    except Exception:
+        _obs = None
 
-    for answer in answers:
-        raw_json_text = _extract_raw_json_text(answer)
-        raw_json = _extract_raw_json_dict(answer)
-        dcf_range_json = extract_dcf_range_json(answer)
-        if not dcf_range_json:
-            continue
-        prices = make_monte_carlo_dcf_range(dcf_range_json, vdict)
-        all_results.extend(prices)
-        if collect_details:
-            details.append(
-                {
-                    "target_price": float(prices[0]) if prices else None,
-                    "investment_amount": float(dcf_range_json.get("investment_amount")),
-                    "raw_json_text": raw_json_text,
-                    "raw_json": raw_json if raw_json else dict(dcf_range_json),
-                }
-            )
+    if _obs is None or not hasattr(_obs, "llm_context"):
+        yield
+        return
 
-    if all_results:
-        summary_text = plot_results(all_results, name_of_eval)
-        if collect_details:
-            return all_results, summary_text, details
-        return all_results, summary_text
-    summary_text = ("\nNo results\n\n", name_of_eval)
-    if collect_details:
-        return [], summary_text, details
-    return [], summary_text
-
-
-def profit_pe_range_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-    collect_details: bool = False,
-):
-    tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-    prompt = build_prompt(tk, financial_dict, instructions_profit_pe_range, text)
-    answers = llm_n_answers_parallel(
-        api_key=DEEPSEEK_API_KEY,
-        prompt=prompt,
-        n=num_iterations,
-        max_workers=llm_workers,
-        model=model,
-    )
-
-    all_results = []
-    pe_results = []
-    ni_results = []
-    details = []
-    name_of_eval = "P/E & Earnings Range Price Valuation"
-
-    for answer in answers:
-        raw_json_text = _extract_raw_json_text(answer)
-        raw_json = _extract_raw_json_dict(answer)
-        profit_pe_range_json = extract_profit_pe_range_json(answer)
-        if not profit_pe_range_json:
-            continue
-        r, pe_r, ni_r = make_monte_carlo_profit_pe_range(profit_pe_range_json, vdict)
-        all_results.extend(r)
-        pe_results.extend(pe_r)
-        ni_results.extend(ni_r)
-        if collect_details:
-            details.append(
-                {
-                    "target_price": float(r[0]) if r else None,
-                    "investment_amount": float(profit_pe_range_json.get("investment_amount")),
-                    "raw_json_text": raw_json_text,
-                    "raw_json": raw_json if raw_json else dict(profit_pe_range_json),
-                }
-            )
-
-    if all_results:
-        summary_text = plot_results(all_results, name_of_eval)
-        if collect_details:
-            return all_results, pe_results, ni_results, summary_text, details
-        return all_results, pe_results, ni_results, summary_text
-
-    summary_text = ("\nNo results\n\n", name_of_eval)
-    if collect_details:
-        return [], pe_results, ni_results, summary_text, details
-    return [], pe_results, ni_results, summary_text
-
-
-def revenue_ps_range_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-    collect_details: bool = False,
-):
-    tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-    prompt = build_prompt(tk, financial_dict, instructions_revenue_ev_sales_range, text)
-    answers = llm_n_answers_parallel(
-        api_key=DEEPSEEK_API_KEY,
-        prompt=prompt,
-        n=num_iterations,
-        max_workers=llm_workers,
-        model=model,
-    )
-
-    all_results = []
-    ps_results = []
-    revenue_results = []
-    details = []
-    name_of_eval = "Revenue & EV/S Range Price Valuation"
-
-    for answer in answers:
-        raw_json_text = _extract_raw_json_text(answer)
-        raw_json = _extract_raw_json_dict(answer)
-        revenue_ps_range_json = extract_revenue_ev_sales_range_json(answer)
-        if not revenue_ps_range_json:
-            continue
-        r, ps_r, rev_r = make_monte_carlo_revenue_ps_range(revenue_ps_range_json, vdict)
-        all_results.extend(r)
-        ps_results.extend(ps_r)
-        revenue_results.extend(rev_r)
-        if collect_details:
-            details.append(
-                {
-                    "target_price": float(r[0]) if r else None,
-                    "investment_amount": float(revenue_ps_range_json.get("investment_amount")),
-                    "raw_json_text": raw_json_text,
-                    "raw_json": raw_json if raw_json else dict(revenue_ps_range_json),
-                }
-            )
-
-    if all_results:
-        summary_text = plot_results(all_results, name_of_eval)
-        if collect_details:
-            return all_results, ps_results, revenue_results, summary_text, details
-        return all_results, ps_results, revenue_results, summary_text
-
-    summary_text = ("\nNo results\n\n", name_of_eval)
-    if collect_details:
-        return [], ps_results, revenue_results, summary_text, details
-    return [], ps_results, revenue_results, summary_text
-
-
-def target_price_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-):
-    tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-    prompt = build_prompt(tk, financial_dict, instructions_target_market_cap, text)
-    answers = llm_n_answers_parallel(
-        api_key=DEEPSEEK_API_KEY,
-        prompt=prompt,
-        n=num_iterations,
-        max_workers=llm_workers,
-        model=model,
-    )
-
-    all_results = []
-    name_of_eval = "LLM Target Price Valuation"
-
-    for answer in answers:
-        target_price_json = extract_target_market_cap_json(answer)
-        if not target_price_json:
-            continue
-        all_results.extend(get_target_price(target_price_json, vdict))
-
-    if all_results:
-        summary_text = plot_results(all_results, name_of_eval)
-        return all_results, summary_text
-
-    summary_text = ("\nNo results\n\n", name_of_eval)
-    return [], summary_text
+    with _obs.llm_context(stage=stage, persona=persona):
+        yield
 
 
 def dream_valuation_full(
@@ -5631,13 +4936,14 @@ def dream_valuation_full(
         instruction = build_prompt_dream_valuation(name)
         prompt = build_prompt(tk, financial_dict, instruction, text)
         temp = 0.0 if str(model or "").strip().lower() == "deepseek-reasoner" else 0.6
-        answer = deepseek_simple_text(
-            api_key=DEEPSEEK_API_KEY,
-            prompt=prompt,
-            short_answer=False,
-            temperature=temp,
-            model=model,
-        )
+        with _obs_llm_context(stage="valuation.dream_team", persona=name):
+            answer = deepseek_simple_text(
+                api_key=DEEPSEEK_API_KEY,
+                prompt=prompt,
+                short_answer=False,
+                temperature=temp,
+                model=model,
+            )
         return name, answer
 
     all_results = []
@@ -5691,43 +4997,6 @@ def dream_valuation_full(
         return [], summary_text, details
     return [], summary_text
 
-
-def sotp_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-):
-    # Build prompt once (you used to build it inside loop)
-    tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-    prompt = build_prompt(tk, financial_dict, instructions_sotp, text)
-    answers = llm_n_answers_parallel(
-        api_key=DEEPSEEK_API_KEY,
-        prompt=prompt,
-        n=num_iterations,
-        max_workers=llm_workers,
-        model=model,
-    )
-
-    all_results = []
-    name_of_eval = "SOTP Valuation"
-
-    for answer in answers:
-        sotp_json = extract_sotp_json(answer)
-        if not sotp_json:
-            continue
-        all_results.extend(get_sotp(sotp_json, vdict))
-
-    if all_results:
-        summary_text = plot_results(all_results, name_of_eval)
-        return all_results, summary_text
-
-    summary_text = ("\nNo results\n\n", name_of_eval)
-    return [], summary_text
 
 def scenario_dcf_full(
     financial_dict,
@@ -6134,65 +5403,6 @@ def sotp_scenario_full(
     return [], summary_text, details
   return [], summary_text
 
-def forest_logic_full(
-    financial_dict,
-    text,
-    num_iterations=3,
-    llm_workers=6,
-    runtime_context=None,
-    variables_dict_input=None,
-    ticker_input=None,
-    model="deepseek-chat",
-    collect_details: bool = False,
-):
-  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
-  prompt = build_prompt(tk, financial_dict, instructions_forest_logic, text)
-  # print(prompt)
-  answers = llm_n_answers_parallel(
-      api_key=DEEPSEEK_API_KEY,
-      prompt=prompt,
-      n=num_iterations,
-      max_workers=llm_workers,
-      model=model,
-  )
-  all_results = []
-  rev_results = []
-  ni_results = []
-  pe_results = []
-  details = []
-  name_of_eval = "Lary's Logic Valuation"
-  for answer in answers:
-    raw_json_text = _extract_raw_json_text(answer)
-    raw_json = _extract_raw_json_dict(answer)
-    forest_logic_json = extract_forest_logic_json(answer)
-    if not forest_logic_json:
-      continue
-    price, rev, ni, pe = get_forest_logic(forest_logic_json, vdict)
-    all_results.extend(price)
-    rev_results.extend(rev)
-    ni_results.extend(ni)
-    pe_results.extend(pe)
-    if collect_details:
-      details.append(
-          {
-              "target_price": float(price[0]) if price else None,
-              "investment_amount": float(forest_logic_json.get("investment_amount")),
-              "raw_json_text": raw_json_text,
-              "raw_json": raw_json if raw_json else dict(forest_logic_json),
-          }
-      )
-  if all_results:
-    summary_text = plot_results(all_results, name_of_eval)
-    if collect_details:
-      return all_results, rev_results, ni_results, pe_results, summary_text, details
-    return all_results, rev_results, ni_results, pe_results, summary_text
-
-  summary_text = ("\nNo results\n\n", name_of_eval)
-  if collect_details:
-    return [], [], [], [] ,summary_text, details
-  return [], [], [], [] ,summary_text
-
-
 def _split_regular_sec_iterations(total_iterations, sec_short_text):
     try:
         n = int(total_iterations)
@@ -6344,58 +5554,60 @@ def run_valuations(
         all_results = []
         summary_name = "Scenario DCF Price Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = scenario_dcf_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = scenario_dcf_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.scenario_dcf"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = scenario_dcf_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = scenario_dcf_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_target_scenario_mixed():
         all_results = []
         summary_name = "Target Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = bbb_tp_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = bbb_tp_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.target_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = bbb_tp_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = bbb_tp_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_earnings_scenario_mixed():
@@ -6404,31 +5616,32 @@ def run_valuations(
         pe_results = []
         summary_name = "Earnings Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_ni, ctx_pe, ctx_summary, ctx_details = bbb_ni_pe_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_ni, ctx_pe, ctx_summary = bbb_ni_pe_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            ni_results.extend(ctx_ni)
-            pe_results.extend(ctx_pe)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.earnings_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_ni, ctx_pe, ctx_summary, ctx_details = bbb_ni_pe_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_ni, ctx_pe, ctx_summary = bbb_ni_pe_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                ni_results.extend(ctx_ni)
+                pe_results.extend(ctx_pe)
+                summary_name = ctx_summary[1]
         return all_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_revenue_scenario_mixed():
@@ -6437,31 +5650,32 @@ def run_valuations(
         revenue_results = []
         summary_name = "Revenue Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            ps_results.extend(ctx_ps)
-            revenue_results.extend(ctx_rev)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.revenue_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_ps, ctx_rev, ctx_summary, ctx_details = revenue_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_ps, ctx_rev, ctx_summary = revenue_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                ps_results.extend(ctx_ps)
+                revenue_results.extend(ctx_rev)
+                summary_name = ctx_summary[1]
         return all_results, ps_results, revenue_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_composite_scenario_mixed():
@@ -6471,90 +5685,93 @@ def run_valuations(
         pe_results = []
         summary_name = "Composite Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = composite_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = composite_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_all)
-            revenue_results.extend(ctx_rev)
-            ni_results.extend(ctx_ni)
-            pe_results.extend(ctx_pe)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.composite_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary, ctx_details = composite_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_all, ctx_rev, ctx_ni, ctx_pe, ctx_summary = composite_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_all)
+                revenue_results.extend(ctx_rev)
+                ni_results.extend(ctx_ni)
+                pe_results.extend(ctx_pe)
+                summary_name = ctx_summary[1]
         return all_results, revenue_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_sotp_scenario_mixed():
         all_results = []
         summary_name = "SOTP Scenario Valuation"
         details = []
-        for ctx_text, iter_count, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = sotp_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = sotp_scenario_full(
-                    financial_dict,
-                    ctx_text,
-                    num_iterations=iter_count,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.sotp_scenario"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = sotp_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = sotp_scenario_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_dream_mixed():
         all_results = []
         summary_name = "Dream Team Target Price Valuation"
         details = []
-        for ctx_text, _, model_name in _context_runs():
-            if collect_details_for_metrics:
-                ctx_results, ctx_summary, ctx_details = dream_valuation_full(
-                    financial_dict,
-                    ctx_text,
-                    dream_valuation_team,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                    collect_details=True,
-                )
-                details.extend(ctx_details)
-            else:
-                ctx_results, ctx_summary = dream_valuation_full(
-                    financial_dict,
-                    ctx_text,
-                    dream_valuation_team,
-                    llm_workers=llm_workers_each_block,
-                    model=model_name,
-                    runtime_context=runtime_context,
-                )
-            all_results.extend(ctx_results)
-            summary_name = ctx_summary[1]
+        with _obs_llm_context(stage="valuation.dream_team"):
+            for ctx_text, _, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = dream_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        dream_valuation_team,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = dream_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        dream_valuation_team,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
         if all_results:
             all_results_mean = [sum(all_results) / len(all_results)]
         else:

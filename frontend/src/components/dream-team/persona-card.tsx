@@ -98,8 +98,8 @@ export function PersonaCard({
         <div className="flex items-center gap-4">
           <PersonaAvatar name={member.persona} size={64} />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate font-display text-2xl leading-tight text-zinc-100 sm:text-[26px]">
+            <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+              <h2 className="font-display text-2xl leading-tight text-zinc-100 break-words sm:text-[26px]">
                 {member.persona}
               </h2>
               <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
@@ -112,7 +112,7 @@ export function PersonaCard({
             >
               {theme.role}
             </p>
-            <p className="mt-1 truncate text-xs italic text-zinc-400">{theme.tagline}</p>
+            <p className="mt-1 text-xs italic text-zinc-400 break-words">{theme.tagline}</p>
           </div>
         </div>
 

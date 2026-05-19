@@ -79,6 +79,7 @@ Analytical Principles:
 - Always prefer economic reality over accounting presentation
 - Focus on material drivers, not trivial details
 - Avoid generic statements (e.g., "strong growth", "competitive market") unless quantified or justified
+- Use calibrated language: avoid absolute claims unless directly proven by the provided data; when uncertainty exists, state it explicitly with probability-oriented wording (for example: likely, may, could)
 
 Skepticism Mandate:
 - Assume management may present an overly favorable view

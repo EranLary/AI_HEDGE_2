@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   MarkdownBlock,
   fmtMarketCap,
@@ -8,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { MessageSquare, X } from "lucide-react";
+import { Maximize2, Minimize2, MessageSquare, X } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -28,8 +30,21 @@ type PersonaChatMessage = {
 
 type ChatStatusKind = "neutral" | "success" | "error";
 
+const THINKING_WORDS = [
+  "Analyzing",
+  "Reading context",
+  "Connecting signals",
+  "Checking assumptions",
+  "Weighing risks",
+  "Comparing scenarios",
+  "Drafting response",
+] as const;
+
+const HEBREW_RE = /[\u0590-\u05FF]/;
+
 export function PersonaCard({
   member,
+  ticker,
   ctx,
   currentPrice,
   liveCurrentPrice,
@@ -57,6 +72,7 @@ export function PersonaCard({
   onAttachBoth,
 }: {
   member: PersonaCardData;
+  ticker: string;
   ctx: CurrencyContext;
   currentPrice: number | null | undefined;
   liveCurrentPrice: number | null | undefined;
@@ -84,6 +100,25 @@ export function PersonaCard({
   onAttachBoth: () => void;
 }) {
   const theme = getPersonaTheme(member.persona);
+  const [thinkingWordIndex, setThinkingWordIndex] = useState(0);
+  const [chatExpanded, setChatExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!chatSending) {
+      setThinkingWordIndex(0);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setThinkingWordIndex((prev) => (prev + 1) % THINKING_WORDS.length);
+    }, 1200);
+    return () => window.clearInterval(id);
+  }, [chatSending]);
+
+  useEffect(() => {
+    if (!chatOpen) {
+      setChatExpanded(false);
+    }
+  }, [chatOpen]);
 
   const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -136,10 +171,11 @@ export function PersonaCard({
   const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
+  const thinkingWord = THINKING_WORDS[thinkingWordIndex];
   const statusLine = chatFetching
     ? "Fetching filing context..."
     : chatSending
-      ? "Thinking..."
+      ? ""
       : chatError || chatStatusMessage || " ";
   const statusToneClass = chatFetching || chatSending
     ? "text-zinc-500"
@@ -212,29 +248,45 @@ export function PersonaCard({
             <button
               type="button"
               onClick={onOpenChat}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-100 transition hover:bg-emerald-500/20"
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
             >
               <MessageSquare size={14} />
-              Chat with {member.persona} AI persona
+              Chat with {member.persona} AI persona about {ticker}
             </button>
           </div>
         ) : null}
       </header>
 
       {canUseChat && chatOpen ? (
-        <section className="border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8">
+        <section
+          className={
+            chatExpanded
+              ? "fixed inset-3 z-[70] flex flex-col rounded-2xl border border-white/10 bg-zinc-950/96 px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8"
+              : "border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8"
+          }
+        >
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="font-display text-sm uppercase tracking-[0.2em] text-zinc-200">
-              Chat with {member.persona} AI persona
+            <h3 className="font-display text-sm text-zinc-200">
+              Chat with {member.persona} AI persona about {ticker}
             </h3>
-            <button
-              type="button"
-              onClick={onCloseChat}
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
-            >
-              <X size={12} />
-              Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setChatExpanded((prev) => !prev)}
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+              >
+                {chatExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                {chatExpanded ? "Collapse" : "Expand"}
+              </button>
+              <button
+                type="button"
+                onClick={onCloseChat}
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+              >
+                <X size={12} />
+                Close
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -274,7 +326,11 @@ export function PersonaCard({
             </div>
           </div>
 
-          <div className="mt-3 max-h-64 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
+          <div
+            className={`mt-3 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 ${
+              chatExpanded ? "max-h-[58vh]" : "max-h-64"
+            }`}
+          >
             {chatMessages.length ? (
               chatMessages.map((msg) => (
                 <div
@@ -284,11 +340,15 @@ export function PersonaCard({
                       ? "border-white/10 bg-zinc-900/70 text-zinc-100"
                       : "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
                   }`}
+                  dir={HEBREW_RE.test(msg.content) ? "rtl" : "ltr"}
+                  style={{ unicodeBidi: "plaintext" }}
                 >
                   <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
                     {msg.role === "assistant" ? member.persona : "You"}
                   </p>
-                  <MarkdownBlock text={msg.content} />
+                  <div className={HEBREW_RE.test(msg.content) ? "text-right leading-8" : "text-left leading-7"}>
+                    <MarkdownBlock text={msg.content} />
+                  </div>
                 </div>
               ))
             ) : (
@@ -307,13 +367,31 @@ export function PersonaCard({
                 }
               }}
               disabled={chatSending || chatFetching}
-              rows={3}
+              rows={chatExpanded ? 5 : 3}
               placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
+              dir="auto"
               className="w-full resize-y rounded-xl border border-white/15 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-3">
               <p className={`text-xs ${statusToneClass}`}>
-                {statusLine}
+                {chatSending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={thinkingWord}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.22 }}
+                        className="text-zinc-300"
+                      >
+                        {thinkingWord}...
+                      </motion.span>
+                    </AnimatePresence>
+                  </span>
+                ) : (
+                  statusLine
+                )}
               </p>
               <button
                 type="button"

@@ -427,6 +427,7 @@ export function PersonaGallery({
             >
               <PersonaCard
                 member={active}
+                ticker={ticker}
                 ctx={ctx}
                 currentPrice={currentPrice}
                 liveCurrentPrice={liveCurrentPrice}

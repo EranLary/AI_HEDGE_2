@@ -152,19 +152,18 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
       {!collapsedDesktop ? (
         <div className="hib-sidebar-heading border-t border-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.14em]">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span>
-                <Activity size={10} className="mr-1 inline" />
-                <span>AI valuation</span>
-              </span>
-              {!mobile ? <ThemeToggle className="h-8 px-2 py-1.5" /> : null}
-            </div>
+            <span>
+              <Activity size={10} className="mr-1 inline" />
+              <span>AI valuation</span>
+            </span>
             {mobile ? (
               <div className="flex items-center gap-2 normal-case tracking-normal">
                 <ThemeToggle className="h-8 px-2 py-1.5" />
                 <AuthMenu menuDirection="up" />
               </div>
-            ) : null}
+            ) : (
+              <ThemeToggle />
+            )}
           </div>
         </div>
       ) : null}

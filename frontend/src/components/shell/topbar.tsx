@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { BarChart3, CandlestickChart, Download, FileText, Menu, Scale, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
-import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
 
@@ -60,7 +59,6 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
       )}
 
       <div className="hidden shrink-0 items-center gap-2 md:flex">
-        <ThemeToggle />
         <AuthMenu />
       </div>
     </header>

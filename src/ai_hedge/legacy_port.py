@@ -342,11 +342,20 @@ def find_currency(curr):
     'TRY': "TRY=X",   # Turkish Lira
 }
 
-    try:
-      ticker_obj = yf.Ticker(currency_tickers[curr])
-      currency_rate = ticker_obj.info.get("regularMarketPrice", 1)
-    except:
+    currency_symbol = currency_tickers.get(curr)
+    if not currency_symbol:
       currency_rate = 1
+    else:
+      currency_rate = 1
+      for _ in range(3):
+        try:
+          ticker_obj = yf.Ticker(currency_symbol)
+          fetched_rate = ticker_obj.info.get("regularMarketPrice")
+          if _is_number(fetched_rate) and fetched_rate > 0:
+            currency_rate = fetched_rate
+            break
+        except:
+          pass
 
     if curr in ['ILA', 'GBp', 'ZAC']:
         currency_rate = currency_rate * 100
@@ -1088,10 +1097,18 @@ def get_variables(ticker: str, info_dict: dict, financial_dict_quarter_bs, finan
     variables_dict["market_cap"] = info_dict.get("marketCap", 0)
     variables_dict["price_currency"] = info_dict.get("price_currency_to_USD", 1)
     variables_dict["financial_currency"] = info_dict.get("financial_currency_to_USD", 1)
-    if variables_dict["financial_currency"] != 1:
-      variables_dict["ev"] = variables_dict["market_cap"]
+    total_debt = info_dict.get("totalDebt")
+    total_cash = info_dict.get("totalCash")
+    enterprise_value = info_dict.get("enterpriseValue")
+
+    # Keep EV/Market Cap bridge consistent across currencies.
+    # Prefer EV rebuilt from debt/cash when available in normalized info.
+    if _is_number(total_debt) and _is_number(total_cash):
+      variables_dict["ev"] = variables_dict["market_cap"] + total_debt - total_cash
+    elif _is_number(enterprise_value):
+      variables_dict["ev"] = enterprise_value
     else:
-      variables_dict["ev"] = info_dict.get("enterpriseValue", variables_dict["market_cap"])
+      variables_dict["ev"] = variables_dict["market_cap"]
     variables_dict["differnce"] = variables_dict["ev"] - variables_dict["market_cap"]
     book_value = info_dict.get("bookValue", 0)
     variables_dict["Equity"] = book_value * variables_dict["shares_outstanding"]
@@ -4153,10 +4170,11 @@ def build_prompt(ticker, financial_dict, instruction, text):
   Your analyst team has delivered a full analysis package and expects a final, decision-grade judgment.
 
   You are given:
-  1) Prepared analysis document (raw text)
-  2) Financial data (structured)
-  3) Company Profile Stats (structured)
-  4) Explicit output instructions (strict JSON schema)
+  1) - Prepared analysis document (raw text)
+  2) - Financial data (structured)
+  3) - Company Profile Stats (structured)
+  4) - Explicit output instructions (strict JSON schema)
+
   Treat the prepared analysis as a very professional analyst opinion - very strong and high quality - but not the truth itself.
 
   Analysis document:

@@ -20,6 +20,12 @@ export type PersonaCardData = {
   reason_sections: Array<{ path?: string; label: string; text: string }>;
 };
 
+type PersonaChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
 export function PersonaCard({
   member,
   ctx,
@@ -27,6 +33,20 @@ export function PersonaCard({
   liveCurrentPrice,
   index,
   total,
+  chatMessages,
+  chatDraft,
+  chatSending,
+  chatFetching,
+  includeAnnual,
+  includeQuarterly,
+  annualReady,
+  quarterlyReady,
+  chatError,
+  onChatDraftChange,
+  onChatSend,
+  onAttachAnnual,
+  onAttachQuarterly,
+  onAttachBoth,
 }: {
   member: PersonaCardData;
   ctx: CurrencyContext;
@@ -34,6 +54,20 @@ export function PersonaCard({
   liveCurrentPrice: number | null | undefined;
   index: number;
   total: number;
+  chatMessages: PersonaChatMessage[];
+  chatDraft: string;
+  chatSending: boolean;
+  chatFetching: boolean;
+  includeAnnual: boolean;
+  includeQuarterly: boolean;
+  annualReady: boolean;
+  quarterlyReady: boolean;
+  chatError: string;
+  onChatDraftChange: (value: string) => void;
+  onChatSend: () => void;
+  onAttachAnnual: () => void;
+  onAttachQuarterly: () => void;
+  onAttachBoth: () => void;
 }) {
   const theme = getPersonaTheme(member.persona);
 
@@ -42,6 +76,7 @@ export function PersonaCard({
     if (Math.abs(value) < 1e-9) return 0;
     return value > 0 ? 1 : -1;
   };
+
   const targetDirectionWithFloor = (target?: number | null, reportPrice?: number | null): -1 | 0 | 1 | null => {
     if (typeof reportPrice !== "number" || !Number.isFinite(reportPrice)) return null;
     const effectiveTarget =
@@ -50,10 +85,11 @@ export function PersonaCard({
         : 0;
     return directionOf(effectiveTarget - reportPrice);
   };
-  const verdictMark = (predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "✔" | "✖" | "-" => {
+
+  const verdictMark = (predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "OK" | "NO" | "-" => {
     if (predicted === null || actual === null) return "-";
     if (predicted === 0 || actual === 0) return "-";
-    return predicted === actual ? "✔" : "✖";
+    return predicted === actual ? "OK" : "NO";
   };
 
   const changePct =
@@ -99,7 +135,7 @@ export function PersonaCard({
           <PersonaAvatar name={member.persona} size={64} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
-              <h2 className="font-display text-2xl leading-tight text-zinc-100 break-words sm:text-[26px]">
+              <h2 className="font-display break-words text-2xl leading-tight text-zinc-100 sm:text-[26px]">
                 {member.persona}
               </h2>
               <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
@@ -112,7 +148,7 @@ export function PersonaCard({
             >
               {theme.role}
             </p>
-            <p className="mt-1 text-xs italic text-zinc-400 break-words">{theme.tagline}</p>
+            <p className="mt-1 break-words text-xs italic text-zinc-400">{theme.tagline}</p>
           </div>
         </div>
 
@@ -125,7 +161,7 @@ export function PersonaCard({
               {fmtMoney(member.target_price, ctx, "price")}
             </dd>
             <dd className={`text-[10px] font-mono ${priceTone}`}>
-              {typeof changePct === "number" ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%` : "—"}
+              {typeof changePct === "number" ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%` : "-"}
             </dd>
           </div>
           <div className="min-w-0 leading-tight">
@@ -141,7 +177,7 @@ export function PersonaCard({
             <dd className={`mt-0.5 truncate font-mono text-sm font-semibold ${allocationTone}`}>
               {typeof allocationPct === "number"
                 ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%`
-                : "—"}
+                : "-"}
             </dd>
           </div>
         </dl>
@@ -170,6 +206,101 @@ export function PersonaCard({
             No step-by-step rationale available for this persona.
           </p>
         )}
+
+        <section className="mt-8 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="font-display text-sm uppercase tracking-[0.2em] text-zinc-200">
+              Chat With {member.persona}
+            </h3>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
+              <span className={`rounded-full border px-2 py-0.5 ${includeAnnual ? "border-emerald-400/40 text-emerald-200" : "border-white/15 text-zinc-400"}`}>
+                Annual {includeAnnual ? (annualReady ? "On" : "Pending") : "Off"}
+              </span>
+              <span className={`rounded-full border px-2 py-0.5 ${includeQuarterly ? "border-emerald-400/40 text-emerald-200" : "border-white/15 text-zinc-400"}`}>
+                Quarterly {includeQuarterly ? (quarterlyReady ? "On" : "Pending") : "Off"}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onAttachAnnual}
+              disabled={chatFetching || chatSending}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Add Annual
+            </button>
+            <button
+              type="button"
+              onClick={onAttachQuarterly}
+              disabled={chatFetching || chatSending}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Add Quarterly
+            </button>
+            <button
+              type="button"
+              onClick={onAttachBoth}
+              disabled={chatFetching || chatSending}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Add Both
+            </button>
+          </div>
+
+          <div className="mt-3 max-h-64 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
+            {chatMessages.length ? (
+              chatMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    msg.role === "assistant"
+                      ? "border-white/10 bg-zinc-900/70 text-zinc-100"
+                      : "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                  }`}
+                >
+                  <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
+                    {msg.role === "assistant" ? member.persona : "You"}
+                  </p>
+                  <MarkdownBlock text={msg.content} />
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-zinc-500">Ask this valuator anything about the current analysis context.</p>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2">
+            <textarea
+              value={chatDraft}
+              onChange={(e) => onChatDraftChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onChatSend();
+                }
+              }}
+              disabled={chatSending || chatFetching}
+              rows={3}
+              placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
+              className="w-full resize-y rounded-xl border border-white/15 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-zinc-500">
+                {chatError || (chatFetching ? "Fetching filing context..." : chatSending ? "Thinking..." : " ")}
+              </p>
+              <button
+                type="button"
+                onClick={onChatSend}
+                disabled={chatSending || chatFetching || !String(chatDraft || "").trim()}
+                className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {chatSending ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </div>
+        </section>
 
         <p className="mt-10 text-[10px] uppercase tracking-[0.22em] text-zinc-600">
           {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")} · Dream Team Edition

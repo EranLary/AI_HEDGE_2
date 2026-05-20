@@ -23,11 +23,47 @@ type DreamOutput = {
   reason_sections?: Array<{ path?: string; label: string; text: string }>;
 };
 
+type PersonaChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+type PersonaChatState = {
+  messages: PersonaChatMessage[];
+  draft: string;
+  includeAnnual: boolean;
+  includeQuarterly: boolean;
+  annualReady: boolean;
+  quarterlyReady: boolean;
+  sending: boolean;
+  fetching: boolean;
+  error: string;
+};
+
 const slideVariants = {
   enter: (direction: number) => ({ x: direction > 0 ? 60 : -60, opacity: 0 }),
   center: { x: 0, opacity: 1 },
   exit: (direction: number) => ({ x: direction > 0 ? -60 : 60, opacity: 0 }),
 };
+
+function makeEmptyChatState(): PersonaChatState {
+  return {
+    messages: [],
+    draft: "",
+    includeAnnual: false,
+    includeQuarterly: false,
+    annualReady: false,
+    quarterlyReady: false,
+    sending: false,
+    fetching: false,
+    error: "",
+  };
+}
+
+function chatScopeKey(reportId: string, persona: string): string {
+  return `${String(reportId || "").trim()}::${String(persona || "").trim()}`;
+}
 
 export function PersonaGallery({
   personas,
@@ -50,6 +86,7 @@ export function PersonaGallery({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+  const [chatByScope, setChatByScope] = useState<Record<string, PersonaChatState>>({});
 
   const merged: PersonaCardData[] = useMemo(
     () => {
@@ -120,6 +157,156 @@ export function PersonaGallery({
 
   const active = merged[activeIndex];
   const activeTheme = getPersonaTheme(active.persona);
+  const activeScopeKey = chatScopeKey(currentReportId, active.persona);
+  const activeChat = chatByScope[activeScopeKey] || makeEmptyChatState();
+
+  const setActiveChat = useCallback(
+    (updater: (prev: PersonaChatState) => PersonaChatState) => {
+      setChatByScope((prev) => {
+        const current = prev[activeScopeKey] || makeEmptyChatState();
+        return {
+          ...prev,
+          [activeScopeKey]: updater(current),
+        };
+      });
+    },
+    [activeScopeKey],
+  );
+
+  const chatApiPath = useMemo(
+    () => `/api/dashboard/${encodeURIComponent(ticker)}/dream-team/chat`,
+    [ticker],
+  );
+
+  const fetchFilings = useCallback(
+    async (args: { annual: boolean; quarterly: boolean }) => {
+      if (!args.annual && !args.quarterly) return;
+      setActiveChat((prev) => ({ ...prev, fetching: true, error: "" }));
+      try {
+        const res = await fetch(chatApiPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "fetch_filings",
+            report_id: currentReportId,
+            persona: active.persona,
+            include_annual: args.annual,
+            include_quarterly: args.quarterly,
+            messages: [],
+            user_message: "",
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          filings?: {
+            annual?: { available?: boolean };
+            quarterly?: { available?: boolean };
+          };
+        };
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to fetch filings.");
+        }
+        const annualReady = Boolean(data.filings?.annual?.available);
+        const quarterlyReady = Boolean(data.filings?.quarterly?.available);
+        setActiveChat((prev) => ({
+          ...prev,
+          fetching: false,
+          includeAnnual: args.annual ? annualReady || prev.includeAnnual : prev.includeAnnual,
+          includeQuarterly: args.quarterly ? quarterlyReady || prev.includeQuarterly : prev.includeQuarterly,
+          annualReady: args.annual ? annualReady : prev.annualReady,
+          quarterlyReady: args.quarterly ? quarterlyReady : prev.quarterlyReady,
+          error:
+            (args.annual && !annualReady) || (args.quarterly && !quarterlyReady)
+              ? "Selected filing context is not currently available."
+              : "",
+        }));
+      } catch (err) {
+        setActiveChat((prev) => ({
+          ...prev,
+          fetching: false,
+          error: String(err || "Failed to fetch filings."),
+        }));
+      }
+    },
+    [active.persona, chatApiPath, currentReportId, setActiveChat],
+  );
+
+  const sendMessage = useCallback(async () => {
+    const userMessage = String(activeChat.draft || "").trim();
+    if (!userMessage || activeChat.sending) return;
+    const pendingUser: PersonaChatMessage = {
+      id: `${Date.now()}-u`,
+      role: "user",
+      content: userMessage,
+    };
+    const messagesForRequest = [...activeChat.messages, pendingUser].slice(-20);
+
+    setActiveChat((prev) => ({
+      ...prev,
+      draft: "",
+      sending: true,
+      error: "",
+      messages: [...prev.messages, pendingUser],
+    }));
+    try {
+      const res = await fetch(chatApiPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "chat",
+          report_id: currentReportId,
+          persona: active.persona,
+          messages: messagesForRequest.map((row) => ({ role: row.role, content: row.content })),
+          user_message: userMessage,
+          include_annual: activeChat.includeAnnual,
+          include_quarterly: activeChat.includeQuarterly,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        reply?: string;
+        filings?: {
+          annual?: { available?: boolean };
+          quarterly?: { available?: boolean };
+        };
+      };
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send message.");
+      }
+      const reply = String(data.reply || "").trim();
+      if (!reply) {
+        throw new Error("Empty persona reply.");
+      }
+      const assistantMsg: PersonaChatMessage = {
+        id: `${Date.now()}-a`,
+        role: "assistant",
+        content: reply,
+      };
+      setActiveChat((prev) => ({
+        ...prev,
+        sending: false,
+        messages: [...prev.messages, assistantMsg],
+        annualReady: Boolean(data.filings?.annual?.available) || prev.annualReady,
+        quarterlyReady: Boolean(data.filings?.quarterly?.available) || prev.quarterlyReady,
+      }));
+    } catch (err) {
+      setActiveChat((prev) => ({
+        ...prev,
+        sending: false,
+        error: String(err || "Failed to send message."),
+      }));
+    }
+  }, [
+    active.persona,
+    activeChat.draft,
+    activeChat.includeAnnual,
+    activeChat.includeQuarterly,
+    activeChat.messages,
+    activeChat.sending,
+    chatApiPath,
+    currentReportId,
+    setActiveChat,
+  ]);
 
   return (
     <div className="relative">
@@ -174,6 +361,28 @@ export function PersonaGallery({
                 liveCurrentPrice={liveCurrentPrice}
                 index={activeIndex}
                 total={total}
+                chatMessages={activeChat.messages}
+                chatDraft={activeChat.draft}
+                chatSending={activeChat.sending}
+                chatFetching={activeChat.fetching}
+                includeAnnual={activeChat.includeAnnual}
+                includeQuarterly={activeChat.includeQuarterly}
+                annualReady={activeChat.annualReady}
+                quarterlyReady={activeChat.quarterlyReady}
+                chatError={activeChat.error}
+                onChatDraftChange={(value) => setActiveChat((prev) => ({ ...prev, draft: value }))}
+                onChatSend={() => {
+                  void sendMessage();
+                }}
+                onAttachAnnual={() => {
+                  void fetchFilings({ annual: true, quarterly: false });
+                }}
+                onAttachQuarterly={() => {
+                  void fetchFilings({ annual: false, quarterly: true });
+                }}
+                onAttachBoth={() => {
+                  void fetchFilings({ annual: true, quarterly: true });
+                }}
               />
             </motion.div>
           </AnimatePresence>

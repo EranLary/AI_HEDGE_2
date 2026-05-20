@@ -65,6 +65,13 @@ function chatScopeKey(reportId: string, persona: string): string {
   return `${String(reportId || "").trim()}::${String(persona || "").trim()}`;
 }
 
+function toChatError(status: number, fallback: string): string {
+  if (status === 401 || status === 403) {
+    return "Please sign up or sign in with Google to use Dream Team chat.";
+  }
+  return fallback;
+}
+
 export function PersonaGallery({
   personas,
   dreamOutputs,
@@ -74,6 +81,7 @@ export function PersonaGallery({
   ticker,
   reports,
   currentReportId,
+  canUseChat,
 }: {
   personas: DreamTeamMember[];
   dreamOutputs: DreamOutput[];
@@ -83,10 +91,12 @@ export function PersonaGallery({
   ticker: string;
   reports: ReportListItem[];
   currentReportId: string;
+  canUseChat: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [chatByScope, setChatByScope] = useState<Record<string, PersonaChatState>>({});
+  const [chatOpenByScope, setChatOpenByScope] = useState<Record<string, boolean>>({});
 
   const merged: PersonaCardData[] = useMemo(
     () => {
@@ -159,6 +169,7 @@ export function PersonaGallery({
   const activeTheme = getPersonaTheme(active.persona);
   const activeScopeKey = chatScopeKey(currentReportId, active.persona);
   const activeChat = chatByScope[activeScopeKey] || makeEmptyChatState();
+  const activeChatOpen = Boolean(chatOpenByScope[activeScopeKey]);
 
   const setActiveChat = useCallback(
     (updater: (prev: PersonaChatState) => PersonaChatState) => {
@@ -180,6 +191,7 @@ export function PersonaGallery({
 
   const fetchFilings = useCallback(
     async (args: { annual: boolean; quarterly: boolean }) => {
+      if (!canUseChat) return;
       if (!args.annual && !args.quarterly) return;
       setActiveChat((prev) => ({ ...prev, fetching: true, error: "" }));
       try {
@@ -204,7 +216,7 @@ export function PersonaGallery({
           };
         };
         if (!res.ok) {
-          throw new Error(data.error || "Failed to fetch filings.");
+          throw new Error(toChatError(res.status, data.error || "Failed to fetch filings."));
         }
         const annualReady = Boolean(data.filings?.annual?.available);
         const quarterlyReady = Boolean(data.filings?.quarterly?.available);
@@ -228,10 +240,11 @@ export function PersonaGallery({
         }));
       }
     },
-    [active.persona, chatApiPath, currentReportId, setActiveChat],
+    [active.persona, canUseChat, chatApiPath, currentReportId, setActiveChat],
   );
 
   const sendMessage = useCallback(async () => {
+    if (!canUseChat) return;
     const userMessage = String(activeChat.draft || "").trim();
     if (!userMessage || activeChat.sending) return;
     const pendingUser: PersonaChatMessage = {
@@ -248,8 +261,8 @@ export function PersonaGallery({
       error: "",
       messages: [...prev.messages, pendingUser],
     }));
-    try {
-      const res = await fetch(chatApiPath, {
+      try {
+        const res = await fetch(chatApiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -271,7 +284,7 @@ export function PersonaGallery({
         };
       };
       if (!res.ok) {
-        throw new Error(data.error || "Failed to send message.");
+        throw new Error(toChatError(res.status, data.error || "Failed to send message."));
       }
       const reply = String(data.reply || "").trim();
       if (!reply) {
@@ -303,6 +316,7 @@ export function PersonaGallery({
     activeChat.includeQuarterly,
     activeChat.messages,
     activeChat.sending,
+    canUseChat,
     chatApiPath,
     currentReportId,
     setActiveChat,
@@ -318,7 +332,15 @@ export function PersonaGallery({
         aria-hidden
       />
 
-      <div className="mb-3 flex items-center justify-end">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <PersonaDropdown
+          personas={merged.map((row) => String(row.persona || "").trim()).filter(Boolean)}
+          activePersona={active.persona}
+          onSelect={(persona) => {
+            const idx = merged.findIndex((row) => String(row.persona || "").trim() === persona);
+            if (idx >= 0) goTo(idx);
+          }}
+        />
         <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
       </div>
       <div className="hib-disclaimer-amber mb-3 rounded-xl border px-3 py-2 text-xs">
@@ -361,6 +383,8 @@ export function PersonaGallery({
                 liveCurrentPrice={liveCurrentPrice}
                 index={activeIndex}
                 total={total}
+                canUseChat={canUseChat}
+                chatOpen={activeChatOpen}
                 chatMessages={activeChat.messages}
                 chatDraft={activeChat.draft}
                 chatSending={activeChat.sending}
@@ -371,6 +395,13 @@ export function PersonaGallery({
                 quarterlyReady={activeChat.quarterlyReady}
                 chatError={activeChat.error}
                 onChatDraftChange={(value) => setActiveChat((prev) => ({ ...prev, draft: value }))}
+                onOpenChat={() => {
+                  if (!canUseChat) return;
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: true }));
+                }}
+                onCloseChat={() => {
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: false }));
+                }}
                 onChatSend={() => {
                   void sendMessage();
                 }}
@@ -438,6 +469,86 @@ function fmtReportLabel(report: ReportListItem): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function PersonaDropdown({
+  personas,
+  activePersona,
+  onSelect,
+}: {
+  personas: string[];
+  activePersona: string;
+  onSelect: (persona: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!personas.length) return null;
+  const single = personas.length === 1;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => !single && setOpen((v) => !v)}
+        disabled={single}
+        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 text-[11px] font-medium text-zinc-300 backdrop-blur transition hover:border-white/30 hover:text-zinc-100 disabled:cursor-default disabled:hover:border-white/10 disabled:hover:text-zinc-300"
+        aria-haspopup={single ? undefined : "listbox"}
+        aria-expanded={open}
+      >
+        <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">Valuator</span>
+        <span className="max-w-[150px] truncate font-mono text-[11px] text-zinc-100">{activePersona}</span>
+        {!single && <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />}
+      </button>
+
+      {open && !single ? (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur"
+        >
+          {personas.map((persona) => {
+            const isActive = persona === activePersona;
+            return (
+              <button
+                key={persona}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => {
+                  onSelect(persona);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition ${
+                  isActive
+                    ? "bg-emerald-500/10 text-emerald-100"
+                    : "text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
+                }`}
+              >
+                <span className="truncate">{persona}</span>
+                {isActive ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ReportVersionDropdown({

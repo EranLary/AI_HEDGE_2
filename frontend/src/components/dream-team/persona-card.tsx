@@ -8,6 +8,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
+import { MessageSquare, X } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -32,6 +33,8 @@ export function PersonaCard({
   liveCurrentPrice,
   index,
   total,
+  canUseChat,
+  chatOpen,
   chatMessages,
   chatDraft,
   chatSending,
@@ -42,6 +45,8 @@ export function PersonaCard({
   quarterlyReady,
   chatError,
   onChatDraftChange,
+  onOpenChat,
+  onCloseChat,
   onChatSend,
   onAttachAnnual,
   onAttachQuarterly,
@@ -53,6 +58,8 @@ export function PersonaCard({
   liveCurrentPrice: number | null | undefined;
   index: number;
   total: number;
+  canUseChat: boolean;
+  chatOpen: boolean;
   chatMessages: PersonaChatMessage[];
   chatDraft: string;
   chatSending: boolean;
@@ -63,6 +70,8 @@ export function PersonaCard({
   quarterlyReady: boolean;
   chatError: string;
   onChatDraftChange: (value: string) => void;
+  onOpenChat: () => void;
+  onCloseChat: () => void;
   onChatSend: () => void;
   onAttachAnnual: () => void;
   onAttachQuarterly: () => void;
@@ -177,37 +186,38 @@ export function PersonaCard({
             </dd>
           </div>
         </dl>
+
+        {canUseChat ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onOpenChat}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-100 transition hover:bg-emerald-500/20"
+            >
+              <MessageSquare size={14} />
+              Chat with {member.persona} AI persona
+            </button>
+          </div>
+        ) : null}
       </header>
 
-      <div className="dream-team-scroll flex-1 overflow-y-auto px-4 pb-7 pt-5 sm:px-9">
-        {sections.length ? (
-          <div className="space-y-7">
-            {sections.map((section, i) => {
-              const text = normalizeReasonText(String(section.text || ""));
-              return (
-                <section key={section.path || `${section.label}-${i}`}>
-                  <h3
-                    className="mb-2 font-display text-[11px] uppercase tracking-[0.22em]"
-                    style={{ color: theme.accent }}
-                  >
-                    {prettyReasonLabel(section.label)}
-                  </h3>
-                  <MarkdownBlock text={text} />
-                </section>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm italic text-zinc-500">
-            No step-by-step rationale available for this persona.
-          </p>
-        )}
-
-        <section className="mt-8 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      {canUseChat && chatOpen ? (
+        <section className="border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="font-display text-sm uppercase tracking-[0.2em] text-zinc-200">
-              Chat With {member.persona}
+              Chat with {member.persona} AI persona
             </h3>
+            <button
+              type="button"
+              onClick={onCloseChat}
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+            >
+              <X size={12} />
+              Close
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
               <span className={`rounded-full border px-2 py-0.5 ${includeAnnual ? "border-emerald-400/40 text-emerald-200" : "border-white/15 text-zinc-400"}`}>
                 Annual {includeAnnual ? (annualReady ? "On" : "Pending") : "Off"}
@@ -216,33 +226,32 @@ export function PersonaCard({
                 Quarterly {includeQuarterly ? (quarterlyReady ? "On" : "Pending") : "Off"}
               </span>
             </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onAttachAnnual}
-              disabled={chatFetching || chatSending}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Add Annual
-            </button>
-            <button
-              type="button"
-              onClick={onAttachQuarterly}
-              disabled={chatFetching || chatSending}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Add Quarterly
-            </button>
-            <button
-              type="button"
-              onClick={onAttachBoth}
-              disabled={chatFetching || chatSending}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Add Both
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onAttachAnnual}
+                disabled={chatFetching || chatSending}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Add Annual
+              </button>
+              <button
+                type="button"
+                onClick={onAttachQuarterly}
+                disabled={chatFetching || chatSending}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Add Quarterly
+              </button>
+              <button
+                type="button"
+                onClick={onAttachBoth}
+                disabled={chatFetching || chatSending}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Add Both
+              </button>
+            </div>
           </div>
 
           <div className="mt-3 max-h-64 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
@@ -263,7 +272,7 @@ export function PersonaCard({
                 </div>
               ))
             ) : (
-              <p className="text-xs text-zinc-500">Ask this valuator anything about the current analysis context.</p>
+              <p className="text-xs text-zinc-500">Start chatting with this AI persona.</p>
             )}
           </div>
 
@@ -297,6 +306,31 @@ export function PersonaCard({
             </div>
           </div>
         </section>
+      ) : null}
+
+      <div className="dream-team-scroll flex-1 overflow-y-auto px-4 pb-7 pt-5 sm:px-9">
+        {sections.length ? (
+          <div className="space-y-7">
+            {sections.map((section, i) => {
+              const text = normalizeReasonText(String(section.text || ""));
+              return (
+                <section key={section.path || `${section.label}-${i}`}>
+                  <h3
+                    className="mb-2 font-display text-[11px] uppercase tracking-[0.22em]"
+                    style={{ color: theme.accent }}
+                  >
+                    {prettyReasonLabel(section.label)}
+                  </h3>
+                  <MarkdownBlock text={text} />
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm italic text-zinc-500">
+            No step-by-step rationale available for this persona.
+          </p>
+        )}
 
         <p className="mt-10 text-[10px] uppercase tracking-[0.22em] text-zinc-600">
           {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")} · Dream Team Edition

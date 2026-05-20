@@ -396,6 +396,27 @@ def _format_short_sec_output(answer: str) -> str:
     """
     lines = (answer or "").splitlines()
     out: List[str] = []
+    in_table_block = False
+
+    def _append_table_line(raw_line: str) -> None:
+        nonlocal in_table_block
+        row = str(raw_line or "").strip()
+        if not row:
+            return
+        if not row.startswith("|"):
+            row = f"| {row}"
+        if not in_table_block:
+            if out and out[-1] != "":
+                out.append("")
+            in_table_block = True
+        out.append(row)
+
+    def _close_table_block() -> None:
+        nonlocal in_table_block
+        if in_table_block:
+            if out and out[-1] != "":
+                out.append("")
+            in_table_block = False
 
     for idx, raw in enumerate(lines):
         line = raw.strip()
@@ -405,12 +426,7 @@ def _format_short_sec_output(answer: str) -> str:
         bullet_content = _extract_bullet_content(line)
         if bullet_content is not None:
             if _looks_like_table_line(bullet_content):
-                if out and out[-1] != "":
-                    out.append("")
-                if bullet_content.startswith("|"):
-                    out.append(bullet_content)
-                else:
-                    out.append(f"| {bullet_content}")
+                _append_table_line(bullet_content)
                 continue
 
             # If model puts heading and table header on the same bullet line, split it.
@@ -419,17 +435,20 @@ def _format_short_sec_output(answer: str) -> str:
                 left = left.strip()
                 right = right.strip()
                 if left:
+                    _close_table_block()
                     out.append(f"- {left}")
                     out.append("")
                 if right:
-                    out.append(f"| {right}")
+                    _append_table_line(f"| {right}")
                 continue
 
+            _close_table_block()
             out.append(f"- {bullet_content}")
             out.append("")
             continue
 
         if _looks_like_heading(line):
+            _close_table_block()
             if out and out[-1] != "":
                 out.append("")
             out.append(line)
@@ -437,13 +456,14 @@ def _format_short_sec_output(answer: str) -> str:
             continue
 
         if _looks_like_table_line(line):
-            if out and out[-1] != "":
-                out.append("")
-            out.append(line)
+            _append_table_line(line)
             continue
 
         next_line = _next_non_empty_line(lines, idx)
-        next_is_explicit_bullet = _extract_bullet_content(next_line) is not None
+        next_bullet_content = _extract_bullet_content(next_line)
+        next_is_explicit_bullet = (
+            next_bullet_content is not None and not _looks_like_table_line(next_bullet_content)
+        )
         if (
             len(out) >= 2
             and out[-1] == ""
@@ -456,9 +476,11 @@ def _format_short_sec_output(answer: str) -> str:
             out[-2] = f"{out[-2]} {line}"
             continue
 
+        _close_table_block()
         out.append(f"- {line}")
         out.append("")
 
+    _close_table_block()
     return "\n".join(out).strip()
 
 

@@ -579,6 +579,251 @@ def _extract_numeric_pairs(value: Any, prefix: str = "") -> List[tuple[str, str]
     return pairs
 
 
+def _humanize_numeric_key(path: str) -> str:
+    text = str(path or "").strip()
+    if not text:
+        return "Value"
+    text = text.replace("_", " ").replace(".", " > ")
+    text = text.replace("[", " #").replace("]", "")
+    return " ".join(part for part in text.split() if part).strip()
+
+
+def _numeric_text(value: Any, *, pct: bool = False) -> str:
+    num = _first_float(value)
+    if num is None:
+        return "N/A"
+    if pct:
+        return _fmt_pct(num)
+    return _fmt_number(num)
+
+
+def _range_mid(value: Any) -> Optional[float]:
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        a = _first_float(value[0])
+        b = _first_float(value[1])
+        if a is not None and b is not None:
+            return (float(a) + float(b)) / 2.0
+    return _first_float(value)
+
+
+def _scenario_list_value(raw_json: Dict[str, Any], scenario_name: str, idx: int) -> Optional[float]:
+    entry = raw_json.get(scenario_name)
+    if isinstance(entry, (list, tuple)) and len(entry) > idx:
+        return _first_float(entry[idx])
+    if isinstance(entry, dict):
+        if idx == 0:
+            return _first_float(entry.get("probability"))
+        if idx == 1:
+            return _first_float(entry.get("target_market_cap"))
+    return None
+
+
+def _method_specific_numeric_pairs(method_name: str, raw_json: Dict[str, Any]) -> List[tuple[str, str]]:
+    if not isinstance(raw_json, dict) or not raw_json:
+        return []
+
+    pairs: List[tuple[str, str]] = []
+    scenario_labels = [("bull", "Bull"), ("base", "Base"), ("bear", "Bear")]
+
+    if method_name == "Scenario DCF":
+        for key, label in scenario_labels:
+            pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
+            pairs.append((f"{label} FCF Next Year", _numeric_text(_scenario_list_value(raw_json, key, 1))))
+            pairs.append((f"{label} Growth Rate (G)", _numeric_text(_scenario_list_value(raw_json, key, 2), pct=True)))
+            pairs.append((f"{label} WACC", _numeric_text(_scenario_list_value(raw_json, key, 3), pct=True)))
+            pairs.append((f"{label} Terminal Growth", _numeric_text(_scenario_list_value(raw_json, key, 4), pct=True)))
+        pairs.append(("Weighted FCF Next Year", _numeric_text(_range_mid(raw_json.get("fcf_next_year")))))
+        pairs.append(("Weighted Growth Rate (G)", _numeric_text(_range_mid(raw_json.get("g")), pct=True)))
+        pairs.append(("Weighted WACC", _numeric_text(_range_mid(raw_json.get("WACC")), pct=True)))
+        pairs.append(("Weighted Terminal Growth", _numeric_text(_range_mid(raw_json.get("TERMINAL")), pct=True)))
+    elif method_name == "Target Scenario":
+        for key, label in scenario_labels:
+            pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
+            pairs.append((f"{label} Target Market Cap", _numeric_text(_scenario_list_value(raw_json, key, 1))))
+        pairs.append(("Weighted Target Market Cap", _numeric_text(raw_json.get("target_market_cap"))))
+    elif method_name == "Earnings Scenario":
+        for key, label in scenario_labels:
+            pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
+            pairs.append((f"{label} Net Income (3Y)", _numeric_text(_scenario_list_value(raw_json, key, 1))))
+        pairs.append(("Weighted Net Income (3Y)", _numeric_text(raw_json.get("net_income_3y"))))
+        pairs.append(("P/E Multiple", _numeric_text(raw_json.get("pe_multiple"))))
+    elif method_name == "Revenue Scenario":
+        for key, label in scenario_labels:
+            pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
+            pairs.append((f"{label} Revenue (3Y)", _numeric_text(_scenario_list_value(raw_json, key, 1))))
+        pairs.append(("Weighted Revenue (3Y)", _numeric_text(raw_json.get("revenue_3y"))))
+        pairs.append(("EV/Sales Multiple", _numeric_text(_range_mid(raw_json.get("ev_sales_multiple")))))
+    elif method_name == "Composite Scenario":
+        for key, label in scenario_labels:
+            pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
+            pairs.append((f"{label} Revenue Growth (3Y Avg)", _numeric_text(_scenario_list_value(raw_json, key, 1), pct=True)))
+            pairs.append((f"{label} Operating Margin", _numeric_text(_scenario_list_value(raw_json, key, 2), pct=True)))
+            pairs.append((f"{label} Net Financing Result", _numeric_text(_scenario_list_value(raw_json, key, 3))))
+            pairs.append((f"{label} Tax Rate", _numeric_text(_scenario_list_value(raw_json, key, 4), pct=True)))
+            pairs.append((f"{label} P/E Multiple", _numeric_text(_scenario_list_value(raw_json, key, 5))))
+        pairs.append(("Weighted Revenue (3Y)", _numeric_text(raw_json.get("revenue_3y"))))
+        pairs.append(("Weighted Net Income (3Y)", _numeric_text(raw_json.get("net_income_3y"))))
+        pairs.append(("Weighted Revenue Growth (3Y Avg)", _numeric_text(raw_json.get("revenue_growth_3y_avg"), pct=True)))
+        pairs.append(("Weighted Operating Margin", _numeric_text(raw_json.get("operating_profitability_margin"), pct=True)))
+        pairs.append(("Weighted Net Financing Result", _numeric_text(raw_json.get("net_financing_result"))))
+        pairs.append(("Weighted Tax Rate", _numeric_text(raw_json.get("tax_rate"), pct=True)))
+        pairs.append(("Weighted P/E Multiple", _numeric_text(raw_json.get("pe_multiple"))))
+    elif method_name == "SOTP Scenario":
+        for key, label in scenario_labels:
+            entry = raw_json.get(key)
+            if isinstance(entry, dict):
+                pairs.append((f"{label} Probability", _numeric_text(entry.get("probability"), pct=True)))
+                pairs.append((f"{label} Target Market Cap", _numeric_text(entry.get("target_market_cap"))))
+                activities = entry.get("activities", {})
+                if isinstance(activities, dict):
+                    for activity_name, activity_value in activities.items():
+                        pairs.append((f"{label} Activity Market Cap - {activity_name}", _numeric_text(activity_value)))
+        pairs.append(("Weighted Target Market Cap", _numeric_text(raw_json.get("target_market_cap"))))
+        weighted_activities = raw_json.get("weighted_activity_market_cap", {})
+        if isinstance(weighted_activities, dict):
+            for activity_name, activity_value in weighted_activities.items():
+                pairs.append((f"Weighted Activity Market Cap - {activity_name}", _numeric_text(activity_value)))
+
+    out: List[tuple[str, str]] = []
+    for label, value in pairs:
+        if value == "N/A":
+            continue
+        out.append((label, value))
+    return out
+
+
+def _avg_numeric_dict_values(payload: Any) -> Optional[float]:
+    if not isinstance(payload, dict):
+        return None
+    vals: List[float] = []
+    for raw in payload.values():
+        num = _first_float(raw)
+        if num is not None:
+            vals.append(float(num))
+    if not vals:
+        return None
+    return float(sum(vals) / len(vals))
+
+
+def _build_assumptions_means_text(final_dict: Dict[str, Any], explain_payload: Optional[Dict[str, Any]] = None) -> str:
+    lines: List[str] = []
+
+    for label, key in [
+        ("Representative Revenue", "Revenue"),
+        ("Representative Earnings", "Net Income"),
+        ("Representative P/E", "P/E"),
+    ]:
+        triplet = _extract_overall_triplet(final_dict, key)
+        if not triplet:
+            continue
+        mean_v = triplet[0]
+        lines.append(f"- {label} (Mean): {_fmt_number(mean_v)}")
+
+    methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
+    scenario_dcf_items = methods.get("Scenario DCF", []) if isinstance(methods, dict) else []
+
+    def _parse_raw(item: Dict[str, Any]) -> Dict[str, Any]:
+        raw = item.get("raw_json", {})
+        if isinstance(raw, dict) and raw:
+            return raw
+        txt = str(item.get("raw_json_text", "") or "").strip()
+        if txt.startswith("{") and txt.endswith("}"):
+            try:
+                parsed = json.loads(txt)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return {}
+        return {}
+
+    dcf_vals: Dict[str, List[float]] = {
+        "fcf": [],
+        "g": [],
+        "wacc": [],
+        "terminal": [],
+    }
+    for item in scenario_dcf_items if isinstance(scenario_dcf_items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        raw = _parse_raw(item)
+        if not raw:
+            continue
+        fcf_mid = _range_mid(raw.get("fcf_next_year"))
+        g_mid = _range_mid(raw.get("g"))
+        wacc_mid = _range_mid(raw.get("WACC"))
+        terminal_mid = _range_mid(raw.get("TERMINAL"))
+        if fcf_mid is not None:
+            dcf_vals["fcf"].append(float(fcf_mid))
+        if g_mid is not None:
+            dcf_vals["g"].append(float(g_mid))
+        if wacc_mid is not None:
+            dcf_vals["wacc"].append(float(wacc_mid))
+        if terminal_mid is not None:
+            dcf_vals["terminal"].append(float(terminal_mid))
+
+    def _avg(vals: List[float]) -> Optional[float]:
+        if not vals:
+            return None
+        return float(sum(vals) / len(vals))
+
+    bull = []
+    base = []
+    bear = []
+    scenario_methods = [
+        "Scenario DCF",
+        "Target Scenario",
+        "Earnings Scenario",
+        "Revenue Scenario",
+        "Composite Scenario",
+        "SOTP Scenario",
+    ]
+    for method_name in scenario_methods:
+        items = methods.get(method_name, []) if isinstance(methods, dict) else []
+        if not isinstance(items, list):
+            continue
+        per_method: Dict[str, List[float]] = {"bull": [], "base": [], "bear": []}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw = _parse_raw(item)
+            if not raw:
+                continue
+            for key in ["bull", "base", "bear"]:
+                entry = raw.get("scenarios", {}).get(key) if isinstance(raw.get("scenarios"), dict) else raw.get(key)
+                p = None
+                if isinstance(entry, (list, tuple)) and entry:
+                    p = _first_float(entry[0])
+                elif isinstance(entry, dict):
+                    p = _first_float(entry.get("probability"))
+                if p is None:
+                    continue
+                if p > 1.0 and p <= 100.0:
+                    p = p / 100.0
+                if 0.0 <= p <= 1.0:
+                    per_method[key].append(float(p))
+        for key, sink in [("bull", bull), ("base", base), ("bear", bear)]:
+            p_mean = _avg(per_method[key])
+            if p_mean is not None:
+                sink.append(p_mean)
+
+    if _avg(bull) is not None:
+        lines.append(f"- Bull Probability (Blended Mean): {_fmt_pct(_avg(bull))}")
+    if _avg(base) is not None:
+        lines.append(f"- Base Probability (Blended Mean): {_fmt_pct(_avg(base))}")
+    if _avg(bear) is not None:
+        lines.append(f"- Bear Probability (Blended Mean): {_fmt_pct(_avg(bear))}")
+    if _avg(dcf_vals["g"]) is not None:
+        lines.append(f"- Growth Rate (G) [Scenario DCF Mean]: {_fmt_pct(_avg(dcf_vals['g']))}")
+    if _avg(dcf_vals["fcf"]) is not None:
+        lines.append(f"- Representative FCF [Scenario DCF Mean]: {_fmt_number(_avg(dcf_vals['fcf']))}")
+    if _avg(dcf_vals["terminal"]) is not None:
+        lines.append(f"- Terminal Value Growth [Scenario DCF Mean]: {_fmt_pct(_avg(dcf_vals['terminal']))}")
+    if _avg(dcf_vals["wacc"]) is not None:
+        lines.append(f"- WACC [Scenario DCF Mean]: {_fmt_pct(_avg(dcf_vals['wacc']))}")
+
+    return "\n".join(lines).strip()
+
+
 def _as_readable_text(value: Any) -> str:
     if value is None:
         return ""
@@ -635,6 +880,18 @@ def _build_prices_explain_text(
         f"Current Price: {_fmt_money(current_price)}",
     ]
 
+    mean_target_across_methods = _avg_numeric_dict_values(aggregate_targets)
+    mean_investment_across_methods = _avg_numeric_dict_values(aggregate_investments)
+    if mean_target_across_methods is not None or mean_investment_across_methods is not None:
+        lines.extend(
+            [
+                "",
+                "## Across Methods Summary",
+                f"Mean Target Across Methods: {_fmt_money(mean_target_across_methods)}",
+                f"Mean Investment Across Methods: {_fmt_money(mean_investment_across_methods)}",
+            ]
+        )
+
     all_investments = explain_payload.get("all_investments", []) if isinstance(explain_payload, dict) else []
     if not isinstance(all_investments, list) or not all_investments:
         all_investments = _collect_investments_from_methods(methods)
@@ -687,6 +944,19 @@ def _build_prices_explain_text(
             ]
         )
 
+    assumptions_means = _build_assumptions_means_text(
+        final_dict if isinstance(final_dict, dict) else {},
+        explain_payload if isinstance(explain_payload, dict) else {},
+    )
+    if assumptions_means:
+        lines.extend(
+            [
+                "",
+                "## Assumptions Means (Report-Aligned)",
+                assumptions_means,
+            ]
+        )
+
     if not isinstance(methods, dict) or not methods:
         lines.extend(["", "No valuation JSON outputs were collected."])
         return "\n".join(lines).strip() + "\n"
@@ -714,14 +984,17 @@ def _build_prices_explain_text(
                 run_header = f"{run_header} ({persona})"
             lines.extend(["", run_header])
 
-            lines.append(f"Output Target Price: {_fmt_money(item.get('target_price'))}")
-            lines.append(f"Output Investment Amount: {_fmt_money(item.get('investment_amount'))}")
+            lines.append(f"- Output Target Price: {_fmt_money(item.get('target_price'))}")
+            lines.append(f"- Output Investment Amount: {_fmt_money(item.get('investment_amount'))}")
             raw_json = _raw_json_dict_for_item(item)
             if not raw_json:
                 lines.append("No JSON payload captured for this output.")
                 continue
 
-            numeric_pairs = _extract_numeric_pairs(raw_json)
+            numeric_pairs = _method_specific_numeric_pairs(str(method_name), raw_json)
+            if not numeric_pairs:
+                generic_pairs = _extract_numeric_pairs(raw_json)
+                numeric_pairs = [( _humanize_numeric_key(k), v) for k, v in generic_pairs]
             lines.append("#### Key Numeric Values")
             if numeric_pairs:
                 for key, value in numeric_pairs:

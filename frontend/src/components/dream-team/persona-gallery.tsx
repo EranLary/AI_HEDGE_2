@@ -51,6 +51,10 @@ const slideVariants = {
   exit: (direction: number) => ({ x: direction > 0 ? -60 : 60, opacity: 0 }),
 };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function makeEmptyChatState(): PersonaChatState {
   return {
     messages: [],
@@ -340,16 +344,37 @@ export function PersonaGallery({
       const assistantMsg: PersonaChatMessage = {
         id: `${Date.now()}-a`,
         role: "assistant",
-        content: reply,
+        content: "",
       };
       setActiveChat((prev) => ({
         ...prev,
-        sending: false,
         messages: [...prev.messages, assistantMsg],
         annualReady: Boolean(data.filings?.annual?.available) || prev.annualReady,
         quarterlyReady: Boolean(data.filings?.quarterly?.available) || prev.quarterlyReady,
         statusMessage: prev.statusMessage,
         statusKind: prev.statusKind,
+      }));
+
+      const pieces = reply.match(/\S+\s*/g) || [reply];
+      const chunkSize = Math.max(1, Math.ceil(pieces.length / 90));
+      const totalTicks = Math.max(1, Math.ceil(pieces.length / chunkSize));
+      const tickMs = Math.max(20, Math.floor(2800 / totalTicks));
+      let idx = 0;
+      while (idx < pieces.length) {
+        idx = Math.min(pieces.length, idx + chunkSize);
+        const partial = pieces.slice(0, idx).join("");
+        setActiveChat((prev) => ({
+          ...prev,
+          messages: prev.messages.map((row) =>
+            row.id === assistantMsg.id ? { ...row, content: partial } : row,
+          ),
+        }));
+        await sleep(tickMs);
+      }
+
+      setActiveChat((prev) => ({
+        ...prev,
+        sending: false,
       }));
     } catch (err) {
       setActiveChat((prev) => ({

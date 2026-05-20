@@ -38,6 +38,31 @@ const THINKING_WORDS = [
   "Weighing risks",
   "Comparing scenarios",
   "Drafting response",
+  "Reviewing fundamentals",
+  "Tracing cash flow",
+  "Stress testing thesis",
+  "Scanning filings",
+  "Mapping catalysts",
+  "Estimating downside",
+  "Evaluating moat",
+  "Aligning evidence",
+  "Calibrating conviction",
+  "Refining conclusion",
+  "Parsing the question",
+  "Cross-checking numbers",
+  "Linking cause and effect",
+  "Testing edge cases",
+  "Balancing upside and risk",
+  "Ranking key drivers",
+  "Inspecting assumptions",
+  "Reconciling signals",
+  "Pressure-testing valuation",
+  "Looking for blind spots",
+  "Validating consistency",
+  "Triangulating evidence",
+  "Reviewing market context",
+  "Sharpening the narrative",
+  "Finalizing response",
 ] as const;
 
 const HEBREW_RE = /[\u0590-\u05FF]/;
@@ -110,7 +135,7 @@ export function PersonaCard({
     }
     const id = window.setInterval(() => {
       setThinkingWordIndex((prev) => (prev + 1) % THINKING_WORDS.length);
-    }, 1200);
+    }, 4600);
     return () => window.clearInterval(id);
   }, [chatSending]);
 
@@ -172,6 +197,14 @@ export function PersonaCard({
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
   const thinkingWord = THINKING_WORDS[thinkingWordIndex];
+  const latestMessage = chatMessages.length ? chatMessages[chatMessages.length - 1] : null;
+  const hasStartedAssistantReveal =
+    Boolean(latestMessage) &&
+    latestMessage?.role === "assistant" &&
+    String(latestMessage?.content || "").trim().length > 0;
+  const annualButtonDisabled = chatFetching || chatSending || includeAnnual;
+  const quarterlyButtonDisabled = chatFetching || chatSending || includeQuarterly;
+  const bothButtonDisabled = chatFetching || chatSending || (includeAnnual && includeQuarterly);
   const statusLine = chatFetching
     ? "Fetching filing context..."
     : chatSending
@@ -262,7 +295,7 @@ export function PersonaCard({
           className={
             chatExpanded
               ? "fixed inset-3 z-[70] flex flex-col rounded-2xl border border-white/10 bg-zinc-950/96 px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8"
-              : "border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8"
+              : "relative z-20 border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8"
           }
         >
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -302,23 +335,23 @@ export function PersonaCard({
               <button
                 type="button"
                 onClick={onAttachAnnual}
-                disabled={chatFetching || chatSending}
+                disabled={annualButtonDisabled}
                 className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Add Annual
+                {includeAnnual ? "Annual Added" : "Add Annual"}
               </button>
               <button
                 type="button"
                 onClick={onAttachQuarterly}
-                disabled={chatFetching || chatSending}
+                disabled={quarterlyButtonDisabled}
                 className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Add Quarterly
+                {includeQuarterly ? "Quarterly Added" : "Add Quarterly"}
               </button>
               <button
                 type="button"
                 onClick={onAttachBoth}
-                disabled={chatFetching || chatSending}
+                disabled={bothButtonDisabled}
                 className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Add Both
@@ -374,7 +407,7 @@ export function PersonaCard({
             />
             <div className="flex items-center justify-between gap-3">
               <p className={`text-xs ${statusToneClass}`}>
-                {chatSending ? (
+                {chatSending && !hasStartedAssistantReveal ? (
                   <span className="inline-flex items-center gap-1.5">
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.span
@@ -390,7 +423,7 @@ export function PersonaCard({
                     </AnimatePresence>
                   </span>
                 ) : (
-                  statusLine
+                  chatSending ? " " : statusLine
                 )}
               </p>
               <button

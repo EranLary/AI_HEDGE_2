@@ -29,6 +29,8 @@ type PersonaChatMessage = {
   content: string;
 };
 
+type ChatStatusKind = "neutral" | "success" | "error";
+
 type PersonaChatState = {
   messages: PersonaChatMessage[];
   draft: string;
@@ -39,6 +41,8 @@ type PersonaChatState = {
   sending: boolean;
   fetching: boolean;
   error: string;
+  statusMessage: string;
+  statusKind: ChatStatusKind;
 };
 
 const slideVariants = {
@@ -58,6 +62,8 @@ function makeEmptyChatState(): PersonaChatState {
     sending: false,
     fetching: false,
     error: "",
+    statusMessage: "",
+    statusKind: "neutral",
   };
 }
 
@@ -68,6 +74,47 @@ function chatScopeKey(reportId: string, persona: string): string {
 function toChatError(status: number, fallback: string): string {
   void status;
   return fallback;
+}
+
+function filingAttachStatus(args: { annual: boolean; quarterly: boolean }, annualReady: boolean, quarterlyReady: boolean): {
+  message: string;
+  kind: ChatStatusKind;
+} {
+  if (args.annual && args.quarterly) {
+    if (annualReady && quarterlyReady) {
+      return { message: "Annual and quarterly filing context attached.", kind: "success" };
+    }
+    if (annualReady && !quarterlyReady) {
+      return {
+        message: "Annual filing attached. Quarterly filing not found; chat continues with base context for quarterly.",
+        kind: "error",
+      };
+    }
+    if (!annualReady && quarterlyReady) {
+      return {
+        message: "Quarterly filing attached. Annual filing not found; chat continues with base context for annual.",
+        kind: "error",
+      };
+    }
+    return {
+      message: "No annual or quarterly filing found right now. Chat continues with base context.",
+      kind: "error",
+    };
+  }
+
+  if (args.annual) {
+    return annualReady
+      ? { message: "Annual filing context attached.", kind: "success" }
+      : { message: "Annual filing not found right now. Chat continues with base context.", kind: "error" };
+  }
+
+  if (args.quarterly) {
+    return quarterlyReady
+      ? { message: "Quarterly filing context attached.", kind: "success" }
+      : { message: "Quarterly filing not found right now. Chat continues with base context.", kind: "error" };
+  }
+
+  return { message: "", kind: "neutral" };
 }
 
 export function PersonaGallery({
@@ -218,23 +265,25 @@ export function PersonaGallery({
         }
         const annualReady = Boolean(data.filings?.annual?.available);
         const quarterlyReady = Boolean(data.filings?.quarterly?.available);
+        const status = filingAttachStatus(args, annualReady, quarterlyReady);
         setActiveChat((prev) => ({
           ...prev,
           fetching: false,
+          error: "",
           includeAnnual: args.annual ? annualReady || prev.includeAnnual : prev.includeAnnual,
           includeQuarterly: args.quarterly ? quarterlyReady || prev.includeQuarterly : prev.includeQuarterly,
           annualReady: args.annual ? annualReady : prev.annualReady,
           quarterlyReady: args.quarterly ? quarterlyReady : prev.quarterlyReady,
-          error:
-            (args.annual && !annualReady) || (args.quarterly && !quarterlyReady)
-              ? "Selected filing context is not currently available."
-              : "",
+          statusMessage: status.message,
+          statusKind: status.kind,
         }));
       } catch (err) {
         setActiveChat((prev) => ({
           ...prev,
           fetching: false,
-          error: String(err || "Failed to fetch filings."),
+          statusMessage: "Failed to fetch filing context. Chat continues with base context.",
+          statusKind: "error",
+          error: "",
         }));
       }
     },
@@ -299,6 +348,8 @@ export function PersonaGallery({
         messages: [...prev.messages, assistantMsg],
         annualReady: Boolean(data.filings?.annual?.available) || prev.annualReady,
         quarterlyReady: Boolean(data.filings?.quarterly?.available) || prev.quarterlyReady,
+        statusMessage: prev.statusMessage,
+        statusKind: prev.statusKind,
       }));
     } catch (err) {
       setActiveChat((prev) => ({
@@ -392,6 +443,8 @@ export function PersonaGallery({
                 annualReady={activeChat.annualReady}
                 quarterlyReady={activeChat.quarterlyReady}
                 chatError={activeChat.error}
+                chatStatusMessage={activeChat.statusMessage}
+                chatStatusKind={activeChat.statusKind}
                 onChatDraftChange={(value) => setActiveChat((prev) => ({ ...prev, draft: value }))}
                 onOpenChat={() => {
                   if (!canUseChat) return;

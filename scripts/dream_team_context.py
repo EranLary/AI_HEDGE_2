@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import io
+import sys
 from datetime import datetime
+from contextlib import redirect_stdout
 from typing import Any, Dict, List, Optional, Tuple
 
 from ai_hedge import legacy_port as legacy
@@ -125,7 +128,12 @@ def main() -> int:
 
     context_error = ""
     try:
-        info_dict, files_dict, financial_dict, _variables_dict = legacy.get_dicts(ticker)
+        captured_stdout = io.StringIO()
+        with redirect_stdout(captured_stdout):
+            info_dict, files_dict, financial_dict, _variables_dict = legacy.get_dicts(ticker)
+        noisy_logs = captured_stdout.getvalue()
+        if noisy_logs.strip():
+            print(noisy_logs, file=sys.stderr, end="")
     except Exception as exc:
         info_dict, files_dict, financial_dict = {}, {}, {}
         context_error = str(exc)

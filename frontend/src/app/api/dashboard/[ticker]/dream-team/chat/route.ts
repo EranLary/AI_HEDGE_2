@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { fetchReportById } from "@/lib/reports-db";
 import { normalizePayload } from "@/lib/dashboard-normalize";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { parseJsonObjectFromMixedOutput } from "@/lib/python-json";
 import { repoRoot, TICKER_RE } from "@/lib/site-runner";
 import { readJson, resolveDashboardReportPath } from "@/lib/server-outputs";
 
@@ -220,14 +221,26 @@ async function runPythonJson(scriptName: string, payload: Record<string, unknown
     child.on("error", (err) => reject(err));
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || `${scriptName} exited with ${code}`));
+        const stderrSnippet = trimText(stderr, 800);
+        const stdoutSnippet = trimText(stdout, 800);
+        reject(
+          new Error(
+            `${scriptName} exited with ${code}. stderr=${JSON.stringify(stderrSnippet)} stdout=${JSON.stringify(stdoutSnippet)}`,
+          ),
+        );
         return;
       }
-      try {
-        const parsed = JSON.parse(stdout || "{}") as Record<string, unknown>;
+      const parsed = parseJsonObjectFromMixedOutput(stdout);
+      if (parsed) {
         resolve(parsed);
-      } catch (err) {
-        reject(new Error(`Invalid JSON from ${scriptName}: ${String(err)}`));
+      } else {
+        const stderrSnippet = trimText(stderr, 800);
+        const stdoutSnippet = trimText(stdout, 800);
+        reject(
+          new Error(
+            `Invalid JSON from ${scriptName}. stderr=${JSON.stringify(stderrSnippet)} stdout=${JSON.stringify(stdoutSnippet)}`,
+          ),
+        );
       }
     });
 

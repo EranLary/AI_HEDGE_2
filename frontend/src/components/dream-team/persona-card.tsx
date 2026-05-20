@@ -26,6 +26,8 @@ type PersonaChatMessage = {
   content: string;
 };
 
+type ChatStatusKind = "neutral" | "success" | "error";
+
 export function PersonaCard({
   member,
   ctx,
@@ -44,6 +46,8 @@ export function PersonaCard({
   annualReady,
   quarterlyReady,
   chatError,
+  chatStatusMessage,
+  chatStatusKind,
   onChatDraftChange,
   onOpenChat,
   onCloseChat,
@@ -69,6 +73,8 @@ export function PersonaCard({
   annualReady: boolean;
   quarterlyReady: boolean;
   chatError: string;
+  chatStatusMessage: string;
+  chatStatusKind: ChatStatusKind;
   onChatDraftChange: (value: string) => void;
   onOpenChat: () => void;
   onCloseChat: () => void;
@@ -130,6 +136,20 @@ export function PersonaCard({
   const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
+  const statusLine = chatFetching
+    ? "Fetching filing context..."
+    : chatSending
+      ? "Thinking..."
+      : chatError || chatStatusMessage || " ";
+  const statusToneClass = chatFetching || chatSending
+    ? "text-zinc-500"
+    : chatError
+      ? "text-rose-300"
+      : chatStatusKind === "success"
+        ? "text-emerald-300"
+        : chatStatusKind === "error"
+          ? "text-amber-300"
+          : "text-zinc-500";
 
   return (
     <article
@@ -292,8 +312,8 @@ export function PersonaCard({
               className="w-full resize-y rounded-xl border border-white/15 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-zinc-500">
-                {chatError || (chatFetching ? "Fetching filing context..." : chatSending ? "Thinking..." : " ")}
+              <p className={`text-xs ${statusToneClass}`}>
+                {statusLine}
               </p>
               <button
                 type="button"

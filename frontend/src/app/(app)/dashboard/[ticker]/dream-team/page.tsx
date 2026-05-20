@@ -1,4 +1,3 @@
-import { auth } from "@/auth";
 import { DashboardError } from "@/components/dashboard-chrome";
 import { getLivePerformance, loadTickerData } from "@/lib/dashboard-server";
 
@@ -28,8 +27,7 @@ export default async function DashboardDreamTeamPage({
     return <DashboardError error="No data" ticker={upper} />;
   }
   const live = await getLivePerformance(upper).catch(() => null);
-  const session = await auth();
-  const canUseChat = Boolean(session?.user?.id) && !Boolean(session?.user?.isGuest);
+  const canUseChat = true;
 
   return (
     <DreamTeamClient

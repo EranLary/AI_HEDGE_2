@@ -157,10 +157,11 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
                 <Activity size={10} className="mr-1 inline" />
                 <span>AI valuation</span>
               </span>
-              {mobile ? <ThemeToggle className="h-8 px-2 py-1.5" /> : null}
+              {!mobile ? <ThemeToggle className="h-8 px-2 py-1.5" /> : null}
             </div>
             {mobile ? (
               <div className="flex items-center gap-2 normal-case tracking-normal">
+                <ThemeToggle className="h-8 px-2 py-1.5" />
                 <AuthMenu menuDirection="up" />
               </div>
             ) : null}

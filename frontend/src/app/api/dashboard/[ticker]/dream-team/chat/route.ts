@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 
 import { NextResponse } from "next/server";
 
-import { auth } from "@/auth";
 import { fetchReportById } from "@/lib/reports-db";
 import { normalizePayload } from "@/lib/dashboard-normalize";
 import type { DashboardPayload } from "@/lib/dashboard-types";
@@ -250,15 +249,6 @@ export async function POST(
   req: Request,
   context: { params: Promise<{ ticker: string }> },
 ) {
-  const session = await auth();
-  const userId = session?.user?.id || "";
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session?.user?.isGuest) {
-    return NextResponse.json({ error: "Please sign in before using Dream Team chat." }, { status: 403 });
-  }
-
   const params = await context.params;
   const ticker = String(params.ticker || "").trim().toUpperCase();
   if (!TICKER_RE.test(ticker)) {

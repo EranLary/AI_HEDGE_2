@@ -66,9 +66,7 @@ function chatScopeKey(reportId: string, persona: string): string {
 }
 
 function toChatError(status: number, fallback: string): string {
-  if (status === 401 || status === 403) {
-    return "Please sign up or sign in with Google to use Dream Team chat.";
-  }
+  void status;
   return fallback;
 }
 

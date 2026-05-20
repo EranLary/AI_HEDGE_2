@@ -1827,13 +1827,6 @@ def load_text_from_file(file_path: str = "analysis.txt") -> str:
 
 
 from typing import Tuple
-
-ANALYZER_CALIBRATION_SENTENCE = (
-    "Use calibrated language: avoid absolute claims unless directly proven by the provided data; "
-    "when uncertainty exists, state it explicitly with probability-oriented wording "
-    "(for example: likely, may, could)."
-)
-
 def what_it_does_insights_result(info_dict) -> Tuple[str, str]:
     """
     Generate a clear, plain-language explanation of what the company actually does.
@@ -1864,7 +1857,6 @@ Guidelines:
 - Explain who the customers are and what problem the company solves.
 - Translate business jargon into plain, concrete language.
 - If multiple activities exist, explain the main one first and mention others briefly.
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Write 5-7 short sentences.
 """.strip()
@@ -1924,7 +1916,6 @@ Rules:
 - If valuation implies extreme expectations, articulate them clearly.
 - If governance, ownership, margins, growth, or capital structure stand out, explain the consequences.
 - Connect business model, financials, and market expectations into a single coherent story.
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Output format:
 - Bullet points only.
@@ -2003,7 +1994,6 @@ Output rules:
 - No headlines, no chronology, no PR language
 - Be concise, sharp, and opinionated
 - Focus on what actually matters for an investor
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {info_dict["short_name"]}
@@ -2081,7 +2071,6 @@ What to extract:
 - Whether the stock is treated as a story, growth platform, or cash-flow asset
 - Signals of speculative vs institutional behavior
 - What outcomes the market is overpaying or underpaying for
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 calls_df:
@@ -2164,7 +2153,6 @@ Output rules:
 - Prioritize depth, judgment, and interpretation
 - Be precise, skeptical, and professional
 - No generic textbook explanations
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Input:
 Name of company: {name_of_company}
@@ -2296,7 +2284,6 @@ Output rules:
 - Be direct and analytical
 - No generic explanations, no filler
 - If the JSONs are missing key context (e.g., dates, sample size), state how that limits confidence
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Price targets:
@@ -2427,7 +2414,6 @@ Output requirements:
 - Focus on insights, not raw numbers
 - Separate ownership structure, institutional behavior, and insider trading insights
 - No generic explanations
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Your goal is to understand who owns the company, how that is changing, and why it matters.
 """.strip()
@@ -2506,7 +2492,6 @@ Output rules:
 - No raw table repetition
 - No generic explanations
 - Be analytical and opinionated
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {company_name}
@@ -2624,7 +2609,6 @@ Output rules:
 - Do not mechanically repeat numbers without interpretation
 - Be direct, analytical, and opinionated
 - Prioritize insight over completeness
-- {ANALYZER_CALIBRATION_SENTENCE}
 
 Inputs:
 Company: {company_name}
@@ -2768,8 +2752,7 @@ def swot_analysis(ticker):
   * Be analytical, not descriptive.
   * Avoid repeating the input text verbatim.
   * Prioritize insight over completeness.
-  * Assume the reader is sophisticated and time-constrained.
-  * {ANALYZER_CALIBRATION_SENTENCE}"""
+  * Assume the reader is sophisticated and time-constrained."""
 
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -2855,7 +2838,6 @@ def market_analyst(ticker):
   - Avoid generic market descriptions.
   - Avoid repeating the input text verbatim.
   - Prioritize clarity, depth, and economic relevance over length.
-  - {ANALYZER_CALIBRATION_SENTENCE}
 
   The final output should read as a **decision-grade market characterization**, not a generic industry overview.
   """
@@ -2911,7 +2893,6 @@ def bear_vs_bull_insights(ticker):
   - Be specific, causal, and thoughtful.
   - Write as if presenting to a skeptical investment committee.
   - The goal is not balance, but clarity of scenarios.
-  - {ANALYZER_CALIBRATION_SENTENCE}
 
   Your objective is to define the upside and downside boundaries of reality for this company.
   """
@@ -2995,7 +2976,6 @@ def change_up_anaysis(ticker, change):
 
   Reason step by step and explain your reasoning clearly.
   Deliver a deep analytical narrative, not a summary.
-  {ANALYZER_CALIBRATION_SENTENCE}
   """
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -3079,7 +3059,6 @@ def change_down_anaysis(ticker, change):
 
   Reason step by step and explain your reasoning clearly.
   Deliver a rigorous analytical narrative, not a summary.
-  {ANALYZER_CALIBRATION_SENTENCE}
   """
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -3127,7 +3106,6 @@ def for_value_insights(financial_dict, ticker):
   Each bullet should reflect a real analytical insight, not a summary or a restatement.
 
   Avoid generic language, boilerplate finance phrases, or mechanical checklists.
-  {ANALYZER_CALIBRATION_SENTENCE}
 
   Do not explain the company. Do not explain valuation methods.
   Just extract the truths that matter most for valuation.
@@ -4179,7 +4157,7 @@ def build_prompt(ticker, financial_dict, instruction, text):
   2) Financial data (structured)
   3) Company Profile Stats (structured)
   4) Explicit output instructions (strict JSON schema)
-  Treat the prepared analysis as analyst opinion, not truth. Structured financial data and primary-source excerpts override it.
+  Treat the prepared analysis as a very professional analyst opinion - very strong and high quality - but not the truth itself.
 
   Analysis document:
   <Analysis_Document>
@@ -7201,6 +7179,7 @@ def main_function(ticker, download_text = False, download_pdf = True, download_p
 
 # ticker = "NICE"
 # final_dict = main_function(ticker, download_text = False, download_pdf = False, download_pptx = False, download_excel = False)
+
 
 
 

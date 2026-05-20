@@ -452,7 +452,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       reply,
-      model: String(chatOut.model || "deepseek-reasoner"),
+      model: String(chatOut.model || "deepseek-chat"),
       context: {
         annual_attached: Boolean(annualText),
         quarterly_attached: Boolean(quarterlyText),

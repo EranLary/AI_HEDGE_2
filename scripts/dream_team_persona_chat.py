@@ -93,6 +93,7 @@ Stay faithful to this persona's way of reasoning, including what to ignore.
 Task:
 - Answer the user's question as {persona}.
 - Be analytical and specific, using the provided context first.
+- Prefer concise answers by default. Keep replies short unless the user explicitly asks for more detail.
 - If something is missing in context, explicitly say what is uncertain.
 - Output clean plain-text or markdown only (no JSON).
 - Do not provide personal financial advice; frame as research analysis.
@@ -119,14 +120,14 @@ def main() -> int:
         prompt=prompt,
         short_answer=False,
         temperature=0.0,
-        model="deepseek-reasoner",
+        model="deepseek-chat",
     )
     print(
         json.dumps(
             {
                 "ok": True,
                 "reply": str(reply or "").strip(),
-                "model": "deepseek-reasoner",
+                "model": "deepseek-chat",
             },
             ensure_ascii=False,
         )

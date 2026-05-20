@@ -9,7 +9,6 @@ import {
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
 
-import { PersonaAvatar } from "./persona-avatar";
 import { getPersonaTheme } from "./persona-themes";
 
 export type PersonaCardData = {
@@ -131,25 +130,22 @@ export function PersonaCard({
       }}
     >
       <header className="relative border-b border-white/5 px-4 pb-4 pt-5 sm:px-8">
-        <div className="flex items-center gap-4">
-          <PersonaAvatar name={member.persona} size={64} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
-              <h2 className="font-display break-words text-2xl leading-tight text-zinc-100 sm:text-[26px]">
-                {member.persona}
-              </h2>
-              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
-                AI Persona
-              </span>
-            </div>
-            <p
-              className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.22em]"
-              style={{ color: theme.accent }}
-            >
-              {theme.role}
-            </p>
-            <p className="mt-1 break-words text-xs italic text-zinc-400">{theme.tagline}</p>
+        <div className="min-w-0">
+          <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+            <h2 className="font-display break-words text-2xl leading-tight text-zinc-100 sm:text-[26px]">
+              {member.persona}
+            </h2>
+            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
+              AI Persona
+            </span>
           </div>
+          <p
+            className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.22em]"
+            style={{ color: theme.accent }}
+          >
+            {theme.role}
+          </p>
+          <p className="mt-1 break-words text-xs italic text-zinc-400">{theme.tagline}</p>
         </div>
 
         <dl className="mt-4 grid grid-cols-3 gap-3 sm:gap-6">

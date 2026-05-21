@@ -10,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { Maximize2, Minimize2, MessageSquare, SquarePen, X } from "lucide-react";
+import { MessageSquare, SquarePen } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -32,43 +32,26 @@ type PersonaChatMessage = {
 type ChatStatusKind = "neutral" | "success" | "error";
 
 const THINKING_WORDS = [
-  "Signal Mapping",
-  "Context Reading",
-  "Thesis Testing",
-  "Risk Weighing",
-  "Driver Ranking",
+  "Thesis Mapping",
+  "Risk Scanning",
+  "Value Framing",
+  "Signal Weighing",
+  "Context Parsing",
   "Evidence Linking",
-  "Assumption Checking",
-  "Scenario Comparing",
-  "Moat Evaluation",
-  "Catalyst Mapping",
-  "Valuation Framing",
-  "Data Triangulation",
-  "Consistency Validation",
-  "Bias Scanning",
-  "Narrative Refinement",
-  "Downside Estimation",
+  "Driver Ranking",
+  "Moat Testing",
+  "Scenario Stressing",
+  "Assumption Auditing",
   "Cashflow Tracing",
-  "Filing Review",
-  "Insight Synthesis",
+  "Margin Calibrating",
+  "Catalyst Prioritizing",
+  "Sensitivity Testing",
+  "Allocation Framing",
+  "Benchmark Comparing",
+  "Probability Weighing",
+  "Filing Synthesizing",
   "Conclusion Drafting",
-  "Signal Reconciliation",
-  "Premise Auditing",
-  "Quality Screening",
-  "Factor Balancing",
-  "Priority Sorting",
-  "Market Contextualizing",
-  "Argument Sharpening",
-  "Logic Verifying",
-  "Output Structuring",
-  "Position Calibrating",
-  "Trend Inspecting",
-  "Sensitivity Probing",
-  "Benchmark Aligning",
-  "Uncertainty Framing",
-  "Portfolio Reflecting",
-  "Execution Planning",
-  "Decision Polishing",
+  "Decision Refining",
 ] as const;
 
 const HEBREW_RE = /[\u0590-\u05FF]/;
@@ -144,7 +127,6 @@ export function PersonaCard({
 }) {
   const theme = getPersonaTheme(member.persona);
   const [thinkingWordIndex, setThinkingWordIndex] = useState(0);
-  const [chatExpanded, setChatExpanded] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
 
@@ -170,19 +152,32 @@ export function PersonaCard({
       setThinkingWordIndex(0);
       return;
     }
+    setThinkingWordIndex((prev) => {
+      if (THINKING_WORDS.length <= 1) return 0;
+      let next = prev;
+      while (next === prev) {
+        next = Math.floor(Math.random() * THINKING_WORDS.length);
+      }
+      return next;
+    });
     const id = window.setInterval(() => {
-      setThinkingWordIndex((prev) => (prev + 1) % THINKING_WORDS.length);
+      setThinkingWordIndex((prev) => {
+        if (THINKING_WORDS.length <= 1) return 0;
+        let next = prev;
+        while (next === prev) {
+          next = Math.floor(Math.random() * THINKING_WORDS.length);
+        }
+        return next;
+      });
     }, 2600);
     return () => window.clearInterval(id);
   }, [chatSending]);
 
   useEffect(() => {
     if (!chatOpen) {
-      setChatExpanded(false);
       shouldStickToBottomRef.current = true;
       return;
     }
-    setChatExpanded(true);
     shouldStickToBottomRef.current = true;
     const id = window.requestAnimationFrame(() => {
       scrollTranscriptToBottom("auto");
@@ -195,7 +190,7 @@ export function PersonaCard({
     if (shouldStickToBottomRef.current) {
       scrollTranscriptToBottom(chatSending ? "auto" : "smooth");
     }
-  }, [chatMessages, chatSending, chatOpen, chatExpanded]);
+  }, [chatMessages, chatSending, chatOpen]);
 
   const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -332,24 +327,20 @@ export function PersonaCard({
           <div className="mt-4">
             <button
               type="button"
-              onClick={onOpenChat}
+              onClick={chatOpen ? onCloseChat : onOpenChat}
               className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
             >
               <MessageSquare size={14} />
-              Chat with {member.persona} AI persona about {ticker}
+              {chatOpen
+                ? `Close chat with ${member.persona} AI persona about ${ticker}`
+                : `Chat with ${member.persona} AI persona about ${ticker}`}
             </button>
           </div>
         ) : null}
       </header>
 
       {canUseChat && chatOpen ? (
-        <section
-          className={
-            chatExpanded
-              ? "hib-dream-chat-panel hib-dream-chat-panel-expanded fixed inset-3 z-[70] flex flex-col rounded-2xl px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8"
-              : "hib-dream-chat-panel relative z-20 border-b px-4 py-3 sm:px-8"
-          }
-        >
+        <section className="hib-dream-chat-panel hib-dream-chat-panel-expanded relative z-20 border-b px-4 py-3 sm:px-8">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="font-display text-sm text-zinc-200">
               Chat with {activePersona} AI persona about {ticker}
@@ -363,22 +354,6 @@ export function PersonaCard({
                 aria-label="Start new chat"
               >
                 <SquarePen size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatExpanded((prev) => !prev)}
-                className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
-              >
-                {chatExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                {chatExpanded ? "Collapse" : "Expand"}
-              </button>
-              <button
-                type="button"
-                onClick={onCloseChat}
-                className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
-              >
-                <X size={12} />
-                Close
               </button>
             </div>
           </div>
@@ -447,18 +422,16 @@ export function PersonaCard({
               </button>
           </div>
 
-          <div
-            ref={transcriptRef}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              shouldStickToBottomRef.current = isNearBottom(el);
-            }}
-            className={`hib-dream-chat-transcript mt-3 space-y-3 overflow-y-auto rounded-xl border p-3 ${
-              chatExpanded ? "max-h-[58vh]" : "max-h-64"
-            }`}
-          >
-            {chatMessages.length ? (
-              chatMessages.map((msg) => (
+          {chatMessages.length > 0 ? (
+            <div
+              ref={transcriptRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                shouldStickToBottomRef.current = isNearBottom(el);
+              }}
+              className="hib-dream-chat-transcript mt-3 max-h-[50vh] space-y-3 overflow-y-auto rounded-xl border p-3"
+            >
+              {chatMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`rounded-xl border px-3 py-2 text-sm ${
@@ -476,9 +449,9 @@ export function PersonaCard({
                     <MarkdownBlock text={msg.content} />
                   </div>
                 </div>
-              ))
-            ) : null}
-          </div>
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-3 flex flex-col gap-2">
             <textarea
@@ -491,7 +464,7 @@ export function PersonaCard({
                 }
               }}
               disabled={chatSending || chatFetching}
-              rows={chatExpanded ? 5 : 3}
+              rows={4}
               placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
               dir="auto"
               className="hib-dream-chat-input w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60"

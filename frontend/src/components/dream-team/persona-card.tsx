@@ -10,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { MessageSquare, SquarePen } from "lucide-react";
+import { MessageSquare, SquarePen, X } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -343,12 +343,13 @@ export function PersonaCard({
           <div className="mt-4">
             <button
               type="button"
-              onClick={chatOpen ? onCloseChat : onOpenChat}
+              onClick={onOpenChat}
+              disabled={chatOpen}
               className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
             >
               <MessageSquare size={14} />
               {chatOpen
-                ? `Close chat with ${member.persona} AI persona about ${ticker}`
+                ? `Chat open with ${member.persona} AI persona about ${ticker}`
                 : `Chat with ${member.persona} AI persona about ${ticker}`}
             </button>
           </div>
@@ -356,7 +357,7 @@ export function PersonaCard({
       </header>
 
       {canUseChat && chatOpen ? (
-        <section className="hib-dream-chat-panel hib-dream-chat-panel-expanded relative z-20 border-b px-4 py-3 sm:px-8">
+        <section className="hib-dream-chat-panel hib-dream-chat-panel-expanded fixed inset-3 z-[70] flex flex-col rounded-2xl px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="font-display text-sm text-zinc-200">
               Chat with {activePersona} AI persona about {ticker}
@@ -370,6 +371,16 @@ export function PersonaCard({
                 aria-label="Start new chat"
               >
                 <SquarePen size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={onCloseChat}
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.15em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+                title="Hide chat"
+                aria-label="Hide chat"
+              >
+                <X size={12} />
+                Hide chat
               </button>
             </div>
           </div>
@@ -445,7 +456,7 @@ export function PersonaCard({
                 const el = e.currentTarget;
                 shouldStickToBottomRef.current = isNearBottom(el);
               }}
-              className="hib-dream-chat-transcript mt-3 max-h-[50vh] space-y-3 overflow-y-auto rounded-xl border p-3"
+              className="hib-dream-chat-transcript mt-3 flex-1 space-y-3 overflow-y-auto rounded-xl border p-3"
             >
               {chatMessages.map((msg) => (
                 <div

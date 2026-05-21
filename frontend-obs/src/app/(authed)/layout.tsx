@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 
 import { signOut } from "@/auth";
 import { AppHeader } from "@/components/app-header";
+import { SwRegister } from "@/components/sw-register";
 import { AdminForbiddenError, requireAdmin } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,7 @@ export default async function AuthedLayout({ children }: { children: ReactNode }
 
   return (
     <div style={{ minHeight: "100vh" }}>
+      <SwRegister />
       <AppHeader email={email} signOutSlot={signOutSlot} />
       <main className="app-main">{children}</main>
     </div>

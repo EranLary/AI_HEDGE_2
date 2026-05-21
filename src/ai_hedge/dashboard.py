@@ -434,6 +434,59 @@ def _parse_raw_json_from_item(item: Dict[str, Any]) -> Dict[str, Any]:
             return {}
     return {}
 
+def _normalize_probability_value(value: Any) -> Optional[float]:
+    prob = _safe_float(value)
+    if prob is None:
+        return None
+    if prob > 1.0 and prob <= 100.0:
+        prob = prob / 100.0
+    if prob < 0.0 or prob > 1.0:
+        return None
+    return float(prob)
+
+
+def _scenario_entry(raw: Dict[str, Any], scenario: str) -> Any:
+    if not isinstance(raw, dict):
+        return None
+    scenarios = raw.get("scenarios")
+    if isinstance(scenarios, dict) and scenario in scenarios:
+        return scenarios.get(scenario)
+    return raw.get(scenario)
+
+
+def _scenario_probability_from_entry(entry: Any) -> Optional[float]:
+    if isinstance(entry, (list, tuple)) and len(entry) >= 1:
+        return _normalize_probability_value(entry[0])
+    if isinstance(entry, dict):
+        return _normalize_probability_value(entry.get("probability"))
+    return None
+
+
+def _scenario_value_from_entry(entry: Any, idx: int) -> Optional[float]:
+    if isinstance(entry, (list, tuple)) and len(entry) > idx:
+        return _safe_float(entry[idx])
+    if not isinstance(entry, dict):
+        return None
+    if idx == 0:
+        return _scenario_probability_from_entry(entry)
+    if idx == 1:
+        target_market_cap = _safe_float(entry.get("target_market_cap"))
+        if target_market_cap is not None:
+            return target_market_cap
+        net_income = _safe_float(entry.get("net_income_3y"))
+        if net_income is not None:
+            return net_income
+        revenue = _safe_float(entry.get("revenue_3y"))
+        if revenue is not None:
+            return revenue
+        activities = entry.get("activities")
+        if isinstance(activities, dict) and activities:
+            vals = [_safe_float(v) for v in activities.values()]
+            nums = [v for v in vals if v is not None]
+            if nums:
+                return float(sum(nums))
+    return None
+
 
 def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Dict[str, float]:
     if not isinstance(items, list) or not items:
@@ -468,22 +521,83 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
     def avg_scenario_value(scenario: str, idx: int) -> Optional[float]:
         vals: List[float] = []
         for raw in raw_list:
-            value = raw.get(scenario)
-            if isinstance(value, (list, tuple)) and len(value) > idx:
-                n = _safe_float(value[idx])
-                if n is not None:
-                    vals.append(n)
+            entry = _scenario_entry(raw, scenario)
+            n = _scenario_value_from_entry(entry, idx)
+            if n is not None:
+                vals.append(n)
         return _mean(vals)
 
+    def avg_weighted_scenario_value(idx: int) -> Optional[float]:
+        vals: List[float] = []
+        for raw in raw_list:
+            weighted = 0.0
+            has_any = False
+            for scenario in ["bull", "base", "bear"]:
+                entry = _scenario_entry(raw, scenario)
+                prob = _scenario_value_from_entry(entry, 0)
+                val = _scenario_value_from_entry(entry, idx)
+                if prob is None or val is None:
+                    continue
+                weighted += float(prob) * float(val)
+                has_any = True
+            if has_any:
+                vals.append(weighted)
+        return _mean(vals)
+
+    def coalesce(*values: Optional[float]) -> Optional[float]:
+        for value in values:
+            if isinstance(value, (int, float)):
+                return float(value)
+        return None
+
+    def _normalize_activity_metric_key(name: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(name or "").strip().lower())
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        return normalized or "unknown_activity"
+
+    def avg_weighted_activity_values() -> Dict[str, float]:
+        collected: Dict[str, List[float]] = {}
+        for raw in raw_list:
+            # Preferred path: precomputed weighted activity values from backend detail payload.
+            weighted_raw = raw.get("weighted_activity_market_cap")
+            if isinstance(weighted_raw, dict) and weighted_raw:
+                for activity_name, activity_value in weighted_raw.items():
+                    value = _safe_float(activity_value)
+                    if value is None:
+                        continue
+                    key = _normalize_activity_metric_key(str(activity_name))
+                    collected.setdefault(key, []).append(float(value))
+                continue
+
+            # Fallback path: compute weighted activity values from per-scenario activity maps.
+            per_raw_weighted: Dict[str, float] = {}
+            for scenario in ["bull", "base", "bear"]:
+                entry = _scenario_entry(raw, scenario)
+                if not isinstance(entry, dict):
+                    continue
+                prob = _normalize_probability_value(entry.get("probability"))
+                activities = entry.get("activities")
+                if prob is None or not isinstance(activities, dict):
+                    continue
+                for activity_name, activity_value in activities.items():
+                    value = _safe_float(activity_value)
+                    if value is None:
+                        continue
+                    key = _normalize_activity_metric_key(str(activity_name))
+                    per_raw_weighted[key] = float(per_raw_weighted.get(key, 0.0)) + (float(prob) * float(value))
+            for key, weighted_value in per_raw_weighted.items():
+                collected.setdefault(key, []).append(float(weighted_value))
+
+        out: Dict[str, float] = {}
+        for activity_key, values in collected.items():
+            mean_value = _mean(values)
+            if mean_value is None:
+                continue
+            out[f"weighted_activity_{activity_key}"] = float(mean_value)
+        return out
+
     metrics: Dict[str, Optional[float]] = {}
-    if method_name == "DCF":
-        metrics = {
-            "fcf_next_year": avg_mid("fcf_next_year"),
-            "growth_rate": avg_mid("g"),
-            "wacc": avg_mid("WACC"),
-            "terminal_growth": avg_mid("TERMINAL"),
-        }
-    elif method_name == "Scenario DCF":
+    if method_name == "Scenario DCF":
         metrics = {
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
@@ -493,40 +607,52 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "wacc": avg_mid("WACC"),
             "terminal_growth": avg_mid("TERMINAL"),
         }
-    elif method_name == "Net Income & P/E":
+    elif method_name == "Target Scenario":
         metrics = {
-            "net_income_3y": avg_mid("net_income_3y"),
-            "pe_multiple": avg_mid("pe_multiple"),
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "target_market_cap": coalesce(avg_num("target_market_cap"), avg_weighted_scenario_value(1)),
         }
-    elif method_name == "Revenue & EV/S":
+    elif method_name == "Earnings Scenario":
         metrics = {
-            "revenue_3y": avg_mid("revenue_3y"),
-            "ev_sales_multiple": avg_mid("ev_sales_multiple"),
-        }
-    elif method_name == "Dream Team":
-        metrics = {
-            "target_market_cap": avg_num("target_market_cap"),
-        }
-    elif method_name == "BBB Target":
-        metrics = {
-            "bull_target_market_cap": avg_scenario_value("bull", 1),
-            "base_target_market_cap": avg_scenario_value("base", 1),
-            "bear_target_market_cap": avg_scenario_value("bear", 1),
-        }
-    elif method_name == "BBB NI & P/E":
-        metrics = {
-            "bull_net_income": avg_scenario_value("bull", 1),
-            "base_net_income": avg_scenario_value("base", 1),
-            "bear_net_income": avg_scenario_value("bear", 1),
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "net_income_3y": coalesce(avg_num("net_income_3y"), avg_weighted_scenario_value(1)),
             "pe_multiple": avg_num("pe_multiple"),
         }
-    elif method_name == "Lary's Logic":
+    elif method_name == "Revenue Scenario":
         metrics = {
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "revenue_3y": coalesce(avg_num("revenue_3y"), avg_weighted_scenario_value(1)),
+            "ev_sales_multiple": avg_mid("ev_sales_multiple"),
+        }
+    elif method_name == "Composite Scenario":
+        metrics = {
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
             "revenue_growth_3y_avg": avg_num("revenue_growth_3y_avg"),
             "operating_margin": avg_num("operating_profitability_margin"),
             "net_financing_result": avg_num("net_financing_result"),
             "tax_rate": avg_num("tax_rate"),
             "pe_multiple": avg_num("pe_multiple"),
+        }
+    elif method_name == "SOTP Scenario":
+        metrics = {
+            "bull_probability": avg_scenario_value("bull", 0),
+            "base_probability": avg_scenario_value("base", 0),
+            "bear_probability": avg_scenario_value("bear", 0),
+            "target_market_cap": coalesce(avg_num("target_market_cap"), avg_weighted_scenario_value(1)),
+        }
+        for activity_metric_key, activity_metric_value in avg_weighted_activity_values().items():
+            metrics[activity_metric_key] = activity_metric_value
+    elif method_name == "Dream Team":
+        metrics = {
+            "target_market_cap": avg_num("target_market_cap"),
         }
     return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
@@ -1137,6 +1263,58 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
                 }
             )
 
+    # Add equal-weight blended scenario probabilities across scenario-capable methods.
+    scenario_methods = [
+        "Scenario DCF",
+        "Target Scenario",
+        "Earnings Scenario",
+        "Revenue Scenario",
+        "Composite Scenario",
+        "SOTP Scenario",
+    ]
+    prob_buckets: Dict[str, List[float]] = {"bull": [], "base": [], "bear": []}
+    for method_name in scenario_methods:
+        items = method_details.get(method_name, []) if isinstance(method_details, dict) else []
+        if not isinstance(items, list) or not items:
+            continue
+        per_method: Dict[str, List[float]] = {"bull": [], "base": [], "bear": []}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw_json = _parse_raw_json_from_item(item)
+            if not raw_json:
+                continue
+            for label in ["bull", "base", "bear"]:
+                p = _scenario_probability_from_entry(_scenario_entry(raw_json, label))
+                if p is not None:
+                    per_method[label].append(float(p))
+        for label in ["bull", "base", "bear"]:
+            if per_method[label]:
+                prob_buckets[label].append(float(sum(per_method[label]) / len(per_method[label])))
+
+    blended_specs = [
+        ("bull_probability_blended", "Bull Probability", prob_buckets["bull"]),
+        ("base_probability_blended", "Base Probability", prob_buckets["base"]),
+        ("bear_probability_blended", "Bear Probability", prob_buckets["bear"]),
+    ]
+    for metric_key, label, values in blended_specs:
+        if not values:
+            continue
+        mean_v = float(sum(values) / len(values))
+        metric_means.append(
+            {
+                "metric_key": metric_key,
+                "label": label,
+                "mean": mean_v,
+                "min": mean_v,
+                "max": mean_v,
+                "sample_count": len(values),
+                "method_count": len(values),
+                "methods": scenario_methods,
+                "source_paths": [f"blended_probabilities.{metric_key}"],
+            }
+        )
+
     metric_means.sort(key=lambda x: x["label"])
     source_values.sort(key=lambda x: (x["method"], x["metric_key"], x["persona"]))
     return {
@@ -1197,13 +1375,12 @@ def build_dashboard_payload(
     )
     method_order = [
         "Scenario DCF",
-        "DCF",
-        "Net Income & P/E",
-        "Revenue & EV/S",
+        "Target Scenario",
+        "Earnings Scenario",
+        "Revenue Scenario",
+        "Composite Scenario",
+        "SOTP Scenario",
         "Dream Team",
-        "BBB Target",
-        "BBB NI & P/E",
-        "Lary's Logic",
     ]
 
     method_blocks: List[Dict[str, Any]] = []

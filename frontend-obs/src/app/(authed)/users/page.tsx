@@ -58,7 +58,7 @@ export default async function ManageUsersPage() {
                 return (
                   <tr key={a.email} style={{ borderTop: "1px solid var(--color-border)" }}>
                     <Td>
-                      <span style={{ fontFamily: "ui-monospace, monospace" }}>{a.email}</span>
+                      <span style={{ fontFamily: "var(--font-mono)" }}>{a.email}</span>
                       {isSelf ? <span style={{ marginLeft: 8, opacity: 0.6, fontSize: 12 }}>(you)</span> : null}
                     </Td>
                     <Td>

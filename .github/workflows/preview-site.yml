@@ -166,8 +166,12 @@ jobs:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID }}
           AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET }}
+          OBS_DATABASE_URL: ${{ secrets.OBS_DATABASE_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          args=()
+          # Bypass auth on per-PR previews — Google OAuth doesn't permit
+          # wildcard redirect URIs for pr-N-* hostnames. Never set on prod.
+          args=("AUTH_BYPASS_PREVIEW=1")
           if [ -z "$DEEPSEEK_API_KEY" ]; then
             echo "::warning::DEEPSEEK_API_KEY secret not set - preview will be missing it."
           else
@@ -202,6 +206,14 @@ jobs:
           else
             args+=("AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET")
           fi
+          # Point obs writes at the prod obs DB (no Neon branch for obs) and tag every
+          # obs_runs row with `preview-pr-N` so they are distinguishable from real runs.
+          if [ -z "$OBS_DATABASE_URL" ]; then
+            echo "::warning::OBS_DATABASE_URL secret not set - obs writes from this preview will fall back to the branched site DB (which has no obs tables) and silently no-op."
+          else
+            args+=("OBS_DATABASE_URL=$OBS_DATABASE_URL")
+          fi
+          args+=("OBS_RUN_SOURCE_LABEL=preview-pr-${PR_NUMBER}")
           if [ "${#args[@]}" -gt 0 ]; then
             flyctl secrets set "${args[@]}" --app "${{ env.PREVIEW_APP }}" --stage
           fi
@@ -252,8 +264,13 @@ jobs:
 
             **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
 
+            ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
+            redirect URIs for `pr-*` hostnames, so the preview hands out signed-in
+            access to anyone with the URL. Don't share it externally.
+
             - Volume forked from prod on PR open; staleness accepted until close.
-            - DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
+            - Site DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
+            - **Obs DB is the prod obs DB** (no branching). Pipeline runs from this preview write `obs_runs` / `obs_calls` rows tagged with `source = "preview-pr-${{ github.event.pull_request.number }}"` so they're easy to filter or clean up later.
             - Machine auto-stops when idle, auto-starts on request.
             - Tear-down (Fly app + volume + Neon branch) runs automatically when this PR is closed.
 

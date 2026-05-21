@@ -1,20 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { CSSProperties } from "react";
 
-import { CopyButton } from "@/components/copy-button";
+import { CallWaterfall } from "@/components/call-waterfall";
+import { CollapsibleMarkdown } from "@/components/collapsible-markdown";
+import { ArrowLeftIcon } from "@/components/icons";
 import { StatusPill } from "@/components/status-pill";
 import {
   getCall,
   getRun,
   listChildCalls,
-  type ObsCallRow,
+  type ObsCallSummaryRow,
 } from "@/lib/obs-db";
 import {
   formatCost,
   formatLatency,
   formatTokens,
 } from "@/lib/obs-format";
+import { callLabel, callTitle } from "@/lib/obs-labels";
+import { splitPrompt } from "@/lib/obs-prompt";
 import { stageColor } from "@/lib/obs-styles";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +45,9 @@ export default async function CallDetailPage({
 
   const color = stageColor(call.stage);
   const backHref = `/runs/${runId}${backView === "flow" ? "?view=flow" : ""}`;
+  const title = callTitle(call);
+  const technical = callLabel(call);
+  const showSubtitle = technical && technical !== title;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -53,18 +59,20 @@ export default async function CallDetailPage({
           flexWrap: "wrap",
         }}
       >
-        <Link href={backHref} className="btn-ghost">
-          ← Back to {run.ticker} run
+        <Link
+          href={backHref}
+          className="btn-ghost btn-ghost--icon"
+          title={`Back to ${run.ticker} run`}
+          aria-label={`Back to ${run.ticker} run`}
+        >
+          <ArrowLeftIcon size={15} />
         </Link>
         <span style={{ opacity: 0.4 }}>/</span>
+        <span aria-hidden className="stage-dot" style={{ background: color }} />
         <span
           style={{
             fontSize: 12,
-            padding: "3px 10px",
-            borderRadius: 999,
-            border: `1px solid ${color}`,
-            color,
-            background: "transparent",
+            opacity: 0.85,
             textTransform: "uppercase",
             letterSpacing: 0.4,
             fontWeight: 600,
@@ -79,12 +87,26 @@ export default async function CallDetailPage({
       </div>
 
       <div>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>
-          Call #{call.sequence}
+        <h1
+          style={{
+            fontSize: 22,
+            marginBottom: 4,
+            fontWeight: 600,
+            letterSpacing: "-0.2px",
+            wordBreak: "break-word",
+          }}
+        >
+          {title}
         </h1>
-        <div style={{ opacity: 0.7, fontSize: 13 }}>
+        <div
+          style={{
+            opacity: 0.65,
+            fontSize: 12.5,
+            fontFamily: showSubtitle ? "var(--font-mono)" : undefined,
+          }}
+        >
+          {showSubtitle ? `${technical} · ` : ""}#{call.sequence} ·{" "}
           {call.model_actual ?? call.model_requested} · temp {call.temperature}
-          {call.call_site ? ` · ${call.call_site}` : ""}
         </div>
       </div>
 
@@ -107,24 +129,60 @@ export default async function CallDetailPage({
 
       <CallContext runId={runId} parent={parent} children={children} backView={backView} />
 
-      <Section title="Prompt" copyText={call.prompt}>
-        <pre style={preStyle}>{call.prompt}</pre>
-      </Section>
-      <Section
+      {children.length > 0 && (
+        <CallWaterfall
+          runId={runId}
+          parent={{
+            id: call.id,
+            started_at: call.started_at,
+            ended_at: call.ended_at,
+            latency_ms: call.latency_ms,
+            stage: call.stage,
+          }}
+          children={children}
+          linkMode="page"
+          backView={backView}
+        />
+      )}
+
+      {(() => {
+        const { system, user } = splitPrompt(call);
+        return (
+          <>
+            <CollapsibleMarkdown
+              title="System"
+              body={system}
+              defaultOpen={false}
+            />
+            <CollapsibleMarkdown
+              title="User"
+              body={user}
+              defaultOpen={false}
+              meta={`${formatTokens(call.tokens_in)} tok in`}
+            />
+          </>
+        );
+      })()}
+      <CollapsibleMarkdown
         title="Response"
-        copyText={call.response ?? ""}
-      >
-        <pre style={preStyle}>{call.response ?? "(no response captured)"}</pre>
-      </Section>
+        body={call.response}
+        defaultOpen={false}
+        meta={`${formatTokens(call.tokens_out)} tok out · ${formatLatency(call.latency_ms)}`}
+      />
       {call.reasoning && (
-        <Section title="Reasoning" copyText={call.reasoning}>
-          <pre style={preStyle}>{call.reasoning}</pre>
-        </Section>
+        <CollapsibleMarkdown
+          title="Reasoning"
+          body={call.reasoning}
+          defaultOpen={false}
+        />
       )}
       {call.error_message && (
-        <Section title={`Error · ${call.error_class ?? ""}`} copyText={call.error_message}>
-          <pre style={{ ...preStyle, color: "#fca5a5" }}>{call.error_message}</pre>
-        </Section>
+        <CollapsibleMarkdown
+          title={`Error · ${call.error_class ?? ""}`}
+          body={call.error_message}
+          defaultOpen
+          emphasizeError
+        />
       )}
     </div>
   );
@@ -141,55 +199,6 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function Section({
-  title,
-  copyText,
-  children,
-}: {
-  title: string;
-  copyText?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 6,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            opacity: 0.7,
-            textTransform: "uppercase",
-            letterSpacing: 0.4,
-          }}
-        >
-          {title}
-        </div>
-        {copyText ? <CopyButton text={copyText} /> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-const preStyle: CSSProperties = {
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 12,
-  margin: 0,
-  padding: 14,
-  background: "var(--color-card-bg)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 8,
-  lineHeight: 1.55,
-};
-
 function CallContext({
   runId,
   parent,
@@ -197,8 +206,8 @@ function CallContext({
   backView,
 }: {
   runId: string;
-  parent: ObsCallRow | null;
-  children: ObsCallRow[];
+  parent: ObsCallSummaryRow | null;
+  children: ObsCallSummaryRow[];
   backView: "flow" | "hierarchy";
 }) {
   if (!parent && children.length === 0) return null;
@@ -234,22 +243,13 @@ function CallContext({
   );
 }
 
-function CallSummary({ call }: { call: ObsCallRow }) {
+function CallSummary({ call }: { call: ObsCallSummaryRow }) {
   const color = stageColor(call.stage);
+  const title = callTitle(call);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 999,
-          background: color,
-          display: "inline-block",
-        }}
-      />
-      <span style={{ fontWeight: 600 }}>
-        {call.persona ?? `#${call.sequence}`}
-      </span>
+      <span aria-hidden className="stage-dot" style={{ background: color }} />
+      <span style={{ fontWeight: 600 }}>{title}</span>
       <span style={{ opacity: 0.6 }}>{call.stage}</span>
       <span style={{ opacity: 0.5 }}>· {formatLatency(call.latency_ms)}</span>
       <span style={{ opacity: 0.5 }}>· {formatCost(call.cost_usd, 4)}</span>

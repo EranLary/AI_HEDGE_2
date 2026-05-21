@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -62,7 +61,6 @@ export type OverviewClientProps = {
   reportsForTicker: ReportListItem[];
   resolvedReportId: string;
   liveCurrentPrice: number | null;
-  livePerformanceSlot: ReactNode;
 };
 
 export function OverviewClient({
@@ -71,7 +69,6 @@ export function OverviewClient({
   reportsForTicker,
   resolvedReportId,
   liveCurrentPrice,
-  livePerformanceSlot,
 }: OverviewClientProps) {
   const upper = ticker;
   const ctx = buildCurrencyContext(data);
@@ -255,8 +252,6 @@ export function OverviewClient({
             </p>
           </div>
         </div>
-        {livePerformanceSlot}
-
       </section>
 
       <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">

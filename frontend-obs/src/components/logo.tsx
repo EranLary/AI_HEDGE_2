@@ -8,7 +8,7 @@ export function Logo({ height = 24 }: LogoProps) {
     <>
       <img
         className="hib-logo-dark"
-        src="/hedge-logo-dark.png"
+        src="/hedge-logo-dark.svg"
         alt="Hedge in a Box"
         width={width}
         height={height}
@@ -16,7 +16,7 @@ export function Logo({ height = 24 }: LogoProps) {
       />
       <img
         className="hib-logo-light"
-        src="/hedge-logo-light.png"
+        src="/hedge-logo-light.svg"
         alt="Hedge in a Box"
         width={width}
         height={height}

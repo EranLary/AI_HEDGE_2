@@ -146,6 +146,7 @@ def main() -> int:
         # Ensure DB persistence before marking run as completed.
         report_id = None
         persistence_error = ""
+        write_err: str | None = None
         try:
             from ai_hedge.db.writer import (
                 find_report_id_by_source_run_id,
@@ -158,7 +159,7 @@ def main() -> int:
                 ticker=ticker,
             )
             if not report_id:
-                write_run_to_db(
+                _, write_err = write_run_to_db(
                     Path(output_dir).resolve() / ticker,
                     source="site",
                     max_attempts=5,
@@ -170,9 +171,14 @@ def main() -> int:
                     ticker=ticker,
                 )
             if not report_id:
-                persistence_error = (
+                base_msg = (
                     "Run artifacts were generated but DB report persistence failed. "
                     "No reports row found for source_run_id."
+                )
+                persistence_error = (
+                    f"{base_msg} Last writer error: {write_err}"
+                    if write_err
+                    else base_msg
                 )
         except Exception as persist_exc:  # noqa: BLE001
             persistence_error = f"DB persistence verification failed: {persist_exc}"

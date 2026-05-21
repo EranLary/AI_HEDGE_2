@@ -118,7 +118,7 @@ test("positive_only mode counts only positive target/allocation predictions", ()
   const live = new Map<string, number | null>([["TEST", 120]]); // actual up
 
   const agg = computeHitRateAggregation(reports, live, "positive_only");
-  const dcf = agg.by_model.find((row) => row.key === "Intrinsic DCF");
+  const dcf = agg.by_model.find((row) => row.key === "Scenario DCF");
   assert.ok(dcf);
 
   // Only positive target prediction should be counted -> hit.

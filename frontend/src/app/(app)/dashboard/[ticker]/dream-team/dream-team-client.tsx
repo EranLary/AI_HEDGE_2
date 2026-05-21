@@ -37,6 +37,7 @@ export function DreamTeamClient({
       ticker={ticker}
       reports={reportsForTicker}
       currentReportId={resolvedReportId}
+      showReportSelector={false}
       canUseChat={canUseChat}
     />
   );

@@ -155,6 +155,7 @@ export function PersonaGallery({
   ticker,
   reports,
   currentReportId,
+  showReportSelector = true,
   canUseChat,
 }: {
   personas: DreamTeamMember[];
@@ -165,6 +166,7 @@ export function PersonaGallery({
   ticker: string;
   reports: ReportListItem[];
   currentReportId: string;
+  showReportSelector?: boolean;
   canUseChat: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -588,7 +590,11 @@ export function PersonaGallery({
             if (idx >= 0) goTo(idx);
           }}
         />
-        <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
+        {showReportSelector ? (
+          <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
+        ) : (
+          <div />
+        )}
       </div>
       <div className="hib-disclaimer-amber mb-3 rounded-xl border px-3 py-2 text-xs">
         Disclaimer: Dream Team views are AI PERSONA simulations for research workflow support, not real investor quotes or advice.

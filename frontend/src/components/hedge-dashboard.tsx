@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Download } from "lucide-react";
+import { Check, ChevronDown, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -753,6 +753,8 @@ export function HedgeDashboard({
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
   const [liveCurrentPrice, setLiveCurrentPrice] = useState<number | null>(null);
+  const [reportPickerOpen, setReportPickerOpen] = useState(false);
+  const reportPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const tickerFromProp = String(tickerOverride || "").trim().toUpperCase();
@@ -836,6 +838,22 @@ export function HedgeDashboard({
         .sort((a, b) => reportTimestamp(b) - reportTimestamp(a)),
     [reports, selectedTicker],
   );
+
+  useEffect(() => {
+    if (!reportPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (reportPickerRef.current && !reportPickerRef.current.contains(e.target as Node)) setReportPickerOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setReportPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [reportPickerOpen]);
   const currentReportId =
     selectedTicker && reportsForSelectedTicker.length
       ? reportsForSelectedTicker.some((r) => r.report_id === selectedReportId)
@@ -1362,31 +1380,61 @@ export function HedgeDashboard({
 
         {reportsForSelectedTicker.length > 1 ? (
           <section className="mb-4 rounded-xl border border-white/10 bg-zinc-950/70 p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.14em] text-zinc-400">
-              Report Versions ({selectedTicker}) - Newest to Oldest
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {reportsForSelectedTicker.map((report) => {
-                const active = report.report_id === currentReportId;
-                return (
-                  <button
-                    key={report.report_id}
-                    type="button"
-                    onClick={() => {
-                      setLoading(true);
-                      setSelectedReportId(report.report_id);
-                    }}
-                    className={`rounded-lg border px-3 py-2 text-xs transition ${
-                      active
-                        ? "hib-tab-active border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
-                        : "hib-tab-inactive border-white/15 bg-white/5 text-zinc-300"
-                    }`}
-                  >
-                    {fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}
-                  </button>
-                );
-              })}
+            <div className="relative" ref={reportPickerRef}>
+              <button
+                type="button"
+                onClick={() => setReportPickerOpen((v) => !v)}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 text-[11px] font-medium text-zinc-300 backdrop-blur transition hover:border-white/30 hover:text-zinc-100"
+                aria-haspopup="listbox"
+                aria-expanded={reportPickerOpen}
+              >
+                <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">{selectedTicker} · Report</span>
+                <span className="font-mono text-[11px] text-zinc-100">
+                  {fmtDateTimeNoSeconds(
+                    String(
+                      (reportsForSelectedTicker.find((r) => r.report_id === currentReportId) || reportsForSelectedTicker[0])
+                        ?.generated_at ||
+                        (reportsForSelectedTicker.find((r) => r.report_id === currentReportId) || reportsForSelectedTicker[0])
+                          ?.updated_at ||
+                        "",
+                    ),
+                  )}
+                </span>
+                <ChevronDown size={12} className={`transition ${reportPickerOpen ? "rotate-180" : ""}`} />
+              </button>
+              {reportPickerOpen ? (
+                <div
+                  role="listbox"
+                  className="absolute left-0 top-full z-40 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur"
+                >
+                  {reportsForSelectedTicker.map((report) => {
+                    const active = report.report_id === currentReportId;
+                    return (
+                      <button
+                        key={report.report_id}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => {
+                          setLoading(true);
+                          setSelectedReportId(report.report_id);
+                          setReportPickerOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition ${
+                          active
+                            ? "bg-emerald-500/10 text-emerald-100"
+                            : "text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
+                        }`}
+                      >
+                        <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
+                        {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
+            <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">Newest to oldest</div>
           </section>
         ) : null}
 

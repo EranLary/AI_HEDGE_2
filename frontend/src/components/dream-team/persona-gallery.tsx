@@ -257,6 +257,7 @@ export function PersonaGallery({
   const activeScopeKey = chatScopeKey(currentReportId);
   const activeChat = chatByScope[activeScopeKey] || makeEmptyChatState();
   const activeChatOpen = Boolean(chatOpenByScope[activeScopeKey]);
+  const currentReport = reports.find((r) => r.report_id === currentReportId) || reports[0] || null;
 
   const setActiveChat = useCallback(
     (updater: (prev: PersonaChatState) => PersonaChatState) => {
@@ -593,7 +594,12 @@ export function PersonaGallery({
         {showReportSelector ? (
           <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
         ) : (
-          <div />
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 text-[11px] font-medium text-zinc-300 backdrop-blur">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">Latest Report</span>
+            <span className="font-mono text-[11px] text-zinc-100">
+              {currentReport ? fmtReportLabel(currentReport) : "N/A"}
+            </span>
+          </div>
         )}
       </div>
       <div className="hib-disclaimer-amber mb-3 rounded-xl border px-3 py-2 text-xs">

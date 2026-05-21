@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MarkdownBlock,
@@ -31,38 +31,43 @@ type PersonaChatMessage = {
 type ChatStatusKind = "neutral" | "success" | "error";
 
 const THINKING_WORDS = [
-  "Analyzing",
-  "Reading context",
-  "Connecting signals",
-  "Checking assumptions",
-  "Weighing risks",
-  "Comparing scenarios",
-  "Drafting response",
-  "Reviewing fundamentals",
-  "Tracing cash flow",
-  "Stress testing thesis",
-  "Scanning filings",
-  "Mapping catalysts",
-  "Estimating downside",
-  "Evaluating moat",
-  "Aligning evidence",
-  "Calibrating conviction",
-  "Refining conclusion",
-  "Parsing the question",
-  "Cross-checking numbers",
-  "Linking cause and effect",
-  "Testing edge cases",
-  "Balancing upside and risk",
-  "Ranking key drivers",
-  "Inspecting assumptions",
-  "Reconciling signals",
-  "Pressure-testing valuation",
-  "Looking for blind spots",
-  "Validating consistency",
-  "Triangulating evidence",
-  "Reviewing market context",
-  "Sharpening the narrative",
-  "Finalizing response",
+  "Signal Mapping",
+  "Context Reading",
+  "Thesis Testing",
+  "Risk Weighing",
+  "Driver Ranking",
+  "Evidence Linking",
+  "Assumption Checking",
+  "Scenario Comparing",
+  "Moat Evaluation",
+  "Catalyst Mapping",
+  "Valuation Framing",
+  "Data Triangulation",
+  "Consistency Validation",
+  "Bias Scanning",
+  "Narrative Refinement",
+  "Downside Estimation",
+  "Cashflow Tracing",
+  "Filing Review",
+  "Insight Synthesis",
+  "Conclusion Drafting",
+  "Signal Reconciliation",
+  "Premise Auditing",
+  "Quality Screening",
+  "Factor Balancing",
+  "Priority Sorting",
+  "Market Contextualizing",
+  "Argument Sharpening",
+  "Logic Verifying",
+  "Output Structuring",
+  "Position Calibrating",
+  "Trend Inspecting",
+  "Sensitivity Probing",
+  "Benchmark Aligning",
+  "Uncertainty Framing",
+  "Portfolio Reflecting",
+  "Execution Planning",
+  "Decision Polishing",
 ] as const;
 
 const HEBREW_RE = /[\u0590-\u05FF]/;
@@ -83,6 +88,8 @@ export function PersonaCard({
   chatFetching,
   includeAnnual,
   includeQuarterly,
+  annualPending,
+  quarterlyPending,
   annualReady,
   quarterlyReady,
   chatError,
@@ -111,6 +118,8 @@ export function PersonaCard({
   chatFetching: boolean;
   includeAnnual: boolean;
   includeQuarterly: boolean;
+  annualPending: boolean;
+  quarterlyPending: boolean;
   annualReady: boolean;
   quarterlyReady: boolean;
   chatError: string;
@@ -127,6 +136,25 @@ export function PersonaCard({
   const theme = getPersonaTheme(member.persona);
   const [thinkingWordIndex, setThinkingWordIndex] = useState(0);
   const [chatExpanded, setChatExpanded] = useState(false);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+
+  const isNearBottom = (el: HTMLDivElement): boolean => {
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return remaining < 36;
+  };
+
+  const scrollTranscriptToBottom = (behavior: ScrollBehavior) => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  };
+
+  const handleSend = () => {
+    shouldStickToBottomRef.current = true;
+    scrollTranscriptToBottom("smooth");
+    onChatSend();
+  };
 
   useEffect(() => {
     if (!chatSending) {
@@ -135,15 +163,29 @@ export function PersonaCard({
     }
     const id = window.setInterval(() => {
       setThinkingWordIndex((prev) => (prev + 1) % THINKING_WORDS.length);
-    }, 4600);
+    }, 2600);
     return () => window.clearInterval(id);
   }, [chatSending]);
 
   useEffect(() => {
     if (!chatOpen) {
       setChatExpanded(false);
+      shouldStickToBottomRef.current = true;
+      return;
     }
+    shouldStickToBottomRef.current = true;
+    const id = window.requestAnimationFrame(() => {
+      scrollTranscriptToBottom("auto");
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [chatOpen]);
+
+  useLayoutEffect(() => {
+    if (!chatOpen) return;
+    if (shouldStickToBottomRef.current) {
+      scrollTranscriptToBottom(chatSending ? "auto" : "smooth");
+    }
+  }, [chatMessages, chatSending, chatOpen, chatExpanded]);
 
   const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -202,9 +244,9 @@ export function PersonaCard({
     Boolean(latestMessage) &&
     latestMessage?.role === "assistant" &&
     String(latestMessage?.content || "").trim().length > 0;
-  const annualButtonDisabled = chatFetching || chatSending || includeAnnual;
-  const quarterlyButtonDisabled = chatFetching || chatSending || includeQuarterly;
-  const bothButtonDisabled = chatFetching || chatSending || (includeAnnual && includeQuarterly);
+  const annualButtonDisabled = chatSending || annualPending || includeAnnual;
+  const quarterlyButtonDisabled = chatSending || quarterlyPending || includeQuarterly;
+  const bothButtonDisabled = chatSending || annualPending || quarterlyPending || (includeAnnual && includeQuarterly);
   const statusLine = chatFetching
     ? "Fetching filing context..."
     : chatSending
@@ -294,8 +336,8 @@ export function PersonaCard({
         <section
           className={
             chatExpanded
-              ? "fixed inset-3 z-[70] flex flex-col rounded-2xl border border-white/10 bg-zinc-950/96 px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8"
-              : "relative z-20 border-b border-white/10 bg-black/25 px-4 py-3 sm:px-8"
+              ? "hib-dream-chat-panel hib-dream-chat-panel-expanded fixed inset-3 z-[70] flex flex-col rounded-2xl px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8"
+              : "hib-dream-chat-panel relative z-20 border-b px-4 py-3 sm:px-8"
           }
         >
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -322,45 +364,62 @@ export function PersonaCard({
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
-              <span className={`rounded-full border px-2 py-0.5 ${includeAnnual ? "border-emerald-400/40 text-emerald-200" : "border-white/15 text-zinc-400"}`}>
-                Annual {includeAnnual ? (annualReady ? "On" : "Pending") : "Off"}
-              </span>
-              <span className={`rounded-full border px-2 py-0.5 ${includeQuarterly ? "border-emerald-400/40 text-emerald-200" : "border-white/15 text-zinc-400"}`}>
-                Quarterly {includeQuarterly ? (quarterlyReady ? "On" : "Pending") : "Off"}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={onAttachAnnual}
                 disabled={annualButtonDisabled}
-                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`rounded-full border px-3 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-85 ${
+                  includeAnnual
+                    ? "border-emerald-500/60 bg-emerald-500/25 text-emerald-100"
+                    : annualPending
+                      ? "border-slate-400/40 bg-slate-500/20 text-zinc-300"
+                      : "border-white/20 text-zinc-200 hover:border-white/40 hover:text-zinc-100"
+                }`}
               >
-                {includeAnnual ? "Annual Added" : "Add Annual"}
+                {includeAnnual ? "Annual On" : annualPending ? "Annual Loading..." : "Add Annual"}
               </button>
               <button
                 type="button"
                 onClick={onAttachQuarterly}
                 disabled={quarterlyButtonDisabled}
-                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`rounded-full border px-3 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-85 ${
+                  includeQuarterly
+                    ? "border-emerald-500/60 bg-emerald-500/25 text-emerald-100"
+                    : quarterlyPending
+                      ? "border-slate-400/40 bg-slate-500/20 text-zinc-300"
+                      : "border-white/20 text-zinc-200 hover:border-white/40 hover:text-zinc-100"
+                }`}
               >
-                {includeQuarterly ? "Quarterly Added" : "Add Quarterly"}
+                {includeQuarterly ? "Quarterly On" : quarterlyPending ? "Quarterly Loading..." : "Add Quarterly"}
               </button>
               <button
                 type="button"
                 onClick={onAttachBoth}
                 disabled={bothButtonDisabled}
-                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-zinc-200 transition hover:border-white/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`rounded-full border px-3 py-1 text-[11px] transition disabled:cursor-not-allowed disabled:opacity-85 ${
+                  includeAnnual && includeQuarterly
+                    ? "border-emerald-500/60 bg-emerald-500/25 text-emerald-100"
+                    : annualPending || quarterlyPending
+                      ? "border-slate-400/40 bg-slate-500/20 text-zinc-300"
+                      : "border-white/20 text-zinc-200 hover:border-white/40 hover:text-zinc-100"
+                }`}
               >
-                Add Both
+                {includeAnnual && includeQuarterly
+                  ? "Annual + Quarterly On"
+                  : annualPending || quarterlyPending
+                    ? "Loading Both..."
+                    : "Add Both"}
               </button>
-            </div>
           </div>
 
           <div
-            className={`mt-3 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 ${
+            ref={transcriptRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              shouldStickToBottomRef.current = isNearBottom(el);
+            }}
+            className={`hib-dream-chat-transcript mt-3 space-y-3 overflow-y-auto rounded-xl border p-3 ${
               chatExpanded ? "max-h-[58vh]" : "max-h-64"
             }`}
           >
@@ -370,8 +429,8 @@ export function PersonaCard({
                   key={msg.id}
                   className={`rounded-xl border px-3 py-2 text-sm ${
                     msg.role === "assistant"
-                      ? "border-white/10 bg-zinc-900/70 text-zinc-100"
-                      : "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                      ? "hib-dream-chat-msg-assistant"
+                      : "hib-dream-chat-msg-user"
                   }`}
                   dir={HEBREW_RE.test(msg.content) ? "rtl" : "ltr"}
                   style={{ unicodeBidi: "plaintext" }}
@@ -396,14 +455,14 @@ export function PersonaCard({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  onChatSend();
+                  handleSend();
                 }
               }}
               disabled={chatSending || chatFetching}
               rows={chatExpanded ? 5 : 3}
               placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
               dir="auto"
-              className="w-full resize-y rounded-xl border border-white/15 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-60"
+              className="hib-dream-chat-input w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-3">
               <p className={`text-xs ${statusToneClass}`}>
@@ -428,7 +487,7 @@ export function PersonaCard({
               </p>
               <button
                 type="button"
-                onClick={onChatSend}
+                onClick={handleSend}
                 disabled={chatSending || chatFetching || !String(chatDraft || "").trim()}
                 className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               >

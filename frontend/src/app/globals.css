@@ -691,6 +691,62 @@ html[data-theme="light"] .hib-bear-prob-value {
   display: none;
 }
 
+.hib-dream-chat-panel {
+  border-color: var(--border-subtle);
+  background-color: rgba(3, 7, 18, 0.78);
+}
+.hib-dream-chat-panel-expanded {
+  background-color: var(--surface-overlay);
+}
+.hib-dream-chat-transcript {
+  border-color: var(--border-subtle);
+  background-color: rgba(2, 6, 14, 0.58);
+}
+.hib-dream-chat-msg-assistant {
+  border-color: var(--border-subtle);
+  background-color: rgba(15, 23, 42, 0.7);
+  color: var(--text-primary);
+}
+.hib-dream-chat-msg-user {
+  border-color: rgba(16, 185, 129, 0.35);
+  background-color: rgba(16, 185, 129, 0.14);
+  color: #d1fae5;
+}
+.hib-dream-chat-input {
+  border-color: var(--border-subtle);
+  background-color: rgba(2, 6, 14, 0.72);
+  color: var(--text-primary);
+}
+.hib-dream-chat-input:focus {
+  border-color: var(--border-strong);
+}
+.hib-dream-chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+html[data-theme="light"] .hib-dream-chat-panel {
+  background-color: rgba(255, 255, 255, 0.96);
+}
+html[data-theme="light"] .hib-dream-chat-panel-expanded {
+  background-color: var(--surface-overlay);
+}
+html[data-theme="light"] .hib-dream-chat-transcript {
+  background-color: rgba(248, 250, 252, 0.98);
+}
+html[data-theme="light"] .hib-dream-chat-msg-assistant {
+  background-color: rgba(255, 255, 255, 0.98);
+  color: var(--text-primary);
+}
+html[data-theme="light"] .hib-dream-chat-msg-user {
+  border-color: rgba(5, 150, 105, 0.45);
+  background-color: rgba(236, 253, 245, 0.96);
+  color: #065f46;
+}
+html[data-theme="light"] .hib-dream-chat-input {
+  background-color: rgba(255, 255, 255, 0.98);
+  color: var(--text-primary);
+}
+
 /* ---------- App shell: sidebar, topbar, auth menu ---------- */
 
 .hib-sidebar {

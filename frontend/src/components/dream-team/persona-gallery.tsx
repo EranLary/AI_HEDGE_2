@@ -36,6 +36,8 @@ type PersonaChatState = {
   draft: string;
   includeAnnual: boolean;
   includeQuarterly: boolean;
+  annualPending: boolean;
+  quarterlyPending: boolean;
   annualReady: boolean;
   quarterlyReady: boolean;
   sending: boolean;
@@ -51,8 +53,22 @@ const slideVariants = {
   exit: (direction: number) => ({ x: direction > 0 ? -60 : 60, opacity: 0 }),
 };
 
+const CHAT_SEND_MAX_ATTEMPTS = 3;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(attempt: number): number {
+  return 350 * (2 ** Math.max(0, attempt - 1));
+}
+
+function isRetryableChatFailure(status: number | null, err: unknown): boolean {
+  if (status !== null) {
+    return status === 408 || status === 429 || status >= 500;
+  }
+  const msg = String(err || "").toLowerCase();
+  return msg.includes("typeerror") || msg.includes("failed to fetch") || msg.includes("network");
 }
 
 function makeEmptyChatState(): PersonaChatState {
@@ -61,6 +77,8 @@ function makeEmptyChatState(): PersonaChatState {
     draft: "",
     includeAnnual: false,
     includeQuarterly: false,
+    annualPending: false,
+    quarterlyPending: false,
     annualReady: false,
     quarterlyReady: false,
     sending: false,
@@ -242,7 +260,13 @@ export function PersonaGallery({
     async (args: { annual: boolean; quarterly: boolean }) => {
       if (!canUseChat) return;
       if (!args.annual && !args.quarterly) return;
-      setActiveChat((prev) => ({ ...prev, fetching: true, error: "" }));
+      setActiveChat((prev) => ({
+        ...prev,
+        fetching: true,
+        error: "",
+        annualPending: args.annual ? true : prev.annualPending,
+        quarterlyPending: args.quarterly ? true : prev.quarterlyPending,
+      }));
       try {
         const res = await fetch(chatApiPath, {
           method: "POST",
@@ -276,6 +300,8 @@ export function PersonaGallery({
           error: "",
           includeAnnual: args.annual ? annualReady || prev.includeAnnual : prev.includeAnnual,
           includeQuarterly: args.quarterly ? quarterlyReady || prev.includeQuarterly : prev.includeQuarterly,
+          annualPending: args.annual ? false : prev.annualPending,
+          quarterlyPending: args.quarterly ? false : prev.quarterlyPending,
           annualReady: args.annual ? annualReady : prev.annualReady,
           quarterlyReady: args.quarterly ? quarterlyReady : prev.quarterlyReady,
           statusMessage: status.message,
@@ -285,6 +311,8 @@ export function PersonaGallery({
         setActiveChat((prev) => ({
           ...prev,
           fetching: false,
+          annualPending: args.annual ? false : prev.annualPending,
+          quarterlyPending: args.quarterly ? false : prev.quarterlyPending,
           statusMessage: "Failed to fetch filing context. Chat continues with base context.",
           statusKind: "error",
           error: "",
@@ -313,30 +341,69 @@ export function PersonaGallery({
       messages: [...prev.messages, pendingUser],
     }));
       try {
-        const res = await fetch(chatApiPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "chat",
-          report_id: currentReportId,
-          persona: active.persona,
-          messages: messagesForRequest.map((row) => ({ role: row.role, content: row.content })),
-          user_message: userMessage,
-          include_annual: activeChat.includeAnnual,
-          include_quarterly: activeChat.includeQuarterly,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
+      let data: {
         error?: string;
         reply?: string;
         filings?: {
           annual?: { available?: boolean };
           quarterly?: { available?: boolean };
         };
-      };
-      if (!res.ok) {
-        throw new Error(toChatError(res.status, data.error || "Failed to send message."));
+      } | null = null;
+      let lastErr: unknown = null;
+      let lastStatus: number | null = null;
+
+      for (let attempt = 1; attempt <= CHAT_SEND_MAX_ATTEMPTS; attempt += 1) {
+        lastStatus = null;
+        try {
+          const res = await fetch(chatApiPath, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "chat",
+              report_id: currentReportId,
+              persona: active.persona,
+              messages: messagesForRequest.map((row) => ({ role: row.role, content: row.content })),
+              user_message: userMessage,
+              include_annual: activeChat.includeAnnual,
+              include_quarterly: activeChat.includeQuarterly,
+            }),
+          });
+
+          const parsed = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            reply?: string;
+            filings?: {
+              annual?: { available?: boolean };
+              quarterly?: { available?: boolean };
+            };
+          };
+
+          if (!res.ok) {
+            lastStatus = res.status;
+            const err = new Error(toChatError(res.status, parsed.error || "Failed to send message."));
+            if (attempt < CHAT_SEND_MAX_ATTEMPTS && isRetryableChatFailure(res.status, err)) {
+              await sleep(retryDelayMs(attempt));
+              continue;
+            }
+            throw err;
+          }
+
+          data = parsed;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < CHAT_SEND_MAX_ATTEMPTS && isRetryableChatFailure(lastStatus, err)) {
+            await sleep(retryDelayMs(attempt));
+            continue;
+          }
+          throw err;
+        }
       }
+
+      if (!data) {
+        throw new Error(String(lastErr || "Failed to send message after retries."));
+      }
+
       const reply = String(data.reply || "").trim();
       if (!reply) {
         throw new Error("Empty persona reply.");
@@ -466,6 +533,8 @@ export function PersonaGallery({
                 chatFetching={activeChat.fetching}
                 includeAnnual={activeChat.includeAnnual}
                 includeQuarterly={activeChat.includeQuarterly}
+                annualPending={activeChat.annualPending}
+                quarterlyPending={activeChat.quarterlyPending}
                 annualReady={activeChat.annualReady}
                 quarterlyReady={activeChat.quarterlyReady}
                 chatError={activeChat.error}

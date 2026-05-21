@@ -73,7 +73,7 @@ export function ReportsTabs({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search ticker or company"
-        className="min-w-[220px] flex-1 rounded-lg border border-white/10 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-400/60 focus:outline-none"
+        className="min-w-[220px] flex-1 rounded-lg border border-white/10 bg-zinc-950/70 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-400/60 focus:outline-none sm:text-sm"
       />
     </div>
   );

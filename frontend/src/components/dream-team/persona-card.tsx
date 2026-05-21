@@ -424,7 +424,7 @@ export function PersonaCard({
             <select
               value={activePersona}
               onChange={(e) => onPersonaSwitch(e.target.value)}
-              className="hib-select rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs outline-none transition hover:border-white/35 focus:border-white/40"
+              className="hib-select rounded-full border border-white/20 bg-white/5 px-3 py-1 text-base outline-none transition hover:border-white/35 focus:border-white/40 sm:text-xs"
             >
               {personas.map((name) => (
                 <option key={name} value={name} className="hib-select-option">

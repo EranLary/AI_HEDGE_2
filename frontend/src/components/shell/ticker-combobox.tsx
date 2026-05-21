@@ -137,7 +137,7 @@ export function TickerCombobox({ collapsed = false, onCollapsedClick }: Combobox
               value={query}
               onChange={(e) => setQuery(e.target.value.toUpperCase())}
               placeholder="Type ticker..."
-              className="w-full rounded-md border border-white/10 bg-black/30 py-1.5 pl-7 pr-7 text-sm uppercase tracking-[0.06em] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-400/50"
+              className="w-full rounded-md border border-white/10 bg-black/30 py-1.5 pl-7 pr-7 text-base uppercase tracking-[0.06em] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-400/50 sm:text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && filtered[0]) {
                   e.preventDefault();

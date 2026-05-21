@@ -52,6 +52,22 @@ const THINKING_WORDS = [
   "Filing Synthesizing",
   "Conclusion Drafting",
   "Decision Refining",
+  "Conviction Testing",
+  "Volatility Assessing",
+  "Exposure Balancing",
+  "Liquidity Reviewing",
+  "Return Optimizing",
+  "Discipline Applying",
+  "Inference Validating",
+  "Evidence Auditing",
+  "Outlier Inspecting",
+  "Trigger Monitoring",
+  "Timing Evaluating",
+  "Framework Aligning",
+  "Signal Filtering",
+  "Quality Verifying",
+  "Narrative Stressing",
+  "Forecast Refining",
 ] as const;
 
 const HEBREW_RE = /[\u0590-\u05FF]/;

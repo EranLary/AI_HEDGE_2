@@ -544,7 +544,7 @@ export function PersonaCard({
               rows={4}
               placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
               dir="auto"
-              className="hib-dream-chat-input w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60"
+              className="hib-dream-chat-input w-full resize-y rounded-xl border px-3 py-2 text-base outline-none transition disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
             />
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">

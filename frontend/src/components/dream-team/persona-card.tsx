@@ -10,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { EyeOff, MessageSquare, Pencil, SquarePen } from "lucide-react";
+import { EyeOff, MessageSquare, Pencil, RotateCcw, SquarePen } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -86,6 +86,7 @@ export function PersonaCard({
   chatOpen,
   chatMessages,
   chatDraft,
+  chatEditing,
   chatSending,
   chatFetching,
   includeAnnual,
@@ -105,6 +106,7 @@ export function PersonaCard({
   onChatSend,
   onStopThinking,
   onEditUserMessage,
+  onCancelEdit,
   onAttachAnnual,
   onAttachQuarterly,
   onAttachBoth,
@@ -122,6 +124,7 @@ export function PersonaCard({
   chatOpen: boolean;
   chatMessages: PersonaChatMessage[];
   chatDraft: string;
+  chatEditing: boolean;
   chatSending: boolean;
   chatFetching: boolean;
   includeAnnual: boolean;
@@ -141,6 +144,7 @@ export function PersonaCard({
   onChatSend: () => void;
   onStopThinking: (sendAfterStop: boolean) => void;
   onEditUserMessage: (messageId: string) => void;
+  onCancelEdit: () => void;
   onAttachAnnual: () => void;
   onAttachQuarterly: () => void;
   onAttachBoth: () => void;
@@ -543,26 +547,40 @@ export function PersonaCard({
               className="hib-dream-chat-input w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-3">
-              <p className={`text-xs ${statusToneClass}`}>
-                {chatSending && !hasStartedAssistantReveal ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <AnimatePresence mode="wait" initial={false}>
-                      <motion.span
-                        key={thinkingWord}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.22 }}
-                        className="text-zinc-300"
-                      >
-                        {thinkingWord}...
-                      </motion.span>
-                    </AnimatePresence>
-                  </span>
-                ) : (
-                  chatSending ? " " : statusLine
-                )}
-              </p>
+              <div className="flex items-center gap-2">
+                {chatEditing && !chatSending ? (
+                  <button
+                    type="button"
+                    onClick={onCancelEdit}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/40 hover:text-zinc-100"
+                    title="Cancel edit"
+                    aria-label="Cancel edit"
+                  >
+                    <RotateCcw size={10} />
+                    Cancel edit
+                  </button>
+                ) : null}
+                <p className={`text-xs ${statusToneClass}`}>
+                  {chatSending && !hasStartedAssistantReveal ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.span
+                          key={thinkingWord}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.22 }}
+                          className="text-zinc-300"
+                        >
+                          {thinkingWord}...
+                        </motion.span>
+                      </AnimatePresence>
+                    </span>
+                  ) : (
+                    chatSending ? " " : statusLine
+                  )}
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => {

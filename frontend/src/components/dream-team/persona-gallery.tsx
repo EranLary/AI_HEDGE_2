@@ -35,6 +35,9 @@ type ChatStatusKind = "neutral" | "success" | "error";
 type PersonaChatState = {
   messages: PersonaChatMessage[];
   draft: string;
+  isEditing: boolean;
+  editBackupMessages: PersonaChatMessage[] | null;
+  editBackupDraft: string;
   includeAnnual: boolean;
   includeQuarterly: boolean;
   annualPending: boolean;
@@ -76,6 +79,9 @@ function makeEmptyChatState(): PersonaChatState {
   return {
     messages: [],
     draft: "",
+    isEditing: false,
+    editBackupMessages: null,
+    editBackupDraft: "",
     includeAnnual: false,
     includeQuarterly: false,
     annualPending: false,
@@ -350,6 +356,9 @@ export function PersonaGallery({
     setActiveChat((prev) => ({
       ...prev,
       draft: "",
+      isEditing: false,
+      editBackupMessages: null,
+      editBackupDraft: "",
       sending: true,
       error: "",
       messages: [...prev.messages, pendingUser],
@@ -530,10 +539,31 @@ export function PersonaGallery({
       const selected = prev.messages[idx];
       return {
         ...prev,
+        isEditing: true,
+        editBackupMessages: prev.messages,
+        editBackupDraft: prev.draft,
         messages: prev.messages.slice(0, idx),
         draft: selected.content,
         error: "",
         statusMessage: "Editing previous message. Update and send.",
+        statusKind: "neutral",
+      };
+    });
+  }, [activeChat.sending, setActiveChat]);
+
+  const cancelEdit = useCallback(() => {
+    if (activeChat.sending) return;
+    setActiveChat((prev) => {
+      if (!prev.isEditing || !prev.editBackupMessages) return prev;
+      return {
+        ...prev,
+        isEditing: false,
+        messages: prev.editBackupMessages,
+        draft: prev.editBackupDraft,
+        editBackupMessages: null,
+        editBackupDraft: "",
+        error: "",
+        statusMessage: "Edit canceled.",
         statusKind: "neutral",
       };
     });
@@ -607,6 +637,7 @@ export function PersonaGallery({
                 chatOpen={activeChatOpen}
                 chatMessages={activeChat.messages}
                 chatDraft={activeChat.draft}
+                chatEditing={activeChat.isEditing}
                 chatSending={activeChat.sending}
                 chatFetching={activeChat.fetching}
                 includeAnnual={activeChat.includeAnnual}
@@ -649,6 +680,9 @@ export function PersonaGallery({
                 }}
                 onEditUserMessage={(messageId) => {
                   editUserMessage(messageId);
+                }}
+                onCancelEdit={() => {
+                  cancelEdit();
                 }}
                 onAttachAnnual={() => {
                   void fetchFilings({ annual: true, quarterly: false });

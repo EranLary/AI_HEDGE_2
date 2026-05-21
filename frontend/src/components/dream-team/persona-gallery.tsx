@@ -165,6 +165,8 @@ export function PersonaGallery({
   const [direction, setDirection] = useState(0);
   const [chatByScope, setChatByScope] = useState<Record<string, PersonaChatState>>({});
   const [chatOpenByScope, setChatOpenByScope] = useState<Record<string, boolean>>({});
+  const sendAbortRef = useRef<AbortController | null>(null);
+  const sendRunIdRef = useRef(0);
 
   const merged: PersonaCardData[] = useMemo(
     () => {
@@ -228,6 +230,15 @@ export function PersonaGallery({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [next, prev, total]);
+
+  useEffect(() => {
+    return () => {
+      sendRunIdRef.current += 1;
+      const controller = sendAbortRef.current;
+      if (controller) controller.abort();
+      sendAbortRef.current = null;
+    };
+  }, []);
 
   if (!total) {
     return <p className="text-sm text-zinc-500">No dream-team personas emitted for this report.</p>;
@@ -323,10 +334,12 @@ export function PersonaGallery({
     [active.persona, canUseChat, chatApiPath, currentReportId, setActiveChat],
   );
 
-  const sendMessage = useCallback(async () => {
+  const sendMessage = useCallback(async (forcedUserMessage?: string) => {
     if (!canUseChat) return;
-    const userMessage = String(activeChat.draft || "").trim();
-    if (!userMessage || activeChat.sending) return;
+    const userMessage = String(forcedUserMessage ?? (activeChat.draft || "")).trim();
+    const hasForcedUserMessage = typeof forcedUserMessage === "string" && forcedUserMessage.trim().length > 0;
+    if (!userMessage || (activeChat.sending && !hasForcedUserMessage)) return;
+
     const pendingUser: PersonaChatMessage = {
       id: `${Date.now()}-u`,
       role: "user",
@@ -341,7 +354,14 @@ export function PersonaGallery({
       error: "",
       messages: [...prev.messages, pendingUser],
     }));
-      try {
+
+    const runId = sendRunIdRef.current + 1;
+    sendRunIdRef.current = runId;
+    const abortController = new AbortController();
+    sendAbortRef.current = abortController;
+    const isRunActive = () => sendRunIdRef.current === runId && !abortController.signal.aborted;
+
+    try {
       let data: {
         error?: string;
         reply?: string;
@@ -354,11 +374,13 @@ export function PersonaGallery({
       let lastStatus: number | null = null;
 
       for (let attempt = 1; attempt <= CHAT_SEND_MAX_ATTEMPTS; attempt += 1) {
+        if (!isRunActive()) return;
         lastStatus = null;
         try {
           const res = await fetch(chatApiPath, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: abortController.signal,
             body: JSON.stringify({
               action: "chat",
               report_id: currentReportId,
@@ -415,6 +437,8 @@ export function PersonaGallery({
       if (!reply) {
         throw new Error("Empty persona reply.");
       }
+      if (!isRunActive()) return;
+
       const assistantMsg: PersonaChatMessage = {
         id: `${Date.now()}-a`,
         role: "assistant",
@@ -435,7 +459,7 @@ export function PersonaGallery({
       const totalTicks = Math.max(1, Math.ceil(pieces.length / chunkSize));
       const tickMs = Math.max(20, Math.floor(2800 / totalTicks));
       let idx = 0;
-      while (idx < pieces.length) {
+      while (idx < pieces.length && isRunActive()) {
         idx = Math.min(pieces.length, idx + chunkSize);
         const partial = pieces.slice(0, idx).join("");
         setActiveChat((prev) => ({
@@ -447,16 +471,22 @@ export function PersonaGallery({
         await sleep(tickMs);
       }
 
+      if (!isRunActive()) return;
       setActiveChat((prev) => ({
         ...prev,
         sending: false,
       }));
     } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
       setActiveChat((prev) => ({
         ...prev,
         sending: false,
         error: String(err || "Failed to send message."),
       }));
+    } finally {
+      if (sendAbortRef.current === abortController) {
+        sendAbortRef.current = null;
+      }
     }
   }, [
     active.persona,
@@ -470,6 +500,44 @@ export function PersonaGallery({
     currentReportId,
     setActiveChat,
   ]);
+
+  const stopThinking = useCallback((sendAfterStop: boolean) => {
+    const shouldSend = sendAfterStop && String(activeChat.draft || "").trim().length > 0;
+    sendRunIdRef.current += 1;
+    const controller = sendAbortRef.current;
+    if (controller) controller.abort();
+    sendAbortRef.current = null;
+    setActiveChat((prev) => ({
+      ...prev,
+      sending: false,
+      error: "",
+      statusMessage: shouldSend ? "Stopped current response. Sending your new message..." : "Response stopped.",
+      statusKind: "neutral",
+    }));
+    if (shouldSend) {
+      const draftToSend = String(activeChat.draft || "").trim();
+      window.setTimeout(() => {
+        void sendMessage(draftToSend);
+      }, 0);
+    }
+  }, [activeChat.draft, sendMessage, setActiveChat]);
+
+  const editUserMessage = useCallback((messageId: string) => {
+    if (activeChat.sending) return;
+    setActiveChat((prev) => {
+      const idx = prev.messages.findIndex((row) => row.id === messageId && row.role === "user");
+      if (idx < 0) return prev;
+      const selected = prev.messages[idx];
+      return {
+        ...prev,
+        messages: prev.messages.slice(0, idx),
+        draft: selected.content,
+        error: "",
+        statusMessage: "Editing previous message. Update and send.",
+        statusKind: "neutral",
+      };
+    });
+  }, [activeChat.sending, setActiveChat]);
 
   return (
     <div className="relative">
@@ -563,6 +631,10 @@ export function PersonaGallery({
                   if (idx >= 0) goTo(idx);
                 }}
                 onNewChat={() => {
+                  sendRunIdRef.current += 1;
+                  const controller = sendAbortRef.current;
+                  if (controller) controller.abort();
+                  sendAbortRef.current = null;
                   setChatByScope((prev) => ({
                     ...prev,
                     [activeScopeKey]: makeEmptyChatState(),
@@ -571,6 +643,12 @@ export function PersonaGallery({
                 }}
                 onChatSend={() => {
                   void sendMessage();
+                }}
+                onStopThinking={(sendAfterStop) => {
+                  stopThinking(sendAfterStop);
+                }}
+                onEditUserMessage={(messageId) => {
+                  editUserMessage(messageId);
                 }}
                 onAttachAnnual={() => {
                   void fetchFilings({ annual: true, quarterly: false });

@@ -10,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { MessageSquare, SquarePen, X } from "lucide-react";
+import { EyeOff, MessageSquare, Pencil, SquarePen } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -103,6 +103,8 @@ export function PersonaCard({
   onPersonaSwitch,
   onNewChat,
   onChatSend,
+  onStopThinking,
+  onEditUserMessage,
   onAttachAnnual,
   onAttachQuarterly,
   onAttachBoth,
@@ -137,12 +139,14 @@ export function PersonaCard({
   onPersonaSwitch: (persona: string) => void;
   onNewChat: () => void;
   onChatSend: () => void;
+  onStopThinking: (sendAfterStop: boolean) => void;
+  onEditUserMessage: (messageId: string) => void;
   onAttachAnnual: () => void;
   onAttachQuarterly: () => void;
   onAttachBoth: () => void;
 }) {
   const theme = getPersonaTheme(member.persona);
-  const [thinkingWordIndex, setThinkingWordIndex] = useState(0);
+  const [thinkingWord, setThinkingWord] = useState("Thinking");
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
 
@@ -165,28 +169,44 @@ export function PersonaCard({
 
   useEffect(() => {
     if (!chatSending) {
-      setThinkingWordIndex(0);
+      setThinkingWord("Thinking");
       return;
     }
-    setThinkingWordIndex((prev) => {
-      if (THINKING_WORDS.length <= 1) return 0;
-      let next = prev;
-      while (next === prev) {
-        next = Math.floor(Math.random() * THINKING_WORDS.length);
+    setThinkingWord("Thinking");
+    let cancelled = false;
+    let stage = 0;
+    let timerId: number | null = null;
+    let prevRandom = "";
+
+    const randomDelayMs = () => 2200 + Math.floor(Math.random() * 1401);
+    const pickRandomPhrase = () => {
+      if (THINKING_WORDS.length <= 1) return THINKING_WORDS[0] || "Analyzing company";
+      let next = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)] || "Analyzing company";
+      while (next === prevRandom) {
+        next = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)] || "Analyzing company";
       }
+      prevRandom = next;
       return next;
-    });
-    const id = window.setInterval(() => {
-      setThinkingWordIndex((prev) => {
-        if (THINKING_WORDS.length <= 1) return 0;
-        let next = prev;
-        while (next === prev) {
-          next = Math.floor(Math.random() * THINKING_WORDS.length);
+    };
+
+    const schedule = () => {
+      timerId = window.setTimeout(() => {
+        if (cancelled) return;
+        if (stage === 0) {
+          setThinkingWord("Analyzing company");
+          stage = 1;
+        } else {
+          setThinkingWord(pickRandomPhrase());
         }
-        return next;
-      });
-    }, 2600);
-    return () => window.clearInterval(id);
+        schedule();
+      }, randomDelayMs());
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
   }, [chatSending]);
 
   useEffect(() => {
@@ -207,6 +227,15 @@ export function PersonaCard({
       scrollTranscriptToBottom(chatSending ? "auto" : "smooth");
     }
   }, [chatMessages, chatSending, chatOpen]);
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [chatOpen]);
 
   const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -259,7 +288,6 @@ export function PersonaCard({
   const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
-  const thinkingWord = THINKING_WORDS[thinkingWordIndex];
   const latestMessage = chatMessages.length ? chatMessages[chatMessages.length - 1] : null;
   const hasStartedAssistantReveal =
     Boolean(latestMessage) &&
@@ -268,6 +296,8 @@ export function PersonaCard({
   const annualButtonDisabled = chatSending || annualPending || includeAnnual;
   const quarterlyButtonDisabled = chatSending || quarterlyPending || includeQuarterly;
   const bothButtonDisabled = chatSending || annualPending || quarterlyPending || (includeAnnual && includeQuarterly);
+  const draftTrimmed = String(chatDraft || "").trim();
+  const stopWillSend = chatSending && draftTrimmed.length > 0;
   const statusLine = chatFetching
     ? "Fetching filing context..."
     : chatSending
@@ -357,7 +387,7 @@ export function PersonaCard({
       </header>
 
       {canUseChat && chatOpen ? (
-        <section className="hib-dream-chat-panel hib-dream-chat-panel-expanded fixed inset-3 z-[70] flex flex-col rounded-2xl px-4 py-3 shadow-2xl backdrop-blur sm:inset-8 sm:px-8">
+        <section className="hib-dream-chat-panel hib-dream-chat-panel-expanded fixed inset-0 z-[70] flex h-[100dvh] w-screen flex-col rounded-none px-4 py-3 shadow-2xl backdrop-blur sm:px-8">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="font-display text-sm text-zinc-200">
               Chat with {activePersona} AI persona about {ticker}
@@ -379,7 +409,7 @@ export function PersonaCard({
                 title="Hide chat"
                 aria-label="Hide chat"
               >
-                <X size={12} />
+                <EyeOff size={12} />
                 Hide chat
               </button>
             </div>
@@ -472,6 +502,18 @@ export function PersonaCard({
                   <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
                     {msg.role === "assistant" ? (msg.persona || activePersona) : "You"}
                   </p>
+                  {msg.role === "user" && !chatSending ? (
+                    <button
+                      type="button"
+                      onClick={() => onEditUserMessage(msg.id)}
+                      className="mb-1 inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+                      title="Edit this message"
+                      aria-label="Edit this message"
+                    >
+                      <Pencil size={10} />
+                      Edit
+                    </button>
+                  ) : null}
                   <div className={HEBREW_RE.test(msg.content) ? "text-right leading-8" : "text-left leading-7"}>
                     <MarkdownBlock text={msg.content} />
                   </div>
@@ -487,10 +529,14 @@ export function PersonaCard({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  handleSend();
+                  if (chatSending) {
+                    onStopThinking(stopWillSend);
+                  } else {
+                    handleSend();
+                  }
                 }
               }}
-              disabled={chatSending || chatFetching}
+              disabled={chatFetching}
               rows={4}
               placeholder={`Ask ${member.persona} about valuation, assumptions, or risk...`}
               dir="auto"
@@ -519,11 +565,17 @@ export function PersonaCard({
               </p>
               <button
                 type="button"
-                onClick={handleSend}
-                disabled={chatSending || chatFetching || !String(chatDraft || "").trim()}
+                onClick={() => {
+                  if (chatSending) {
+                    onStopThinking(stopWillSend);
+                  } else {
+                    handleSend();
+                  }
+                }}
+                disabled={chatFetching || (!chatSending && !draftTrimmed)}
                 className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {chatSending ? "Sending..." : "Send"}
+                {chatSending ? (stopWillSend ? "Stop & Send" : "Stop") : "Send"}
               </button>
             </div>
           </div>

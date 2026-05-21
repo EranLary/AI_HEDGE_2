@@ -23,11 +23,128 @@ type DreamOutput = {
   reason_sections?: Array<{ path?: string; label: string; text: string }>;
 };
 
+type PersonaChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  persona?: string;
+};
+
+type ChatStatusKind = "neutral" | "success" | "error";
+
+type PersonaChatState = {
+  messages: PersonaChatMessage[];
+  draft: string;
+  isEditing: boolean;
+  editBackupMessages: PersonaChatMessage[] | null;
+  editBackupDraft: string;
+  includeAnnual: boolean;
+  includeQuarterly: boolean;
+  annualPending: boolean;
+  quarterlyPending: boolean;
+  annualReady: boolean;
+  quarterlyReady: boolean;
+  sending: boolean;
+  fetching: boolean;
+  error: string;
+  statusMessage: string;
+  statusKind: ChatStatusKind;
+};
+
 const slideVariants = {
   enter: (direction: number) => ({ x: direction > 0 ? 60 : -60, opacity: 0 }),
   center: { x: 0, opacity: 1 },
   exit: (direction: number) => ({ x: direction > 0 ? -60 : 60, opacity: 0 }),
 };
+
+const CHAT_SEND_MAX_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(attempt: number): number {
+  return 350 * (2 ** Math.max(0, attempt - 1));
+}
+
+function isRetryableChatFailure(status: number | null, err: unknown): boolean {
+  if (status !== null) {
+    return status === 408 || status === 429 || status >= 500;
+  }
+  const msg = String(err || "").toLowerCase();
+  return msg.includes("typeerror") || msg.includes("failed to fetch") || msg.includes("network");
+}
+
+function makeEmptyChatState(): PersonaChatState {
+  return {
+    messages: [],
+    draft: "",
+    isEditing: false,
+    editBackupMessages: null,
+    editBackupDraft: "",
+    includeAnnual: false,
+    includeQuarterly: false,
+    annualPending: false,
+    quarterlyPending: false,
+    annualReady: false,
+    quarterlyReady: false,
+    sending: false,
+    fetching: false,
+    error: "",
+    statusMessage: "",
+    statusKind: "neutral",
+  };
+}
+
+function chatScopeKey(reportId: string): string {
+  return String(reportId || "").trim();
+}
+
+function toChatError(status: number, fallback: string): string {
+  void status;
+  return fallback;
+}
+
+function filingAttachStatus(args: { annual: boolean; quarterly: boolean }, annualReady: boolean, quarterlyReady: boolean): {
+  message: string;
+  kind: ChatStatusKind;
+} {
+  if (args.annual && args.quarterly) {
+    if (annualReady && quarterlyReady) {
+      return { message: "Annual and quarterly filing context attached.", kind: "success" };
+    }
+    if (annualReady && !quarterlyReady) {
+      return {
+        message: "Annual filing attached. Quarterly filing not found; chat continues with base context for quarterly.",
+        kind: "error",
+      };
+    }
+    if (!annualReady && quarterlyReady) {
+      return {
+        message: "Quarterly filing attached. Annual filing not found; chat continues with base context for annual.",
+        kind: "error",
+      };
+    }
+    return {
+      message: "No annual or quarterly filing found right now. Chat continues with base context.",
+      kind: "error",
+    };
+  }
+
+  if (args.annual) {
+    return annualReady
+      ? { message: "Annual filing context attached.", kind: "success" }
+      : { message: "Annual filing not found right now. Chat continues with base context.", kind: "error" };
+  }
+
+  if (args.quarterly) {
+    return quarterlyReady
+      ? { message: "Quarterly filing context attached.", kind: "success" }
+      : { message: "Quarterly filing not found right now. Chat continues with base context.", kind: "error" };
+  }
+
+  return { message: "", kind: "neutral" };
+}
 
 export function PersonaGallery({
   personas,
@@ -38,6 +155,8 @@ export function PersonaGallery({
   ticker,
   reports,
   currentReportId,
+  showReportSelector = true,
+  canUseChat,
 }: {
   personas: DreamTeamMember[];
   dreamOutputs: DreamOutput[];
@@ -47,9 +166,15 @@ export function PersonaGallery({
   ticker: string;
   reports: ReportListItem[];
   currentReportId: string;
+  showReportSelector?: boolean;
+  canUseChat: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+  const [chatByScope, setChatByScope] = useState<Record<string, PersonaChatState>>({});
+  const [chatOpenByScope, setChatOpenByScope] = useState<Record<string, boolean>>({});
+  const sendAbortRef = useRef<AbortController | null>(null);
+  const sendRunIdRef = useRef(0);
 
   const merged: PersonaCardData[] = useMemo(
     () => {
@@ -114,12 +239,338 @@ export function PersonaGallery({
     return () => window.removeEventListener("keydown", handler);
   }, [next, prev, total]);
 
+  useEffect(() => {
+    return () => {
+      sendRunIdRef.current += 1;
+      const controller = sendAbortRef.current;
+      if (controller) controller.abort();
+      sendAbortRef.current = null;
+    };
+  }, []);
+
   if (!total) {
     return <p className="text-sm text-zinc-500">No dream-team personas emitted for this report.</p>;
   }
 
   const active = merged[activeIndex];
   const activeTheme = getPersonaTheme(active.persona);
+  const activeScopeKey = chatScopeKey(currentReportId);
+  const activeChat = chatByScope[activeScopeKey] || makeEmptyChatState();
+  const activeChatOpen = Boolean(chatOpenByScope[activeScopeKey]);
+  const currentReport = reports.find((r) => r.report_id === currentReportId) || reports[0] || null;
+
+  const setActiveChat = useCallback(
+    (updater: (prev: PersonaChatState) => PersonaChatState) => {
+      setChatByScope((prev) => {
+        const current = prev[activeScopeKey] || makeEmptyChatState();
+        return {
+          ...prev,
+          [activeScopeKey]: updater(current),
+        };
+      });
+    },
+    [activeScopeKey],
+  );
+
+  const chatApiPath = useMemo(
+    () => `/api/dashboard/${encodeURIComponent(ticker)}/dream-team/chat`,
+    [ticker],
+  );
+
+  const fetchFilings = useCallback(
+    async (args: { annual: boolean; quarterly: boolean }) => {
+      if (!canUseChat) return;
+      if (!args.annual && !args.quarterly) return;
+      setActiveChat((prev) => ({
+        ...prev,
+        fetching: true,
+        error: "",
+        annualPending: args.annual ? true : prev.annualPending,
+        quarterlyPending: args.quarterly ? true : prev.quarterlyPending,
+      }));
+      try {
+        const res = await fetch(chatApiPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "fetch_filings",
+            report_id: currentReportId,
+            persona: active.persona,
+            include_annual: args.annual,
+            include_quarterly: args.quarterly,
+            messages: [],
+            user_message: "",
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          filings?: {
+            annual?: { available?: boolean };
+            quarterly?: { available?: boolean };
+          };
+        };
+        if (!res.ok) {
+          throw new Error(toChatError(res.status, data.error || "Failed to fetch filings."));
+        }
+        const annualReady = Boolean(data.filings?.annual?.available);
+        const quarterlyReady = Boolean(data.filings?.quarterly?.available);
+        const status = filingAttachStatus(args, annualReady, quarterlyReady);
+        setActiveChat((prev) => ({
+          ...prev,
+          fetching: false,
+          error: "",
+          includeAnnual: args.annual ? annualReady || prev.includeAnnual : prev.includeAnnual,
+          includeQuarterly: args.quarterly ? quarterlyReady || prev.includeQuarterly : prev.includeQuarterly,
+          annualPending: args.annual ? false : prev.annualPending,
+          quarterlyPending: args.quarterly ? false : prev.quarterlyPending,
+          annualReady: args.annual ? annualReady : prev.annualReady,
+          quarterlyReady: args.quarterly ? quarterlyReady : prev.quarterlyReady,
+          statusMessage: status.message,
+          statusKind: status.kind,
+        }));
+      } catch (err) {
+        setActiveChat((prev) => ({
+          ...prev,
+          fetching: false,
+          annualPending: args.annual ? false : prev.annualPending,
+          quarterlyPending: args.quarterly ? false : prev.quarterlyPending,
+          statusMessage: "Failed to fetch filing context. Chat continues with base context.",
+          statusKind: "error",
+          error: "",
+        }));
+      }
+    },
+    [active.persona, canUseChat, chatApiPath, currentReportId, setActiveChat],
+  );
+
+  const sendMessage = useCallback(async (forcedUserMessage?: string) => {
+    if (!canUseChat) return;
+    const userMessage = String(forcedUserMessage ?? (activeChat.draft || "")).trim();
+    const hasForcedUserMessage = typeof forcedUserMessage === "string" && forcedUserMessage.trim().length > 0;
+    if (!userMessage || (activeChat.sending && !hasForcedUserMessage)) return;
+
+    const pendingUser: PersonaChatMessage = {
+      id: `${Date.now()}-u`,
+      role: "user",
+      content: userMessage,
+    };
+    const messagesForRequest = [...activeChat.messages, pendingUser].slice(-20);
+
+    setActiveChat((prev) => ({
+      ...prev,
+      draft: "",
+      isEditing: false,
+      editBackupMessages: null,
+      editBackupDraft: "",
+      sending: true,
+      error: "",
+      messages: [...prev.messages, pendingUser],
+    }));
+
+    const runId = sendRunIdRef.current + 1;
+    sendRunIdRef.current = runId;
+    const abortController = new AbortController();
+    sendAbortRef.current = abortController;
+    const isRunActive = () => sendRunIdRef.current === runId && !abortController.signal.aborted;
+
+    try {
+      let data: {
+        error?: string;
+        reply?: string;
+        filings?: {
+          annual?: { available?: boolean };
+          quarterly?: { available?: boolean };
+        };
+      } | null = null;
+      let lastErr: unknown = null;
+      let lastStatus: number | null = null;
+
+      for (let attempt = 1; attempt <= CHAT_SEND_MAX_ATTEMPTS; attempt += 1) {
+        if (!isRunActive()) return;
+        lastStatus = null;
+        try {
+          const res = await fetch(chatApiPath, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: abortController.signal,
+            body: JSON.stringify({
+              action: "chat",
+              report_id: currentReportId,
+              persona: active.persona,
+              messages: messagesForRequest.map((row) => ({
+                role: row.role,
+                content:
+                  row.role === "assistant"
+                    ? `[Assistant: ${String(row.persona || active.persona)}] ${row.content}`
+                    : row.content,
+              })),
+              user_message: userMessage,
+              include_annual: activeChat.includeAnnual,
+              include_quarterly: activeChat.includeQuarterly,
+            }),
+          });
+
+          const parsed = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            reply?: string;
+            filings?: {
+              annual?: { available?: boolean };
+              quarterly?: { available?: boolean };
+            };
+          };
+
+          if (!res.ok) {
+            lastStatus = res.status;
+            const err = new Error(toChatError(res.status, parsed.error || "Failed to send message."));
+            if (attempt < CHAT_SEND_MAX_ATTEMPTS && isRetryableChatFailure(res.status, err)) {
+              await sleep(retryDelayMs(attempt));
+              continue;
+            }
+            throw err;
+          }
+
+          data = parsed;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < CHAT_SEND_MAX_ATTEMPTS && isRetryableChatFailure(lastStatus, err)) {
+            await sleep(retryDelayMs(attempt));
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!data) {
+        throw new Error(String(lastErr || "Failed to send message after retries."));
+      }
+
+      const reply = String(data.reply || "").trim();
+      if (!reply) {
+        throw new Error("Empty persona reply.");
+      }
+      if (!isRunActive()) return;
+
+      const assistantMsg: PersonaChatMessage = {
+        id: `${Date.now()}-a`,
+        role: "assistant",
+        content: "",
+        persona: active.persona,
+      };
+      setActiveChat((prev) => ({
+        ...prev,
+        messages: [...prev.messages, assistantMsg],
+        annualReady: Boolean(data.filings?.annual?.available) || prev.annualReady,
+        quarterlyReady: Boolean(data.filings?.quarterly?.available) || prev.quarterlyReady,
+        statusMessage: prev.statusMessage,
+        statusKind: prev.statusKind,
+      }));
+
+      const pieces = reply.match(/\S+\s*/g) || [reply];
+      const chunkSize = Math.max(1, Math.ceil(pieces.length / 90));
+      const totalTicks = Math.max(1, Math.ceil(pieces.length / chunkSize));
+      const tickMs = Math.max(20, Math.floor(2800 / totalTicks));
+      let idx = 0;
+      while (idx < pieces.length && isRunActive()) {
+        idx = Math.min(pieces.length, idx + chunkSize);
+        const partial = pieces.slice(0, idx).join("");
+        setActiveChat((prev) => ({
+          ...prev,
+          messages: prev.messages.map((row) =>
+            row.id === assistantMsg.id ? { ...row, content: partial } : row,
+          ),
+        }));
+        await sleep(tickMs);
+      }
+
+      if (!isRunActive()) return;
+      setActiveChat((prev) => ({
+        ...prev,
+        sending: false,
+      }));
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setActiveChat((prev) => ({
+        ...prev,
+        sending: false,
+        error: String(err || "Failed to send message."),
+      }));
+    } finally {
+      if (sendAbortRef.current === abortController) {
+        sendAbortRef.current = null;
+      }
+    }
+  }, [
+    active.persona,
+    activeChat.draft,
+    activeChat.includeAnnual,
+    activeChat.includeQuarterly,
+    activeChat.messages,
+    activeChat.sending,
+    canUseChat,
+    chatApiPath,
+    currentReportId,
+    setActiveChat,
+  ]);
+
+  const stopThinking = useCallback((sendAfterStop: boolean) => {
+    const shouldSend = sendAfterStop && String(activeChat.draft || "").trim().length > 0;
+    sendRunIdRef.current += 1;
+    const controller = sendAbortRef.current;
+    if (controller) controller.abort();
+    sendAbortRef.current = null;
+    setActiveChat((prev) => ({
+      ...prev,
+      sending: false,
+      error: "",
+      statusMessage: shouldSend ? "Stopped current response. Sending your new message..." : "Response stopped.",
+      statusKind: "neutral",
+    }));
+    if (shouldSend) {
+      const draftToSend = String(activeChat.draft || "").trim();
+      window.setTimeout(() => {
+        void sendMessage(draftToSend);
+      }, 0);
+    }
+  }, [activeChat.draft, sendMessage, setActiveChat]);
+
+  const editUserMessage = useCallback((messageId: string) => {
+    if (activeChat.sending) return;
+    setActiveChat((prev) => {
+      const idx = prev.messages.findIndex((row) => row.id === messageId && row.role === "user");
+      if (idx < 0) return prev;
+      const selected = prev.messages[idx];
+      return {
+        ...prev,
+        isEditing: true,
+        editBackupMessages: prev.messages,
+        editBackupDraft: prev.draft,
+        messages: prev.messages.slice(0, idx),
+        draft: selected.content,
+        error: "",
+        statusMessage: "Editing previous message. Update and send.",
+        statusKind: "neutral",
+      };
+    });
+  }, [activeChat.sending, setActiveChat]);
+
+  const cancelEdit = useCallback(() => {
+    if (activeChat.sending) return;
+    setActiveChat((prev) => {
+      if (!prev.isEditing || !prev.editBackupMessages) return prev;
+      return {
+        ...prev,
+        isEditing: false,
+        messages: prev.editBackupMessages,
+        draft: prev.editBackupDraft,
+        editBackupMessages: null,
+        editBackupDraft: "",
+        error: "",
+        statusMessage: "Edit canceled.",
+        statusKind: "neutral",
+      };
+    });
+  }, [activeChat.sending, setActiveChat]);
 
   return (
     <div className="relative">
@@ -131,8 +582,25 @@ export function PersonaGallery({
         aria-hidden
       />
 
-      <div className="mb-3 flex items-center justify-end">
-        <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <PersonaDropdown
+          personas={merged.map((row) => String(row.persona || "").trim()).filter(Boolean)}
+          activePersona={active.persona}
+          onSelect={(persona) => {
+            const idx = merged.findIndex((row) => String(row.persona || "").trim() === persona);
+            if (idx >= 0) goTo(idx);
+          }}
+        />
+        {showReportSelector ? (
+          <ReportVersionDropdown reports={reports} currentReportId={currentReportId} ticker={ticker} />
+        ) : (
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 text-[11px] font-medium text-zinc-300 backdrop-blur">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">Latest Report</span>
+            <span className="font-mono text-[11px] text-zinc-100">
+              {currentReport ? fmtReportLabel(currentReport) : "N/A"}
+            </span>
+          </div>
+        )}
       </div>
       <div className="hib-disclaimer-amber mb-3 rounded-xl border px-3 py-2 text-xs">
         Disclaimer: Dream Team views are AI PERSONA simulations for research workflow support, not real investor quotes or advice.
@@ -169,11 +637,74 @@ export function PersonaGallery({
             >
               <PersonaCard
                 member={active}
+                ticker={ticker}
+                personas={merged.map((row) => String(row.persona || "").trim()).filter(Boolean)}
+                activePersona={active.persona}
                 ctx={ctx}
                 currentPrice={currentPrice}
                 liveCurrentPrice={liveCurrentPrice}
                 index={activeIndex}
                 total={total}
+                canUseChat={canUseChat}
+                chatOpen={activeChatOpen}
+                chatMessages={activeChat.messages}
+                chatDraft={activeChat.draft}
+                chatEditing={activeChat.isEditing}
+                chatSending={activeChat.sending}
+                chatFetching={activeChat.fetching}
+                includeAnnual={activeChat.includeAnnual}
+                includeQuarterly={activeChat.includeQuarterly}
+                annualPending={activeChat.annualPending}
+                quarterlyPending={activeChat.quarterlyPending}
+                annualReady={activeChat.annualReady}
+                quarterlyReady={activeChat.quarterlyReady}
+                chatError={activeChat.error}
+                chatStatusMessage={activeChat.statusMessage}
+                chatStatusKind={activeChat.statusKind}
+                onChatDraftChange={(value) => setActiveChat((prev) => ({ ...prev, draft: value }))}
+                onOpenChat={() => {
+                  if (!canUseChat) return;
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: true }));
+                }}
+                onCloseChat={() => {
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: false }));
+                }}
+                onPersonaSwitch={(persona) => {
+                  const idx = merged.findIndex((row) => String(row.persona || "").trim() === String(persona || "").trim());
+                  if (idx >= 0) goTo(idx);
+                }}
+                onNewChat={() => {
+                  sendRunIdRef.current += 1;
+                  const controller = sendAbortRef.current;
+                  if (controller) controller.abort();
+                  sendAbortRef.current = null;
+                  setChatByScope((prev) => ({
+                    ...prev,
+                    [activeScopeKey]: makeEmptyChatState(),
+                  }));
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: true }));
+                }}
+                onChatSend={() => {
+                  void sendMessage();
+                }}
+                onStopThinking={(sendAfterStop) => {
+                  stopThinking(sendAfterStop);
+                }}
+                onEditUserMessage={(messageId) => {
+                  editUserMessage(messageId);
+                }}
+                onCancelEdit={() => {
+                  cancelEdit();
+                }}
+                onAttachAnnual={() => {
+                  void fetchFilings({ annual: true, quarterly: false });
+                }}
+                onAttachQuarterly={() => {
+                  void fetchFilings({ annual: false, quarterly: true });
+                }}
+                onAttachBoth={() => {
+                  void fetchFilings({ annual: true, quarterly: true });
+                }}
               />
             </motion.div>
           </AnimatePresence>
@@ -229,6 +760,86 @@ function fmtReportLabel(report: ReportListItem): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function PersonaDropdown({
+  personas,
+  activePersona,
+  onSelect,
+}: {
+  personas: string[];
+  activePersona: string;
+  onSelect: (persona: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!personas.length) return null;
+  const single = personas.length === 1;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => !single && setOpen((v) => !v)}
+        disabled={single}
+        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 text-[11px] font-medium text-zinc-300 backdrop-blur transition hover:border-white/30 hover:text-zinc-100 disabled:cursor-default disabled:hover:border-white/10 disabled:hover:text-zinc-300"
+        aria-haspopup={single ? undefined : "listbox"}
+        aria-expanded={open}
+      >
+        <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">Valuator</span>
+        <span className="max-w-[150px] truncate font-mono text-[11px] text-zinc-100">{activePersona}</span>
+        {!single && <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />}
+      </button>
+
+      {open && !single ? (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur"
+        >
+          {personas.map((persona) => {
+            const isActive = persona === activePersona;
+            return (
+              <button
+                key={persona}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => {
+                  onSelect(persona);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition ${
+                  isActive
+                    ? "bg-emerald-500/10 text-emerald-100"
+                    : "text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
+                }`}
+              >
+                <span className="truncate">{persona}</span>
+                {isActive ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ReportVersionDropdown({

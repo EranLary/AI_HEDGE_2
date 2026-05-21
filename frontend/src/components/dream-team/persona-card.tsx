@@ -10,7 +10,7 @@ import {
   prettyReasonLabel,
   type CurrencyContext,
 } from "@/components/hedge-dashboard";
-import { Maximize2, Minimize2, MessageSquare, X } from "lucide-react";
+import { Maximize2, Minimize2, MessageSquare, SquarePen, X } from "lucide-react";
 
 import { getPersonaTheme } from "./persona-themes";
 
@@ -26,6 +26,7 @@ type PersonaChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  persona?: string;
 };
 
 type ChatStatusKind = "neutral" | "success" | "error";
@@ -75,6 +76,8 @@ const HEBREW_RE = /[\u0590-\u05FF]/;
 export function PersonaCard({
   member,
   ticker,
+  personas,
+  activePersona,
   ctx,
   currentPrice,
   liveCurrentPrice,
@@ -98,6 +101,8 @@ export function PersonaCard({
   onChatDraftChange,
   onOpenChat,
   onCloseChat,
+  onPersonaSwitch,
+  onNewChat,
   onChatSend,
   onAttachAnnual,
   onAttachQuarterly,
@@ -105,6 +110,8 @@ export function PersonaCard({
 }: {
   member: PersonaCardData;
   ticker: string;
+  personas: string[];
+  activePersona: string;
   ctx: CurrencyContext;
   currentPrice: number | null | undefined;
   liveCurrentPrice: number | null | undefined;
@@ -128,6 +135,8 @@ export function PersonaCard({
   onChatDraftChange: (value: string) => void;
   onOpenChat: () => void;
   onCloseChat: () => void;
+  onPersonaSwitch: (persona: string) => void;
+  onNewChat: () => void;
   onChatSend: () => void;
   onAttachAnnual: () => void;
   onAttachQuarterly: () => void;
@@ -173,6 +182,7 @@ export function PersonaCard({
       shouldStickToBottomRef.current = true;
       return;
     }
+    setChatExpanded(true);
     shouldStickToBottomRef.current = true;
     const id = window.requestAnimationFrame(() => {
       scrollTranscriptToBottom("auto");
@@ -342,9 +352,18 @@ export function PersonaCard({
         >
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="font-display text-sm text-zinc-200">
-              Chat with {member.persona} AI persona about {ticker}
+              Chat with {activePersona} AI persona about {ticker}
             </h3>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onNewChat}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 text-zinc-300 transition hover:border-white/35 hover:text-zinc-100"
+                title="Start new chat"
+                aria-label="Start new chat"
+              >
+                <SquarePen size={12} />
+              </button>
               <button
                 type="button"
                 onClick={() => setChatExpanded((prev) => !prev)}
@@ -362,6 +381,21 @@ export function PersonaCard({
                 Close
               </button>
             </div>
+          </div>
+
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Valuator</span>
+            <select
+              value={activePersona}
+              onChange={(e) => onPersonaSwitch(e.target.value)}
+              className="hib-select rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs outline-none transition hover:border-white/35 focus:border-white/40"
+            >
+              {personas.map((name) => (
+                <option key={name} value={name} className="hib-select-option">
+                  {name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -436,16 +470,14 @@ export function PersonaCard({
                   style={{ unicodeBidi: "plaintext" }}
                 >
                   <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-zinc-400">
-                    {msg.role === "assistant" ? member.persona : "You"}
+                    {msg.role === "assistant" ? (msg.persona || activePersona) : "You"}
                   </p>
                   <div className={HEBREW_RE.test(msg.content) ? "text-right leading-8" : "text-left leading-7"}>
                     <MarkdownBlock text={msg.content} />
                   </div>
                 </div>
               ))
-            ) : (
-              <p className="text-xs text-zinc-500">Start chatting with this AI persona.</p>
-            )}
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-col gap-2">

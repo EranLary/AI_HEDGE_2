@@ -27,6 +27,7 @@ type PersonaChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  persona?: string;
 };
 
 type ChatStatusKind = "neutral" | "success" | "error";
@@ -89,8 +90,8 @@ function makeEmptyChatState(): PersonaChatState {
   };
 }
 
-function chatScopeKey(reportId: string, persona: string): string {
-  return `${String(reportId || "").trim()}::${String(persona || "").trim()}`;
+function chatScopeKey(reportId: string): string {
+  return String(reportId || "").trim();
 }
 
 function toChatError(status: number, fallback: string): string {
@@ -234,7 +235,7 @@ export function PersonaGallery({
 
   const active = merged[activeIndex];
   const activeTheme = getPersonaTheme(active.persona);
-  const activeScopeKey = chatScopeKey(currentReportId, active.persona);
+  const activeScopeKey = chatScopeKey(currentReportId);
   const activeChat = chatByScope[activeScopeKey] || makeEmptyChatState();
   const activeChatOpen = Boolean(chatOpenByScope[activeScopeKey]);
 
@@ -362,7 +363,13 @@ export function PersonaGallery({
               action: "chat",
               report_id: currentReportId,
               persona: active.persona,
-              messages: messagesForRequest.map((row) => ({ role: row.role, content: row.content })),
+              messages: messagesForRequest.map((row) => ({
+                role: row.role,
+                content:
+                  row.role === "assistant"
+                    ? `[Assistant: ${String(row.persona || active.persona)}] ${row.content}`
+                    : row.content,
+              })),
               user_message: userMessage,
               include_annual: activeChat.includeAnnual,
               include_quarterly: activeChat.includeQuarterly,
@@ -412,6 +419,7 @@ export function PersonaGallery({
         id: `${Date.now()}-a`,
         role: "assistant",
         content: "",
+        persona: active.persona,
       };
       setActiveChat((prev) => ({
         ...prev,
@@ -520,6 +528,8 @@ export function PersonaGallery({
               <PersonaCard
                 member={active}
                 ticker={ticker}
+                personas={merged.map((row) => String(row.persona || "").trim()).filter(Boolean)}
+                activePersona={active.persona}
                 ctx={ctx}
                 currentPrice={currentPrice}
                 liveCurrentPrice={liveCurrentPrice}
@@ -547,6 +557,17 @@ export function PersonaGallery({
                 }}
                 onCloseChat={() => {
                   setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: false }));
+                }}
+                onPersonaSwitch={(persona) => {
+                  const idx = merged.findIndex((row) => String(row.persona || "").trim() === String(persona || "").trim());
+                  if (idx >= 0) goTo(idx);
+                }}
+                onNewChat={() => {
+                  setChatByScope((prev) => ({
+                    ...prev,
+                    [activeScopeKey]: makeEmptyChatState(),
+                  }));
+                  setChatOpenByScope((prev) => ({ ...prev, [activeScopeKey]: true }));
                 }}
                 onChatSend={() => {
                   void sendMessage();

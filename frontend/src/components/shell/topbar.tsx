@@ -96,26 +96,28 @@ function SectionPills({
   const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
 
   return (
-    <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 sm:gap-2">
-      {SECTIONS.map((s) => {
-        const active = activeSection === s.slug;
-        const href = `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}${suffix}`;
-        const Icon = s.icon;
-        return (
-          <Link
-            key={s.slug}
-            href={href}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
-              active
-                ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
-                : "border-white/15 bg-white/5 text-zinc-300 hover:border-white/30 hover:text-zinc-100"
-            }`}
-          >
-            <Icon size={12} />
-            <span>{s.label}</span>
-          </Link>
-        );
-      })}
+    <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 px-1 sm:gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:gap-2">
+        {SECTIONS.map((s) => {
+          const active = activeSection === s.slug;
+          const href = `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}${suffix}`;
+          const Icon = s.icon;
+          return (
+            <Link
+              key={s.slug}
+              href={href}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                active
+                  ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
+                  : "border-white/15 bg-white/5 text-zinc-300 hover:border-white/30 hover:text-zinc-100"
+              }`}
+            >
+              <Icon size={12} />
+              <span>{s.label}</span>
+            </Link>
+          );
+        })}
+      </div>
       <PdfDownloadMenu activeTicker={activeTicker} reportParam={reportParam} />
     </nav>
   );

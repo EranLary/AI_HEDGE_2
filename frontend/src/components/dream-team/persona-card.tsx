@@ -441,12 +441,21 @@ export function PersonaCard({
             <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Valuator</span>
             <div className="flex flex-wrap gap-2">
               {personaPickerRows.map((row) => {
-                const toneClass =
-                  row.tone === "up"
-                    ? "border-emerald-500/55 bg-emerald-500/20 text-emerald-100"
-                    : row.tone === "down"
-                      ? "border-red-500/55 bg-red-500/20 text-red-100"
-                      : "border-white/20 bg-white/5 text-zinc-200";
+                const toneClass = row.isActive
+                  ? (
+                    row.tone === "up"
+                      ? "border-emerald-500/60 bg-emerald-500/24 text-emerald-100"
+                      : row.tone === "down"
+                        ? "border-red-500/60 bg-red-500/24 text-red-100"
+                        : "border-white/25 bg-white/10 text-zinc-100"
+                  )
+                  : (
+                    row.tone === "up"
+                      ? "border-emerald-500/35 bg-emerald-500/8 text-zinc-300"
+                      : row.tone === "down"
+                        ? "border-red-500/35 bg-red-500/8 text-zinc-300"
+                        : "border-white/20 bg-white/5 text-zinc-300"
+                  );
                 const activeClass = row.isActive
                   ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
                   : "hover:border-white/40";
@@ -558,18 +567,9 @@ export function PersonaCard({
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="hib-dream-chat-transcript mt-4 flex min-h-[170px] items-end rounded-xl border px-4 py-3">
-              <div className="space-y-1">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Ready to chat</p>
-                <p className="text-sm text-zinc-300">
-                  You are chatting with <span className="font-semibold text-zinc-100">{activePersona}</span>. Ask your first question below.
-                </p>
-              </div>
-            </div>
-          )}
+          ) : null}
 
-          <div className="mt-4 flex flex-col gap-2">
+          <div className={`${chatMessages.length > 0 ? "mt-4" : "mt-8"} flex flex-col gap-2`}>
             <textarea
               value={chatDraft}
               onChange={(e) => onChatDraftChange(e.target.value)}

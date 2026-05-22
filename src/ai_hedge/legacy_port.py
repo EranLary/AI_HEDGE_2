@@ -3393,6 +3393,7 @@ Output schema (must match exactly):
   "base_rationale": "string",
   "bear": [number, number, number, number, number],
   "bear_rationale": "string",
+  "representative_ev_current": number,
   "investment_amount": number,
   "investment_rationale": "string"
 }
@@ -3404,6 +3405,7 @@ Definitions:
 - probability must be decimal (0..1), not percent string.
 - fcf_next_year must be absolute full units in U.S. dollars.
 - g, WACC, and TERMINAL must be decimal ratios (example: 0.10 for 10%).
+- representative_ev_current must be a single positive full-unit enterprise value (EV) anchor for the company today.
 - investment_amount is capital allocated out of a $100,000 notional budget in [-100000, 100000].
 
 Rules:
@@ -3585,6 +3587,7 @@ Output schema (must match exactly):
   "bear_rationale": "string",
   "ev_sales_multiple": number,
   "ev_sales_rationale": "string",
+  "representative_ev_current": number,
   "investment_amount": number,
   "investment_rationale": "string"
 }
@@ -3594,6 +3597,7 @@ Definitions:
 - probability must be decimal in [0,1], and all scenario probabilities must sum to 1.0 (+/-0.001 tolerance).
 - revenue_3y_normalized must be absolute numeric revenue in full units (not percentages, not K/M abbreviations).
 - ev_sales_multiple must be one shared long-term EV/S multiple used across all scenarios.
+- representative_ev_current must be a single positive full-unit enterprise value (EV) anchor for the company today.
 - "step_by_step_analysis" should justify scenario separation, probability weights, revenue normalization, and multiple discipline.
 - "investment_amount" must be in [-100000, 100000], and "investment_rationale" must explain the position size.
 
@@ -3618,6 +3622,7 @@ Output schema (must match exactly):
   "base_rationale": "string",
   "bear": [number, number, number, number, number, number],
   "bear_rationale": "string",
+  "representative_revenue_current_year": number,
   "investment_amount": number,
   "investment_rationale": "string"
 }
@@ -3630,10 +3635,11 @@ Rules:
 2) growth/margin/tax must be decimal ratios (for example 0.18, not 18).
 3) net_financing_result must be a full absolute numeric value (can be negative).
 4) pe_multiple must be numeric and single-value per scenario.
-5) Keep step_by_step_analysis and rationale fields as single complete strings.
-6) "investment_amount" must be in [-100000, 100000].
-7) Do not output ranges, null/NaN, nested objects, or extra top-level keys.
-8) ZERO POLITENESS: output raw JSON only.
+5) representative_revenue_current_year must be a single positive full-unit revenue number for the current-year anchor used by your own understanding.
+6) Keep step_by_step_analysis and rationale fields as single complete strings.
+7) "investment_amount" must be in [-100000, 100000].
+8) Do not output ranges, null/NaN, nested objects, or extra top-level keys.
+9) ZERO POLITENESS: output raw JSON only.
 """
 
 instructions_sotp_scenario = """Based on the input you receive, produce a probabilistic 3-scenario SOTP valuation (Bull / Base / Bear).
@@ -3789,6 +3795,12 @@ def extract_scenario_dcf_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    representative_ev_raw = data.get("representative_ev_current")
+    representative_ev_current = None
+    if isinstance(representative_ev_raw, (int, float)) and not isinstance(representative_ev_raw, bool):
+        representative_ev_current = float(representative_ev_raw)
+        if representative_ev_current <= 0:
+            representative_ev_current = None
 
     scenarios: Dict[str, Dict[str, float]] = {}
     for scenario_name in ["bull", "base", "bear"]:
@@ -3825,6 +3837,7 @@ def extract_scenario_dcf_json(text: str) -> Dict[str, Any]:
 
     return {
         "scenarios": scenarios,
+        "representative_ev_current": representative_ev_current,
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
     }
@@ -4001,6 +4014,12 @@ def extract_revenue_scenario_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    representative_ev_raw = data.get("representative_ev_current")
+    representative_ev_current = None
+    if isinstance(representative_ev_raw, (int, float)) and not isinstance(representative_ev_raw, bool):
+        representative_ev_current = float(representative_ev_raw)
+        if representative_ev_current <= 0:
+            representative_ev_current = None
 
     if not isinstance(data["ev_sales_multiple"], (int, float)) or isinstance(data["ev_sales_multiple"], bool):
         return {}
@@ -4031,6 +4050,7 @@ def extract_revenue_scenario_json(text: str) -> Dict[str, Any]:
     return {
         "scenarios": scenarios,
         "ev_sales_multiple": ev_sales_multiple,
+        "representative_ev_current": representative_ev_current,
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
     }
@@ -4049,6 +4069,12 @@ def extract_composite_scenario_json(text: str) -> Dict[str, Any]:
     if not investment_fields:
         return {}
     investment_amount, investment_rationale = investment_fields
+    representative_revenue_raw = data.get("representative_revenue_current_year")
+    representative_revenue_current_year = None
+    if isinstance(representative_revenue_raw, (int, float)) and not isinstance(representative_revenue_raw, bool):
+        representative_revenue_current_year = float(representative_revenue_raw)
+        if representative_revenue_current_year <= 0:
+            representative_revenue_current_year = None
 
     scenarios: Dict[str, Dict[str, float]] = {}
     for scenario in ["bull", "base", "bear"]:
@@ -4076,6 +4102,7 @@ def extract_composite_scenario_json(text: str) -> Dict[str, Any]:
 
     return {
         "scenarios": scenarios,
+        "representative_revenue_current_year": representative_revenue_current_year,
         "investment_amount": investment_amount,
         "investment_rationale": investment_rationale,
     }
@@ -4292,9 +4319,14 @@ def build_prompt(ticker, financial_dict, instruction, text):
   return prompt
 
 
-def calculate_dcf(variable_dict, fcf0, wacc, g, terminal_g, years=5):
+def calculate_dcf(variable_dict, fcf0, wacc, g, terminal_g, years=5, representative_ev_current=None):
     shares_outstanding = variable_dict["shares_outstanding"]
-    diff = variable_dict["ev"] - variable_dict["market_cap"]
+    ev_anchor = float(variable_dict.get("ev", 0) or 0)
+    if isinstance(representative_ev_current, (int, float)) and not isinstance(representative_ev_current, bool):
+        candidate_ev = float(representative_ev_current)
+        if candidate_ev > 0:
+            ev_anchor = candidate_ev
+    diff = ev_anchor - variable_dict["market_cap"]
 
     if terminal_g >= wacc:
         return 0
@@ -4326,7 +4358,7 @@ def calculate_dcf(variable_dict, fcf0, wacc, g, terminal_g, years=5):
     return share
 
 
-def calculate_scenario_dcf(variable_dict, scenarios_dict):
+def calculate_scenario_dcf(variable_dict, scenarios_dict, representative_ev_current=None):
     expected_price = 0.0
     weighted_fcf = 0.0
     weighted_g = 0.0
@@ -4342,7 +4374,16 @@ def calculate_scenario_dcf(variable_dict, scenarios_dict):
         wacc = float(payload.get("wacc", 0.0))
         terminal_g = float(payload.get("terminal_g", 0.0))
 
-        scenario_price = float(calculate_dcf(variable_dict, fcf, wacc, g, terminal_g))
+        scenario_price = float(
+            calculate_dcf(
+                variable_dict,
+                fcf,
+                wacc,
+                g,
+                terminal_g,
+                representative_ev_current=representative_ev_current,
+            )
+        )
         per_scenario_prices[scenario_name] = scenario_price
 
         expected_price += p * scenario_price
@@ -4356,6 +4397,11 @@ def calculate_scenario_dcf(variable_dict, scenarios_dict):
 
     return {
         "expected_price": expected_price,
+        "representative_ev_current": (
+            float(representative_ev_current)
+            if isinstance(representative_ev_current, (int, float)) and not isinstance(representative_ev_current, bool) and float(representative_ev_current) > 0
+            else float(variable_dict.get("ev", 0) or 0)
+        ),
         "weighted_fcf_next_year": weighted_fcf,
         "weighted_g": weighted_g,
         "weighted_wacc": weighted_wacc,
@@ -4363,8 +4409,13 @@ def calculate_scenario_dcf(variable_dict, scenarios_dict):
         "per_scenario_prices": per_scenario_prices,
     }
 
-def calculate_ps(variable_dict, ev_sales_multiple, revenue):
-    diff = variable_dict["ev"] - variable_dict["market_cap"]
+def calculate_ps(variable_dict, ev_sales_multiple, revenue, representative_ev_current=None):
+    ev_anchor = float(variable_dict.get("ev", 0) or 0)
+    if isinstance(representative_ev_current, (int, float)) and not isinstance(representative_ev_current, bool):
+        candidate_ev = float(representative_ev_current)
+        if candidate_ev > 0:
+            ev_anchor = candidate_ev
+    diff = ev_anchor - variable_dict["market_cap"]
     ev = ev_sales_multiple * revenue
     fmc = ev - diff
     shares_outstanding = variable_dict["shares_outstanding"]
@@ -4416,27 +4467,32 @@ def calculate_bbb_ni_pe(variable_dict, scenarios_dict, pe_multiple):
     return 0, ni
   return share_price, ni
 
-def calculate_revenue_scenario(variable_dict, scenarios_dict, ev_sales_multiple):
+def calculate_revenue_scenario(variable_dict, scenarios_dict, ev_sales_multiple, representative_ev_current=None):
   expected_revenue = 0.0
   per_scenario_prices: Dict[str, float] = {}
   for scenario_name in ["bear", "base", "bull"]:
     payload = scenarios_dict.get(scenario_name, {})
     prob = float(payload.get("probability", 0.0))
     revenue_3y = float(payload.get("revenue_3y", 0.0))
-    scenario_price = float(calculate_ps(variable_dict, ev_sales_multiple, revenue_3y))
+    scenario_price = float(calculate_ps(variable_dict, ev_sales_multiple, revenue_3y, representative_ev_current=representative_ev_current))
     per_scenario_prices[scenario_name] = scenario_price
     expected_revenue += prob * revenue_3y
-  expected_price = float(calculate_ps(variable_dict, ev_sales_multiple, expected_revenue))
+  expected_price = float(calculate_ps(variable_dict, ev_sales_multiple, expected_revenue, representative_ev_current=representative_ev_current))
   if expected_price < 0:
     expected_price = 0.0
   return {
       "expected_price": expected_price,
       "expected_revenue_3y": expected_revenue,
       "ev_sales_multiple": float(ev_sales_multiple),
+      "representative_ev_current": (
+          float(representative_ev_current)
+          if isinstance(representative_ev_current, (int, float)) and not isinstance(representative_ev_current, bool) and float(representative_ev_current) > 0
+          else float(variable_dict.get("ev", 0) or 0)
+      ),
       "per_scenario_prices": per_scenario_prices,
   }
 
-def calculate_composite_scenario(variable_dict, scenarios_dict):
+def calculate_composite_scenario(variable_dict, scenarios_dict, representative_revenue_current_year=None):
   expected_price = 0.0
   expected_revenue = 0.0
   expected_net_income = 0.0
@@ -4447,6 +4503,11 @@ def calculate_composite_scenario(variable_dict, scenarios_dict):
   weighted_tax = 0.0
   weighted_pe = 0.0
   per_scenario_prices: Dict[str, float] = {}
+  revenue_anchor = float(variable_dict.get("revenue", 0) or 0)
+  if isinstance(representative_revenue_current_year, (int, float)) and not isinstance(representative_revenue_current_year, bool):
+    candidate_anchor = float(representative_revenue_current_year)
+    if candidate_anchor > 0:
+      revenue_anchor = candidate_anchor
 
   for scenario_name in ["bear", "base", "bull"]:
     payload = scenarios_dict.get(scenario_name, {})
@@ -4457,7 +4518,7 @@ def calculate_composite_scenario(variable_dict, scenarios_dict):
     tax_rate = float(payload.get("tax_rate", 0.0))
     pe = float(payload.get("pe_multiple", 0.0))
     scenario_price, scenario_revenue, scenario_ni, _ = calculate_forest_logic(
-        variable_dict, growth, margin, net_financing, tax_rate, pe
+        variable_dict, growth, margin, net_financing, tax_rate, pe, revenue_override=revenue_anchor
     )
     per_scenario_prices[scenario_name] = float(scenario_price)
     expected_price += prob * float(scenario_price)
@@ -4474,6 +4535,7 @@ def calculate_composite_scenario(variable_dict, scenarios_dict):
     expected_price = 0.0
   return {
       "expected_price": expected_price,
+      "representative_revenue_current_year": revenue_anchor,
       "expected_revenue_3y": expected_revenue,
       "expected_net_income_3y": expected_net_income,
       "expected_pe_multiple": expected_pe,
@@ -4529,8 +4591,11 @@ def calculate_sotp_scenario(variable_dict, scenarios_dict):
       "weighted_activity_market_cap": weighted_activity_market_cap,
   }
 
-def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe):
-  revenue = variable_dict["revenue"]
+def calculate_forest_logic(variable_dict, growth, op_margin, net_financing, tax_rate, pe, revenue_override=None):
+  if isinstance(revenue_override, (int, float)) and not isinstance(revenue_override, bool):
+    revenue = float(revenue_override)
+  else:
+    revenue = float(variable_dict.get("revenue", 0) or 0)
   if revenue <= 0:
     return 0, 0, 0, 0
   shares_outstanding = variable_dict["shares_outstanding"]
@@ -4563,7 +4628,11 @@ def get_bbb_tp(bbb_tp_json, variables_dict):
     return []
 
 def get_scenario_dcf(scenario_dcf_json, variables_dict):
-  calc = calculate_scenario_dcf(variables_dict, scenario_dcf_json["scenarios"])
+  calc = calculate_scenario_dcf(
+      variables_dict,
+      scenario_dcf_json["scenarios"],
+      scenario_dcf_json.get("representative_ev_current"),
+  )
   expected_price = float(calc["expected_price"])
   if expected_price > 0:
     return [expected_price], calc
@@ -4582,6 +4651,7 @@ def get_revenue_scenario(revenue_scenario_json, variables_dict):
       variables_dict,
       revenue_scenario_json["scenarios"],
       revenue_scenario_json["ev_sales_multiple"],
+      revenue_scenario_json.get("representative_ev_current"),
   )
   expected_price = float(calc["expected_price"])
   expected_revenue = float(calc["expected_revenue_3y"])
@@ -4591,7 +4661,11 @@ def get_revenue_scenario(revenue_scenario_json, variables_dict):
   return [], [ev_sales_multiple], [expected_revenue], calc
 
 def get_composite_scenario(composite_scenario_json, variables_dict):
-  calc = calculate_composite_scenario(variables_dict, composite_scenario_json["scenarios"])
+  calc = calculate_composite_scenario(
+      variables_dict,
+      composite_scenario_json["scenarios"],
+      composite_scenario_json.get("representative_revenue_current_year"),
+  )
   expected_price = float(calc["expected_price"])
   expected_revenue = float(calc["expected_revenue_3y"])
   expected_net_income = float(calc["expected_net_income_3y"])
@@ -5047,6 +5121,7 @@ def scenario_dcf_full(
       raw_for_detail["g"] = [weighted_g, weighted_g]
       raw_for_detail["WACC"] = [weighted_wacc, weighted_wacc]
       raw_for_detail["TERMINAL"] = [weighted_terminal, weighted_terminal]
+      raw_for_detail["representative_ev_current"] = float(calc.get("representative_ev_current", 0.0))
       details.append(
           {
               "target_price": float(prices[0]) if prices else None,
@@ -5243,6 +5318,7 @@ def revenue_scenario_full(
       raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
       ev_sales_multiple = float(revenue_json.get("ev_sales_multiple", 0.0))
       raw_for_detail["ev_sales_multiple"] = [ev_sales_multiple, ev_sales_multiple]
+      raw_for_detail["representative_ev_current"] = float(calc.get("representative_ev_current", 0.0))
       details.append(
           {
               "target_price": float(price[0]) if price else None,
@@ -5313,6 +5389,9 @@ def composite_scenario_full(
             float(scenario_payload.get("pe_multiple", 0.0)),
         ]
       raw_for_detail["revenue_3y"] = float(calc.get("expected_revenue_3y", 0.0))
+      raw_for_detail["representative_revenue_current_year"] = float(
+          calc.get("representative_revenue_current_year", 0.0)
+      )
       raw_for_detail["net_income_3y"] = float(calc.get("expected_net_income_3y", 0.0))
       raw_for_detail["revenue_growth_3y_avg"] = float(calc.get("weighted_growth", 0.0))
       raw_for_detail["operating_profitability_margin"] = float(calc.get("weighted_margin", 0.0))

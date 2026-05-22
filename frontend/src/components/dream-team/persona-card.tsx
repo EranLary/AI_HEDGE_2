@@ -432,6 +432,10 @@ export function PersonaCard({
               </button>
             </div>
           </div>
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px]">
+            <span className="uppercase tracking-[0.14em] text-zinc-500">Talking now</span>
+            <span className="font-semibold text-zinc-100">{activePersona}</span>
+          </div>
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Valuator</span>
@@ -443,7 +447,9 @@ export function PersonaCard({
                     : row.tone === "down"
                       ? "border-red-500/55 bg-red-500/20 text-red-100"
                       : "border-white/20 bg-white/5 text-zinc-200";
-                const activeClass = row.isActive ? "ring-1 ring-white/40" : "hover:border-white/40";
+                const activeClass = row.isActive
+                  ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
+                  : "hover:border-white/40";
                 return (
                   <button
                     key={row.name}
@@ -452,7 +458,10 @@ export function PersonaCard({
                     className={`rounded-full border px-3 py-1 text-[11px] transition ${toneClass} ${activeClass}`}
                     aria-pressed={row.isActive}
                   >
-                    {row.name}
+                    <span className="inline-flex items-center gap-1">
+                      {row.isActive ? <span className="text-[10px] leading-none text-sky-200">●</span> : null}
+                      <span>{row.name}</span>
+                    </span>
                   </button>
                 );
               })}
@@ -549,9 +558,18 @@ export function PersonaCard({
                 </div>
               ))}
             </div>
-          ) : null}
+          ) : (
+            <div className="hib-dream-chat-transcript mt-4 flex min-h-[170px] items-end rounded-xl border px-4 py-3">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Ready to chat</p>
+                <p className="text-sm text-zinc-300">
+                  You are chatting with <span className="font-semibold text-zinc-100">{activePersona}</span>. Ask your first question below.
+                </p>
+              </div>
+            </div>
+          )}
 
-          <div className="mt-3 flex flex-col gap-2">
+          <div className="mt-4 flex flex-col gap-2">
             <textarea
               value={chatDraft}
               onChange={(e) => onChatDraftChange(e.target.value)}

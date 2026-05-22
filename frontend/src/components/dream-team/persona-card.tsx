@@ -22,6 +22,11 @@ export type PersonaCardData = {
   reason_sections: Array<{ path?: string; label: string; text: string }>;
 };
 
+type PersonaPickerOption = {
+  name: string;
+  targetPrice: number | null;
+};
+
 type PersonaChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -113,7 +118,7 @@ export function PersonaCard({
 }: {
   member: PersonaCardData;
   ticker: string;
-  personas: string[];
+  personas: PersonaPickerOption[];
   activePersona: string;
   ctx: CurrencyContext;
   currentPrice: number | null | undefined;
@@ -292,6 +297,15 @@ export function PersonaCard({
   const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
+  const personaPickerRows = personas.map((row) => {
+    const target = typeof row.targetPrice === "number" && Number.isFinite(row.targetPrice) ? row.targetPrice : null;
+    const isNeutral = typeof currentPrice !== "number" || !Number.isFinite(currentPrice) || target === null || Math.abs(target - currentPrice) < 1e-9;
+    return {
+      ...row,
+      isActive: row.name === activePersona,
+      tone: isNeutral ? "neutral" : target > currentPrice ? "up" : "down",
+    };
+  });
   const latestMessage = chatMessages.length ? chatMessages[chatMessages.length - 1] : null;
   const hasStartedAssistantReveal =
     Boolean(latestMessage) &&
@@ -421,17 +435,28 @@ export function PersonaCard({
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Valuator</span>
-            <select
-              value={activePersona}
-              onChange={(e) => onPersonaSwitch(e.target.value)}
-              className="hib-select rounded-full border border-white/20 bg-white/5 px-3 py-1 text-base outline-none transition hover:border-white/35 focus:border-white/40 sm:text-xs"
-            >
-              {personas.map((name) => (
-                <option key={name} value={name} className="hib-select-option">
-                  {name}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap gap-2">
+              {personaPickerRows.map((row) => {
+                const toneClass =
+                  row.tone === "up"
+                    ? "border-emerald-500/55 bg-emerald-500/20 text-emerald-100"
+                    : row.tone === "down"
+                      ? "border-red-500/55 bg-red-500/20 text-red-100"
+                      : "border-white/20 bg-white/5 text-zinc-200";
+                const activeClass = row.isActive ? "ring-1 ring-white/40" : "hover:border-white/40";
+                return (
+                  <button
+                    key={row.name}
+                    type="button"
+                    onClick={() => onPersonaSwitch(row.name)}
+                    className={`rounded-full border px-3 py-1 text-[11px] transition ${toneClass} ${activeClass}`}
+                    aria-pressed={row.isActive}
+                  >
+                    {row.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">

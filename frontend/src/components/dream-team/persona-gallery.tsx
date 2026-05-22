@@ -638,7 +638,12 @@ export function PersonaGallery({
               <PersonaCard
                 member={active}
                 ticker={ticker}
-                personas={merged.map((row) => String(row.persona || "").trim()).filter(Boolean)}
+                personas={merged
+                  .map((row) => ({
+                    name: String(row.persona || "").trim(),
+                    targetPrice: typeof row.target_price === "number" && Number.isFinite(row.target_price) ? row.target_price : null,
+                  }))
+                  .filter((row) => row.name)}
                 activePersona={active.persona}
                 ctx={ctx}
                 currentPrice={currentPrice}

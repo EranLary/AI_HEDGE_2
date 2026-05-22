@@ -57,11 +57,6 @@ def _maybe_start_preview_keepalive() -> Tuple[Optional[threading.Event], Optiona
     return (stop_event, thread)
 
 
-def _write_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def _append_progress_line(progress_file: str, message: str) -> None:
     try:
         progress_path = Path(progress_file)
@@ -108,6 +103,8 @@ def main() -> int:
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
 
+    from ai_hedge.io.status import make_default_sink
+
     ticker = str(args.ticker or "").strip().upper()
     output_dir = str(Path(args.output_dir).resolve())
     status_file = Path(args.status_file).resolve()
@@ -122,6 +119,7 @@ def main() -> int:
         except Exception:
             existing_status = {}
 
+    sink = make_default_sink(status_file)
     job_id = _job_id_from_status(existing_status, output_dir)
     running_payload: Dict[str, Any] = {
         "job_id": job_id,
@@ -145,7 +143,7 @@ def main() -> int:
         "report_id": None,
         "persistence_error": "",
     }
-    _write_json(status_file, running_payload)
+    sink.update_status(running_payload)
 
     def _write_running_progress() -> None:
         with lock:
@@ -158,7 +156,7 @@ def main() -> int:
             "llm_completed": completed,
             "llm_progress_pct": round(pct, 2),
         }
-        _write_json(status_file, payload)
+        sink.update_status(payload)
 
     keepalive_stop, keepalive_thread = _maybe_start_preview_keepalive()
 
@@ -250,13 +248,13 @@ def main() -> int:
                     "status": "failed",
                     "error": persistence_error or "DB persistence failed.",
                 }
-                _write_json(status_file, failed_payload)
+                sink.update_status(failed_payload)
                 _append_progress_line(progress_file, "Site Run Finalized: failed")
                 legacy_port._deepseek_simple_full = original_full
                 legacy_port.deepseek_simple_text = original_deepseek
                 return 1
 
-            _write_json(status_file, completed_with_warning)
+            sink.update_status(completed_with_warning)
             _append_progress_line(progress_file, "Site Run Finalized: completed")
             legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
@@ -271,7 +269,7 @@ def main() -> int:
             "llm_progress_pct": 100.0,
             "report_id": report_id,
         }
-        _write_json(status_file, completed_payload)
+        sink.update_status(completed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: completed")
         legacy_port._deepseek_simple_full = original_full
         legacy_port.deepseek_simple_text = original_deepseek
@@ -286,7 +284,7 @@ def main() -> int:
             "error": str(exc),
             "traceback": traceback.format_exc(limit=6),
         }
-        _write_json(status_file, failed_payload)
+        sink.update_status(failed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: failed")
         return 1
     finally:

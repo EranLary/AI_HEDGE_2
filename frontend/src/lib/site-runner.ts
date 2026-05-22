@@ -30,6 +30,11 @@ export type RunStatusPayload = {
 const APP_BOOT_TIME_MS = Date.now();
 const APP_BOOT_ISO = new Date(APP_BOOT_TIME_MS).toISOString();
 let staleRunsReconciled = false;
+let staleRunsReconciledViaSql = false;
+
+export function appBootIso(): string {
+  return APP_BOOT_ISO;
+}
 
 export function repoRoot(): string {
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), "..");
@@ -164,4 +169,17 @@ export function reconcileStaleRunsAfterRestart(): void {
   } catch {
     // ignore marker failures
   }
+}
+
+/**
+ * SQL-based equivalent of `reconcileStaleRunsAfterRestart`. Runs at most once
+ * per process so we don't re-fire on every request. Best-effort — when Neon is
+ * unreachable the FS reconciler still runs above and is authoritative until
+ * Phase 2 drops the FS sink.
+ */
+export async function reconcileStaleRunsViaSql(): Promise<void> {
+  if (staleRunsReconciledViaSql) return;
+  staleRunsReconciledViaSql = true;
+  const { failStaleRunsViaSql } = await import("@/lib/site-runs-db");
+  await failStaleRunsViaSql({ appBootAt: APP_BOOT_ISO });
 }

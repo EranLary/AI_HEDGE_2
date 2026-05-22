@@ -161,7 +161,9 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
                 <ThemeToggle className="h-8 px-2 py-1.5" />
                 <AuthMenu menuDirection="up" />
               </div>
-            ) : null}
+            ) : (
+              <ThemeToggle />
+            )}
           </div>
         </div>
       ) : null}

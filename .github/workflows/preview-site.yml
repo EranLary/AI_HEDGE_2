@@ -171,7 +171,9 @@ jobs:
         run: |
           # Bypass auth on per-PR previews — Google OAuth doesn't permit
           # wildcard redirect URIs for pr-N-* hostnames. Never set on prod.
-          args=("AUTH_BYPASS_PREVIEW=1")
+          # PREVIEW_KEEPALIVE keeps the machine alive during analysis runs so the
+          # detached worker isn't killed by Fly auto-stop (see scripts/site_run.py).
+          args=("AUTH_BYPASS_PREVIEW=1" "PREVIEW_KEEPALIVE=1")
           if [ -z "$DEEPSEEK_API_KEY" ]; then
             echo "::warning::DEEPSEEK_API_KEY secret not set - preview will be missing it."
           else
@@ -271,7 +273,7 @@ jobs:
             - Volume forked from prod on PR open; staleness accepted until close.
             - Site DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
             - **Obs DB is the prod obs DB** (no branching). Pipeline runs from this preview write `obs_runs` / `obs_calls` rows tagged with `source = "preview-pr-${{ github.event.pull_request.number }}"` so they're easy to filter or clean up later.
-            - Machine auto-stops when idle, auto-starts on request.
+            - Machine auto-stops when idle, auto-starts on request. It stays up for the duration of an active analysis run (self-ping keep-alive), then auto-stops — so mid-run analyses survive a closed tab.
             - Tear-down (Fly app + volume + Neon branch) runs automatically when this PR is closed.
 
   teardown:

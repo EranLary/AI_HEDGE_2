@@ -6,13 +6,55 @@ import os
 import sys
 import threading
 import traceback
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _maybe_start_preview_keepalive() -> Tuple[Optional[threading.Event], Optional[threading.Thread]]:
+    """Keep a Fly *preview* machine alive while this run executes.
+
+    Preview machines run with ``auto_stop_machines = "stop"`` so they shut down
+    when the Fly edge proxy sees no inbound traffic. A detached run gets killed
+    mid-flight once the browser tab closes and polling stops. To prevent that we
+    self-ping our own *public* hostname every 30s — the request egresses to the
+    Fly proxy and routes back in, resetting the idle timer. Loopback pings do not
+    count (the proxy never sees them), so the public URL is required.
+
+    Gated to previews only: needs ``PREVIEW_KEEPALIVE`` truthy *and* a Fly-injected
+    ``FLY_APP_NAME``. Prod never sets ``PREVIEW_KEEPALIVE``; local dev has no
+    ``FLY_APP_NAME``. Returns ``(None, None)`` when disabled. Best-effort: ping
+    failures are swallowed so they can never affect the run.
+    """
+    flag = str(os.getenv("PREVIEW_KEEPALIVE", "") or "").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return (None, None)
+    app = str(os.getenv("FLY_APP_NAME", "") or "").strip()
+    if not app:
+        return (None, None)
+
+    url = f"https://{app}.fly.dev/api/health"
+    stop_event = threading.Event()
+
+    def _loop() -> None:
+        while True:
+            try:
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    resp.read(0)
+            except Exception:
+                # best-effort: a failed ping must never surface
+                pass
+            if stop_event.wait(30):
+                return
+
+    thread = threading.Thread(target=_loop, name="preview-keepalive", daemon=True)
+    thread.start()
+    return (stop_event, thread)
 
 
 def _append_progress_line(progress_file: str, message: str) -> None:
@@ -115,6 +157,8 @@ def main() -> int:
             "llm_progress_pct": round(pct, 2),
         }
         sink.update_status(payload)
+
+    keepalive_stop, keepalive_thread = _maybe_start_preview_keepalive()
 
     try:
         from ai_hedge import legacy_port
@@ -243,6 +287,13 @@ def main() -> int:
         sink.update_status(failed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: failed")
         return 1
+    finally:
+        # Stop the preview keep-alive so the machine can auto-stop once the run
+        # ends. Runs on every return/exception path above.
+        if keepalive_stop is not None:
+            keepalive_stop.set()
+        if keepalive_thread is not None:
+            keepalive_thread.join(timeout=2)
 
 
 if __name__ == "__main__":

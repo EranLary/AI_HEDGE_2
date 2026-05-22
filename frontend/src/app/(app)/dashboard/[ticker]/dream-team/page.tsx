@@ -5,18 +5,17 @@ import { DreamTeamClient } from "./dream-team-client";
 
 export default async function DashboardDreamTeamPage({
   params,
-  searchParams,
+  searchParams: _searchParams,
 }: {
   params: Promise<{ ticker: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { ticker } = await params;
-  const search = (await searchParams) ?? {};
-  const reportId = typeof search.report === "string" ? search.report : undefined;
 
   let resolved;
   try {
-    resolved = await loadTickerData(ticker, reportId);
+    // Dream Team blog page is always pinned to the latest report for this ticker.
+    resolved = await loadTickerData(ticker);
   } catch (err) {
     const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
     return <DashboardError error={(err as Error)?.message || "Failed to load dashboard"} ticker={upper} />;
@@ -27,6 +26,7 @@ export default async function DashboardDreamTeamPage({
     return <DashboardError error="No data" ticker={upper} />;
   }
   const live = await getLivePerformance(upper).catch(() => null);
+  const canUseChat = true;
 
   return (
     <DreamTeamClient
@@ -35,6 +35,7 @@ export default async function DashboardDreamTeamPage({
       reportsForTicker={reportsForTicker}
       resolvedReportId={resolvedReportId}
       liveCurrentPrice={typeof live?.current_price === "number" ? live.current_price : null}
+      canUseChat={canUseChat}
     />
   );
 }

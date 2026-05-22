@@ -10,6 +10,7 @@ export type DreamTeamClientProps = {
   reportsForTicker: ReportListItem[];
   resolvedReportId: string;
   liveCurrentPrice: number | null;
+  canUseChat: boolean;
 };
 
 export function DreamTeamClient({
@@ -18,6 +19,7 @@ export function DreamTeamClient({
   reportsForTicker,
   resolvedReportId,
   liveCurrentPrice,
+  canUseChat,
 }: DreamTeamClientProps) {
   const ctx = buildCurrencyContext(data);
   const team = data.dream_team || [];
@@ -35,6 +37,8 @@ export function DreamTeamClient({
       ticker={ticker}
       reports={reportsForTicker}
       currentReportId={resolvedReportId}
+      showReportSelector={false}
+      canUseChat={canUseChat}
     />
   );
 }

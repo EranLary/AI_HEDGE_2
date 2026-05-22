@@ -863,6 +863,18 @@ def _run_json_extraction_prompt(*, ticker: str, financial_dict: Dict[str, Any], 
     return _parse_json_blob(raw)
 
 
+def _has_exec_summary(doc: Dict[str, Any]) -> bool:
+    if not isinstance(doc, dict):
+        return False
+    return bool(_first_non_empty(doc.get("executive_summary"), doc.get("executive_summary_markdown")))
+
+
+def _has_reasons(doc: Dict[str, Any]) -> bool:
+    if not isinstance(doc, dict):
+        return False
+    return bool(_as_str_list(doc.get("reasons"), max_items=1))
+
+
 def generate_dashboard_sections(
     *,
     ticker: str,
@@ -893,38 +905,69 @@ def generate_dashboard_sections(
             deterministic_red_flags=deterministic_red_flags,
         )
 
+    max_attempts_raw = os.getenv("DASHBOARD_EXTRACTION_ATTEMPTS", "").strip()
     try:
-        exec_doc = _run_json_extraction_prompt(
-            ticker=ticker,
-            financial_dict=financial_dict,
-            text=merged_text,
-            instruction=INSTRUCTION_EXECUTIVE_SUMMARY,
-        )
-        bull_doc = _run_json_extraction_prompt(
-            ticker=ticker,
-            financial_dict=financial_dict,
-            text=merged_text,
-            instruction=INSTRUCTION_BULL_CASE,
-        )
-        bear_doc = _run_json_extraction_prompt(
-            ticker=ticker,
-            financial_dict=financial_dict,
-            text=merged_text,
-            instruction=INSTRUCTION_BEAR_CASE,
-        )
+        max_attempts = int(max_attempts_raw) if max_attempts_raw else 3
     except Exception:
-        return _fallback_qualitative_sections(
-            analysis_text=analysis_text,
-            sec_short_text=sec_short_text,
-            deterministic_red_flags=deterministic_red_flags,
-        )
+        max_attempts = 3
+    max_attempts = max(1, max_attempts)
 
-    if not exec_doc or not bull_doc or not bear_doc:
-        return _fallback_qualitative_sections(
-            analysis_text=analysis_text,
-            sec_short_text=sec_short_text,
-            deterministic_red_flags=deterministic_red_flags,
-        )
+    exec_doc: Dict[str, Any] = {}
+    bull_doc: Dict[str, Any] = {}
+    bear_doc: Dict[str, Any] = {}
+    for _ in range(max_attempts):
+        try:
+            cand_exec = _run_json_extraction_prompt(
+                ticker=ticker,
+                financial_dict=financial_dict,
+                text=merged_text,
+                instruction=INSTRUCTION_EXECUTIVE_SUMMARY,
+            )
+            if _has_exec_summary(cand_exec):
+                exec_doc = cand_exec
+        except Exception:
+            pass
+
+        try:
+            cand_bull = _run_json_extraction_prompt(
+                ticker=ticker,
+                financial_dict=financial_dict,
+                text=merged_text,
+                instruction=INSTRUCTION_BULL_CASE,
+            )
+            if _has_reasons(cand_bull):
+                bull_doc = cand_bull
+        except Exception:
+            pass
+
+        try:
+            cand_bear = _run_json_extraction_prompt(
+                ticker=ticker,
+                financial_dict=financial_dict,
+                text=merged_text,
+                instruction=INSTRUCTION_BEAR_CASE,
+            )
+            if _has_reasons(cand_bear):
+                bear_doc = cand_bear
+        except Exception:
+            pass
+
+        if _has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc):
+            break
+
+    fallback = _fallback_qualitative_sections(
+        analysis_text=analysis_text,
+        sec_short_text=sec_short_text,
+        deterministic_red_flags=deterministic_red_flags,
+    )
+    fallback_docs = fallback.get("documents", {}) if isinstance(fallback.get("documents"), dict) else {}
+
+    if not _has_exec_summary(exec_doc):
+        exec_doc = fallback_docs.get("executive_summary", {}) if isinstance(fallback_docs.get("executive_summary"), dict) else {}
+    if not _has_reasons(bull_doc):
+        bull_doc = fallback_docs.get("bull_case", {}) if isinstance(fallback_docs.get("bull_case"), dict) else {}
+    if not _has_reasons(bear_doc):
+        bear_doc = fallback_docs.get("bear_case", {}) if isinstance(fallback_docs.get("bear_case"), dict) else {}
 
     bull_reasons = _as_str_list(bull_doc.get("reasons"), max_items=15)
     bear_reasons = _as_str_list(bear_doc.get("reasons"), max_items=15)
@@ -932,6 +975,10 @@ def generate_dashboard_sections(
     executive_summary = _first_non_empty(exec_doc.get("executive_summary"), exec_doc.get("executive_summary_markdown"))
     if not executive_summary:
         executive_summary = "Executive summary extraction was empty."
+
+    source = "llm"
+    if not (_has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc)):
+        source = "mixed_fallback"
 
     return {
         "documents": {
@@ -946,7 +993,7 @@ def generate_dashboard_sections(
         "bull_insights": bull_reasons[:10],
         "red_flags": [],
         "swot": {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []},
-        "source": "llm",
+        "source": source,
     }
 
 

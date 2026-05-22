@@ -632,6 +632,7 @@ def _method_specific_numeric_pairs(method_name: str, raw_json: Dict[str, Any]) -
             pairs.append((f"{label} Growth Rate (G)", _numeric_text(_scenario_list_value(raw_json, key, 2), pct=True)))
             pairs.append((f"{label} WACC", _numeric_text(_scenario_list_value(raw_json, key, 3), pct=True)))
             pairs.append((f"{label} Terminal Growth", _numeric_text(_scenario_list_value(raw_json, key, 4), pct=True)))
+        pairs.append(("Representative EV (Current Anchor)", _numeric_text(raw_json.get("representative_ev_current"))))
         pairs.append(("Weighted FCF Next Year", _numeric_text(_range_mid(raw_json.get("fcf_next_year")))))
         pairs.append(("Weighted Growth Rate (G)", _numeric_text(_range_mid(raw_json.get("g")), pct=True)))
         pairs.append(("Weighted WACC", _numeric_text(_range_mid(raw_json.get("WACC")), pct=True)))
@@ -651,6 +652,7 @@ def _method_specific_numeric_pairs(method_name: str, raw_json: Dict[str, Any]) -
         for key, label in scenario_labels:
             pairs.append((f"{label} Probability", _numeric_text(_scenario_list_value(raw_json, key, 0), pct=True)))
             pairs.append((f"{label} Revenue (3Y)", _numeric_text(_scenario_list_value(raw_json, key, 1))))
+        pairs.append(("Representative EV (Current Anchor)", _numeric_text(raw_json.get("representative_ev_current"))))
         pairs.append(("Weighted Revenue (3Y)", _numeric_text(raw_json.get("revenue_3y"))))
         pairs.append(("EV/Sales Multiple", _numeric_text(_range_mid(raw_json.get("ev_sales_multiple")))))
     elif method_name == "Composite Scenario":
@@ -661,6 +663,7 @@ def _method_specific_numeric_pairs(method_name: str, raw_json: Dict[str, Any]) -
             pairs.append((f"{label} Net Financing Result", _numeric_text(_scenario_list_value(raw_json, key, 3))))
             pairs.append((f"{label} Tax Rate", _numeric_text(_scenario_list_value(raw_json, key, 4), pct=True)))
             pairs.append((f"{label} P/E Multiple", _numeric_text(_scenario_list_value(raw_json, key, 5))))
+        pairs.append(("Representative Revenue (Current Year Anchor)", _numeric_text(raw_json.get("representative_revenue_current_year"))))
         pairs.append(("Weighted Revenue (3Y)", _numeric_text(raw_json.get("revenue_3y"))))
         pairs.append(("Weighted Net Income (3Y)", _numeric_text(raw_json.get("net_income_3y"))))
         pairs.append(("Weighted Revenue Growth (3Y Avg)", _numeric_text(raw_json.get("revenue_growth_3y_avg"), pct=True)))

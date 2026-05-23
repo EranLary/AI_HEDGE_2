@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional
 from ai_hedge import legacy_port as legacy
 from ai_hedge.text_to_pdf_check import convert_text_to_pdf
 
+MAYA_BASE_URL = "https://maya.tase.co.il"
+MAYA_FILES_BASE_URL = "https://mayafiles.tase.co.il"
+
 
 def _read_input() -> Dict[str, Any]:
     raw = ""
@@ -48,6 +51,28 @@ def _truncate(text: Any, max_chars: int) -> str:
     return out[:max_chars]
 
 
+def _normalize_source_url(raw_url: Any, source: str) -> str:
+    url = str(raw_url or "").strip()
+    if not url:
+        return ""
+    if url.startswith("//"):
+        return f"https:{url}"
+    if url.lower().startswith(("http://", "https://")):
+        return url
+
+    source_u = str(source or "").strip().upper()
+    if source_u == "MAYA":
+        if url.startswith("/"):
+            if "/reports/" in url or "/api/" in url:
+                return f"{MAYA_BASE_URL}{url}"
+            return f"{MAYA_FILES_BASE_URL}{url}"
+        return f"{MAYA_FILES_BASE_URL}/{url.lstrip('/')}"
+
+    if "." in url and "/" in url:
+        return f"https://{url.lstrip('/')}"
+    return url
+
+
 def _filing_kind(label: str, payload: Dict[str, Any]) -> str:
     joined = " ".join(
         [
@@ -80,7 +105,10 @@ def _extract_filing_entries(files_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "source": source,
                 "form_type": form_type,
                 "date": str(raw.get("date") or "").strip(),
-                "source_url": str(raw.get("url") or "").strip(),
+                "source_url": _normalize_source_url(
+                    raw.get("url") or raw.get("source_url") or raw.get("link") or raw.get("href"),
+                    source,
+                ),
                 "text": _truncate(text, 400000),
             }
         )

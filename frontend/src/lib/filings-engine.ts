@@ -52,14 +52,36 @@ type CacheEntry = {
 
 const FILINGS_STATUS_CACHE = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAYA_BASE_URL = "https://maya.tase.co.il";
+const MAYA_FILES_BASE_URL = "https://mayafiles.tase.co.il";
+
+function normalizeSourceUrl(rawUrl: string, source: string): string {
+  const url = String(rawUrl || "").trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+
+  const src = String(source || "").trim().toUpperCase();
+  if (src === "MAYA") {
+    if (url.startsWith("/")) {
+      if (url.includes("/reports/") || url.includes("/api/")) return `${MAYA_BASE_URL}${url}`;
+      return `${MAYA_FILES_BASE_URL}${url}`;
+    }
+    return `${MAYA_FILES_BASE_URL}/${url.replace(/^\/+/, "")}`;
+  }
+
+  if (/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:\/|$)/.test(url)) return `https://${url}`;
+  return url;
+}
 
 function normalizeFiling(value: Partial<FilingSnippet> | null | undefined): FilingSnippet {
+  const source = String(value?.source || "");
   return {
     available: Boolean(value?.available),
-    source: String(value?.source || ""),
+    source,
     form_type: String(value?.form_type || ""),
     date: String(value?.date || ""),
-    source_url: String(value?.source_url || ""),
+    source_url: normalizeSourceUrl(String(value?.source_url || ""), source),
     text: String(value?.text || ""),
   };
 }

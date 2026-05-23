@@ -51,9 +51,12 @@ type CacheEntry = {
 };
 
 const FILINGS_STATUS_CACHE = new Map<string, CacheEntry>();
+const FILINGS_STATUS_INFLIGHT = new Map<string, Promise<FilingsStatus>>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAYA_BASE_URL = "https://maya.tase.co.il";
 const MAYA_FILES_BASE_URL = "https://mayafiles.tase.co.il";
+const STATUS_TIMEOUT_MS = 45_000;
+const PDF_TIMEOUT_MS = 120_000;
 
 function normalizeSourceUrl(rawUrl: string, source: string): string {
   const url = String(rawUrl || "").trim();
@@ -113,7 +116,11 @@ function ensureTicker(ticker: string): string {
   return tk;
 }
 
-async function runPythonJson(scriptName: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function runPythonJson(
+  scriptName: string,
+  payload: Record<string, unknown>,
+  opts?: { timeoutMs?: number },
+): Promise<Record<string, unknown>> {
   const root = repoRoot();
   const scriptPath = path.resolve(root, "scripts", scriptName);
   const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
@@ -130,6 +137,20 @@ async function runPythonJson(scriptName: string, payload: Record<string, unknown
 
     let stdout = "";
     let stderr = "";
+    const timeoutMs = Number(opts?.timeoutMs || 0) > 0 ? Number(opts?.timeoutMs) : 0;
+    let finished = false;
+    const timeoutHandle =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            if (finished) return;
+            try {
+              child.kill();
+            } catch {
+              // no-op
+            }
+            reject(new Error(`${scriptName} timed out after ${timeoutMs}ms`));
+          }, timeoutMs)
+        : null;
 
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
@@ -137,8 +158,16 @@ async function runPythonJson(scriptName: string, payload: Record<string, unknown
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
     });
-    child.on("error", (err) => reject(err));
+    child.on("error", (err) => {
+      if (finished) return;
+      finished = true;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      reject(err);
+    });
     child.on("close", (code) => {
+      if (finished) return;
+      finished = true;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (code !== 0) {
         reject(
           new Error(
@@ -169,28 +198,43 @@ export async function getTickerFilingsStatus(ticker: string, opts?: { forceRefre
   if (!opts?.forceRefresh) {
     const cached = readCache(tk);
     if (cached) return cached;
+    const inflight = FILINGS_STATUS_INFLIGHT.get(tk);
+    if (inflight) return inflight;
   }
 
-  const raw = (await runPythonJson("dream_team_context.py", {
-    ticker: tk,
-    include_annual: true,
-    include_quarterly: true,
-  })) as DreamTeamContextPayload;
+  const fetchPromise = (async () => {
+    const raw = (await runPythonJson(
+      "filings_status.py",
+      {
+        ticker: tk,
+      },
+      { timeoutMs: STATUS_TIMEOUT_MS },
+    )) as DreamTeamContextPayload;
 
-  if (!raw.ok) {
-    throw new Error(String(raw.error || "Failed to fetch filing status."));
+    if (!raw.ok) {
+      throw new Error(String(raw.error || "Failed to fetch filing status."));
+    }
+
+    const out: FilingsStatus = {
+      ticker: tk,
+      filings: {
+        annual: normalizeFiling(raw.filings?.annual),
+        quarterly: normalizeFiling(raw.filings?.quarterly),
+      },
+      context_error: String(raw.context_error || ""),
+    };
+    writeCache(out);
+    return out;
+  })();
+
+  if (!opts?.forceRefresh) {
+    FILINGS_STATUS_INFLIGHT.set(tk, fetchPromise);
   }
-
-  const out: FilingsStatus = {
-    ticker: tk,
-    filings: {
-      annual: normalizeFiling(raw.filings?.annual),
-      quarterly: normalizeFiling(raw.filings?.quarterly),
-    },
-    context_error: String(raw.context_error || ""),
-  };
-  writeCache(out);
-  return out;
+  try {
+    return await fetchPromise;
+  } finally {
+    FILINGS_STATUS_INFLIGHT.delete(tk);
+  }
 }
 
 export async function buildFilingPdf(ticker: string, kind: FilingKind): Promise<{
@@ -203,10 +247,14 @@ export async function buildFilingPdf(ticker: string, kind: FilingKind): Promise<
     throw new Error("Invalid filing kind.");
   }
 
-  const raw = (await runPythonJson("filing_pdf.py", {
-    ticker: tk,
-    kind,
-  })) as FilingPdfPayload;
+  const raw = (await runPythonJson(
+    "filing_pdf.py",
+    {
+      ticker: tk,
+      kind,
+    },
+    { timeoutMs: PDF_TIMEOUT_MS },
+  )) as FilingPdfPayload;
 
   if (!raw.ok) {
     const code = String(raw.error || "filing_pdf_failed");

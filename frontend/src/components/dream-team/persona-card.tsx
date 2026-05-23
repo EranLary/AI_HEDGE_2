@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MarkdownBlock,
+  SmallCopyButton,
   fmtMarketCap,
   fmtMoney,
   normalizeReasonText,
@@ -297,6 +298,14 @@ export function PersonaCard({
   const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
+  const dreamBlogCopyText = sections
+    .map((section) => {
+      const text = normalizeReasonText(String(section.text || ""));
+      if (!text) return "";
+      return `${prettyReasonLabel(section.label)}\n${text}`;
+    })
+    .filter(Boolean)
+    .join("\n\n");
   const personaPickerRows = personas.map((row) => {
     const target = typeof row.targetPrice === "number" && Number.isFinite(row.targetPrice) ? row.targetPrice : null;
     const isNeutral = typeof currentPrice !== "number" || !Number.isFinite(currentPrice) || target === null || Math.abs(target - currentPrice) < 1e-9;
@@ -646,6 +655,9 @@ export function PersonaCard({
       <div className="dream-team-scroll flex-1 overflow-y-auto px-4 pb-7 pt-5 sm:px-9">
         {sections.length ? (
           <div className="space-y-7">
+            <div className="flex justify-end">
+              <SmallCopyButton text={dreamBlogCopyText} label={`Copy ${member.persona} blog`} />
+            </div>
             {sections.map((section, i) => {
               const text = normalizeReasonText(String(section.text || ""));
               return (

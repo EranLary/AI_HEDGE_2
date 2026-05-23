@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Download } from "lucide-react";
+import { Check, ChevronDown, Copy, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -366,6 +366,78 @@ function Tab({ active, onClick, label }: { active: boolean; onClick: () => void;
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fallback below for browsers that block clipboard API.
+  }
+  try {
+    if (typeof document === "undefined") return false;
+    const textArea = document.createElement("textarea");
+    textArea.value = value;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+export function SmallCopyButton({
+  text,
+  label = "Copy text",
+  className = "",
+}: {
+  text: string;
+  label?: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const hasText = String(text || "").trim().length > 0;
+
+  useEffect(() => {
+    if (!copied) return;
+    const timerId = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(timerId);
+  }, [copied]);
+
+  const handleCopy = useCallback(async () => {
+    if (!hasText || busy) return;
+    setBusy(true);
+    const ok = await copyTextToClipboard(text);
+    setBusy(false);
+    if (ok) setCopied(true);
+  }, [busy, hasText, text]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!hasText || busy}
+      title={label}
+      aria-label={label}
+      className={`inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${className}`}
+    >
+      {copied ? <Check size={10} /> : <Copy size={10} />}
+      <span>{copied ? "Copied" : "Copy"}</span>
     </button>
   );
 }
@@ -1326,6 +1398,17 @@ export function HedgeDashboard({
 
   const bullProbability = assumptionsByNorm.get(normalizeMetricLabel("Bull Probability"))?.mean ?? null;
   const bearProbability = assumptionsByNorm.get(normalizeMetricLabel("Bear Probability"))?.mean ?? null;
+  const executiveSummaryCopyText = normalizeReasonText(String(data?.analysis_matrix?.executive_summary_markdown || ""));
+  const bullCopyText = [
+    `Bull Probability: ${fmtProbability(bullProbability)}`,
+    "",
+    ...bullReasons.map((item, idx) => `${idx + 1}. ${normalizeReasonText(String(item || ""))}`),
+  ].join("\n").trim();
+  const bearCopyText = [
+    `Bear Probability: ${fmtProbability(bearProbability)}`,
+    "",
+    ...bearReasons.map((item, idx) => `${idx + 1}. ${normalizeReasonText(String(item || ""))}`),
+  ].join("\n").trim();
   const finalCombinedScore =
     typeof data?.decision_card?.combined_score === "number" && Number.isFinite(data.decision_card.combined_score)
       ? Number(data.decision_card.combined_score)
@@ -1694,9 +1777,19 @@ export function HedgeDashboard({
               </section>
             ) : null}
 
-            {mainTab === "executive" ? <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4"><MarkdownBlock text={data.analysis_matrix.executive_summary_markdown || ""} /></section> : null}
+            {mainTab === "executive" ? (
+              <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+                <div className="mb-3 flex justify-end">
+                  <SmallCopyButton text={executiveSummaryCopyText} label="Copy execution summary" />
+                </div>
+                <MarkdownBlock text={data.analysis_matrix.executive_summary_markdown || ""} />
+              </section>
+            ) : null}
             {mainTab === "bull" ? (
               <section className="mb-6 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 p-4">
+                <div className="mb-3 flex justify-end">
+                  <SmallCopyButton text={bullCopyText} label="Copy bull dashboard" />
+                </div>
                 <div className="mb-4 rounded-xl border border-emerald-400/35 bg-emerald-400/10 p-3">
                   <p className="hib-bull-prob-label text-xs uppercase tracking-[0.14em]">Bull Probability</p>
                   <p className="hib-bull-prob-value text-2xl font-semibold">{fmtProbability(bullProbability)}</p>
@@ -1706,6 +1799,9 @@ export function HedgeDashboard({
             ) : null}
             {mainTab === "bear" ? (
               <section className="mb-6 rounded-2xl border border-red-500/35 bg-red-500/10 p-4">
+                <div className="mb-3 flex justify-end">
+                  <SmallCopyButton text={bearCopyText} label="Copy bear dashboard" />
+                </div>
                 <div className="mb-4 rounded-xl border border-red-400/35 bg-red-400/10 p-3">
                   <p className="hib-bear-prob-label text-xs uppercase tracking-[0.14em]">Bear Probability</p>
                   <p className="hib-bear-prob-value text-2xl font-semibold">{fmtProbability(bearProbability)}</p>

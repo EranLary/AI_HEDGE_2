@@ -56,7 +56,7 @@ export default async function ReportsPage({
       <ReportsTabs active={tab} signedIn={signedIn} initialQuery={query} />
 
       {tab === "community" ? (
-        <CommunityTabContent query={query} excludeUserId={userId || undefined} />
+        <CommunityTabContent query={query} signedIn={signedIn} />
       ) : (
         <MineTabContent userId={userId} signedIn={signedIn} query={query} />
       )}
@@ -66,16 +66,15 @@ export default async function ReportsPage({
 
 async function CommunityTabContent({
   query,
-  excludeUserId,
+  signedIn,
 }: {
   query: string;
-  excludeUserId: string | undefined;
+  signedIn: boolean;
 }) {
   let rows: DbReportSummary[] = [];
   let hasMore = false;
   try {
     const page = await listCommunityReportsPaged({
-      excludeUserId,
       query,
       limit: COMMUNITY_PAGE_SIZE,
       offset: 0,
@@ -87,7 +86,7 @@ async function CommunityTabContent({
   }
 
   if (!rows.length) {
-    return <EmptyState tab="community" signedIn={Boolean(excludeUserId)} hasQuery={Boolean(query)} />;
+    return <EmptyState tab="community" signedIn={signedIn} hasQuery={Boolean(query)} />;
   }
 
   return <CommunityList initialRows={rows} initialHasMore={hasMore} query={query} />;

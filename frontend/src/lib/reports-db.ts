@@ -292,13 +292,12 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
   return rows;
 }
 
-/** Public reports authored by anyone other than the optional excluded user. */
-export async function listCommunityReports(excludeUserId?: string): Promise<DbReportSummary[]> {
+/** Public reports authored by anyone. */
+export async function listCommunityReports(): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return fallbackCommunityReportsFromOutputs();
   try {
-    const rows = excludeUserId
-      ? ((await sql`
+    const rows = ((await sql`
         SELECT r.id::text AS id, r.ticker, r.generated_at,
                r.company_name,
                r.current_price::float8 AS current_price,
@@ -312,23 +311,6 @@ export async function listCommunityReports(excludeUserId?: string): Promise<DbRe
           LEFT JOIN report_artifacts a ON a.report_id = r.id
          WHERE r.visibility = 'public'
            AND r.deleted_at IS NULL
-           AND (r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
-         ORDER BY r.generated_at DESC;
-      `) as unknown as DbReportSummary[])
-    : ((await sql`
-        SELECT r.id::text AS id, r.ticker, r.generated_at,
-               r.company_name,
-               r.current_price::float8 AS current_price,
-               r.market_cap::float8    AS market_cap,
-               r.currency,
-               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
-               r.mean_target_price::float8 AS mean_target_price,
-               r.source, r.source_run_id,
-               r.visibility
-          FROM reports r
-          LEFT JOIN report_artifacts a ON a.report_id = r.id
-          WHERE r.visibility = 'public'
-            AND r.deleted_at IS NULL
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
     return rows;
@@ -347,7 +329,6 @@ export interface PagedCommunityReports {
  * Returns `limit` rows plus a `hasMore` flag (computed by over-fetching one row).
  */
 export async function listCommunityReportsPaged(opts: {
-  excludeUserId?: string;
   query?: string;
   limit: number;
   offset: number;
@@ -366,31 +347,9 @@ export async function listCommunityReportsPaged(opts: {
   const fetchN = limit + 1;
   const q = String(opts.query || "").trim();
   const like = q ? `%${q}%` : "";
-  const excludeUserId = opts.excludeUserId?.trim() || null;
 
   try {
-    const rows = (excludeUserId
-      ? ((await sql`
-        SELECT r.id::text AS id, r.ticker, r.generated_at,
-               r.company_name,
-               r.current_price::float8 AS current_price,
-               r.market_cap::float8    AS market_cap,
-               r.currency,
-               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
-               r.mean_target_price::float8 AS mean_target_price,
-               r.source, r.source_run_id,
-               r.visibility
-          FROM reports r
-          LEFT JOIN report_artifacts a ON a.report_id = r.id
-         WHERE r.visibility = 'public'
-           AND r.deleted_at IS NULL
-           AND (r.user_id IS NULL OR r.user_id <> ${excludeUserId}::uuid)
-           AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
-         ORDER BY r.generated_at DESC
-         LIMIT ${fetchN}
-        OFFSET ${offset};
-      `) as unknown as DbReportSummary[])
-    : ((await sql`
+    const rows = ((await sql`
         SELECT r.id::text AS id, r.ticker, r.generated_at,
                r.company_name,
                r.current_price::float8 AS current_price,
@@ -408,7 +367,7 @@ export async function listCommunityReportsPaged(opts: {
          ORDER BY r.generated_at DESC
          LIMIT ${fetchN}
         OFFSET ${offset};
-      `) as unknown as DbReportSummary[]));
+      `) as unknown as DbReportSummary[]);
 
     const hasMore = rows.length > limit;
     return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };

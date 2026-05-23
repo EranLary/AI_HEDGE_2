@@ -16,11 +16,9 @@ export async function loadMoreCommunity(input: {
   limit: number;
   query: string;
 }): Promise<LoadMoreCommunityResult> {
-  const session = await auth();
-  const excludeUserId = session?.user?.id || undefined;
+  await auth();
   try {
     return await listCommunityReportsPaged({
-      excludeUserId,
       query: input.query,
       limit: input.limit,
       offset: input.offset,

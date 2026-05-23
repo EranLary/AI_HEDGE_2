@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 
 import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ReportChipRow } from "@/components/dashboard-chrome";
+import { SmallCopyButton } from "@/components/hedge-dashboard";
 
 type SwotData = {
   strengths: string[];
@@ -82,19 +83,29 @@ function ScenarioColumn({
   const probClass = tone === "bull" ? "hib-bull-prob-label" : "hib-bear-prob-label";
   const probValueClass = tone === "bull" ? "hib-bull-prob-value" : "hib-bear-prob-value";
   const items = reasons.length ? reasons : doc?.reasons || [];
+  const copyText = [
+    typeof probability === "number"
+      ? `Probability: ${(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%`
+      : "Probability: N/A",
+    "",
+    ...items.map((reason, idx) => `${idx + 1}. ${String(reason || "").replace(/~~/g, "").trim()}`),
+  ].join("\n").trim();
 
   return (
     <section className={`rounded-2xl border p-4 ${borderCls}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="font-display text-lg">{title}</h2>
-        {typeof probability === "number" ? (
-          <div className="text-right">
-            <p className={`text-[10px] uppercase tracking-[0.18em] ${probClass}`}>Probability</p>
-            <p className={`text-xl font-bold ${probValueClass}`}>
-              {(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%
-            </p>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <SmallCopyButton text={copyText} label={`Copy ${title}`} iconOnly />
+          {typeof probability === "number" ? (
+            <div className="text-right">
+              <p className={`text-[10px] uppercase tracking-[0.18em] ${probClass}`}>Probability</p>
+              <p className={`text-xl font-bold ${probValueClass}`}>
+                {(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%
+              </p>
+            </div>
+          ) : null}
+        </div>
       </div>
       {items.length ? (
         <ul className="space-y-2 text-sm text-zinc-200">

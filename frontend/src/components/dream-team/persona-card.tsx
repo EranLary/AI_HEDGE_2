@@ -656,7 +656,7 @@ export function PersonaCard({
         {sections.length ? (
           <div className="space-y-7">
             <div className="flex justify-end">
-              <SmallCopyButton text={dreamBlogCopyText} label={`Copy ${member.persona} blog`} />
+              <SmallCopyButton text={dreamBlogCopyText} label={`Copy ${member.persona} blog`} iconOnly />
             </div>
             {sections.map((section, i) => {
               const text = normalizeReasonText(String(section.text || ""));

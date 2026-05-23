@@ -404,10 +404,12 @@ export function SmallCopyButton({
   text,
   label = "Copy text",
   className = "",
+  iconOnly = false,
 }: {
   text: string;
   label?: string;
   className?: string;
+  iconOnly?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -434,10 +436,12 @@ export function SmallCopyButton({
       disabled={!hasText || busy}
       title={label}
       aria-label={label}
-      className={`inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${className}`}
+      className={`inline-flex items-center rounded-full border border-white/15 bg-white/5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${
+        iconOnly ? "h-7 w-7 justify-center p-0" : "gap-1 px-2 py-1"
+      } ${className}`}
     >
       {copied ? <Check size={10} /> : <Copy size={10} />}
-      <span>{copied ? "Copied" : "Copy"}</span>
+      {iconOnly ? <span className="sr-only">{copied ? "Copied" : "Copy"}</span> : <span>{copied ? "Copied" : "Copy"}</span>}
     </button>
   );
 }

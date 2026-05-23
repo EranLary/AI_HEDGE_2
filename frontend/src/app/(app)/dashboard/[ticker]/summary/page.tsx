@@ -549,10 +549,7 @@ export default function DashboardSummaryPage({
         <div className="mt-3 flex flex-wrap items-start gap-3">
           {(["annual", "quarterly"] as const).map((kind) => {
             const row = filings?.[kind];
-            const label = kind === "annual" ? "Annual Filing PDF" : "Quarterly Filing PDF";
-            const href = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/pdf`;
             const sourceHref = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`;
-            const available = Boolean(row?.available);
             const hasSource = Boolean(row?.available && String(row?.source_url || "").trim());
             const meta = filingsLoading && !row
               ? "Checking..."
@@ -561,26 +558,13 @@ export default function DashboardSummaryPage({
                 : "Not available";
             return (
               <div key={kind} className="min-w-[210px] rounded-lg border border-white/10 bg-black/25 p-2">
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                  {kind === "annual" ? "Annual" : "Quarterly"}
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  {available ? (
-                    <a
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/35 hover:bg-white/10"
-                      href={href}
-                    >
-                      {label}
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
-                    >
-                      {label}
-                    </button>
-                  )}
                   {hasSource ? (
                     <a
-                      className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/35 hover:bg-white/10"
+                      className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/35 hover:bg-white/10"
                       href={sourceHref}
                       target="_blank"
                       rel="noreferrer"
@@ -591,7 +575,7 @@ export default function DashboardSummaryPage({
                     <button
                       type="button"
                       disabled
-                      className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
+                      className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
                     >
                       Source Filing
                     </button>

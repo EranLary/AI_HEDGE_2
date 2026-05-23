@@ -7,6 +7,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function unavailablePayload(ticker: string, contextError = "") {
+  return {
+    ok: true,
+    ticker,
+    filings: {
+      annual: { available: false, source: "", form_type: "", date: "", source_url: "", text: "" },
+      quarterly: { available: false, source: "", form_type: "", date: "", source_url: "", text: "" },
+    },
+    context_error: contextError,
+  };
+}
+
 export async function GET(
   req: Request,
   context: { params: Promise<{ ticker: string }> },
@@ -29,10 +41,6 @@ export async function GET(
       context_error: status.context_error || "",
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to fetch filing status: ${String(err)}` },
-      { status: 500 },
-    );
+    return NextResponse.json(unavailablePayload(tk, String(err)));
   }
 }
-

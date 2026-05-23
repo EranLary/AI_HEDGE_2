@@ -34,16 +34,15 @@ export async function GET(
     }
     if (!/^https?:\/\//i.test(url)) {
       return NextResponse.json(
-        { error: "Source filing URL is invalid." },
-        { status: 500 },
+        { error: `${filingKind} source filing is not available for ${tk}.` },
+        { status: 404 },
       );
     }
     return NextResponse.redirect(url, 302);
-  } catch (err) {
+  } catch {
     return NextResponse.json(
-      { error: `Failed to resolve source filing URL: ${String(err)}` },
-      { status: 500 },
+      { error: `${filingKind} source filing is not available for ${tk}.` },
+      { status: 404 },
     );
   }
 }
-

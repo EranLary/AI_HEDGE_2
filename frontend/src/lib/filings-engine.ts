@@ -55,8 +55,17 @@ const FILINGS_STATUS_INFLIGHT = new Map<string, Promise<FilingsStatus>>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAYA_BASE_URL = "https://maya.tase.co.il";
 const MAYA_FILES_BASE_URL = "https://mayafiles.tase.co.il";
-const STATUS_TIMEOUT_MS = 45_000;
-const PDF_TIMEOUT_MS = 120_000;
+
+function envMs(name: string, fallbackMs: number): number {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) return fallbackMs;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallbackMs;
+  return Math.floor(parsed);
+}
+
+const STATUS_TIMEOUT_MS = envMs("FILINGS_STATUS_TIMEOUT_MS", 75_000);
+const PDF_TIMEOUT_MS = envMs("FILINGS_PDF_TIMEOUT_MS", 180_000);
 
 function normalizeSourceUrl(rawUrl: string, source: string): string {
   const url = String(rawUrl || "").trim();

@@ -97,6 +97,31 @@ function fmtDateTimeNoSeconds(value: string): string {
   });
 }
 
+function escapeRegExp(value: string): string {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function fmtFilingDateOnly(value: string): string {
+  const txt = String(value || "").trim();
+  if (!txt) return "";
+  const prefix = txt.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return prefix;
+  const dt = new Date(txt);
+  if (!Number.isFinite(dt.getTime())) return txt;
+  return dt.toISOString().slice(0, 10);
+}
+
+function cleanFilingFormLabel(source: string, formType: string): string {
+  let label = String(formType || "").trim().replace(/\s+/g, " ");
+  const sourceLabel = String(source || "").trim();
+  if (!label) return "";
+  if (sourceLabel) {
+    const sourcePrefix = new RegExp(`^${escapeRegExp(sourceLabel)}\\s+`, "i");
+    label = label.replace(sourcePrefix, "").trim();
+  }
+  return label;
+}
+
 function fmtMoney(value: number | null | undefined, ticker: string): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
   const isIsraeliTicker = String(ticker || "").toUpperCase().endsWith(".TA");
@@ -551,10 +576,13 @@ export default function DashboardSummaryPage({
             const row = filings?.[kind];
             const sourceHref = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`;
             const hasSource = Boolean(row?.available && String(row?.source_url || "").trim());
+            const sourceLabel = String(row?.source || "").trim();
+            const formLabel = cleanFilingFormLabel(sourceLabel, String(row?.form_type || ""));
+            const dateLabel = fmtFilingDateOnly(String(row?.date || ""));
             const meta = filingsLoading && !row
               ? "Checking..."
               : row?.available
-                ? `${row.source || "N/A"} ${row.form_type || ""} ${row.date || ""}`.trim()
+                ? [sourceLabel || "N/A", formLabel, dateLabel].filter(Boolean).join(" ").trim()
                 : "Not available";
             return (
               <div key={kind} className="min-w-[210px] rounded-lg border border-white/10 bg-black/25 p-2">

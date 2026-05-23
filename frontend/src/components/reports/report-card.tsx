@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { DbReportSummary } from "@/lib/reports-db";
 import { FriendlyDate } from "./friendly-date";
+import { VisibilityToggle } from "./visibility-toggle";
 
 // Allowed values: Strong Buy | Buy | Hold | Sell | Strong Sell
 function recommendationTone(rec: string | null): { label: string; cls: string } {
@@ -21,28 +22,38 @@ function recommendationTone(rec: string | null): { label: string; cls: string } 
   }
 }
 
-export function ReportCard({ report }: { report: DbReportSummary }) {
+export function ReportCard({
+  report,
+  showVisibilityToggle = false,
+}: {
+  report: DbReportSummary;
+  showVisibilityToggle?: boolean;
+}) {
   const href = `/dashboard/${encodeURIComponent(report.ticker)}/summary?report=${encodeURIComponent(report.id)}`;
   const rec = recommendationTone(report.recommendation);
   const company = report.company_name || report.ticker;
 
   return (
-    <Link
-      href={href}
-      className="group flex h-full flex-col justify-between rounded-2xl border border-white/10 bg-zinc-950/70 p-5 transition hover:border-emerald-400/50 hover:bg-emerald-500/5"
-    >
-      <div>
-        <p className="font-display text-3xl text-zinc-100">{report.ticker}</p>
-        <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{company}</p>
-      </div>
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <span
-          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${rec.cls}`}
-        >
-          {rec.label}
-        </span>
-        <FriendlyDate iso={report.generated_at} className="text-xs text-zinc-400" />
-      </div>
-    </Link>
+    <article className="group relative flex h-full flex-col rounded-2xl border border-white/10 bg-zinc-950/70 transition hover:border-emerald-400/50 hover:bg-emerald-500/5">
+      {showVisibilityToggle ? (
+        <div className="absolute right-3 top-3 z-10">
+          <VisibilityToggle reportId={report.id} variant="icon" />
+        </div>
+      ) : null}
+      <Link href={href} className="flex h-full flex-col justify-between p-5">
+        <div>
+          <p className="font-display text-3xl text-zinc-100">{report.ticker}</p>
+          <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{company}</p>
+        </div>
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <span
+            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${rec.cls}`}
+          >
+            {rec.label}
+          </span>
+          <FriendlyDate iso={report.generated_at} className="text-xs text-zinc-400" />
+        </div>
+      </Link>
+    </article>
   );
 }

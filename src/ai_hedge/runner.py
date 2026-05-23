@@ -135,6 +135,108 @@ def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
     return "SEC"
 
 
+def _safe_filing_date(value: Any) -> datetime:
+    txt = str(value or "").strip()
+    if not txt:
+        return datetime.min
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(txt[:19], fmt)
+        except Exception:
+            continue
+    try:
+        return datetime.fromisoformat(txt.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.min
+
+
+def _normalize_filing_source_url(raw_url: Any, source: str) -> str:
+    url = str(raw_url or "").strip()
+    if not url:
+        return ""
+    if url.startswith("//"):
+        return f"https:{url}"
+    if url.lower().startswith(("http://", "https://")):
+        return url
+
+    source_u = str(source or "").strip().upper()
+    if source_u == "MAYA":
+        if url.startswith("/"):
+            if "/reports/" in url or "/api/" in url:
+                return f"https://maya.tase.co.il{url}"
+            return f"https://mayafiles.tase.co.il{url}"
+        return f"https://mayafiles.tase.co.il/{url.lstrip('/')}"
+
+    if "." in url and "/" in url:
+        return f"https://{url.lstrip('/')}"
+    return url
+
+
+def _filing_kind(form_type: str, raw: Dict[str, Any]) -> str:
+    joined = " ".join(
+        [
+            str(form_type or ""),
+            str(raw.get("form_type") or ""),
+            str(raw.get("title") or ""),
+            str(raw.get("name") or ""),
+            str(raw.get("label") or ""),
+        ]
+    ).upper()
+    if any(x in joined for x in ("10-K", "20-F", "ANNUAL", "MAYA ANNUAL")):
+        return "annual"
+    if any(x in joined for x in ("10-Q", "6-K", "QUARTER", "Q1", "Q2", "Q3", "Q4", "MAYA QUARTERLY")):
+        return "quarterly"
+    return "other"
+
+
+def _empty_filing_for_dashboard() -> Dict[str, Any]:
+    return {"available": False, "source": "", "form_type": "", "date": "", "source_url": ""}
+
+
+def _extract_latest_filing_sources(files_dict: Optional[Dict[str, object]]) -> Dict[str, Any]:
+    out = {
+        "annual": _empty_filing_for_dashboard(),
+        "quarterly": _empty_filing_for_dashboard(),
+    }
+    if not isinstance(files_dict, dict):
+        return out
+
+    rows: List[Dict[str, Any]] = []
+    for form_type, raw in files_dict.items():
+        if not isinstance(raw, dict):
+            continue
+        text = str(raw.get("text", "") or "").strip()
+        if not text:
+            continue
+        source = _filing_source_label(str(form_type or ""), raw)
+        rows.append(
+            {
+                "kind": _filing_kind(str(form_type or ""), raw),
+                "source": source,
+                "form_type": str(raw.get("form_type") or form_type or "").strip(),
+                "date": str(raw.get("date") or "").strip(),
+                "source_url": _normalize_filing_source_url(
+                    raw.get("url") or raw.get("source_url") or raw.get("link") or raw.get("href"),
+                    source,
+                ),
+            }
+        )
+
+    rows.sort(key=lambda x: _safe_filing_date(x.get("date")), reverse=True)
+    for kind in ("annual", "quarterly"):
+        picked = next((row for row in rows if row.get("kind") == kind), None)
+        if not picked:
+            continue
+        out[kind] = {
+            "available": True,
+            "source": str(picked.get("source") or ""),
+            "form_type": str(picked.get("form_type") or ""),
+            "date": str(picked.get("date") or ""),
+            "source_url": str(picked.get("source_url") or ""),
+        }
+    return out
+
+
 def _build_sec_sources_footer(files_dict: Optional[Dict[str, object]]) -> str:
     if not _has_filing_text(files_dict):
         return ""
@@ -1402,6 +1504,7 @@ def _run_ticker_valuation_impl(
 
     try:
         analysis_duration_minutes = round((time.perf_counter() - run_started) / 60.0, 2)
+        filing_sources = _extract_latest_filing_sources(files_dict)
         dashboard_payload = build_dashboard_payload(
             ticker=ticker,
             info_dict=info_dict,
@@ -1413,6 +1516,7 @@ def _run_ticker_valuation_impl(
             sec_short_text=sec_short_text,
             qualitative_sections=qualitative_sections,
             technical_analysis=technical_analysis_payload,
+            filings=filing_sources,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
             artifacts={

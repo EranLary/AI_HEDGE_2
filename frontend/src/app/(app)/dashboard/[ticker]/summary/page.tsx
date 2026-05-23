@@ -55,6 +55,25 @@ type ReturnsMap = {
   "5Y"?: number | null;
 };
 
+type FilingStatusSnippet = {
+  available: boolean;
+  source: string;
+  form_type: string;
+  date: string;
+  source_url: string;
+};
+
+type FilingsStatusPayload = {
+  ok?: boolean;
+  ticker?: string;
+  filings?: {
+    annual?: FilingStatusSnippet;
+    quarterly?: FilingStatusSnippet;
+  };
+  context_error?: string;
+  error?: string;
+};
+
 const RETURN_COLUMNS = ["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"] as const;
 
 const WINDOW_OPTIONS: Array<{ key: SummaryWindow; label: string }> = [
@@ -76,6 +95,31 @@ function fmtDateTimeNoSeconds(value: string): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function escapeRegExp(value: string): string {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function fmtFilingDateOnly(value: string): string {
+  const txt = String(value || "").trim();
+  if (!txt) return "";
+  const prefix = txt.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return prefix;
+  const dt = new Date(txt);
+  if (!Number.isFinite(dt.getTime())) return txt;
+  return dt.toISOString().slice(0, 10);
+}
+
+function cleanFilingFormLabel(source: string, formType: string): string {
+  let label = String(formType || "").trim().replace(/\s+/g, " ");
+  const sourceLabel = String(source || "").trim();
+  if (!label) return "";
+  if (sourceLabel) {
+    const sourcePrefix = new RegExp(`^${escapeRegExp(sourceLabel)}\\s+`, "i");
+    label = label.replace(sourcePrefix, "").trim();
+  }
+  return label;
 }
 
 function fmtMoney(value: number | null | undefined, ticker: string): string {
@@ -343,6 +387,12 @@ export default function DashboardSummaryPage({
   const [refreshToken, setRefreshToken] = useState(0);
   const [data, setData] = useState<SummaryPayload | null>(null);
   const [returnsMap, setReturnsMap] = useState<ReturnsMap | null>(null);
+  const [filingsLoading, setFilingsLoading] = useState(true);
+  const [filingsError, setFilingsError] = useState("");
+  const [filings, setFilings] = useState<{
+    annual: FilingStatusSnippet;
+    quarterly: FilingStatusSnippet;
+  } | null>(null);
 
   const reportId = search?.get("report") || "";
 
@@ -391,6 +441,59 @@ export default function DashboardSummaryPage({
       } finally {
         if (!cancelled) {
           setPerformanceLoading(false);
+        }
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [upper, refreshToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setFilingsLoading(true);
+      setFilingsError("");
+      try {
+        const refreshQuery =
+          refreshToken > 0 ? `?refresh=${encodeURIComponent(`${Date.now()}-${refreshToken}`)}` : "";
+        const res = await fetch(
+          `/api/dashboard/${encodeURIComponent(upper)}/filings/status${refreshQuery}`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as FilingsStatusPayload;
+        if (!cancelled) {
+          if (!res.ok || !json?.ok || !json?.filings) {
+            setFilings(null);
+            setFilingsError(String(json?.error || "Failed to load filing availability."));
+          } else {
+            setFilings({
+              annual: {
+                available: Boolean(json.filings.annual?.available),
+                source: String(json.filings.annual?.source || ""),
+                form_type: String(json.filings.annual?.form_type || ""),
+                date: String(json.filings.annual?.date || ""),
+                source_url: String(json.filings.annual?.source_url || ""),
+              },
+              quarterly: {
+                available: Boolean(json.filings.quarterly?.available),
+                source: String(json.filings.quarterly?.source || ""),
+                form_type: String(json.filings.quarterly?.form_type || ""),
+                date: String(json.filings.quarterly?.date || ""),
+                source_url: String(json.filings.quarterly?.source_url || ""),
+              },
+            });
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setFilings(null);
+          setFilingsError("Failed to load filing availability.");
+        }
+      } finally {
+        if (!cancelled) {
+          setFilingsLoading(false);
         }
       }
     }
@@ -461,12 +564,58 @@ export default function DashboardSummaryPage({
             <button
               type="button"
               onClick={() => setRefreshToken((v) => v + 1)}
-              disabled={loading}
+              disabled={loading || filingsLoading}
               className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Refreshing..." : "Refresh"}
+              {loading || filingsLoading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-start gap-3">
+          {(["annual", "quarterly"] as const).map((kind) => {
+            const row = filings?.[kind];
+            const sourceHref = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`;
+            const hasSource = Boolean(row?.available && String(row?.source_url || "").trim());
+            const sourceLabel = String(row?.source || "").trim();
+            const formLabel = cleanFilingFormLabel(sourceLabel, String(row?.form_type || ""));
+            const dateLabel = fmtFilingDateOnly(String(row?.date || ""));
+            const meta = filingsLoading && !row
+              ? "Checking..."
+              : row?.available
+                ? [sourceLabel || "N/A", formLabel, dateLabel].filter(Boolean).join(" ").trim()
+                : "Not available";
+            return (
+              <div key={kind} className="min-w-[210px] rounded-lg border border-white/10 bg-black/25 p-2">
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                  {kind === "annual" ? "Annual" : "Quarterly"}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {hasSource ? (
+                    <a
+                      className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/35 hover:bg-white/10"
+                      href={sourceHref}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Source Filing
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
+                    >
+                      Source Filing
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-zinc-500">{meta}</p>
+              </div>
+            );
+          })}
+          {filingsError ? (
+            <p className="self-center text-xs text-amber-300">{filingsError}</p>
+          ) : null}
         </div>
       </header>
 

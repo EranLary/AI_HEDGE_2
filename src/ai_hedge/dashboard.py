@@ -1384,6 +1384,7 @@ def build_dashboard_payload(
     technical_analysis: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
+    filings: Optional[Dict[str, Any]] = None,
     enable_llm_extractions: bool = True,
 ) -> Dict[str, Any]:
     info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
@@ -1638,6 +1639,7 @@ def build_dashboard_payload(
             "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
+        "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,
     }
 

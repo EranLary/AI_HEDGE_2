@@ -1,127 +1,193 @@
-﻿# AI Hedge Notebook Port (Ticker Valuation)
+# AI_HEDGE_2
 
-This project ports the notebook logic into a runnable modular structure while preserving the original valuation flow and prompts/parsers in `src/ai_hedge/legacy_port.py`.
+AI_HEDGE_2 is an AI-driven equity analysis platform with three active surfaces:
 
-## What it does now
-- Accepts a ticker input
-- Runs the same analysis + valuation pipeline
-- Saves 3 valuation plots:
-  - prices valuation
-  - revenue valuation
-  - net income valuation
-- Optionally generates PDF from analysis text (`--pdf`)
+1. Python valuation engine (`run.py`, `run_lite.py`)
+2. Public web app (`frontend/`, "Hedge in a Box")
+3. Observability admin app (`frontend-obs/`)
 
-## Setup
-1. Install dependencies:
-   ```powershell
-   pip install -r requirements.txt
-   ```
-2. Set API key:
-   ```powershell
-   $env:DEEPSEEK_API_KEY="your_key_here"
-   ```
+The codebase has evolved far beyond a notebook port. This README documents the current project shape.
 
-## Run
+## What The Project Does
+
+- Runs full ticker analysis and valuation from Python
+- Produces analysis artifacts (text, PDF, charts, dashboard JSON)
+- Stores report data in Neon Postgres
+- Serves reports in the Next.js site
+- Exposes Summary filing source links for latest annual and quarterly filings (SEC or MAYA)
+- Tracks LLM run/call telemetry in the observability app
+
+## Repo Layout
+
+- `src/ai_hedge/legacy_port.py`: core valuation and prompt/parsing logic (high sensitivity file)
+- `src/ai_hedge/runner.py`: orchestrates full valuation run and artifact creation
+- `src/ai_hedge/dashboard.py`: dashboard payload generation
+- `src/ai_hedge/service.py`: service layer used by site workflows
+- `src/ai_hedge/maya_reports.py`: MAYA filing fetch for `.TA` tickers
+- `src/ai_hedge/obs/`: observability instrumentation and DB writes
+- `frontend/`: public dashboard site (Next.js)
+- `frontend-obs/`: internal observability admin app (Next.js)
+- `scripts/`: helper scripts used by site APIs (including filing status/PDF generation)
+- `outputs/`: generated local artifacts (gitignored)
+
+## Prerequisites
+
+- Python 3.11 or 3.12
+- Node.js 20+
+- npm
+
+## Environment Setup
+
+1. Copy `.env.example` to `.env`
+2. Fill required values
+
+Minimum for valuation runs:
+
+- `DEEPSEEK_API_KEY`
+
+Common DB/auth variables used across the site and tooling:
+
+- `DATABASE_URL`
+- `DATABASE_URL_UNPOOLED`
+- `AUTH_SECRET`
+- `AUTH_GOOGLE_ID`
+- `AUTH_GOOGLE_SECRET`
+- `AUTH_URL`
+- `OBS_DATABASE_URL`
+
+For frontend local dev, keep app-specific values in:
+
+- `frontend/.env.local`
+- `frontend-obs/.env.local`
+
+## Install Dependencies
+
+Python:
+
 ```powershell
-python run.py --ticker AAPL --pdf
+python -m pip install -r requirements.txt
 ```
 
-Optional flags:
-- `--output-root outputs`
-- `--show-plots`
+Public site:
 
-Valuation flow uses a single combined-context pass (regular text + SEC short when available).
-
-Outputs are saved under `outputs/<TICKER>/`.
-
-## Hedge in a Box Dashboard (Next.js)
-
-The repository now includes a dashboard web app in `frontend/` named **Hedge in a Box**.
-
-### What it reads
-- `outputs/**/<TICKER>_dashboard.json` (preferred)
-- fallback artifact routes for:
-  - `<TICKER>_analysis.pdf`
-  - `<TICKER>_prices_explain.txt`
-  - `<TICKER>_prices_explain.pdf`
-  - `<TICKER>_analysis.txt`
-
-The full valuation runner now attempts to generate:
-- `outputs/<TICKER>/<TICKER>_dashboard.json`
-
-This JSON includes:
-- command-center stats
-- executive summary + key insights + bull/red flags + SWOT (LLM dashboard extraction)
-- valuation block cards and key numeric means
-- consensus/LMIL/CV metrics
-- dream team cards
-- forensic/forecast matrix fields
-
-### Run locally
 ```powershell
 cd frontend
 npm install
+```
+
+Observability site:
+
+```powershell
+cd frontend-obs
+npm install
+```
+
+## Run Locally
+
+### Full valuation run
+
+```powershell
+python run.py --ticker AAPL --no-show-plots
+```
+
+Useful flags:
+
+- `--pdf` / `--no-pdf`
+- `--output-root outputs`
+- `--analysis-workers <n>`
+- `--llm-workers <n>`
+- `--valuation-block-workers <n>`
+
+### Lite/smoke valuation run
+
+```powershell
+python run_lite.py --ticker AAPL --no-show-plots
+```
+
+### Public app
+
+```powershell
+cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-Open:
-- Dashboard: `http://127.0.0.1:3000`
-- Discovery: `http://127.0.0.1:3000/discovery`
+Open `http://127.0.0.1:3000`
 
-## Easy Fly Deploy
-
-Use these scripts from project root:
+### Observability app
 
 ```powershell
-.\deploy-site.ps1
+cd frontend-obs
+npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
-Windows cmd equivalents:
+Open `http://127.0.0.1:3001`
 
-```cmd
-deploy-site.cmd
+## Artifacts Produced Per Ticker
+
+A full run writes to `outputs/<TICKER>/` and typically includes:
+
+- `<TICKER>_analysis.txt`
+- `<TICKER>_analysis.pdf` (if enabled)
+- `<TICKER>_prices_valuation.png`
+- `<TICKER>_revenue_valuation.png`
+- `<TICKER>_net_income_valuation.png`
+- `<TICKER>_prices_explain.txt`
+- `<TICKER>_prices_explain.pdf` (when generated)
+- `<TICKER>_dashboard.json`
+- `<TICKER>_technical_analysis.json`
+
+## Filing Source Links (SEC and MAYA)
+
+Summary page filing actions are source-link first:
+
+- Annual source filing
+- Quarterly source filing
+
+Behavior:
+
+- Uses ticker-level latest annual/latest quarterly filing
+- Supports both SEC and MAYA
+- MAYA relative URLs are normalized before redirecting
+- Status fetch is cached and de-duplicated to reduce repeated upstream cost
+
+## Database CLI Utilities
+
+Use:
+
+```powershell
+python dbcli.py --help
 ```
 
-Unified helper (all actions):
+This includes schema init, Fly snapshot fetch, scan/push/pull helpers, and report stats workflows.
+
+## Deploy
+
+### Manual Fly deploy
 
 ```powershell
 .\deploy_fly.ps1 site
-.\deploy_fly.ps1 status-site
-.\deploy_fly.ps1 logs-site
+.\deploy_fly.ps1 obs
 ```
 
-Optional flags:
-
-- `-NoDepot` adds `--depot=false`
-- `-NoRemote` omits `--remote-only`
-
-## Easy Git Push
-
-Use these scripts from project root:
+Status/logs:
 
 ```powershell
-.\push-git.ps1 -Message "feat: update dashboard"
+.\deploy_fly.ps1 status-site
+.\deploy_fly.ps1 logs-site
+.\deploy_fly.ps1 status-obs
+.\deploy_fly.ps1 logs-obs
 ```
 
-Windows cmd:
+### GitHub Actions
 
-```cmd
-push-git.cmd feat: update dashboard
-```
+- `.github/workflows/deploy-fly.yml`: deploys `site` and `obs` on push to `main`/`master`
+- `.github/workflows/preview-site.yml`: per-PR site previews
+- `.github/workflows/preview-obs.yml`: per-PR obs previews
 
-What it does:
-- `git add -A`
-- `git commit -m "<message>"` (only if there are changes)
-- `git push` (or `git push -u origin <current-branch>` if upstream is missing)
+## Development Notes
 
-## GitHub Auto Deploy (Fly)
+- `src/ai_hedge/legacy_port.py` is intentionally close to notebook behavior. Edit carefully.
+- Do not commit generated files from `outputs/`, `logs/`, or `.env`.
+- Theme/color system for `frontend/` is documented in `frontend/BRAND_COLORS.md`.
+- PR-first workflow is mandatory in this repo (`AGENTS.md`).
 
-This repo includes `.github/workflows/deploy-fly.yml` for automatic deploys on push to:
-- `main`
-- `master`
-
-It deploys the site app:
-- `hedge-in-a-box-site` using `fly.site.toml`
-
-Required GitHub secret:
-- `FLY_API_TOKEN` (Fly API token with access to the site app)

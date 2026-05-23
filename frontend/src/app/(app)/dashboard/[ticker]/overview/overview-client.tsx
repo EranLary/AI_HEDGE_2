@@ -7,7 +7,6 @@ import remarkGfm from "remark-gfm";
 
 import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ReportChipRow } from "@/components/dashboard-chrome";
-import { VisibilityToggle } from "@/components/reports/visibility-toggle";
 import {
   buildCurrencyContext,
   fmtMoney,
@@ -191,12 +190,6 @@ export function OverviewClient({
           >
             Open Overall Summary <ArrowRight size={12} />
           </Link>
-        </div>
-      ) : null}
-
-      {resolvedReportId ? (
-        <div className="mb-3 flex justify-end">
-          <VisibilityToggle reportId={resolvedReportId} />
         </div>
       ) : null}
 

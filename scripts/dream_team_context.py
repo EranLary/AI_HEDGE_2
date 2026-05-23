@@ -86,6 +86,7 @@ def _extract_filing_entries(files_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "source": source,
                 "form_type": form_type,
                 "date": str(raw.get("date") or "").strip(),
+                "source_url": str(raw.get("url") or "").strip(),
                 "text": _truncate(text, 220000),
             }
         )
@@ -101,7 +102,7 @@ def _pick_latest(entries: List[Dict[str, Any]], kind: str) -> Optional[Dict[str,
 
 
 def _empty_filing() -> Dict[str, Any]:
-    return {"available": False, "source": "", "form_type": "", "date": "", "text": ""}
+    return {"available": False, "source": "", "form_type": "", "date": "", "source_url": "", "text": ""}
 
 
 def _to_filing_payload(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -112,6 +113,7 @@ def _to_filing_payload(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "source": str(row.get("source") or ""),
         "form_type": str(row.get("form_type") or ""),
         "date": str(row.get("date") or ""),
+        "source_url": str(row.get("source_url") or ""),
         "text": str(row.get("text") or ""),
     }
 

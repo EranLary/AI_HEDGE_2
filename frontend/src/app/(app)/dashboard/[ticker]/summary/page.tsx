@@ -60,6 +60,7 @@ type FilingStatusSnippet = {
   source: string;
   form_type: string;
   date: string;
+  source_url: string;
 };
 
 type FilingsStatusPayload = {
@@ -448,12 +449,14 @@ export default function DashboardSummaryPage({
                 source: String(json.filings.annual?.source || ""),
                 form_type: String(json.filings.annual?.form_type || ""),
                 date: String(json.filings.annual?.date || ""),
+                source_url: String(json.filings.annual?.source_url || ""),
               },
               quarterly: {
                 available: Boolean(json.filings.quarterly?.available),
                 source: String(json.filings.quarterly?.source || ""),
                 form_type: String(json.filings.quarterly?.form_type || ""),
                 date: String(json.filings.quarterly?.date || ""),
+                source_url: String(json.filings.quarterly?.source_url || ""),
               },
             });
           }
@@ -548,7 +551,9 @@ export default function DashboardSummaryPage({
             const row = filings?.[kind];
             const label = kind === "annual" ? "Annual Filing PDF" : "Quarterly Filing PDF";
             const href = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/pdf`;
+            const sourceHref = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`;
             const available = Boolean(row?.available);
+            const hasSource = Boolean(row?.available && String(row?.source_url || "").trim());
             const meta = filingsLoading && !row
               ? "Checking..."
               : row?.available
@@ -556,22 +561,42 @@ export default function DashboardSummaryPage({
                 : "Not available";
             return (
               <div key={kind} className="min-w-[210px] rounded-lg border border-white/10 bg-black/25 p-2">
-                {available ? (
-                  <a
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/35 hover:bg-white/10"
-                    href={href}
-                  >
-                    {label}
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
-                  >
-                    {label}
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {available ? (
+                    <a
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/35 hover:bg-white/10"
+                      href={href}
+                    >
+                      {label}
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
+                    >
+                      {label}
+                    </button>
+                  )}
+                  {hasSource ? (
+                    <a
+                      className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/35 hover:bg-white/10"
+                      href={sourceHref}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Source Filing
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500 disabled:cursor-not-allowed"
+                    >
+                      Source Filing
+                    </button>
+                  )}
+                </div>
                 <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-zinc-500">{meta}</p>
               </div>
             );

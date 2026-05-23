@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -79,6 +80,7 @@ def _extract_filing_entries(files_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "source": source,
                 "form_type": form_type,
                 "date": str(raw.get("date") or "").strip(),
+                "source_url": str(raw.get("url") or "").strip(),
                 "text": _truncate(text, 400000),
             }
         )
@@ -93,17 +95,56 @@ def _pick_latest(entries: List[Dict[str, Any]], kind: str) -> Optional[Dict[str,
     return None
 
 
+def _clean_filing_text(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"https?://\S+", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(?:us-gaap|dei|xbrli|link|iso4217|xlink|srt|country|tsla):[A-Za-z0-9_.-]+\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\b[A-Za-z0-9._:/-]{40,}\b", " ", cleaned)
+
+    lines: List[str] = []
+    for raw_line in cleaned.split("\n"):
+        line = re.sub(r"[ \t]+", " ", raw_line).strip()
+        if not line:
+            continue
+        alpha_count = sum(ch.isalpha() for ch in line)
+        if alpha_count < 3:
+            continue
+        lines.append(line)
+
+    deduped: List[str] = []
+    prev = ""
+    for line in lines:
+        if line == prev:
+            continue
+        deduped.append(line)
+        prev = line
+
+    out = "\n\n".join(deduped)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out
+
+
 def _build_markdown(ticker: str, kind: str, filing: Dict[str, Any]) -> str:
     title = "Annual Filing" if kind == "annual" else "Quarterly Filing"
     source = str(filing.get("source") or "")
     form_type = str(filing.get("form_type") or "")
     date = str(filing.get("date") or "")
-    text = str(filing.get("text") or "")
+    source_url = str(filing.get("source_url") or "")
+    text = _clean_filing_text(str(filing.get("text") or ""))
+    if not text:
+        text = "Filing text could not be cleaned for display."
     return (
         f"# {ticker} {title}\n\n"
         f"- Source: {source or 'N/A'}\n"
         f"- Form Type: {form_type or 'N/A'}\n"
         f"- Date: {date or 'N/A'}\n\n"
+        f"- Source Filing URL: {source_url or 'N/A'}\n\n"
         f"---\n\n"
         f"{text}\n"
     )
@@ -185,6 +226,7 @@ def main() -> int:
                     "source": str(filing.get("source") or ""),
                     "form_type": str(filing.get("form_type") or ""),
                     "date": str(filing.get("date") or ""),
+                    "source_url": str(filing.get("source_url") or ""),
                     "text": str(filing.get("text") or ""),
                 },
                 "context_error": context_error,

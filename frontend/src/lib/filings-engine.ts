@@ -12,6 +12,7 @@ export type FilingSnippet = {
   source: string;
   form_type: string;
   date: string;
+  source_url: string;
   text: string;
 };
 
@@ -58,6 +59,7 @@ function normalizeFiling(value: Partial<FilingSnippet> | null | undefined): Fili
     source: String(value?.source || ""),
     form_type: String(value?.form_type || ""),
     date: String(value?.date || ""),
+    source_url: String(value?.source_url || ""),
     text: String(value?.text || ""),
   };
 }
@@ -200,4 +202,3 @@ export async function buildFilingPdf(ticker: string, kind: FilingKind): Promise<
     filing: normalizeFiling(raw.filing),
   };
 }
-

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getTickerFilingsStatus } from "@/lib/filings-engine";
+import { getStoredTickerFilingsStatus } from "@/lib/filings-stored";
 import { TICKER_RE } from "@/lib/site-runner";
 
 export const runtime = "nodejs";
@@ -29,11 +29,10 @@ export async function GET(
     return NextResponse.json({ error: "Invalid ticker format." }, { status: 400 });
   }
 
-  const url = new URL(req.url);
-  const forceRefresh = String(url.searchParams.get("refresh") || "").trim().length > 0;
+  void req;
 
   try {
-    const status = await getTickerFilingsStatus(tk, { forceRefresh });
+    const status = await getStoredTickerFilingsStatus(tk);
     return NextResponse.json({
       ok: true,
       ticker: status.ticker,

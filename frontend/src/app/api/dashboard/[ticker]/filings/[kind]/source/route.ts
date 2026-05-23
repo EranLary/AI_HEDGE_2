@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getTickerFilingsStatus } from "@/lib/filings-engine";
+import { getStoredTickerFilingsStatus } from "@/lib/filings-stored";
 import { TICKER_RE } from "@/lib/site-runner";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function GET(
   }
 
   try {
-    const status = await getTickerFilingsStatus(tk);
+    const status = await getStoredTickerFilingsStatus(tk);
     const filing = filingKind === "annual" ? status.filings.annual : status.filings.quarterly;
     const url = String(filing?.source_url || "").trim();
     if (!filing?.available || !url) {

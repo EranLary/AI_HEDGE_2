@@ -222,6 +222,22 @@ export type DashboardPayload = {
       confidence_explanation?: string;
     };
   };
+  filings?: {
+    annual?: {
+      available?: boolean;
+      source?: string;
+      form_type?: string;
+      date?: string;
+      source_url?: string;
+    };
+    quarterly?: {
+      available?: boolean;
+      source?: string;
+      form_type?: string;
+      date?: string;
+      source_url?: string;
+    };
+  };
   artifacts: {
     analysis_txt?: string;
     prices_plot?: string;

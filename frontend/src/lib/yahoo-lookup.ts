@@ -77,7 +77,7 @@ function pickExchange(quote: Record<string, unknown>): string {
 // Yahoo's URL form. If the part after the last dot looks like an exchange code,
 // keep the dot; otherwise treat it as a share-class suffix and convert to dash.
 const KNOWN_EXCHANGE_SUFFIXES = new Set([
-  "TA", "L", "TO", "V", "CN", "NEO", "NE",
+  "TA", "L", "IL", "TO", "V", "CN", "NEO", "NE",
   "PA", "AS", "DE", "F", "MU", "HM", "HA", "DU", "BE", "SG", "MI", "MC", "BR", "VI", "VS", "ST", "OL", "HE", "CO", "IC", "IR",
   "SW", "PRA", "WA", "BD", "AT", "MX", "SA", "BA", "CL", "ME", "TI", "TWN",
   "AX", "NZ", "JK", "BK", "KS", "KQ", "T", "HK", "SS", "SZ", "NS", "BO", "KL",

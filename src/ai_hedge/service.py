@@ -54,7 +54,7 @@ You are a senior Buy-Side equity analyst at a top-tier investment fund.
 
 You specialize in:
 - Deep fundamental analysis
-- Financial statement interpretation (10-K, 10-Q, footnotes)
+- Financial statement interpretation (SEC forms, MAYA reports, footnotes)
 - Detecting earnings quality issues and accounting distortions
 - Competitive positioning and industry structure
 - Valuation under uncertainty
@@ -69,7 +69,7 @@ You are expected to:
 - Connect financial data, then business reality, then valuation implications
 
 Critical Data Constraint:
-- Use ONLY the provided inputs (info dict, financials, SEC filings).
+- Use ONLY the provided inputs (info dict, financials, official filing text).
 - Do NOT use prior knowledge.
 - If something is missing, write EXACTLY:
   "Not disclosed in the provided filings."
@@ -233,7 +233,7 @@ def _truncate_text(value: Any, max_chars: int) -> str:
 
 def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[str]]:
     """
-    Build SEC text-only context from files_dict (no tables).
+    Build official filing text-only context from files_dict (no tables).
 
     Returns:
         (combined_text, notes)
@@ -276,28 +276,37 @@ def _build_sec_text_payload(files_dict: Dict[str, object]) -> Tuple[str, List[st
     annual_budget = max(0, total_budget - quarterly_text_chars) if quarterly_entries else total_budget
     annual_budget_left = annual_budget
 
-    def _append_block(form_type: str, date: str, text: str) -> None:
-        header = f"## Filing: {form_type} | Date: {date}".strip()
+    def _append_block(form_type: str, raw: Dict[str, Any], date: str, text: str) -> None:
+        source = str(raw.get("source") or "").strip()
+        issuer = str(raw.get("resolved_company_id") or "").strip()
+        parts = [f"## Filing: {form_type}"]
+        if source:
+            parts.append(f"Source: {source}")
+        if issuer:
+            parts.append(f"MAYA company id: {issuer}")
+        if date:
+            parts.append(f"Date: {date}")
+        header = " | ".join(parts).strip()
         chunks.append(f"{header}\n{text}")
 
-    for form_type, _raw, text, date, _kind in quarterly_entries:
-        _append_block(form_type, date, text)
+    for form_type, raw, text, date, _kind in quarterly_entries:
+        _append_block(form_type, raw, date, text)
 
-    for form_type, _raw, text, date, _kind in annual_entries:
+    for form_type, raw, text, date, _kind in annual_entries:
         if annual_budget_left <= 0:
             clipped = ""
         else:
             clipped = _truncate_text(text, annual_budget_left)
             annual_budget_left -= len(clipped)
-        _append_block(form_type, date, clipped)
+        _append_block(form_type, raw, date, clipped)
 
     # Keep other filings only as best effort within the remaining annual budget.
-    for form_type, _raw, text, date, _kind in other_entries:
+    for form_type, raw, text, date, _kind in other_entries:
         if annual_budget_left <= 0:
             break
         clipped = _truncate_text(text, annual_budget_left)
         annual_budget_left -= len(clipped)
-        _append_block(form_type, date, clipped)
+        _append_block(form_type, raw, date, clipped)
 
     return "\n\n".join(chunks), notes
 def _sec_style_instruction(short_mode: bool) -> str:
@@ -501,7 +510,7 @@ def _build_sec_prompt(
         f"Ticker: {ticker}\n\n"
         f"Info dict (info_dict['info']):\n{info_text}\n\n"
         f"Financial reports (financial_dict['all_reports'/'All Reports']):\n{all_reports_text}\n\n"
-        f"SEC filings text (from files_dict, text only):\n{sec_text_bundle}\n"
+        f"Official filing text (from files_dict, text only):\n{sec_text_bundle}\n"
     )
 
 
@@ -522,7 +531,7 @@ def _generate_sec_analysis_text(
     sec_text_bundle, notes = _build_sec_text_payload(files_dict)
     errors.extend(notes)
     if not sec_text_bundle.strip():
-        errors.append("No SEC filing text available in files_dict.")
+        errors.append("No official filing text available in files_dict.")
         return "", errors
 
     info_text = _truncate_text(json.dumps(info_dict.get("info", {}), ensure_ascii=False), 120_000)
@@ -625,9 +634,9 @@ def _format_sec_qna_markdown(questions: List[str], answers_payload: Dict[str, An
         "## SEC Pre-Decision Q&A",
     ]
 
-    lines.extend(["", "### Answers from SEC filings"])
+    lines.extend(["", "### Answers from official filings"])
     if not rows:
-        lines.append("No SEC-based answers were generated.")
+        lines.append("No filing-based answers were generated.")
         return "\n".join(lines).strip()
 
     for idx, row in enumerate(rows, start=1):
@@ -662,7 +671,7 @@ def build_sec_question_answer_text(
 ) -> Dict[str, object]:
     """
     Build SEC-focused questions from initial analysis + all reports, then answer them
-    using SEC filing text. Returns markdown-ready Q&A text.
+    using official filing text. Returns markdown-ready Q&A text.
     """
     ticker_u = (ticker or "").strip().upper()
     errors: List[str] = []
@@ -685,7 +694,7 @@ def build_sec_question_answer_text(
         sec_text_bundle, notes = _build_sec_text_payload(files_dict or {})
         errors.extend(notes)
         if not sec_text_bundle.strip():
-            errors.append("No SEC filing text available in files_dict.")
+            errors.append("No official filing text available in files_dict.")
             return out
 
         analysis_slice = _truncate_text(analysis_text, 150_000)
@@ -695,7 +704,7 @@ def build_sec_question_answer_text(
         questions_prompt = (
             "You are preparing final investment decision diligence.\n"
             "Given the first-pass analysis text and financial reports, list the most critical\n"
-            "questions/information to verify directly in formal SEC filings BEFORE final decision.\n"
+            "questions/information to verify directly in formal company filings BEFORE final decision.\n"
             "Focus on falsifiable, valuation-critical checks (earnings quality, cash conversion,\n"
             "segment economics, contingent liabilities, dilution, covenant/legal risk, concentration risk).\n\n"
             f"Ticker: {ticker_u}\n\n"
@@ -727,8 +736,8 @@ def build_sec_question_answer_text(
 
         questions_block = "\n".join(f"{idx}. {q}" for idx, q in enumerate(questions, start=1))
         answers_prompt = (
-            "You are given SEC filing text and a diligence question list.\n"
-            "Answer each question strictly from the provided SEC text.\n"
+            "You are given official filing text and a diligence question list.\n"
+            "Answer each question strictly from the provided filing text.\n"
             'If unavailable, answer exactly: "Not disclosed in the provided filings."\n\n'
             "Return ONLY valid JSON in this exact shape:\n"
             "{\n"
@@ -744,7 +753,7 @@ def build_sec_question_answer_text(
             "}\n"
             "No markdown, no extra keys, no prose outside JSON.\n\n"
             f"Questions:\n{questions_block}\n\n"
-            f"SEC filings text:\n{sec_text_bundle}\n"
+            f"Official filing text:\n{sec_text_bundle}\n"
         )
 
         raw_answers = legacy.deepseek_simple_text(
@@ -871,7 +880,7 @@ def _run_sec_analysis(
 
         header = (
             f"# {ticker_u} - {'SEC Short' if short_mode else 'SEC Full'} Analysis\n\n"
-            "This report is based strictly on SEC filing text + info_dict['info'] + financial_dict['All Reports'].\n\n"
+            "This report is based strictly on official filing text + info_dict['info'] + financial_dict['All Reports'].\n\n"
             "\n\n"
         )
         analysis_target.write_text(header + generated_text + "\n", encoding="utf-8")

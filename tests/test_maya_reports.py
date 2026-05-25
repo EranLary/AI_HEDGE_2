@@ -133,6 +133,63 @@ def test_unresolved_ta_company_id_is_recorded():
             unresolved_path.unlink()
 
 
+def test_collect_ticker_terms_uses_supplied_yahoo_info_without_refetch():
+    with patch("ai_hedge.maya_reports.yf.Ticker") as p_ticker:
+        terms = maya_reports._collect_ticker_terms(
+            "AMRK.TA",
+            company_info={
+                "shortName": "AMIR MARKETING AND",
+                "longName": "Amir Marketing and Investments in Agriculture Ltd",
+            },
+        )
+
+    assert p_ticker.call_count == 0
+    assert terms[:3] == [
+        "AMRK",
+        "Amir Marketing and Investments in Agriculture Ltd",
+        "AMIR MARKETING AND",
+    ]
+
+
+def test_dynamic_company_resolution_rejects_zero_match_candidates():
+    rows = [
+        {
+            "companies": [
+                {"companyId": 1084, "name": "Tower Semiconductor Ltd."},
+            ]
+        }
+    ]
+
+    with patch("ai_hedge.maya_reports._safe_request_json", return_value=rows):
+        company_id = maya_reports._resolve_company_id_dynamic(
+            "AMRK.TA",
+            session=object(),
+            company_info={"shortName": "AMIR MARKETING AND"},
+        )
+
+    assert company_id is None
+
+
+def test_dynamic_company_resolution_uses_supplied_company_name():
+    rows = [
+        {
+            "companies": [
+                {"companyId": 1084, "name": "Tower Semiconductor Ltd."},
+                {"companyId": 2204, "name": "Amir Marketing and Investments in Agriculture Ltd."},
+            ]
+        }
+    ]
+
+    with patch("ai_hedge.maya_reports._safe_request_json", return_value=rows):
+        company_id = maya_reports._resolve_company_id_dynamic(
+            "AMRK.TA",
+            session=object(),
+            company_info={"shortName": "AMIR MARKETING AND"},
+        )
+
+    assert company_id == 2204
+
+
 def test_sec_payload_contract_accepts_maya_dict():
     files_dict = {
         "MAYA Annual Report": {

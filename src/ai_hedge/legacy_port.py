@@ -954,7 +954,7 @@ def _latest_filing_full_text_sec(ticker: str) -> dict:
         return files_dict
 
 
-def latest_filing_full_text(ticker: str) -> dict:
+def latest_filing_full_text(ticker: str, company_info: Optional[Dict[str, Any]] = None) -> dict:
     """
     Routing wrapper:
     - `.TA` tickers -> MAYA financial reports (annual + quarterly when available)
@@ -965,7 +965,7 @@ def latest_filing_full_text(ticker: str) -> dict:
         try:
             from .maya_reports import fetch_latest_maya_reports
 
-            maya_files = fetch_latest_maya_reports(ticker_u)
+            maya_files = fetch_latest_maya_reports(ticker_u, company_info=company_info)
             if isinstance(maya_files, dict):
                 return maya_files
             return {}
@@ -1141,7 +1141,8 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
 def get_dicts(ticker):
     info_dict = get_info_data(ticker)
-    files_dict = latest_filing_full_text(ticker)
+    info_payload = info_dict.get("info") if isinstance(info_dict, dict) else {}
+    files_dict = latest_filing_full_text(ticker, company_info=info_payload if isinstance(info_payload, dict) else {})
     financial_dict = get_financial_data(ticker, info_dict["info"], info_dict["financials"])
     variables_dict = get_variables(ticker, info_dict["info"], financial_dict["balance_sheet_quarterly"], financial_dict["financials_annual"], info_dict["financials"])
     return info_dict, files_dict, financial_dict, variables_dict

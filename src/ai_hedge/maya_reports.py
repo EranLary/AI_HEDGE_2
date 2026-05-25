@@ -146,7 +146,7 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _record_unresolved_company_id(ticker: str) -> None:
+def _record_unresolved_company_id(ticker: str, company_info: Optional[Dict[str, Any]] = None) -> None:
     ticker_u = _normalize_ticker(ticker)
     if not ticker_u or not ticker_u.endswith(".TA"):
         return
@@ -162,7 +162,7 @@ def _record_unresolved_company_id(ticker: str) -> None:
         prev = existing.get(ticker_u, {}) if isinstance(existing.get(ticker_u, {}), dict) else {}
         now = _utc_now_iso()
         count = int(prev.get("count", 0) or 0) + 1
-        terms = _collect_ticker_terms(ticker_u)
+        terms = _collect_ticker_terms(ticker_u, company_info=company_info)
 
         existing[ticker_u] = {
             "count": count,
@@ -240,15 +240,19 @@ def _normalize_name_tokens(value: str) -> List[str]:
     return out
 
 
-def _collect_ticker_terms(ticker: str) -> List[str]:
+def _collect_ticker_terms(ticker: str, company_info: Optional[Dict[str, Any]] = None) -> List[str]:
     base = _normalize_ticker(ticker).replace(".TA", "")
     terms: List[str] = [base]
-    try:
-        info = yf.Ticker(_normalize_ticker(ticker)).info
-    except Exception:
-        info = {}
+
+    info = company_info if isinstance(company_info, dict) else {}
+    if not info:
+        try:
+            info = yf.Ticker(_normalize_ticker(ticker)).info
+        except Exception:
+            info = {}
+
     if isinstance(info, dict):
-        for key in ("longName", "shortName", "prevName"):
+        for key in ("longName", "shortName", "displayName", "prevName"):
             val = str(info.get(key, "") or "").strip()
             if val:
                 terms.append(val)
@@ -294,10 +298,14 @@ def _score_company_candidate(name: str, search_term: str, ticker_base: str) -> i
     return score
 
 
-def _resolve_company_id_dynamic(ticker: str, session: requests.Session) -> Optional[int]:
+def _resolve_company_id_dynamic(
+    ticker: str,
+    session: requests.Session,
+    company_info: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
     ticker_u = _normalize_ticker(ticker)
     ticker_base = ticker_u.replace(".TA", "")
-    terms = _collect_ticker_terms(ticker_u)
+    terms = _collect_ticker_terms(ticker_u, company_info=company_info)
     if not terms:
         return None
 
@@ -334,7 +342,10 @@ def _resolve_company_id_dynamic(ticker: str, session: requests.Session) -> Optio
             if company_id <= 0:
                 continue
             company_name = str(comp.get("name", "") or "")
-            score = term_weight + _score_company_candidate(company_name, term, ticker_base) + 1
+            match_score = _score_company_candidate(company_name, term, ticker_base)
+            if match_score <= 0:
+                continue
+            score = term_weight + match_score
             candidate_scores[company_id] = candidate_scores.get(company_id, 0) + score
             if company_name:
                 candidate_names[company_id] = company_name
@@ -350,15 +361,25 @@ def _resolve_company_id_dynamic(ticker: str, session: requests.Session) -> Optio
         return candidate_scores[cid], token_hits
 
     winner = max(candidate_scores.keys(), key=_tie_break)
-    return winner if winner > 0 else None
+    if winner <= 0:
+        return None
+
+    best_score = candidate_scores.get(winner, 0)
+    if best_score < 8:
+        return None
+    return winner
 
 
-def _resolve_company_id(ticker: str, session: requests.Session) -> Optional[int]:
+def _resolve_company_id(
+    ticker: str,
+    session: requests.Session,
+    company_info: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
     overrides = _load_company_overrides()
     ticker_u = _normalize_ticker(ticker)
     if ticker_u in overrides:
         return overrides[ticker_u]
-    return _resolve_company_id_dynamic(ticker_u, session)
+    return _resolve_company_id_dynamic(ticker_u, session, company_info=company_info)
 
 
 def _safe_dt(value: Any) -> datetime:
@@ -631,7 +652,14 @@ def _download_report_text(session: requests.Session, detail: Dict[str, Any]) -> 
     return "", ""
 
 
-def _build_entry(label: str, *, detail: Dict[str, Any], text: str, source_url: str) -> Dict[str, Any]:
+def _build_entry(
+    label: str,
+    *,
+    detail: Dict[str, Any],
+    text: str,
+    source_url: str,
+    company_id: int,
+) -> Dict[str, Any]:
     publish_date = str(detail.get("publishDate", "") or "")
     title = str(detail.get("title", "") or "")
     if title and title not in text[:2000]:
@@ -644,10 +672,14 @@ def _build_entry(label: str, *, detail: Dict[str, Any], text: str, source_url: s
         "title": title or None,
         "source": "MAYA",
         "label": label,
+        "resolved_company_id": int(company_id),
     }
 
 
-def fetch_latest_maya_reports(ticker: str) -> Dict[str, Dict[str, Any]]:
+def fetch_latest_maya_reports(
+    ticker: str,
+    company_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """
     Fetch latest annual + quarterly MAYA reports for `.TA` tickers.
 
@@ -661,9 +693,9 @@ def fetch_latest_maya_reports(ticker: str) -> Dict[str, Dict[str, Any]]:
     session = requests.Session()
     out: Dict[str, Dict[str, Any]] = {}
 
-    company_id = _resolve_company_id(ticker_u, session)
+    company_id = _resolve_company_id(ticker_u, session, company_info=company_info)
     if not company_id:
-        _record_unresolved_company_id(ticker_u)
+        _record_unresolved_company_id(ticker_u, company_info=company_info)
         return {}
 
     annual_primary = _pick_latest_annual(session, company_id=company_id, lang="he")
@@ -761,6 +793,12 @@ def fetch_latest_maya_reports(ticker: str) -> Dict[str, Dict[str, Any]]:
 
         if not detail or not text:
             continue
-        out[label] = _build_entry(label, detail=detail, text=text, source_url=source_url)
+        out[label] = _build_entry(
+            label,
+            detail=detail,
+            text=text,
+            source_url=source_url,
+            company_id=company_id,
+        )
 
     return out

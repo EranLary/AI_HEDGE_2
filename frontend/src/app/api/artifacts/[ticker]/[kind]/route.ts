@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import { findLatestByFileName, outputsRoot, resolveDashboardReportPath } from "@/lib/server-outputs";
 
@@ -109,8 +110,14 @@ async function resolveReportScopedFile(
   reportId: string,
   fileName: string,
 ): Promise<{ foundPath: string; r2Url: string | null }> {
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null };
+
   const reportPath = resolveDashboardReportPath(reportId);
   if (reportPath) {
+    if (deletedFilter.isDeleted(reportId, ticker, siteRunIdFromPathLike(reportPath))) {
+      return { foundPath: "", r2Url: null };
+    }
     const foundPath = resolveFromRoot(path.dirname(reportPath), fileName);
     return { foundPath, r2Url: null };
   }
@@ -178,7 +185,12 @@ export async function GET(
     }
   }
 
-  const found = foundPath ? { path: foundPath } : findLatestByFileName(fileName);
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  const latestPath = foundPath ? foundPath : findLatestByFileName(fileName)?.path || "";
+  const found =
+    latestPath && !deletedFilter.isDeleted("", ticker, siteRunIdFromPathLike(latestPath))
+      ? { path: latestPath }
+      : null;
   if (!found) {
     return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
   }

@@ -1,4 +1,5 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
@@ -58,8 +59,10 @@ async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayl
     // Fall through to outputs scan.
   }
 
+  const deletedFilter = await getDeletedReportFilterForTicker(tk);
   for (const entry of listDashboardReports()) {
     if (String(entry.ticker || "").toUpperCase() !== tk) continue;
+    if (deletedFilter.isDeleted(entry.report_id, tk, siteRunIdFromPathLike(entry.path))) continue;
     const payload = readJson<DashboardPayload>(entry.path);
     if (payload) return payload;
   }

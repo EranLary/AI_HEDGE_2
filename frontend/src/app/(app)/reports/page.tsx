@@ -117,7 +117,7 @@ async function MineTabContent({
     <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {filtered.map((r) => (
         <li key={r.id} className="h-full">
-          <ReportCard report={r} showVisibilityToggle />
+          <ReportCard report={r} showVisibilityToggle showDeleteAction />
         </li>
       ))}
     </ul>

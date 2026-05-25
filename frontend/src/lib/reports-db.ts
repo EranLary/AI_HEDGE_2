@@ -37,6 +37,12 @@ export interface DbTickerRow {
   last_analyzed_at: string | null;
 }
 
+export interface DeletedReportRef {
+  id: string;
+  ticker: string;
+  source_run_id: string | null;
+}
+
 export async function fetchLatestReport(ticker: string): Promise<DbReportFull | null> {
   const sql = getSql();
   if (!sql) return null;
@@ -164,7 +170,37 @@ export async function attributeReportToUser(opts: {
   return rows.length > 0;
 }
 
-function fallbackCommunityReportsFromOutputs(query?: string): DbReportSummary[] {
+type DeletedReportPredicate = (reportId: string, ticker: string, runId: string | null) => boolean;
+
+function siteRunIdFromPathLike(value: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\\/g, "/");
+  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
+async function deletedReportPredicate(): Promise<DeletedReportPredicate> {
+  try {
+    const refs = await listDeletedReportRefs();
+    const ids = new Set<string>();
+    const runKeys = new Set<string>();
+    for (const ref of refs) {
+      const id = String(ref.id || "").trim();
+      const ticker = String(ref.ticker || "").trim().toUpperCase();
+      const runId = String(ref.source_run_id || "").trim();
+      if (id) ids.add(id);
+      if (ticker && runId) runKeys.add(`${ticker}:${runId}`);
+    }
+    return (reportId, ticker, runId) =>
+      ids.has(String(reportId || "").trim()) ||
+      runKeys.has(`${String(ticker || "").trim().toUpperCase()}:${String(runId || "").trim()}`);
+  } catch {
+    return () => false;
+  }
+}
+
+function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedReportPredicate = () => false): DbReportSummary[] {
   const q = String(query || "").trim().toLowerCase();
   const rows: DbReportSummary[] = [];
   for (const entry of listDashboardReports()) {
@@ -172,6 +208,7 @@ function fallbackCommunityReportsFromOutputs(query?: string): DbReportSummary[] 
     if (!dashboard) continue;
     const ticker = String(dashboard.ticker || entry.ticker || "").toUpperCase();
     if (!ticker) continue;
+    if (isDeleted(entry.report_id, ticker, siteRunIdFromPathLike(entry.path))) continue;
     const companyName = String(dashboard.header?.company_name || "").trim() || null;
     if (q) {
       const inTicker = ticker.toLowerCase().includes(q);
@@ -315,7 +352,7 @@ export async function listCommunityReports(): Promise<DbReportSummary[]> {
       `) as unknown as DbReportSummary[]);
     return rows;
   } catch {
-    return fallbackCommunityReportsFromOutputs();
+    return fallbackCommunityReportsFromOutputs(undefined, await deletedReportPredicate());
   }
 }
 
@@ -372,7 +409,7 @@ export async function listCommunityReportsPaged(opts: {
     const hasMore = rows.length > limit;
     return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
   } catch {
-    const all = fallbackCommunityReportsFromOutputs(opts.query);
+    const all = fallbackCommunityReportsFromOutputs(opts.query, await deletedReportPredicate());
     const pageRows = all.slice(offset, offset + limit + 1);
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
@@ -396,6 +433,51 @@ export async function setReportVisibility(opts: {
      RETURNING id;
   `) as Array<{ id: string }>;
   return rows.length > 0;
+}
+
+/** Owner-scoped soft delete. Deleted reports are excluded from lists and aggregate calculations. */
+export async function deleteUserReport(opts: {
+  reportId: string;
+  userId: string;
+}): Promise<boolean> {
+  const sql = getSql();
+  if (!sql) return false;
+  const rows = (await sql`
+    UPDATE reports
+       SET deleted_at = now()
+     WHERE id = ${opts.reportId}::uuid
+       AND user_id = ${opts.userId}::uuid
+       AND deleted_at IS NULL
+     RETURNING id;
+  `) as Array<{ id: string }>;
+  return rows.length > 0;
+}
+
+export async function listDeletedReportRefs(): Promise<DeletedReportRef[]> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT id::text AS id,
+           ticker,
+           source_run_id
+      FROM reports
+     WHERE deleted_at IS NOT NULL;
+  `) as unknown as DeletedReportRef[];
+  return rows;
+}
+
+export async function listDeletedReportRefsForTicker(ticker: string): Promise<DeletedReportRef[]> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT id::text AS id,
+           ticker,
+           source_run_id
+      FROM reports
+     WHERE deleted_at IS NOT NULL
+       AND ticker = ${String(ticker || "").toUpperCase()};
+  `) as unknown as DeletedReportRef[];
+  return rows;
 }
 
 /**

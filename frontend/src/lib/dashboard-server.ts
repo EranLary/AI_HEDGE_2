@@ -12,6 +12,11 @@ import {
   normalizePayload,
 } from "@/lib/dashboard-normalize";
 import {
+  getDeletedReportFilter,
+  getDeletedReportFilterForTicker,
+  siteRunIdFromPathLike,
+} from "@/lib/deleted-reports";
+import {
   fetchLatestReport,
   fetchReportById,
   listAllReports,
@@ -39,16 +44,9 @@ export type LivePerformance = {
   };
 };
 
-function siteRunIdFromPathLike(value: string): string | null {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const normalized = raw.replace(/\\/g, "/");
-  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
-  return match?.[1] ? String(match[1]).trim() : null;
-}
-
 async function loadReportsList(): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
+  const deletedFilter = await getDeletedReportFilter();
 
   try {
     const dbRows = await listAllReports();
@@ -81,6 +79,7 @@ async function loadReportsList(): Promise<ReportListItem[]> {
     };
     const runId = siteRunIdFromPathLike(report.path);
     const key = runId ? `run:${report.ticker}:${runId}` : `file:${report.path}`;
+    if (deletedFilter.isDeleted(report.report_id, report.ticker, runId)) continue;
     if (merged.has(key)) continue;
     merged.set(key, row);
   }
@@ -105,6 +104,12 @@ async function loadDashboardPayload(
   reportId: string,
 ): Promise<DashboardPayload> {
   const tk = ticker.toUpperCase();
+  const deletedFilter = await getDeletedReportFilterForTicker(tk);
+  if (reportId && deletedFilter.isDeleted(reportId, tk)) {
+    return normalizePayload(tk, { ticker: tk } as DashboardPayload, {
+      reportId,
+    });
+  }
 
   try {
     const dbRow = reportId
@@ -128,6 +133,12 @@ async function loadDashboardPayload(
   if (reportId) {
     const resolved = resolveDashboardReportPath(reportId);
     if (resolved) {
+      const runId = siteRunIdFromPathLike(resolved);
+      if (deletedFilter.isDeleted(reportId, tk, runId)) {
+        return normalizePayload(tk, { ticker: tk } as DashboardPayload, {
+          reportId,
+        });
+      }
       const base = resolved.split(/[\\/]/).pop() || "";
       if (base.toUpperCase().startsWith(`${tk}_DASHBOARD.JSON`)) {
         dashboardPath = resolved;
@@ -143,7 +154,7 @@ async function loadDashboardPayload(
   if (!dashboardPath) {
     const dashboardName = `${tk}_dashboard.json`;
     const latest = findLatestByFileName(dashboardName);
-    if (latest) {
+    if (latest && !deletedFilter.isDeleted("", tk, siteRunIdFromPathLike(latest.path))) {
       dashboardPath = latest.path;
       dashboardMtime = latest.mtimeMs;
     }

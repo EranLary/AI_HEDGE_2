@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
@@ -16,16 +17,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function siteRunIdFromPathLike(value: string): string | null {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const normalized = raw.replace(/\\/g, "/");
-  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
-  return match?.[1] ? String(match[1]).trim() : null;
-}
-
 async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
   const merged = new Map<string, LoadedDashboard>();
+  const deletedFilter = await getDeletedReportFilter();
 
   try {
     const dbRows = await listAllDashboardsForHitRate();
@@ -56,6 +50,7 @@ async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
     const row = { ticker, generatedAt, payload };
     const runId = siteRunIdFromPathLike(entry.path);
     const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
+    if (deletedFilter.isDeleted(entry.report_id, ticker, runId)) continue;
     if (merged.has(key)) continue;
     merged.set(key, row);
   }

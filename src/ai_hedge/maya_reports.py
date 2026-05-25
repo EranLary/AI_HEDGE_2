@@ -80,6 +80,7 @@ _NOISY_NAME_TOKENS = {
     "FINANCIAL",
     "FINANCE",
     "THE",
+    "AND",
 }
 
 
@@ -256,6 +257,9 @@ def _collect_ticker_terms(ticker: str, company_info: Optional[Dict[str, Any]] = 
             val = str(info.get(key, "") or "").strip()
             if val:
                 terms.append(val)
+                cleaned = " ".join(_normalize_name_tokens(val))
+                if cleaned:
+                    terms.append(cleaned)
     uniq: List[str] = []
     seen = set()
     for term in terms:
@@ -277,6 +281,20 @@ def _iter_companies_from_search_rows(rows: Iterable[Dict[str, Any]]) -> Iterable
         for comp in companies:
             if isinstance(comp, dict):
                 yield comp
+
+
+def _iter_reporter_company_ids_from_search_rows(rows: Iterable[Dict[str, Any]]) -> Iterable[int]:
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in ("reporterId", "reporterSecurityId"):
+            try:
+                company_id = int(row.get(key))
+            except Exception:
+                continue
+            if company_id > 0:
+                yield company_id
+                break
 
 
 def _score_company_candidate(name: str, search_term: str, ticker_base: str) -> int:
@@ -321,34 +339,41 @@ def _resolve_company_id_dynamic(
 
     candidate_scores: Dict[int, int] = {}
     candidate_names: Dict[int, str] = {}
-    headers = _base_headers(lang="en", referer=f"{MAYA_BASE_URL}/en/reports/search")
-
     for term, term_weight in weighted_terms:
-        payload = {"pageSize": 50, "pageNumber": 1, "freeText": term}
-        rows = _safe_request_json(
-            session,
-            method="POST",
-            url=MAYA_REPORT_SEARCH_ENDPOINT,
-            headers=headers,
-            payload=payload,
-        )
-        if not isinstance(rows, list):
-            continue
-        for comp in _iter_companies_from_search_rows(rows):
-            try:
-                company_id = int(comp.get("companyId"))
-            except Exception:
+        for lang in ("en", "he"):
+            payload = {"pageSize": 50, "pageNumber": 1, "freeText": term}
+            headers = _base_headers(lang=lang, referer=f"{MAYA_BASE_URL}/{lang}/reports/search")
+            rows = _safe_request_json(
+                session,
+                method="POST",
+                url=MAYA_REPORT_SEARCH_ENDPOINT,
+                headers=headers,
+                payload=payload,
+            )
+            if not isinstance(rows, list):
                 continue
-            if company_id <= 0:
-                continue
-            company_name = str(comp.get("name", "") or "")
-            match_score = _score_company_candidate(company_name, term, ticker_base)
-            if match_score <= 0:
-                continue
-            score = term_weight + match_score
-            candidate_scores[company_id] = candidate_scores.get(company_id, 0) + score
-            if company_name:
-                candidate_names[company_id] = company_name
+            for comp in _iter_companies_from_search_rows(rows):
+                try:
+                    company_id = int(comp.get("companyId"))
+                except Exception:
+                    continue
+                if company_id <= 0:
+                    continue
+                company_name = str(comp.get("name", "") or "")
+                match_score = _score_company_candidate(company_name, term, ticker_base)
+                if match_score <= 0:
+                    continue
+                score = term_weight + match_score
+                candidate_scores[company_id] = candidate_scores.get(company_id, 0) + score
+                if company_name:
+                    candidate_names[company_id] = company_name
+            for company_id in _iter_reporter_company_ids_from_search_rows(rows):
+                if str(term or "").strip().upper() == ticker_base:
+                    score = term_weight + 2
+                else:
+                    score = term_weight + 5
+                candidate_scores[company_id] = candidate_scores.get(company_id, 0) + score
+                candidate_names.setdefault(company_id, f"reporterId:{company_id}")
 
     if not candidate_scores:
         return None

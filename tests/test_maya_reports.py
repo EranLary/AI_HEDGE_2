@@ -144,10 +144,12 @@ def test_collect_ticker_terms_uses_supplied_yahoo_info_without_refetch():
         )
 
     assert p_ticker.call_count == 0
-    assert terms[:3] == [
+    assert terms[:5] == [
         "AMRK",
         "Amir Marketing and Investments in Agriculture Ltd",
+        "AMIR MARKETING INVESTMENTS AGRICULTURE",
         "AMIR MARKETING AND",
+        "AMIR MARKETING",
     ]
 
 
@@ -188,6 +190,67 @@ def test_dynamic_company_resolution_uses_supplied_company_name():
         )
 
     assert company_id == 2204
+
+
+def test_dynamic_company_resolution_uses_reporter_id_from_direct_report_rows():
+    rows = [
+        {
+            "id": 1738575,
+            "title": "Form 20-F For the fiscal year ended December 31, 2025",
+            "publishDate": "2026-04-30T23:00:03.293",
+            "reporterId": 2028,
+            "reporterSecurityId": 1082379,
+        }
+    ]
+
+    with patch("ai_hedge.maya_reports._safe_request_json", return_value=rows):
+        company_id = maya_reports._resolve_company_id_dynamic(
+            "AMRK.TA",
+            session=object(),
+            company_info={"shortName": "AMIR MARKETING AND"},
+        )
+
+    assert company_id == 2028
+
+
+def test_dynamic_company_resolution_prefers_repeated_hebrew_reporter_hits():
+    tower_rows = [
+        {
+            "id": 1738575,
+            "title": "Form 20-F For the fiscal year ended December 31, 2025",
+            "reporterId": 2028,
+            "reporterSecurityId": 1082379,
+            "companies": [{"companyId": 2028, "name": "TOWER"}],
+        }
+    ]
+    amrk_rows = [
+        {
+            "id": 1740428 + idx,
+            "title": "מרשם בעלי מניות",
+            "reporterId": 1232,
+            "reporterSecurityId": 1092204,
+            "companies": [{"companyId": 1232, "name": "עמיר שיווק"}],
+        }
+        for idx in range(4)
+    ]
+
+    def _fake_search(_session, *, method: str, url: str, headers: dict, payload: dict | None = None):
+        term = str((payload or {}).get("freeText", ""))
+        language = str((headers or {}).get("Accept-Language", ""))
+        if term == "AMIR MARKETING" and language.startswith("he-IL"):
+            return amrk_rows
+        if term in {"AMIR MARKETING", "AMIR MARKETING AND"}:
+            return tower_rows
+        return []
+
+    with patch("ai_hedge.maya_reports._safe_request_json", side_effect=_fake_search):
+        company_id = maya_reports._resolve_company_id_dynamic(
+            "AMRK.TA",
+            session=object(),
+            company_info={"shortName": "AMIR MARKETING AND"},
+        )
+
+    assert company_id == 1232
 
 
 def test_sec_payload_contract_accepts_maya_dict():

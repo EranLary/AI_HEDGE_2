@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import {
   computeTickerSummaryAggregation,
   type SummarySourceReport,
@@ -21,16 +22,9 @@ function parseWindow(value: string | null): SummaryWindow {
   return WINDOW_VALUES.has(raw as SummaryWindow) ? (raw as SummaryWindow) : "all";
 }
 
-function siteRunIdFromPathLike(value: string): string | null {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const normalized = raw.replace(/\\/g, "/");
-  const match = normalized.match(/\/_site_runs\/([^/]+)/i);
-  return match?.[1] ? String(match[1]).trim() : null;
-}
-
 async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport[]> {
   const merged = new Map<string, SummarySourceReport>();
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
 
   try {
     const dbRows = await listDashboardsForTicker(ticker);
@@ -60,6 +54,7 @@ async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport
     const row: SummarySourceReport = { ticker, generatedAt, payload };
     const runId = siteRunIdFromPathLike(entry.path);
     const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
+    if (deletedFilter.isDeleted(entry.report_id, ticker, runId)) continue;
     if (merged.has(key)) continue;
     merged.set(key, row);
   }

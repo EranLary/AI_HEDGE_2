@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { DbReportSummary } from "@/lib/reports-db";
+import { DeleteReportButton } from "./delete-report-button";
 import { FriendlyDate } from "./friendly-date";
 import { VisibilityToggle } from "./visibility-toggle";
 
@@ -25,9 +26,11 @@ function recommendationTone(rec: string | null): { label: string; cls: string } 
 export function ReportCard({
   report,
   showVisibilityToggle = false,
+  showDeleteAction = false,
 }: {
   report: DbReportSummary;
   showVisibilityToggle?: boolean;
+  showDeleteAction?: boolean;
 }) {
   const href = `/dashboard/${encodeURIComponent(report.ticker)}/summary?report=${encodeURIComponent(report.id)}`;
   const rec = recommendationTone(report.recommendation);
@@ -38,6 +41,11 @@ export function ReportCard({
       {showVisibilityToggle ? (
         <div className="absolute right-3 top-3 z-10">
           <VisibilityToggle reportId={report.id} variant="icon" />
+        </div>
+      ) : null}
+      {showDeleteAction ? (
+        <div className="absolute right-12 top-3 z-10">
+          <DeleteReportButton reportId={report.id} />
         </div>
       ) : null}
       <Link href={href} className="flex h-full flex-col justify-between p-5">

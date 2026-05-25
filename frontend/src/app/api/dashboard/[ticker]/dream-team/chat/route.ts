@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { fetchReportById } from "@/lib/reports-db";
 import { normalizePayload } from "@/lib/dashboard-normalize";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { parseJsonObjectFromMixedOutput } from "@/lib/python-json";
 import { repoRoot, TICKER_RE } from "@/lib/site-runner";
 import { readJson, resolveDashboardReportPath } from "@/lib/server-outputs";
@@ -291,6 +292,10 @@ export async function POST(
   let reportRow: Awaited<ReturnType<typeof fetchReportById>> | null = null;
   let localDashboardPath = "";
   let localDashboard: DashboardPayload | null = null;
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  if (deletedFilter.isDeleted(reportId, ticker)) {
+    return NextResponse.json({ error: "Report not found." }, { status: 404 });
+  }
   try {
     reportRow = await fetchReportById(reportId);
   } catch {
@@ -299,6 +304,9 @@ export async function POST(
   if (!reportRow) {
     localDashboardPath = String(resolveDashboardReportPath(reportId) || "");
     if (!localDashboardPath) {
+      return NextResponse.json({ error: "Report not found." }, { status: 404 });
+    }
+    if (deletedFilter.isDeleted(reportId, ticker, siteRunIdFromPathLike(localDashboardPath))) {
       return NextResponse.json({ error: "Report not found." }, { status: 404 });
     }
     localDashboard = readJson<DashboardPayload>(localDashboardPath);

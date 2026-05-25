@@ -140,12 +140,26 @@ def df_to_llm_csv(df: pd.DataFrame, scale_abs_gt: float = 1.0) -> str:
 
 
 from copy import deepcopy
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import yfinance as yf
 
 
 def _is_number(x: Any) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _select_shares_outstanding(info: Dict[str, Any], *, default: Optional[float] = 1) -> Optional[float]:
+    for key in ("impliedSharesOutstanding", "sharesOutstanding"):
+        value = info.get(key)
+        if _is_number(value) and value > 0:
+            return float(value)
+
+    market_cap = info.get("marketCap")
+    price = info.get("currentPrice")
+    if _is_number(market_cap) and market_cap > 0 and _is_number(price) and price > 0:
+        return float(market_cap) / float(price)
+
+    return default
 
 
 def _convert_range_str(value: str, factor: float) -> str:
@@ -305,7 +319,11 @@ def convert_financial_keys_to_usd(
 
     return out
 
-def find_currency(curr):
+def _currency_symbol_candidates(curr: Any) -> List[str]:
+    raw = str(curr or "").strip()
+    if not raw:
+        return []
+    curr_u = raw.upper()
     currency_tickers = {
     # --- Israel ---
     'ILA': "ILS=X",   # Israeli Agorot (Minor unit of ILS)
@@ -342,11 +360,22 @@ def find_currency(curr):
     'TRY': "TRY=X",   # Turkish Lira
 }
 
-    currency_symbol = currency_tickers.get(curr)
-    if not currency_symbol:
-      currency_rate = 1
-    else:
-      currency_rate = 1
+    candidates: List[str] = []
+    for key in (raw, curr_u):
+        symbol = currency_tickers.get(key)
+        if symbol and symbol not in candidates:
+            candidates.append(symbol)
+
+    if re.fullmatch(r"[A-Z]{3}", curr_u):
+        for symbol in (f"{curr_u}=X", f"USD{curr_u}=X"):
+            if symbol not in candidates:
+                candidates.append(symbol)
+    return candidates
+
+
+def find_currency(curr):
+    currency_rate = 1
+    for currency_symbol in _currency_symbol_candidates(curr):
       for _ in range(3):
         try:
           ticker_obj = yf.Ticker(currency_symbol)
@@ -356,8 +385,11 @@ def find_currency(curr):
             break
         except:
           pass
+      if currency_rate != 1:
+        break
 
-    if curr in ['ILA', 'GBp', 'ZAC']:
+    curr_raw = str(curr or "").strip()
+    if curr_raw in ['GBp'] or curr_raw.upper() in ['ILA', 'GBX', 'ZAC']:
         currency_rate = currency_rate * 100
 
     return currency_rate
@@ -369,7 +401,7 @@ def recalculate_derived_metrics(info: Dict[str, Any]) -> Dict[str, Any]:
     """
     # 1. Ensure basic values exist
     price = info.get("currentPrice")
-    shares = info.get("impliedSharesOutstanding") or info.get("sharesOutstanding")
+    shares = _select_shares_outstanding(info, default=None)
 
     if not price or not shares:
         return info
@@ -1092,9 +1124,16 @@ warnings.filterwarnings('ignore')
 
 def get_variables(ticker: str, info_dict: dict, financial_dict_quarter_bs, financial_dict_annual_finance, info_financials: dict) -> dict:
     variables_dict = {}
-    variables_dict["shares_outstanding"] = info_dict.get("impliedSharesOutstanding", 1)
-    variables_dict["price"] = info_dict.get("currentPrice", 0)
-    variables_dict["market_cap"] = info_dict.get("marketCap", 0)
+    variables_dict["shares_outstanding"] = _select_shares_outstanding(info_dict, default=1)
+    price = info_dict.get("currentPrice", 0)
+    variables_dict["price"] = price if _is_number(price) else 0
+    market_cap = info_dict.get("marketCap", 0)
+    if _is_number(market_cap) and market_cap > 0:
+        variables_dict["market_cap"] = market_cap
+    elif _is_number(variables_dict["price"]) and variables_dict["price"] > 0 and _is_number(variables_dict["shares_outstanding"]):
+        variables_dict["market_cap"] = variables_dict["price"] * variables_dict["shares_outstanding"]
+    else:
+        variables_dict["market_cap"] = 0
     variables_dict["price_currency"] = info_dict.get("price_currency_to_USD", 1)
     variables_dict["financial_currency"] = info_dict.get("financial_currency_to_USD", 1)
     total_debt = info_dict.get("totalDebt")

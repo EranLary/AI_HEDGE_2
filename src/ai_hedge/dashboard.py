@@ -657,9 +657,8 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
     return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
 
-def _deterministic_red_flags(*, f_score_text: str, price_cv: Any, lmil: Any) -> List[str]:
+def _deterministic_red_flags(*, price_cv: Any, lmil: Any) -> List[str]:
     flags: List[str] = []
-    _ = f_score_text
 
     cv = _safe_float(price_cv)
     if cv is not None and cv > 0.6:
@@ -683,8 +682,8 @@ def _deterministic_red_flags(*, f_score_text: str, price_cv: Any, lmil: Any) -> 
     return out[:8]
 
 
-def deterministic_red_flags(*, f_score_text: str, price_cv: Any, lmil: Any) -> List[str]:
-    return _deterministic_red_flags(f_score_text=f_score_text, price_cv=price_cv, lmil=lmil)
+def deterministic_red_flags(*, price_cv: Any, lmil: Any) -> List[str]:
+    return _deterministic_red_flags(price_cv=price_cv, lmil=lmil)
 
 
 def _fallback_qualitative_sections(
@@ -1399,7 +1398,6 @@ def build_dashboard_payload(
     lmil = prices.get("LMIL") if isinstance(prices.get("LMIL"), (list, tuple)) else []
 
     deterministic_red_flags = _deterministic_red_flags(
-        f_score_text=str(variables_dict.get("f_score", "") or ""),
         price_cv=confidence_cv,
         lmil=lmil,
     )
@@ -1529,7 +1527,7 @@ def build_dashboard_payload(
         target_return_pct = ((consensus_price - current_price) / current_price) * 100.0
 
     if target_return_pct is not None:
-        combined_score = (0.5 * position_size_pct) + (0.5 * target_return_pct)
+        combined_score = (0.4 * position_size_pct) + (0.6 * target_return_pct)
     else:
         combined_score = position_size_pct
 
@@ -1552,17 +1550,6 @@ def build_dashboard_payload(
     confidence_factor = 1.0 / (1.0 + (overall_cv ** 1.3))
     adjusted_score = combined_score * confidence_factor
 
-    if adjusted_score >= 20:
-        action = "Strong Buy"
-    elif adjusted_score >= 5:
-        action = "Buy"
-    elif adjusted_score > -5:
-        action = "Hold"
-    elif adjusted_score > -20:
-        action = "Sell"
-    else:
-        action = "Strong Sell"
-
     return {
         "dashboard_version": "v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1584,7 +1571,6 @@ def build_dashboard_payload(
             "financial_usd_to_display": currency_context.get("financial_usd_to_display"),
             "price_unit_note": currency_context.get("price_unit_note"),
             "price_performance_pct": price_performance_pct,
-            "f_score_text": str(variables_dict.get("f_score", "") or ""),
         },
         "red_flag_shield": _as_str_list(qualitative.get("bear_case_reasons"), max_items=5),
         "analysis_matrix": {
@@ -1627,8 +1613,7 @@ def build_dashboard_payload(
             "target_earnings": _safe_float(final_dict.get("Net Income", {}).get("Overall", [None])[0]),
             "forensic_flags": _as_str_list(qualitative.get("bear_case_reasons"), max_items=6),
         },
-        "decision_card": {
-            "action": action,
+        "score_card": {
             "position_size_pct_of_notional": position_size_pct,
             "target_return_pct": target_return_pct,
             "combined_score": combined_score,
@@ -1636,7 +1621,7 @@ def build_dashboard_payload(
             "confidence_factor": confidence_factor,
             "adjusted_score": adjusted_score,
             "mean_investment_amount": mean_investment,
-            "rationale": "Signal blends 50% investment vote and 50% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
+            "rationale": "Score blends 40% investment allocation and 60% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "filings": filings if isinstance(filings, dict) else {},

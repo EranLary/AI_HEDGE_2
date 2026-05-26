@@ -12,7 +12,7 @@ export function EmptyRunWorkspace() {
       </span>
       <h1 className="font-display text-3xl text-zinc-100 sm:text-4xl">Run your first analysis</h1>
       <p className="mt-2 max-w-md text-sm text-zinc-300">
-        Pick any US ticker. Full institutional valuation in about 30 minutes — models, scenarios, dream-team personas, and a decision.
+        Pick any US ticker. Full institutional valuation in about 30 minutes — models, scenarios, dream-team personas, and a score.
       </p>
       <button
         type="button"

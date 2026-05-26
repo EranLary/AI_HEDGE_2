@@ -54,7 +54,6 @@ class RunArtifacts:
     target_revenue: Optional[float]
     current_earnings: Optional[float]
     target_earnings: Optional[float]
-    f_score_text: str
     sec_fallback_used: bool
     sec_fallback_message: str
     r2_keys: Optional[Dict[str, str]] = None
@@ -377,13 +376,13 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
     header = dashboard_payload.get("header") or {}
     valuation_hub = dashboard_payload.get("valuation_hub") or {}
     consensus = valuation_hub.get("consensus") or {}
-    decision_card = dashboard_payload.get("decision_card") or {}
+    score_card = dashboard_payload.get("score_card") or dashboard_payload.get("decision_card") or {}
     currency_code = header.get("display_currency") or header.get("currency") or "USD"
 
     current_price = _first_float(consensus.get("current_price"))
     mean_target_price = _first_float(consensus.get("mean_target_price"))
 
-    target_change_pct = _first_float(decision_card.get("target_return_pct"))
+    target_change_pct = _first_float(score_card.get("target_return_pct"))
     if (
         target_change_pct is None
         and current_price is not None
@@ -392,9 +391,9 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
     ):
         target_change_pct = ((mean_target_price - current_price) / current_price) * 100.0
 
-    investment_pct = _first_float(decision_card.get("position_size_pct_of_notional"))
+    investment_pct = _first_float(score_card.get("position_size_pct_of_notional"))
 
-    disagreement_score = _first_float(decision_card.get("overall_cv"))
+    disagreement_score = _first_float(score_card.get("overall_cv"))
     if disagreement_score is None:
         cv_vals: List[float] = []
         price_cv = _first_float(consensus.get("cv"))
@@ -1220,7 +1219,7 @@ def _run_ticker_valuation_impl(
     regular_text = str(text or "").strip()
     notes: List[str] = []
 
-    # SEC/MAYA pre-decision Q&A: run only when filing text exists.
+    # SEC/MAYA pre-score Q&A: run only when filing text exists.
     if _has_filing_text(files_dict):
         try:
             from .service import build_sec_question_answer_text
@@ -1237,13 +1236,13 @@ def _run_ticker_valuation_impl(
             if sec_qna_out.get("status") == "success" and sec_qna_text:
                 legacy.append_text_to_file(
                     text=sec_qna_text,
-                    header="SEC Pre-Decision Questions & Answers",
+                    header="SEC Pre-Score Questions & Answers",
                 )
-                print(f"SEC pre-decision Q&A generated successfully for {ticker}")
+                print(f"SEC pre-score Q&A generated successfully for {ticker}")
             elif sec_qna_errors:
                 notes.extend(sec_qna_errors[:3])
         except Exception as sec_qna_exc:
-            notes.append(f"SEC pre-decision Q&A generation failed: {sec_qna_exc}")
+            notes.append(f"SEC pre-score Q&A generation failed: {sec_qna_exc}")
 
     sec_short_text = ""
     sec_fallback_used = False
@@ -1331,7 +1330,6 @@ def _run_ticker_valuation_impl(
         pass
 
     pre_dashboard_red_flags = deterministic_red_flags(
-        f_score_text=str(variables_dict.get("f_score", "") or ""),
         price_cv=None,
         lmil=None,
     )
@@ -1385,8 +1383,6 @@ def _run_ticker_valuation_impl(
     target_revenue = _first_float(revenue_overall[0] if isinstance(revenue_overall, list) and revenue_overall else None)
     current_earnings = _first_float(earnings_dict.get("Current")) if isinstance(earnings_dict, dict) else None
     target_earnings = _first_float(earnings_overall[0] if isinstance(earnings_overall, list) and earnings_overall else None)
-    f_score_text = str(variables_dict.get("f_score", "") or "").strip()
-
     legacy.plot_all_three(
         final_dict,
         ticker,
@@ -1644,7 +1640,6 @@ def _run_ticker_valuation_impl(
         target_revenue=target_revenue,
         current_earnings=current_earnings,
         target_earnings=target_earnings,
-        f_score_text=f_score_text,
         sec_fallback_used=sec_fallback_used,
         sec_fallback_message=sec_fallback_message,
         r2_keys=r2_keys,
@@ -1666,7 +1661,6 @@ def _run_ticker_valuation_impl(
         "target_revenue": artifacts.target_revenue,
         "current_earnings": artifacts.current_earnings,
         "target_earnings": artifacts.target_earnings,
-        "f_score_text": artifacts.f_score_text,
         "analysis_duration_minutes": round((time.perf_counter() - run_started) / 60.0, 2),
         "sec_fallback_used": artifacts.sec_fallback_used,
         "sec_fallback_message": artifacts.sec_fallback_message,

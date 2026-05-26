@@ -53,12 +53,6 @@ function fmtScore(value: number | null | undefined): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
-function decisionClass(tone?: DiscoveryRow["decision_tone"]): string {
-  if (tone === "buy") return "hib-signal-buy";
-  if (tone === "sell") return "hib-signal-sell";
-  return "hib-signal-hold";
-}
-
 function SectionCard({
   title,
   icon,
@@ -137,17 +131,11 @@ function SectionCard({
                   <div>
                     <p className="text-zinc-500">Summary Score</p>
                     <p className={accent}>{fmtScore(row.points_score)}</p>
-                    <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
-                      {row.decision_label || "Hold"}
-                    </p>
                   </div>
                 ) : (
                   <div>
                     <p className="text-zinc-500">Disagreement Score</p>
                     <p className={accent}>{Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}</p>
-                    <p className={`mt-1 font-semibold ${decisionClass(row.decision_tone)}`}>
-                      {row.decision_label || "Hold"}
-                    </p>
                   </div>
                 )}
                 <div>

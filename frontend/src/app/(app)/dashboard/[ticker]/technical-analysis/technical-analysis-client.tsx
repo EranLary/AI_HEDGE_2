@@ -71,7 +71,7 @@ const POET_DEMO_TECHNICAL_ANALYSIS = {
   ],
   momentum_insights: [
     "Momentum is strong and still constructive.",
-    "Failure to hold momentum highs would be an early warning.",
+    "Failure to maintain momentum highs would be an early warning.",
   ],
   risk_signals: [
     "Overbought conditions.",
@@ -111,7 +111,7 @@ const POET_DEMO_TECHNICAL_ANALYSIS = {
     },
   },
   what_to_watch_next: [
-    "Hold/fail at breakout support.",
+    "Maintain/fail at breakout support.",
     "RSI rollover vs continuation.",
     "Down-day volume behavior.",
   ],
@@ -257,18 +257,18 @@ export function TechnicalAnalysisClient({
     bearishProbability !== null
       ? Math.round(((probabilityTotal || 1) > 0 ? (bearishProbability / (probabilityTotal || 1)) : bearishProbability) * 100)
       : null;
-  const finalDecision = String(analysis.final_decision || "").trim().toLowerCase();
+  const finalSignal = String(analysis.final_decision || "").trim().toLowerCase();
   const confidenceExplanation = String(analysis.confidence_explanation || "").trim();
-  const decisionTone =
-    finalDecision === "bullish" ? "hib-target-up" : finalDecision === "bearish" ? "hib-target-down" : "text-zinc-200";
-  const decisionBoxTone =
-    finalDecision === "bullish"
+  const signalTone =
+    finalSignal === "bullish" ? "hib-target-up" : finalSignal === "bearish" ? "hib-target-down" : "text-zinc-200";
+  const signalBoxTone =
+    finalSignal === "bullish"
       ? "border-emerald-400/35 bg-emerald-500/6"
-      : finalDecision === "bearish"
+      : finalSignal === "bearish"
         ? "border-red-400/35 bg-red-500/6"
         : "border-white/10 bg-zinc-950/70";
-  const decisionLabel =
-    finalDecision === "bullish" ? "Bullish" : finalDecision === "bearish" ? "Bearish" : finalDecision === "neutral" ? "Neutral" : "N/A";
+  const signalLabel =
+    finalSignal === "bullish" ? "Bullish" : finalSignal === "bearish" ? "Bearish" : finalSignal === "neutral" ? "Neutral" : "N/A";
 
   return (
     <div>
@@ -299,13 +299,13 @@ export function TechnicalAnalysisClient({
         </section>
       ) : (
         <div className="space-y-5">
-          {(bullishPct !== null || bearishPct !== null || decisionLabel !== "N/A" || confidenceExplanation) ? (
-            <section className={`rounded-2xl border p-4 ${decisionBoxTone}`}>
-              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Probability Decision</h2>
+          {(bullishPct !== null || bearishPct !== null || signalLabel !== "N/A" || confidenceExplanation) ? (
+            <section className={`rounded-2xl border p-4 ${signalBoxTone}`}>
+              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Probability Score</h2>
               <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-                <div className={`rounded-xl border p-3 ${decisionBoxTone}`}>
+                <div className={`rounded-xl border p-3 ${signalBoxTone}`}>
                   <div className="flex items-center justify-end gap-2">
-                    <p className={`text-sm font-semibold ${decisionTone}`}>{decisionLabel}</p>
+                    <p className={`text-sm font-semibold ${signalTone}`}>{signalLabel}</p>
                   </div>
                   {bullishPct !== null ? (
                     <div className="mt-3">
@@ -332,7 +332,7 @@ export function TechnicalAnalysisClient({
                 </div>
 
                 {confidenceExplanation ? (
-                  <div className={`rounded-xl border p-3 ${decisionBoxTone}`}>
+                  <div className={`rounded-xl border p-3 ${signalBoxTone}`}>
                     <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Explanation</p>
                     <p className="mt-2 text-sm leading-relaxed text-zinc-200">{confidenceExplanation}</p>
                   </div>

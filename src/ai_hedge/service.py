@@ -631,7 +631,7 @@ def _format_sec_qna_markdown(questions: List[str], answers_payload: Dict[str, An
     answer_rows = answers_payload.get("answers", [])
     rows: List[Dict[str, Any]] = answer_rows if isinstance(answer_rows, list) else []
     lines: List[str] = [
-        "## SEC Pre-Decision Q&A",
+        "## SEC Pre-Score Q&A",
     ]
 
     lines.extend(["", "### Answers from official filings"])
@@ -702,9 +702,9 @@ def build_sec_question_answer_text(
         all_reports_text = _truncate_text(reports_value, 160_000)
 
         questions_prompt = (
-            "You are preparing final investment decision diligence.\n"
+            "You are preparing final investment score diligence.\n"
             "Given the first-pass analysis text and financial reports, list the most critical\n"
-            "questions/information to verify directly in formal company filings BEFORE final decision.\n"
+            "questions/information to verify directly in formal company filings BEFORE final scoring.\n"
             "Focus on falsifiable, valuation-critical checks (earnings quality, cash conversion,\n"
             "segment economics, contingent liabilities, dilution, covenant/legal risk, concentration risk).\n\n"
             f"Ticker: {ticker_u}\n\n"
@@ -1039,7 +1039,6 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         "prices_explain_txt": "",
         "prices_explain_pdf": "",
         "dashboard_json": "",
-        "f_score_text": "",
         "errors": errors,
         "r2_keys": None,
     }
@@ -1131,7 +1130,6 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         result["target_revenue"] = full_out.get("target_revenue")
         result["current_earnings"] = full_out.get("current_earnings")
         result["target_earnings"] = full_out.get("target_earnings")
-        result["f_score_text"] = str(full_out.get("f_score_text", "") or "")
         result["sec_fallback_used"] = bool(full_out.get("sec_fallback_used", False))
         result["sec_fallback_message"] = str(full_out.get("sec_fallback_message", "") or "")
         result["r2_keys"] = full_out.get("r2_keys")

@@ -44,11 +44,11 @@ function avgNums(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+function combinedScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
   const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
   const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
   if (!hasInvestment && !hasTarget) return null;
-  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  if (hasInvestment && hasTarget) return (0.4 * Number(investmentPct)) + (0.6 * Number(targetReturnPct));
   return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
 }
 
@@ -57,17 +57,6 @@ function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number |
   const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
   const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
   return baseScore * confidenceFactor;
-}
-
-function decisionFromAdjustedScore(adjustedScore: number): {
-  label: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell";
-  tone: "buy" | "sell" | "hold";
-} {
-  if (adjustedScore >= 20) return { label: "Strong Buy", tone: "buy" };
-  if (adjustedScore >= 5) return { label: "Buy", tone: "buy" };
-  if (adjustedScore > -5) return { label: "Hold", tone: "hold" };
-  if (adjustedScore > -20) return { label: "Sell", tone: "sell" };
-  return { label: "Strong Sell", tone: "sell" };
 }
 
 function reportMs(value: string): number {
@@ -279,7 +268,7 @@ export async function GET(request: Request) {
         ? Math.abs(prepared.summary.overview.mean_disagreement_score)
         : Number.POSITIVE_INFINITY;
     const positionPct = metrics.allocation;
-    const combinedScore = combinedDecisionScore(positionPct, returnPct);
+    const baseScore = combinedScore(positionPct, returnPct);
     const misalignedSignal =
       typeof positionPct === "number" &&
       Number.isFinite(positionPct) &&
@@ -289,11 +278,7 @@ export async function GET(request: Request) {
       Math.abs(returnPct) > 1e-9 &&
       (positionPct * returnPct) < 0;
     const penalizedCv = Number.isFinite(confidenceCv) ? (misalignedSignal ? confidenceCv * 1.5 : confidenceCv) : null;
-    const adjustedScore = confidenceAdjustedScore(combinedScore, penalizedCv);
-    const decision = decisionFromAdjustedScore(
-      typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0,
-    );
-
+    const adjustedScore = confidenceAdjustedScore(baseScore, penalizedCv);
     rows.push({
       ticker: prepared.ticker,
       company_name: prepared.companyName,
@@ -304,8 +289,6 @@ export async function GET(request: Request) {
       investment_allocation_pct: positionPct,
       confidence_cv: confidenceCv,
       points_score: typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : null,
-      decision_label: decision.label,
-      decision_tone: decision.tone,
       updated_at: prepared.latestUpdatedAt,
     });
   }

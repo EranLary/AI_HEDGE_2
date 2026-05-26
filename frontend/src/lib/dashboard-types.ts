@@ -67,7 +67,6 @@ export type DashboardPayload = {
       "3Y"?: number | null;
       "5Y"?: number | null;
     };
-    f_score_text?: string;
   };
   red_flag_shield: string[];
   analysis_matrix: {
@@ -160,8 +159,7 @@ export type DashboardPayload = {
     target_earnings: number | null;
     forensic_flags: string[];
   };
-  decision_card: {
-    action: string;
+  score_card?: {
     position_size_pct_of_notional: number;
     mean_investment_amount: number | null;
     target_return_pct?: number | null;
@@ -170,6 +168,17 @@ export type DashboardPayload = {
     confidence_factor?: number | null;
     adjusted_score?: number | null;
     rationale: string;
+  };
+  decision_card?: {
+    action?: string;
+    position_size_pct_of_notional?: number;
+    mean_investment_amount?: number | null;
+    target_return_pct?: number | null;
+    combined_score?: number | null;
+    overall_cv?: number | null;
+    confidence_factor?: number | null;
+    adjusted_score?: number | null;
+    rationale?: string;
   };
   technical_analysis?: {
     status?: "success" | "error" | "unavailable" | string;
@@ -268,8 +277,6 @@ export type DiscoveryRow = {
   investment_allocation_pct: number | null;
   confidence_cv: number;
   points_score?: number | null;
-  decision_label?: string;
-  decision_tone?: "buy" | "sell" | "hold";
   updated_at: string;
 };
 

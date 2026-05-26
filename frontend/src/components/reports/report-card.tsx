@@ -5,22 +5,17 @@ import { DeleteReportButton } from "./delete-report-button";
 import { FriendlyDate } from "./friendly-date";
 import { VisibilityToggle } from "./visibility-toggle";
 
-// Allowed values: Strong Buy | Buy | Hold | Sell | Strong Sell
-function recommendationTone(rec: string | null): { label: string; cls: string } {
-  switch (String(rec || "").trim().toLowerCase()) {
-    case "strong buy":
-      return { label: "Strong Buy", cls: "border-emerald-400/60 bg-emerald-500/15 text-emerald-100" };
-    case "buy":
-      return { label: "Buy", cls: "border-emerald-300/40 bg-emerald-400/10 text-emerald-100" };
-    case "hold":
-      return { label: "Hold", cls: "border-white/20 bg-white/10 text-zinc-100" };
-    case "sell":
-      return { label: "Sell", cls: "border-red-300/40 bg-red-400/10 text-red-100" };
-    case "strong sell":
-      return { label: "Strong Sell", cls: "border-red-400/60 bg-red-500/15 text-red-100" };
-    default:
-      return { label: "—", cls: "border-white/15 bg-white/5 text-zinc-300" };
+function scoreTone(score: number | null): { label: string; cls: string } {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return { label: "Score N/A", cls: "border-white/15 bg-white/5 text-zinc-300" };
   }
+  if (score > 0) {
+    return { label: `Score ${score.toFixed(2)}`, cls: "border-emerald-300/40 bg-emerald-400/10 text-emerald-100" };
+  }
+  if (score < 0) {
+    return { label: `Score ${score.toFixed(2)}`, cls: "border-red-300/40 bg-red-400/10 text-red-100" };
+  }
+  return { label: "Score 0.00", cls: "border-white/20 bg-white/10 text-zinc-100" };
 }
 
 export function ReportCard({
@@ -33,7 +28,7 @@ export function ReportCard({
   showDeleteAction?: boolean;
 }) {
   const href = `/dashboard/${encodeURIComponent(report.ticker)}/summary?report=${encodeURIComponent(report.id)}`;
-  const rec = recommendationTone(report.recommendation);
+  const score = scoreTone(report.score);
   const company = report.company_name || report.ticker;
 
   return (
@@ -55,9 +50,9 @@ export function ReportCard({
         </div>
         <div className="mt-6 flex items-center justify-between gap-3">
           <span
-            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${rec.cls}`}
+            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${score.cls}`}
           >
-            {rec.label}
+            {score.label}
           </span>
           <FriendlyDate iso={report.generated_at} className="text-xs text-zinc-400" />
         </div>

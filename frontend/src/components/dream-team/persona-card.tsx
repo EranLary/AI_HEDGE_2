@@ -57,7 +57,7 @@ const THINKING_WORDS = [
   "Probability Weighing",
   "Filing Synthesizing",
   "Conclusion Drafting",
-  "Decision Refining",
+  "Score Refining",
   "Conviction Testing",
   "Volatility Assessing",
   "Exposure Balancing",

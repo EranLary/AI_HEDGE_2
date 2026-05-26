@@ -176,9 +176,10 @@ function compareMeanRows(a: SummaryMeanRow, b: SummaryMeanRow): number {
 }
 
 function disagreementScoreForReport(payload: DashboardPayload): number | null {
-  const decisionCv = toNumOrNull(payload.decision_card?.overall_cv);
-  if (typeof decisionCv === "number" && Number.isFinite(decisionCv)) {
-    return Math.abs(decisionCv);
+  const scoreCard = payload.score_card || payload.decision_card;
+  const scoreCv = toNumOrNull(scoreCard?.overall_cv);
+  if (typeof scoreCv === "number" && Number.isFinite(scoreCv)) {
+    return Math.abs(scoreCv);
   }
   const consensusCv = toNumOrNull(payload.valuation_hub?.consensus?.cv);
   const lmil = payload.valuation_hub?.consensus?.lmil;
@@ -413,8 +414,8 @@ export function computeTickerSummaryAggregation(
     const payload = report.payload;
     const overviewTarget = safeTarget(payload.valuation_hub?.consensus?.mean_target_price);
     const overviewAllocation =
-      toNumOrNull(payload.decision_card?.position_size_pct_of_notional) ??
-      allocationPctFromAmount(payload.decision_card?.mean_investment_amount);
+      toNumOrNull((payload.score_card || payload.decision_card)?.position_size_pct_of_notional) ??
+      allocationPctFromAmount((payload.score_card || payload.decision_card)?.mean_investment_amount);
     const disagreementScore = disagreementScoreForReport(payload);
     applyMean(overviewAcc, overviewTarget, overviewAllocation, disagreementScore);
 

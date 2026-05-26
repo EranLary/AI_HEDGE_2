@@ -11,7 +11,6 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       market_cap: null,
       shares_outstanding: null,
       currency: "USD",
-      f_score_text: "",
     },
     red_flag_shield: [
       "Dashboard JSON is not generated yet for this ticker.",
@@ -79,11 +78,10 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       target_earnings: null,
       forensic_flags: [],
     },
-    decision_card: {
-      action: "N/A",
+    score_card: {
       position_size_pct_of_notional: 0,
       mean_investment_amount: null,
-      rationale: "Run valuation to produce a portfolio signal.",
+      rationale: "Run valuation to produce a score.",
     },
     technical_analysis: {
       status: "unavailable",

@@ -187,7 +187,7 @@ export function computeHitRateAggregation(
     }
 
     const overallMeanTarget = toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
-    const overallMeanInvestment = toNumOrNull(payload.decision_card?.mean_investment_amount);
+    const overallMeanInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
     if (overallMeanTarget !== null || overallMeanInvestment !== null) {
       applyModelPrediction("Overall", overallMeanTarget, overallMeanInvestment);
     }

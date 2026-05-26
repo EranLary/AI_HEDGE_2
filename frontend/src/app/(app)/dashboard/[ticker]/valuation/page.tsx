@@ -85,7 +85,7 @@ export default function DashboardValuationPage({
         forceMainTab={view === "methods" ? "valuation" : "values"}
         hideNavHeader
         hideMainTabBar
-        hideDecisionFooter
+        hideScoreFooter
         onReportChange={handleReportChange}
         postHeaderSlot={<TargetPriceChart data={payload} />}
       />

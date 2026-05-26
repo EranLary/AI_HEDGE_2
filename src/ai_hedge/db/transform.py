@@ -108,14 +108,13 @@ def _safe_float(value):
 
 def _pluck_dashboard_fields(dashboard: dict) -> dict:
     header = dashboard.get("header") or {}
-    decision = dashboard.get("decision_card") or {}
     consensus = ((dashboard.get("valuation_hub") or {}).get("consensus")) or {}
     return {
         "company_name": header.get("company_name"),
         "current_price": _safe_float(header.get("current_price")),
         "market_cap": _safe_float(header.get("market_cap")),
         "currency": header.get("display_currency") or header.get("currency"),
-        "recommendation": decision.get("action"),
+        "recommendation": None,
         "mean_target_price": _safe_float(consensus.get("mean_target_price")),
     }
 

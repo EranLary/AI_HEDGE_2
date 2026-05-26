@@ -30,11 +30,11 @@ function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "
   return predicted === actual ? "✔" : "✖";
 }
 
-function combinedDecisionScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
+function combinedScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
   const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
   const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
   if (!hasInvestment && !hasTarget) return null;
-  if (hasInvestment && hasTarget) return (0.5 * Number(investmentPct)) + (0.5 * Number(targetReturnPct));
+  if (hasInvestment && hasTarget) return (0.4 * Number(investmentPct)) + (0.6 * Number(targetReturnPct));
   return hasInvestment ? Number(investmentPct) : Number(targetReturnPct);
 }
 
@@ -43,15 +43,6 @@ function confidenceAdjustedScore(baseScore?: number | null, overallCv?: number |
   const cv = typeof overallCv === "number" && Number.isFinite(overallCv) ? Math.max(0, overallCv) : 0;
   const confidenceFactor = 1 / (1 + Math.pow(cv, 1.3));
   return baseScore * confidenceFactor;
-}
-
-function decisionSignal(adjustedScore?: number | null) {
-  const v = typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : 0;
-  if (v <= -20) return { label: "Strong Sell", tone: "negative" as const };
-  if (v < -5) return { label: "Sell", tone: "negative" as const };
-  if (v < 5) return { label: "Hold", tone: "neutral" as const };
-  if (v < 20) return { label: "Buy", tone: "positive" as const };
-  return { label: "Strong Buy", tone: "positive" as const };
 }
 
 export type OverviewClientProps = {
@@ -72,6 +63,7 @@ export function OverviewClient({
   const upper = ticker;
   const ctx = buildCurrencyContext(data);
   const consensus = data.valuation_hub.consensus;
+  const scoreCard = data.score_card || data.decision_card || {};
   const current = typeof consensus?.current_price === "number" ? consensus.current_price : null;
   const mean = typeof consensus?.mean_target_price === "number" ? consensus.mean_target_price : null;
   const changePct =
@@ -79,8 +71,8 @@ export function OverviewClient({
       ? ((mean - current) / current) * 100
       : null;
   const positionPct =
-    typeof data.decision_card?.position_size_pct_of_notional === "number" && Number.isFinite(data.decision_card.position_size_pct_of_notional)
-      ? Number(data.decision_card.position_size_pct_of_notional)
+    typeof scoreCard?.position_size_pct_of_notional === "number" && Number.isFinite(scoreCard.position_size_pct_of_notional)
+      ? Number(scoreCard.position_size_pct_of_notional)
       : null;
   const changeClass =
     typeof changePct === "number" && Math.abs(changePct) > 1e-9
@@ -123,22 +115,25 @@ export function OverviewClient({
     (v): v is number => typeof v === "number" && Number.isFinite(v),
   );
   const disagreementScore =
-    typeof data.decision_card?.overall_cv === "number" && Number.isFinite(data.decision_card.overall_cv)
-      ? Math.abs(Number(data.decision_card.overall_cv))
+    typeof scoreCard?.overall_cv === "number" && Number.isFinite(scoreCard.overall_cv)
+      ? Math.abs(Number(scoreCard.overall_cv))
       : disagreementParts.length > 0
         ? disagreementParts.reduce((sum, v) => sum + v, 0) / disagreementParts.length
         : null;
   const finalCombinedScore =
-    typeof data.decision_card?.combined_score === "number" && Number.isFinite(data.decision_card.combined_score)
-      ? Number(data.decision_card.combined_score)
-      : combinedDecisionScore(positionPct, changePct);
+    typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
+      ? Number(scoreCard.combined_score)
+      : combinedScore(positionPct, changePct);
   const finalAdjustedScore =
-    typeof data.decision_card?.adjusted_score === "number" && Number.isFinite(data.decision_card.adjusted_score)
-      ? Number(data.decision_card.adjusted_score)
+    typeof scoreCard?.adjusted_score === "number" && Number.isFinite(scoreCard.adjusted_score)
+      ? Number(scoreCard.adjusted_score)
       : confidenceAdjustedScore(finalCombinedScore, disagreementScore);
-  const signal = decisionSignal(finalAdjustedScore);
   const toneClass =
-    signal.tone === "positive" ? "hib-target-up" : signal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
+    typeof finalAdjustedScore === "number" && Math.abs(finalAdjustedScore) > 1e-9
+      ? finalAdjustedScore > 0
+        ? "hib-target-up"
+        : "hib-target-down"
+      : "text-zinc-200";
   const positionToneClass =
     typeof positionPct === "number" && Math.abs(positionPct) > 1e-9
       ? positionPct > 0
@@ -200,8 +195,10 @@ export function OverviewClient({
             <h1 className="font-display text-2xl text-zinc-100">{data.header.company_name || data.ticker}</h1>
           </div>
           <div className="text-right">
-            <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Decision</p>
-            <p className={`text-3xl font-bold ${toneClass}`}>{signal.label}</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Score</p>
+            <p className={`text-3xl font-bold ${toneClass}`}>
+              {typeof finalAdjustedScore === "number" && Number.isFinite(finalAdjustedScore) ? finalAdjustedScore.toFixed(2) : "N/A"}
+            </p>
           </div>
         </div>
 
@@ -230,8 +227,8 @@ export function OverviewClient({
               Investment Sizing <span className="text-zinc-300">({investmentVerdict})</span>
             </p>
             <p className={`mt-1 text-2xl font-bold ${positionToneClass}`}>
-              {typeof data.decision_card?.position_size_pct_of_notional === "number"
-                ? `${data.decision_card.position_size_pct_of_notional.toFixed(2)}%`
+              {typeof scoreCard?.position_size_pct_of_notional === "number"
+                ? `${scoreCard.position_size_pct_of_notional.toFixed(2)}%`
                 : "N/A"}
             </p>
             <p className="mt-1 text-xs text-zinc-500">of notional</p>

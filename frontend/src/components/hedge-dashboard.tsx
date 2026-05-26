@@ -18,7 +18,7 @@ export type HedgeDashboardProps = {
   forceMainTab?: MainTab;
   hideNavHeader?: boolean;
   hideMainTabBar?: boolean;
-  hideDecisionFooter?: boolean;
+  hideScoreFooter?: boolean;
   onReportChange?: (reportId: string) => void;
   postHeaderSlot?: ReactNode;
 };
@@ -236,7 +236,7 @@ const fmtLargeAware = (v?: number | null) => {
   if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
   return fmtNum(v);
 };
-const fmtDecisionPctOnly = (v?: number | null) => {
+const fmtScoreInputPctOnly = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   if (Math.abs(v) < 1e-9) return "0.00%";
   return `${v > 0 ? "+" : "-"}${Math.abs(v).toFixed(2)}%`;
@@ -312,7 +312,7 @@ function formatAssumptionValue(label: string, value: number | null | undefined, 
 }
 
 function modelExplanation(modelName: string): string {
-  return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before making a decision.";
+  return MODEL_EXPLANATIONS[String(modelName || "").trim()] || "This model adds another valuation lens so you can compare different ways of pricing the same business before scoring it.";
 }
 
 function stripBrokenMarkdownArtifacts(text: string): string {
@@ -770,26 +770,17 @@ function orderedMethodMetrics(methodName: string, keyMetricMeans: Record<string,
     .filter((row): row is MethodMetricItem => row !== null);
 }
 
-function getFinalDecisionSignal(score?: number | null): { label: string; tone: "neutral" | "negative" | "positive" } {
-  const v = typeof score === "number" && Number.isFinite(score) ? score : 0;
-  if (v <= -20) return { label: "Strong Sell", tone: "negative" };
-  if (v < -5) return { label: "Sell", tone: "negative" };
-  if (v < 5) return { label: "Hold", tone: "neutral" };
-  if (v < 20) return { label: "Buy", tone: "positive" };
-  return { label: "Strong Buy", tone: "positive" };
-}
-
 function investmentAmountToPct(investmentAmount?: number | null): number | null {
   if (typeof investmentAmount !== "number" || !Number.isFinite(investmentAmount)) return null;
   return (investmentAmount / NOTIONAL_BASE_USD) * 100;
 }
 
-function combinedDecisionScore(investmentAmount?: number | null, targetReturnPct?: number | null): number | null {
+function combinedScore(investmentAmount?: number | null, targetReturnPct?: number | null): number | null {
   const investmentScore = investmentAmountToPct(investmentAmount);
   const hasInvestment = typeof investmentScore === "number" && Number.isFinite(investmentScore);
   const hasTargetReturn = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
   if (!hasInvestment && !hasTargetReturn) return null;
-  if (hasInvestment && hasTargetReturn) return (0.5 * Number(investmentScore)) + (0.5 * Number(targetReturnPct));
+  if (hasInvestment && hasTargetReturn) return (0.4 * Number(investmentScore)) + (0.6 * Number(targetReturnPct));
   return hasInvestment ? Number(investmentScore) : Number(targetReturnPct);
 }
 
@@ -806,7 +797,7 @@ export function HedgeDashboard({
   forceMainTab,
   hideNavHeader = false,
   hideMainTabBar = false,
-  hideDecisionFooter = false,
+  hideScoreFooter = false,
   onReportChange,
   postHeaderSlot,
 }: HedgeDashboardProps = {}) {
@@ -1183,7 +1174,7 @@ export function HedgeDashboard({
         target,
         investment: b.investment_amount,
         changePct,
-        combinedScore: combinedDecisionScore(b.investment_amount, changePct),
+        combinedScore: combinedScore(b.investment_amount, changePct),
       };
     });
     return rows.sort((a, b) => {
@@ -1413,17 +1404,16 @@ export function HedgeDashboard({
     "",
     ...bearReasons.map((item, idx) => `${idx + 1}. ${normalizeReasonText(String(item || ""))}`),
   ].join("\n").trim();
+  const scoreCard = data?.score_card || data?.decision_card || {};
   const finalCombinedScore =
-    typeof data?.decision_card?.combined_score === "number" && Number.isFinite(data.decision_card.combined_score)
-      ? Number(data.decision_card.combined_score)
-      : combinedDecisionScore(data?.decision_card?.mean_investment_amount, consensusChangePct);
+    typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
+      ? Number(scoreCard.combined_score)
+      : combinedScore(scoreCard?.mean_investment_amount, consensusChangePct);
   const finalAdjustedScore =
-    typeof data?.decision_card?.adjusted_score === "number" && Number.isFinite(data.decision_card.adjusted_score)
-      ? Number(data.decision_card.adjusted_score)
+    typeof scoreCard?.adjusted_score === "number" && Number.isFinite(scoreCard.adjusted_score)
+      ? Number(scoreCard.adjusted_score)
       : confidenceAdjustedScore(finalCombinedScore, overallDisagreement);
-  const decisionSignal = getFinalDecisionSignal(finalAdjustedScore);
-  const decisionToneClass =
-    decisionSignal.tone === "positive" ? "hib-target-up" : decisionSignal.tone === "negative" ? "hib-target-down" : "text-zinc-200";
+  const scoreToneClass = toneClassFromSign(finalAdjustedScore);
 
   return (
     <div className={hideNavHeader ? "min-h-full" : "hib-shell min-h-screen"}>
@@ -1624,13 +1614,6 @@ export function HedgeDashboard({
                     <div className="space-y-2 sm:hidden">
                       {targetTableRows.map((row) => {
                         const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
-                        const rowDecision = getFinalDecisionSignal(rowAdjustedScore);
-                        const rowDecisionToneClass =
-                          rowDecision.tone === "positive"
-                            ? "hib-target-up"
-                            : rowDecision.tone === "negative"
-                              ? "hib-target-down"
-                              : "text-zinc-200";
                         return (
                           <article key={`${row.name}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
                             <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.name}</p>
@@ -1645,7 +1628,9 @@ export function HedgeDashboard({
                                 {fmtNotionalPct(row.investment)}
                               </span>
                             </div>
-                            <p className={`mt-1 text-xs font-semibold ${rowDecisionToneClass}`}>{rowDecision.label}</p>
+                            <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
+                              Score {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
+                            </p>
                           </article>
                         );
                       })}
@@ -1663,13 +1648,12 @@ export function HedgeDashboard({
                               <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
                             </span>
                           </th>
-                          <th className="px-3 py-2 text-right font-medium">Decision</th>
+                          <th className="px-3 py-2 text-right font-medium">Score</th>
                         </tr>
                       </thead>
                       <tbody>
                         {targetTableRows.map((row) => {
                           const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
-                          const rowDecision = getFinalDecisionSignal(rowAdjustedScore);
                           const rowTargetVerdict = verdictMark(
                             targetDirectionWithFloor(row.target, consensusCurrent),
                             actualDirection,
@@ -1678,12 +1662,6 @@ export function HedgeDashboard({
                             directionOf(investmentAmountToPct(row.investment)),
                             actualDirection,
                           );
-                          const rowDecisionToneClass =
-                            rowDecision.tone === "positive"
-                              ? "hib-target-up"
-                              : rowDecision.tone === "negative"
-                                ? "hib-target-down"
-                                : "text-zinc-200";
                           return (
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
                             <td className="px-3 py-2 font-medium text-zinc-200">{row.name}</td>
@@ -1697,7 +1675,9 @@ export function HedgeDashboard({
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
                               {fmtNotionalPct(row.investment)} <span className="text-zinc-300">({rowInvestmentVerdict})</span>
                             </td>
-                            <td className={`px-3 py-2 text-right font-semibold ${rowDecisionToneClass}`}>{rowDecision.label}</td>
+                            <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
+                              {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
+                            </td>
                           </tr>
                           );
                         })}
@@ -1855,11 +1835,13 @@ export function HedgeDashboard({
               </section>
             ) : null}
 
-            {!hideDecisionFooter ? (
+            {!hideScoreFooter ? (
               <section className="grid gap-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4 lg:grid-cols-[1fr_auto]">
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Decision</p>
-                  <p className={`text-4xl font-bold ${decisionToneClass}`}>{decisionSignal.label}</p>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Score</p>
+                  <p className={`text-4xl font-bold ${scoreToneClass}`}>
+                    {typeof finalAdjustedScore === "number" && Number.isFinite(finalAdjustedScore) ? finalAdjustedScore.toFixed(2) : "N/A"}
+                  </p>
                   <p className="mt-2 text-xl font-semibold text-zinc-100">
                     <span>Mean Target Price: </span>
                     <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
@@ -1868,8 +1850,10 @@ export function HedgeDashboard({
                     </span>
                   </p>
                   <p className="text-lg font-semibold text-zinc-100">
-                    <span>Mean Investment Decision: </span>
-                    <span className={decisionToneClass}>{fmtDecisionPctOnly(data.decision_card.position_size_pct_of_notional)}</span>
+                    <span>Mean Investment Score Input: </span>
+                    <span className={toneClassFromSign(scoreCard.position_size_pct_of_notional)}>
+                      {fmtScoreInputPctOnly(scoreCard.position_size_pct_of_notional)}
+                    </span>
                   </p>
                   <p className="hib-neutral-metric text-sm">
                     Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}

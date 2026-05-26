@@ -239,9 +239,13 @@ export function normalizePayload(
       ...base.forecast_forensic_matrix,
       ...(payload.forecast_forensic_matrix || {}),
     },
-    decision_card: {
-      ...base.decision_card,
-      ...(payload.decision_card || {}),
+    score_card: {
+      position_size_pct_of_notional: 0,
+      mean_investment_amount: null,
+      rationale: "Run valuation to produce a score.",
+      ...(base.score_card || {}),
+      ...((payload as DashboardPayload).decision_card || {}),
+      ...(payload.score_card || {}),
     },
     artifacts: {
       ...base.artifacts,
@@ -372,10 +376,6 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       base.valuation_hub.consensus.current_price = parseMoney(p[1]);
     }
 
-    const fLine = analysisText.match(/Piotroski F-Score[\s\S]{0,500}/i);
-    if (fLine) {
-      base.header.f_score_text = fLine[0];
-    }
   }
 
   if (explainFile) {

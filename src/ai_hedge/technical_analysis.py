@@ -431,11 +431,11 @@ def technical_analysis_to_markdown(analysis: Dict[str, Any]) -> str:
     if isinstance(bearish_probability, (int, float)):
         lines.append(f"- Bearish Probability: {float(bearish_probability):.2%}")
     if final_decision:
-        lines.append(f"- Final Decision: {final_decision.title()}")
+        lines.append(f"- Final Signal: {final_decision.title()}")
     lines.append("")
 
     if confidence_explanation:
-        lines.append("### Probability Decision")
+        lines.append("### Probability Score")
         lines.append(confidence_explanation)
         lines.append("")
 

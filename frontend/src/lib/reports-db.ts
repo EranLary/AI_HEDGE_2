@@ -14,6 +14,7 @@ export interface DbReportSummary {
   currency: string | null;
   recommendation: string | null;
   mean_target_price: number | null;
+  score: number | null;
   source: string;
   source_run_id: string | null;
   visibility: ReportVisibility;
@@ -57,6 +58,10 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
            r.currency,
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'adjusted_score')::float8,
+             (a.dashboard->'decision_card'->>'adjusted_score')::float8
+           ) AS score,
            r.source, r.source_run_id,
            r.visibility,
            a.dashboard,
@@ -88,6 +93,10 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
            r.currency,
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'adjusted_score')::float8,
+             (a.dashboard->'decision_card'->>'adjusted_score')::float8
+           ) AS score,
            r.source, r.source_run_id,
            r.visibility,
            a.dashboard,
@@ -139,8 +148,12 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
            r.current_price::float8 AS current_price,
            r.market_cap::float8    AS market_cap,
            r.currency,
-           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'adjusted_score')::float8,
+             (a.dashboard->'decision_card'->>'adjusted_score')::float8
+           ) AS score,
            r.source, r.source_run_id,
            r.visibility
       FROM reports r
@@ -234,14 +247,16 @@ function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedR
           ? Number(dashboard.header.market_cap)
           : null,
       currency: typeof dashboard.header?.currency === "string" ? dashboard.header.currency : null,
-      recommendation:
-        typeof dashboard.decision_card?.action === "string" && dashboard.decision_card.action.trim()
-          ? dashboard.decision_card.action.trim()
-          : null,
+      recommendation: null,
       mean_target_price:
         typeof dashboard.valuation_hub?.consensus?.mean_target_price === "number" &&
         Number.isFinite(dashboard.valuation_hub.consensus.mean_target_price)
           ? Number(dashboard.valuation_hub.consensus.mean_target_price)
+          : null,
+      score:
+        typeof (dashboard.score_card || dashboard.decision_card)?.adjusted_score === "number" &&
+        Number.isFinite((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
+          ? Number((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
           : null,
       source: "site",
       source_run_id: null,
@@ -294,8 +309,12 @@ export async function listAllReports(): Promise<DbReportSummary[]> {
            r.current_price::float8 AS current_price,
            r.market_cap::float8    AS market_cap,
            r.currency,
-           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'adjusted_score')::float8,
+             (a.dashboard->'decision_card'->>'adjusted_score')::float8
+           ) AS score,
            r.source, r.source_run_id,
            r.visibility
       FROM reports r
@@ -316,8 +335,12 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
            r.current_price::float8 AS current_price,
            r.market_cap::float8    AS market_cap,
            r.currency,
-           COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
+           NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'adjusted_score')::float8,
+             (a.dashboard->'decision_card'->>'adjusted_score')::float8
+           ) AS score,
            r.source, r.source_run_id,
            r.visibility
       FROM reports r
@@ -340,8 +363,12 @@ export async function listCommunityReports(): Promise<DbReportSummary[]> {
                r.current_price::float8 AS current_price,
                r.market_cap::float8    AS market_cap,
                r.currency,
-               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
-               r.mean_target_price::float8 AS mean_target_price,
+                NULLIF(r.recommendation, '') AS recommendation,
+                r.mean_target_price::float8 AS mean_target_price,
+                COALESCE(
+                  (a.dashboard->'score_card'->>'adjusted_score')::float8,
+                  (a.dashboard->'decision_card'->>'adjusted_score')::float8
+                ) AS score,
                r.source, r.source_run_id,
                r.visibility
           FROM reports r
@@ -392,8 +419,12 @@ export async function listCommunityReportsPaged(opts: {
                r.current_price::float8 AS current_price,
                r.market_cap::float8    AS market_cap,
                r.currency,
-               COALESCE(NULLIF(r.recommendation, ''), a.dashboard->'decision_card'->>'action') AS recommendation,
-               r.mean_target_price::float8 AS mean_target_price,
+                NULLIF(r.recommendation, '') AS recommendation,
+                r.mean_target_price::float8 AS mean_target_price,
+                COALESCE(
+                  (a.dashboard->'score_card'->>'adjusted_score')::float8,
+                  (a.dashboard->'decision_card'->>'adjusted_score')::float8
+                ) AS score,
                r.source, r.source_run_id,
                r.visibility
           FROM reports r

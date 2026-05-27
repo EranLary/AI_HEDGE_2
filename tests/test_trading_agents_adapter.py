@@ -52,6 +52,31 @@ def test_context_framing_includes_research_lens_and_excludes_market_payload():
     assert "market_report" not in payload
 
 
+def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
+    payload = ta.normalize_trading_agents_state(
+        "TEST",
+        {
+            "fundamentals_report": "fundamental point " * 100,
+            "news_report": "news point " * 100,
+            "sentiment_report": "social point " * 100,
+            "investment_debate_state": {"bull_history": "bull", "bear_history": "bear"},
+            "risk_debate_state": {"neutral_history": "risk"},
+        },
+        decision="committee output",
+    )
+    monkeypatch.setattr(ta, "_summarize_trading_agents_payload", lambda _payload, api_key="": "compact brief")
+
+    compact = ta.compact_trading_agents_payload(payload, api_key="key")
+    context = ta.build_trading_agents_context(compact)
+
+    assert compact["status"] == "success"
+    assert compact["compacted"] is True
+    assert compact["research_brief"] == "compact brief"
+    assert "fundamentals_report" not in compact
+    assert "compact brief" in context
+    assert "fundamental point" not in context
+
+
 def test_reuse_accepts_fresh_success_with_matching_config(tmp_path):
     now = datetime(2026, 5, 27, tzinfo=timezone.utc)
     old_dir = tmp_path / "outputs" / "_site_runs" / "old" / "TEST"

@@ -5,12 +5,13 @@ import math
 import os
 import shutil
 import inspect
+import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-ADAPTER_VERSION = "2026-05-27.v1"
+ADAPTER_VERSION = "2026-05-27.v2"
 CONFIG_VERSION = "deepseek-v0.2.4-fundamentals-news-social"
 REUSE_WINDOW_DAYS = 7
 SELECTED_ANALYSTS = ["fundamentals", "news", "social"]
@@ -18,7 +19,9 @@ EXCLUDED_ANALYSTS = ["market"]
 LLM_PROVIDER = "deepseek"
 QUICK_THINK_LLM = "deepseek-chat"
 DEEP_THINK_LLM = "deepseek-reasoner"
+SUMMARY_LLM = "deepseek-v4-flash"
 DEEPSEEK_BACKEND_URL = "https://api.deepseek.com/v1"
+COMPACT_BRIEF_MAX_CHARS = 9000
 
 CONTEXT_HEADER = "Independent Multi-Agent Research Lens"
 CONTEXT_INTRO = (
@@ -75,6 +78,13 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+def _trim_chars(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, int(limit))].rstrip() + "\n\n[Truncated]"
+
+
 def _section(title: str, body: Any) -> str:
     text = _text(body)
     if not text:
@@ -85,6 +95,14 @@ def _section(title: str, body: Any) -> str:
 def build_trading_agents_context(payload: Dict[str, Any]) -> str:
     if not isinstance(payload, dict) or payload.get("status") != "success":
         return ""
+    research_brief = _text(payload.get("research_brief"))
+    if research_brief:
+        sections = [
+            CONTEXT_INTRO,
+            "The TradingAgents market/technical analyst is intentionally excluded from this context.",
+            _section("Compact Research Brief", research_brief),
+        ]
+        return "\n\n".join(part.strip() for part in sections if str(part or "").strip()).strip()
 
     sections = [
         CONTEXT_INTRO,
@@ -116,6 +134,117 @@ def build_trading_agents_artifact_text(payload: Dict[str, Any]) -> str:
     if error:
         lines.append(f"Reason: {error}")
     return "\n".join(lines).strip() + "\n"
+
+
+def _raw_trading_agents_bundle(payload: Dict[str, Any]) -> str:
+    sections = [
+        _section("Final Committee View", payload.get("final_committee_view")),
+        _section("Fundamentals Report", payload.get("fundamentals_report")),
+        _section("News Report", payload.get("news_report")),
+        _section("Social / Sentiment Report", payload.get("sentiment_report")),
+        _section("Bull/Bear Debate", payload.get("bull_bear_debate")),
+        _section("Risk Debate", payload.get("risk_debate")),
+    ]
+    return "\n\n".join(part.strip() for part in sections if str(part or "").strip()).strip()
+
+
+def _fallback_compact_research_brief(payload: Dict[str, Any]) -> str:
+    pieces = []
+    final_view = _text(payload.get("final_committee_view"))
+    if final_view:
+        pieces.append(f"### Final Committee View\n{_trim_chars(final_view, 1200)}")
+    for title, key in [
+        ("Fundamental Signals", "fundamentals_report"),
+        ("News And Sentiment Signals", "news_report"),
+        ("Social Sentiment Signals", "sentiment_report"),
+        ("Bull/Bear Debate", "bull_bear_debate"),
+        ("Risk Debate", "risk_debate"),
+    ]:
+        text = _text(payload.get(key))
+        if text:
+            pieces.append(f"### {title}\n{_trim_chars(text, 1400)}")
+    return _trim_chars("\n\n".join(pieces).strip(), COMPACT_BRIEF_MAX_CHARS)
+
+
+def _summarize_trading_agents_payload(payload: Dict[str, Any], *, api_key: str) -> str:
+    raw_bundle = _raw_trading_agents_bundle(payload)
+    if not raw_bundle:
+        return ""
+    key = str(api_key or "").strip()
+    if not key:
+        return _fallback_compact_research_brief(payload)
+
+    prompt = f"""
+You are compressing a verbose multi-agent equity research transcript into the only TradingAgents artifact we will keep.
+
+Write a compact research brief of 1,000-1,400 words. Preserve the highest-signal ideas only.
+
+Rules:
+- Keep it useful for valuation work: business quality, growth durability, earnings quality, margin drivers, capital intensity, competitive position, key news, sentiment, bull case, bear case, and risk debate.
+- Do not add a target price, score, instruction, or trading order.
+- Do not include chart or technical-analysis claims.
+- Do not mention that you are summarizing.
+- Use Markdown with these headings exactly:
+  ### Final Committee View
+  ### Business And Fundamentals
+  ### News And Sentiment
+  ### Bull Case
+  ### Bear Case
+  ### Risk Debate
+  ### What Valuators Should Watch
+- Be specific. Avoid generic filler.
+
+TradingAgents transcript:
+<TradingAgents_Raw>
+{raw_bundle}
+</TradingAgents_Raw>
+""".strip()
+
+    try:
+        response = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": SUMMARY_LLM,
+                "temperature": 0.1,
+                "messages": [
+                    {"role": "system", "content": "Write concise, high-signal investment research."},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=(10.0, 180.0),
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        summary = _text(content)
+        if summary:
+            return _trim_chars(summary, COMPACT_BRIEF_MAX_CHARS)
+    except Exception:
+        pass
+    return _fallback_compact_research_brief(payload)
+
+
+def compact_trading_agents_payload(payload: Dict[str, Any], *, api_key: str = "") -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        return payload
+    brief = _summarize_trading_agents_payload(payload, api_key=api_key)
+    compact = _base_payload(str(payload.get("ticker") or ""), now=_parse_dt(payload.get("generated_at")) or _now_utc())
+    compact.update(
+        {
+            "status": "success",
+            "trade_date": payload.get("trade_date"),
+            "research_brief": brief,
+            "final_committee_view": _text(payload.get("final_committee_view")),
+            "market_report_excluded": bool(payload.get("market_report_excluded")),
+            "compacted": True,
+            "summary_model": SUMMARY_LLM if str(api_key or "").strip() else "fallback",
+        }
+    )
+    return compact
 
 
 def _artifact_paths(output_dir: Path, ticker: str) -> Tuple[Path, Path]:
@@ -362,6 +491,7 @@ def run_trading_agents_lens(
         state, decision = _propagate_trading_agents_graph(graph, ticker_u, run_date)
         payload = normalize_trading_agents_state(ticker_u, state if isinstance(state, dict) else {}, decision, now=now)
         payload["trade_date"] = run_date
+        payload = compact_trading_agents_payload(payload, api_key=key)
     except Exception as exc:
         payload["status"] = "unavailable"
         payload["error"] = str(exc)

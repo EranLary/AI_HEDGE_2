@@ -527,6 +527,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
       ? `Generated fresh ${generatedAt}`
       : `Unavailable ${generatedAt}`;
   const sections = [
+    ["Research Brief", payload.research_brief],
     ["Final Committee View", payload.final_committee_view],
     ["Fundamentals Report", payload.fundamentals_report],
     ["News Report", payload.news_report],
@@ -554,6 +555,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
           Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}
           {". "}
           Not included here: {(payload.excluded_analysts || []).join(", ") || "market"}.
+          {payload.compacted ? " Stored as a compact brief." : ""}
         </p>
         {status !== "success" && payload.error ? (
           <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>

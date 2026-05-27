@@ -176,7 +176,7 @@ def _summarize_trading_agents_payload(payload: Dict[str, Any], *, api_key: str) 
     prompt = f"""
 You are compressing a verbose multi-agent equity research transcript into the only TradingAgents artifact we will keep.
 
-Write a compact research brief of 1,000-1,400 words. Preserve the highest-signal ideas only.
+Write a compact research brief of 1,000-1,600 words. Preserve the highest-signal ideas only.
 
 Rules:
 - Keep it useful for valuation work: business quality, growth durability, earnings quality, margin drivers, capital intensity, competitive position, key news, sentiment, bull case, bear case, and risk debate.

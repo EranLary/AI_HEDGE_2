@@ -1,4 +1,5 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
@@ -48,6 +49,7 @@ function extractFromDashboard(payload: DashboardPayload | null | undefined): Sto
 async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayload | null> {
   const tk = String(ticker || "").trim().toUpperCase();
   if (!tk) return null;
+  const dbEnabled = isDbEnabled();
 
   try {
     const dbRow = await fetchLatestReport(tk);
@@ -55,6 +57,7 @@ async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayl
     if (dashboard && typeof dashboard === "object") {
       return dashboard;
     }
+    if (dbEnabled) return null;
   } catch {
     // Fall through to outputs scan.
   }

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { DashboardPayload, DiscoveryRow } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
@@ -141,6 +142,7 @@ async function loadDashboards(): Promise<
 > {
   const merged = new Map<string, { ticker: string; payload: DashboardPayload; updatedAt: string; sourceLabel: string }>();
   const deletedFilter = await getDeletedReportFilter();
+  const dbEnabled = isDbEnabled();
 
   try {
     const dbRows = await listAllDashboardsForHitRate();
@@ -154,6 +156,11 @@ async function loadDashboards(): Promise<
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.updatedAt}`;
       merged.set(key, row);
+    }
+    if (dbEnabled) {
+      return Array.from(merged.values()).sort(
+        (a, b) => Date.parse(String(b.updatedAt || "")) - Date.parse(String(a.updatedAt || "")),
+      );
     }
   } catch (err) {
     console.warn("[discovery] DB read failed:", err);

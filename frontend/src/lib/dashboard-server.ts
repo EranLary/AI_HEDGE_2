@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { unstable_cache } from "next/cache";
 
 import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
+import { isDbEnabled } from "@/lib/db";
 import {
   buildFallbackFromArtifacts,
   normalizePayload,
@@ -47,6 +48,7 @@ export type LivePerformance = {
 async function loadReportsList(): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
   const deletedFilter = await getDeletedReportFilter();
+  const dbEnabled = isDbEnabled();
 
   try {
     const dbRows = await listAllReports();
@@ -61,6 +63,15 @@ async function loadReportsList(): Promise<ReportListItem[]> {
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
       merged.set(key, row);
+    }
+    if (dbEnabled) {
+      return Array.from(merged.values()).sort((a, b) => {
+        const aMs = Date.parse(String(a.generated_at || a.updated_at || ""));
+        const bMs = Date.parse(String(b.generated_at || b.updated_at || ""));
+        const safeA = Number.isFinite(aMs) ? aMs : 0;
+        const safeB = Number.isFinite(bMs) ? bMs : 0;
+        return safeB - safeA;
+      });
     }
   } catch (err) {
     console.warn("[reports] DB read failed:", err);
@@ -104,9 +115,15 @@ async function loadDashboardPayload(
   reportId: string,
 ): Promise<DashboardPayload> {
   const tk = ticker.toUpperCase();
+  const dbEnabled = isDbEnabled();
   const deletedFilter = await getDeletedReportFilterForTicker(tk);
   if (reportId && deletedFilter.isDeleted(reportId, tk)) {
     return normalizePayload(tk, { ticker: tk } as DashboardPayload, {
+      reportId,
+    });
+  }
+  if (dbEnabled && reportId && !isUuid(reportId)) {
+    return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
       reportId,
     });
   }
@@ -121,6 +138,11 @@ async function loadDashboardPayload(
         reportId: dbRow.id,
         reportFile: undefined,
         reportMtime: generated,
+      });
+    }
+    if (dbEnabled) {
+      return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
+        reportId: reportId || undefined,
       });
     }
   } catch (err) {
@@ -330,6 +352,12 @@ export type ResolvedTickerData = {
   resolvedReportId: string;
   data: DashboardPayload;
 };
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim(),
+  );
+}
 
 function reportTimestamp(report: ReportListItem): number {
   const ms = Date.parse(String(report.generated_at || report.updated_at || ""));

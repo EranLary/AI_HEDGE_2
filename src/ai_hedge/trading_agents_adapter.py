@@ -5,7 +5,6 @@ import math
 import os
 import shutil
 import inspect
-import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -201,26 +200,17 @@ TradingAgents transcript:
 """.strip()
 
     try:
-        response = requests.post(
-            "https://api.deepseek.com/chat/completions",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": SUMMARY_LLM,
-                "temperature": 0.1,
-                "messages": [
-                    {"role": "system", "content": "Write concise, high-signal investment research."},
-                    {"role": "user", "content": prompt},
-                ],
-            },
+        from ai_hedge import legacy_port as legacy
+
+        summary = legacy.deepseek_simple_text(
+            api_key=key,
+            prompt=prompt,
+            model=SUMMARY_LLM,
+            temperature=0.1,
             timeout=(10.0, 180.0),
+            short_answer=False,
         )
-        response.raise_for_status()
-        data = response.json()
-        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
-        summary = _text(content)
+        summary = _text(summary)
         if summary:
             return _trim_chars(summary, COMPACT_BRIEF_MAX_CHARS)
     except Exception:

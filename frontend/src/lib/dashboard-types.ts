@@ -34,6 +34,32 @@ export type DashboardMethodTab = {
   outputs: DashboardMethodOutput[];
 };
 
+export type TradingAgentsPayload = {
+  status?: "success" | "unavailable" | "error" | string;
+  ticker?: string;
+  generated_at?: string;
+  reused?: boolean;
+  reused_at?: string;
+  reused_from?: string;
+  original_generated_at?: string;
+  adapter_version?: string;
+  config_version?: string;
+  provider?: string;
+  quick_think_llm?: string;
+  deep_think_llm?: string;
+  selected_analysts?: string[];
+  excluded_analysts?: string[];
+  error?: string;
+  fundamentals_report?: string;
+  news_report?: string;
+  sentiment_report?: string;
+  bull_bear_debate?: string;
+  risk_debate?: string;
+  final_committee_view?: string;
+  artifact_json?: string;
+  artifact_txt?: string;
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
@@ -231,6 +257,7 @@ export type DashboardPayload = {
       confidence_explanation?: string;
     };
   };
+  trading_agents?: TradingAgentsPayload;
   filings?: {
     annual?: {
       available?: boolean;
@@ -257,6 +284,8 @@ export type DashboardPayload = {
     prices_explain_pdf?: string;
     dashboard_json?: string;
     technical_analysis_json?: string;
+    trading_agents_json?: string;
+    trading_agents_txt?: string;
   };
   downloads?: {
     analysis_pdf: string;

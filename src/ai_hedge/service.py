@@ -1039,6 +1039,8 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         "prices_explain_txt": "",
         "prices_explain_pdf": "",
         "dashboard_json": "",
+        "trading_agents_json": "",
+        "trading_agents_txt": "",
         "errors": errors,
         "r2_keys": None,
     }
@@ -1083,6 +1085,8 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         prices_explain_txt_target = out_dir / f"{ticker_u}_prices_explain.txt"
         prices_explain_pdf_target = out_dir / f"{ticker_u}_prices_explain.pdf"
         dashboard_json_target = out_dir / f"{ticker_u}_dashboard.json"
+        trading_agents_json_target = out_dir / f"{ticker_u}_trading_agents.json"
+        trading_agents_txt_target = out_dir / f"{ticker_u}_trading_agents.txt"
 
         analysis_src = Path(str(full_out.get("analysis_txt", "")))
         pdf_src = Path(str(full_out.get("analysis_pdf", "")))
@@ -1090,6 +1094,8 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         prices_explain_txt_src = Path(str(full_out.get("prices_explain_txt", "")))
         prices_explain_pdf_src = Path(str(full_out.get("prices_explain_pdf", "")))
         dashboard_json_src = Path(str(full_out.get("dashboard_json", "")))
+        trading_agents_json_src = Path(str(full_out.get("trading_agents_json", "")))
+        trading_agents_txt_src = Path(str(full_out.get("trading_agents_txt", "")))
 
         copied_analysis = _copy_artifact(analysis_src, analysis_target)
         copied_pdf = _copy_artifact(pdf_src, pdf_target)
@@ -1097,6 +1103,8 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         copied_prices_explain_txt = _copy_artifact(prices_explain_txt_src, prices_explain_txt_target)
         copied_prices_explain_pdf = _copy_artifact(prices_explain_pdf_src, prices_explain_pdf_target)
         copied_dashboard_json = _copy_artifact(dashboard_json_src, dashboard_json_target)
+        copied_trading_agents_json = _copy_artifact(trading_agents_json_src, trading_agents_json_target)
+        copied_trading_agents_txt = _copy_artifact(trading_agents_txt_src, trading_agents_txt_target)
 
         if copied_analysis:
             result["analysis_txt"] = str(analysis_target)
@@ -1125,6 +1133,12 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
             result["dashboard_json"] = str(dashboard_json_target)
         else:
             errors.append("Dashboard JSON was not generated.")
+
+        if copied_trading_agents_json:
+            result["trading_agents_json"] = str(trading_agents_json_target)
+
+        if copied_trading_agents_txt:
+            result["trading_agents_txt"] = str(trading_agents_txt_target)
 
         result["current_revenue"] = full_out.get("current_revenue")
         result["target_revenue"] = full_out.get("target_revenue")

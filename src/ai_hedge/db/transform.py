@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 
 def _read_text_if_exists(path: Path) -> str | None:
@@ -101,9 +102,21 @@ def _safe_float(value):
         f = float(value)
     except (TypeError, ValueError):
         return None
-    if f != f:  # NaN
+    if not math.isfinite(f):
         return None
     return f
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 def _pluck_dashboard_fields(dashboard: dict) -> dict:
@@ -145,6 +158,7 @@ def ticker_dir_to_row(
         dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    dashboard = _json_safe(dashboard)
 
     ticker = dashboard.get("ticker") or ticker_dir.name
     if not ticker:

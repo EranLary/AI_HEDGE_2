@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
+from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -72,6 +74,18 @@ INSERT INTO report_artifacts (
 """
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def insert_report(
     conn: psycopg.Connection, report_row: dict, artifact_row: dict
 ) -> tuple[str, bool]:
@@ -95,9 +109,9 @@ def insert_report(
 
         new_id = str(result[0])
         artifact_payload = dict(artifact_row)
-        artifact_payload["dashboard"] = Jsonb(artifact_payload["dashboard"])
+        artifact_payload["dashboard"] = Jsonb(_json_safe(artifact_payload["dashboard"]))
         r2_val = artifact_payload.get("r2_keys")
-        artifact_payload["r2_keys"] = Jsonb(r2_val) if r2_val else None
+        artifact_payload["r2_keys"] = Jsonb(_json_safe(r2_val)) if r2_val else None
         artifact_payload["report_id"] = new_id
         cur.execute(_INSERT_ARTIFACT_SQL, artifact_payload)
         return (new_id, True)

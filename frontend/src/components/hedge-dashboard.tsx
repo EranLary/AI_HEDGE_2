@@ -513,6 +513,66 @@ export function MarkdownBlock({ text }: { text: string }) {
   );
 }
 
+function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_agents"] }) {
+  if (!payload || !Object.keys(payload).length) {
+    return <p className="mt-3 text-sm text-zinc-500">No TradingAgents lens was stored for this report.</p>;
+  }
+
+  const status = String(payload.status || "unavailable");
+  const generatedAt = payload.generated_at ? fmtDateTimeNoSeconds(String(payload.generated_at)) : "N/A";
+  const reusedAt = payload.reused_at ? fmtDateTimeNoSeconds(String(payload.reused_at)) : "";
+  const statusText = payload.reused
+    ? `Reused from ${generatedAt}${reusedAt ? `, copied ${reusedAt}` : ""}`
+    : status === "success"
+      ? `Generated fresh ${generatedAt}`
+      : `Unavailable ${generatedAt}`;
+  const sections = [
+    ["Final Committee View", payload.final_committee_view],
+    ["Fundamentals Report", payload.fundamentals_report],
+    ["News Report", payload.news_report],
+    ["Social / Sentiment Report", payload.sentiment_report],
+    ["Bull/Bear Debate", payload.bull_bear_debate],
+    ["Risk Debate", payload.risk_debate],
+  ] as const;
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-zinc-100">Independent Multi-Agent Research Lens</p>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-zinc-300">
+            {statusText}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+          This is another independent view of the company. It is not a target price, score, or instruction, and the market/technical analyst is excluded.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          Analysts: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}
+          {" · "}
+          Excluded: {(payload.excluded_analysts || []).join(", ") || "market"}
+        </p>
+        {status !== "success" && payload.error ? (
+          <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>
+        ) : null}
+      </div>
+
+      {sections.map(([title, text], index) => {
+        const cleanText = String(text || "").trim();
+        if (!cleanText) return null;
+        return (
+          <details key={title} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index < 2}>
+            <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{title}</summary>
+            <div className="mt-2 max-h-[24rem] overflow-auto break-words text-zinc-200">
+              <MarkdownBlock text={cleanText} />
+            </div>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
 function InfoTip({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -1038,6 +1098,10 @@ export function HedgeDashboard({
     return map;
   }, [methodTabs]);
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
+  const tradingAgentsPayload = data?.trading_agents;
+  const hasTradingAgents =
+    !!tradingAgentsPayload &&
+    (Object.keys(tradingAgentsPayload).length > 0 || String(tradingAgentsPayload.status || "").trim().length > 0);
   const selectedOutput = activeMethod
     ? activeMethod.outputs.find((o) => (o.persona || `Output ${o.output_id}`) === outputTab[activeMethod.name]) || activeMethod.outputs[0]
     : null;
@@ -1605,6 +1669,9 @@ export function HedgeDashboard({
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tab active={valuationTab === "overview"} onClick={() => setValuationTab("overview")} label="Overview" />
                   {methodTabs.map((m) => <Tab key={m.name} active={valuationTab === m.name} onClick={() => setValuationTab(m.name)} label={m.name} />)}
+                  {hasTradingAgents ? (
+                    <Tab active={valuationTab === "trading-agents"} onClick={() => setValuationTab("trading-agents")} label="TradingAgents" />
+                  ) : null}
                 </div>
                 {valuationTab === "overview" ? (
                   <div className="mt-3">
@@ -1685,6 +1752,8 @@ export function HedgeDashboard({
                     </table>
                   </div>
                   </div>
+                ) : valuationTab === "trading-agents" ? (
+                  <TradingAgentsPanel payload={tradingAgentsPayload} />
                 ) : activeMethod ? (
                   <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">

@@ -49,6 +49,8 @@ class RunArtifacts:
     prices_explain_txt: str
     prices_explain_pdf: str
     dashboard_json: str
+    trading_agents_json: str
+    trading_agents_txt: str
     notes: List[str]
     current_revenue: Optional[float]
     target_revenue: Optional[float]
@@ -1356,6 +1358,47 @@ def _run_ticker_valuation_impl(
     except Exception as extraction_err:
         notes.append(f"Dashboard extraction append failed: {extraction_err}")
 
+    trading_agents_payload: Dict[str, Any] = {}
+    trading_agents_context = ""
+    trading_agents_json = ""
+    trading_agents_txt = ""
+    try:
+        from .trading_agents_adapter import (
+            CONTEXT_HEADER as TRADING_AGENTS_CONTEXT_HEADER,
+            build_trading_agents_context,
+            run_trading_agents_lens,
+        )
+
+        with _obs.llm_context(stage="trading_agents"):
+            trading_agents_payload = run_trading_agents_lens(
+                ticker=ticker,
+                output_dir=out_dir,
+                api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+            )
+        trading_agents_json = str(trading_agents_payload.get("artifact_json") or "")
+        trading_agents_txt = str(trading_agents_payload.get("artifact_txt") or "")
+        trading_agents_context = build_trading_agents_context(trading_agents_payload)
+        if trading_agents_context:
+            legacy.append_text_to_file(
+                text=trading_agents_context,
+                header=TRADING_AGENTS_CONTEXT_HEADER,
+            )
+            latest_text = legacy.load_text_from_file("analysis.txt")
+            if str(latest_text or "").strip():
+                regular_text = str(latest_text or "").strip()
+        elif trading_agents_payload.get("status") not in {"", None, "success"}:
+            notes.append(
+                "TradingAgents research lens unavailable: "
+                f"{trading_agents_payload.get('error') or trading_agents_payload.get('status')}"
+            )
+    except Exception as trading_agents_err:
+        trading_agents_payload = {
+            "status": "unavailable",
+            "error": str(trading_agents_err),
+        }
+        notes.append(f"TradingAgents research lens failed: {trading_agents_err}")
+    _append_progress(progress_file, "Finished TradingAgents Research Lens")
+
     valuation_contexts = [regular_text]
 
     explain_payload: Dict[str, Any] = {}
@@ -1512,6 +1555,7 @@ def _run_ticker_valuation_impl(
             sec_short_text=sec_short_text,
             qualitative_sections=qualitative_sections,
             technical_analysis=technical_analysis_payload,
+            trading_agents=trading_agents_payload,
             filings=filing_sources,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
@@ -1522,6 +1566,8 @@ def _run_ticker_valuation_impl(
                 "net_income_plot": str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
                 "prices_explain_txt": str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
                 "technical_analysis_json": technical_analysis_json,
+                "trading_agents_json": trading_agents_json,
+                "trading_agents_txt": trading_agents_txt,
             },
         )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
@@ -1600,6 +1646,8 @@ def _run_ticker_valuation_impl(
         "prices-chart": out_dir / f"{ticker}_prices_valuation.png",
         "revenue-chart": out_dir / f"{ticker}_revenue_valuation.png",
         "net-income-chart": out_dir / f"{ticker}_net_income_valuation.png",
+        "trading-agents-json": Path(trading_agents_json) if trading_agents_json else None,
+        "trading-agents-txt": Path(trading_agents_txt) if trading_agents_txt else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     collected_keys: Dict[str, str] = {}
@@ -1635,6 +1683,8 @@ def _run_ticker_valuation_impl(
         prices_explain_txt=str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
         prices_explain_pdf=prices_explain_pdf,
         dashboard_json=dashboard_json,
+        trading_agents_json=trading_agents_json,
+        trading_agents_txt=trading_agents_txt,
         notes=notes,
         current_revenue=current_revenue,
         target_revenue=target_revenue,
@@ -1656,6 +1706,8 @@ def _run_ticker_valuation_impl(
         "prices_explain_txt": artifacts.prices_explain_txt,
         "prices_explain_pdf": artifacts.prices_explain_pdf,
         "dashboard_json": artifacts.dashboard_json,
+        "trading_agents_json": artifacts.trading_agents_json,
+        "trading_agents_txt": artifacts.trading_agents_txt,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,
         "target_revenue": artifacts.target_revenue,

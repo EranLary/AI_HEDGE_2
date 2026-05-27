@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import math
+
 from ai_hedge import dashboard
 from ai_hedge import legacy_port as lp
 from ai_hedge import runner
+from ai_hedge.db.transform import ticker_dir_to_row
 
 
 def test_extract_revenue_scenario_json_parses_and_normalizes():
@@ -157,6 +161,51 @@ def test_dashboard_blended_probabilities_include_sotp_object_shape():
     assert abs(rows["bull_probability_blended"]["mean"] - 0.2) < 1e-9
     assert abs(rows["base_probability_blended"]["mean"] - 0.5) < 1e-9
     assert abs(rows["bear_probability_blended"]["mean"] - 0.3) < 1e-9
+
+
+def test_dashboard_strict_json_replaces_non_finite_values(tmp_path):
+    payload = {
+        "ticker": "BAD",
+        "header": {
+            "price_performance_pct": {
+                "1D": math.nan,
+                "1W": math.inf,
+                "1M": -math.inf,
+                "3M": 1.25,
+            }
+        },
+    }
+
+    out = tmp_path / "BAD_dashboard.json"
+    dashboard.write_dashboard_payload(out, payload)
+
+    raw = out.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    parsed = json.loads(raw)
+    assert parsed["header"]["price_performance_pct"]["1D"] is None
+    assert parsed["header"]["price_performance_pct"]["1W"] is None
+    assert parsed["header"]["price_performance_pct"]["1M"] is None
+    assert parsed["header"]["price_performance_pct"]["3M"] == 1.25
+
+
+def test_db_transform_sanitizes_non_finite_dashboard_values(tmp_path):
+    ticker_dir = tmp_path / "_site_runs" / "BAD_123" / "BAD"
+    ticker_dir.mkdir(parents=True)
+    (ticker_dir / "BAD_analysis.txt").write_text("analysis", encoding="utf-8")
+    (ticker_dir / "BAD_dashboard.json").write_text(
+        '{"ticker":"BAD","generated_at":"2026-01-01T00:00:00+00:00",'
+        '"header":{"current_price":NaN,"price_performance_pct":{"1D":NaN}},'
+        '"valuation_hub":{"consensus":{"mean_target_price":Infinity}}}',
+        encoding="utf-8",
+    )
+
+    bundle = ticker_dir_to_row(ticker_dir, source="site")
+
+    assert bundle is not None
+    assert bundle["report_row"]["current_price"] is None
+    assert bundle["report_row"]["mean_target_price"] is None
+    assert bundle["artifact_row"]["dashboard"]["header"]["price_performance_pct"]["1D"] is None
 
 
 def test_runner_assumptions_pack_blended_probabilities_include_sotp_object_shape():

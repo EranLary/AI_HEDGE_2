@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
+from ai_hedge import legacy_port as legacy
 from ai_hedge import trading_agents_adapter as ta
 
 
@@ -75,6 +76,34 @@ def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
     assert "fundamentals_report" not in compact
     assert "compact brief" in context
     assert "fundamental point" not in context
+
+
+def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):
+    calls = []
+
+    def fake_deepseek_simple_text(**kwargs):
+        calls.append(kwargs)
+        return "observed compact brief"
+
+    monkeypatch.setattr(legacy, "deepseek_simple_text", fake_deepseek_simple_text)
+    payload = ta.normalize_trading_agents_state(
+        "TEST",
+        {
+            "fundamentals_report": "fundamental point",
+            "news_report": "news point",
+            "sentiment_report": "social point",
+        },
+        decision="committee output",
+    )
+
+    brief = ta._summarize_trading_agents_payload(payload, api_key="key")
+
+    assert brief == "observed compact brief"
+    assert len(calls) == 1
+    assert calls[0]["model"] == ta.SUMMARY_LLM
+    assert calls[0]["temperature"] == 0.1
+    assert calls[0]["short_answer"] is False
+    assert "TradingAgents transcript:" in calls[0]["prompt"]
 
 
 def test_reuse_accepts_fresh_success_with_matching_config(tmp_path):

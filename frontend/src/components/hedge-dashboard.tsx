@@ -552,10 +552,8 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
           evidence.
         </p>
         <p className="mt-2 text-xs text-zinc-500">
-          Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}
-          {". "}
-          Not included here: {(payload.excluded_analysts || []).join(", ") || "market"}.
-          {payload.compacted ? " Stored as a compact brief." : ""}
+          Independent Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}.
+          {payload.compacted ? " compacted version." : ""}
         </p>
         {status !== "success" && payload.error ? (
           <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>

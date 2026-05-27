@@ -4,6 +4,7 @@ import json
 import math
 import os
 import shutil
+import inspect
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -295,6 +296,17 @@ def _reuse_artifact(output_dir: Path, ticker: str, source_path: Path, source_pay
     return copied
 
 
+def _propagate_trading_agents_graph(graph: Any, ticker: str, trade_date: str) -> Tuple[Any, Any]:
+    propagate = graph.propagate
+    try:
+        params = inspect.signature(propagate).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "asset_type" in params:
+        return propagate(ticker, trade_date, asset_type="stock")
+    return propagate(ticker, trade_date)
+
+
 def run_trading_agents_lens(
     ticker: str,
     output_dir: str | Path,
@@ -347,7 +359,7 @@ def run_trading_agents_lens(
             }
         )
         graph = TradingAgentsGraph(selected_analysts=list(SELECTED_ANALYSTS), debug=False, config=config)
-        state, decision = graph.propagate(ticker_u, run_date, asset_type="stock")
+        state, decision = _propagate_trading_agents_graph(graph, ticker_u, run_date)
         payload = normalize_trading_agents_state(ticker_u, state if isinstance(state, dict) else {}, decision, now=now)
         payload["trade_date"] = run_date
     except Exception as exc:

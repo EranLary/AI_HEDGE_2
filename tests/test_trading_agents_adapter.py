@@ -102,3 +102,37 @@ def test_reuse_rejects_stale_failure_and_config_mismatch(tmp_path):
     found = ta.find_reusable_trading_agents_artifact(output_dir=new_dir, ticker="TEST", now=now)
 
     assert found is None
+
+
+def test_propagate_helper_supports_v024_signature_without_asset_type():
+    class Graph:
+        def __init__(self):
+            self.calls = []
+
+        def propagate(self, ticker, trade_date):
+            self.calls.append((ticker, trade_date))
+            return {"fundamentals_report": "ok"}, "decision"
+
+    graph = Graph()
+
+    state, decision = ta._propagate_trading_agents_graph(graph, "AAPL", "2026-05-27")
+
+    assert graph.calls == [("AAPL", "2026-05-27")]
+    assert state["fundamentals_report"] == "ok"
+    assert decision == "decision"
+
+
+def test_propagate_helper_keeps_asset_type_when_supported():
+    class Graph:
+        def __init__(self):
+            self.calls = []
+
+        def propagate(self, ticker, trade_date, *, asset_type):
+            self.calls.append((ticker, trade_date, asset_type))
+            return {"fundamentals_report": "ok"}, "decision"
+
+    graph = Graph()
+
+    ta._propagate_trading_agents_graph(graph, "AAPL", "2026-05-27")
+
+    assert graph.calls == [("AAPL", "2026-05-27", "stock")]

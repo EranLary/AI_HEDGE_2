@@ -5,6 +5,7 @@ import shutil
 import sys
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1220,6 +1221,36 @@ def _run_ticker_valuation_impl(
     text = legacy.load_text_from_file("analysis.txt")
     regular_text = str(text or "").strip()
     notes: List[str] = []
+    trading_agents_payload: Dict[str, Any] = {}
+    trading_agents_context = ""
+    trading_agents_json = ""
+    trading_agents_txt = ""
+    trading_agents_executor: Optional[ThreadPoolExecutor] = None
+    trading_agents_future = None
+
+    try:
+        from .trading_agents_adapter import (
+            run_trading_agents_lens,
+        )
+
+        trading_agents_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="trading-agents")
+
+        def _run_trading_agents() -> Dict[str, Any]:
+            with _obs.llm_context(stage="trading_agents"):
+                return run_trading_agents_lens(
+                    ticker=ticker,
+                    output_dir=out_dir,
+                    api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+                )
+
+        trading_agents_future = _obs.obs_submit(trading_agents_executor, _run_trading_agents)
+        _append_progress(progress_file, "Started TradingAgents Research Lens")
+    except Exception as trading_agents_start_err:
+        trading_agents_payload = {
+            "status": "unavailable",
+            "error": str(trading_agents_start_err),
+        }
+        notes.append(f"TradingAgents research lens failed to start: {trading_agents_start_err}")
 
     # SEC/MAYA pre-score Q&A: run only when filing text exists.
     if _has_filing_text(files_dict):
@@ -1358,23 +1389,14 @@ def _run_ticker_valuation_impl(
     except Exception as extraction_err:
         notes.append(f"Dashboard extraction append failed: {extraction_err}")
 
-    trading_agents_payload: Dict[str, Any] = {}
-    trading_agents_context = ""
-    trading_agents_json = ""
-    trading_agents_txt = ""
     try:
         from .trading_agents_adapter import (
             CONTEXT_HEADER as TRADING_AGENTS_CONTEXT_HEADER,
             build_trading_agents_context,
-            run_trading_agents_lens,
         )
 
-        with _obs.llm_context(stage="trading_agents"):
-            trading_agents_payload = run_trading_agents_lens(
-                ticker=ticker,
-                output_dir=out_dir,
-                api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
-            )
+        if trading_agents_future is not None:
+            trading_agents_payload = trading_agents_future.result()
         trading_agents_json = str(trading_agents_payload.get("artifact_json") or "")
         trading_agents_txt = str(trading_agents_payload.get("artifact_txt") or "")
         trading_agents_context = build_trading_agents_context(trading_agents_payload)
@@ -1397,6 +1419,9 @@ def _run_ticker_valuation_impl(
             "error": str(trading_agents_err),
         }
         notes.append(f"TradingAgents research lens failed: {trading_agents_err}")
+    finally:
+        if trading_agents_executor is not None:
+            trading_agents_executor.shutdown(wait=False)
     _append_progress(progress_file, "Finished TradingAgents Research Lens")
 
     valuation_contexts = [regular_text]

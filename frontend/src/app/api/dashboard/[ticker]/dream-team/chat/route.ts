@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 
 import { NextResponse } from "next/server";
 
+import { isDbEnabled } from "@/lib/db";
 import { fetchReportById } from "@/lib/reports-db";
 import { normalizePayload } from "@/lib/dashboard-normalize";
 import type { DashboardPayload } from "@/lib/dashboard-types";
@@ -69,6 +70,12 @@ function trimText(value: unknown, maxChars: number): string {
 
 function cacheKey(ticker: string, reportId: string): string {
   return `${String(ticker || "").toUpperCase()}::${String(reportId || "").trim()}`;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim(),
+  );
 }
 
 function getCache(key: string): ContextCacheEntry | null {
@@ -285,6 +292,7 @@ export async function POST(
   const persona = String(body.persona || "").trim();
   const includeAnnual = Boolean(body.include_annual);
   const includeQuarterly = Boolean(body.include_quarterly);
+  const dbEnabled = isDbEnabled();
 
   if (!reportId) return NextResponse.json({ error: "report_id is required." }, { status: 400 });
   if (!persona) return NextResponse.json({ error: "persona is required." }, { status: 400 });
@@ -294,6 +302,9 @@ export async function POST(
   let localDashboard: DashboardPayload | null = null;
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
   if (deletedFilter.isDeleted(reportId, ticker)) {
+    return NextResponse.json({ error: "Report not found." }, { status: 404 });
+  }
+  if (dbEnabled && !isUuid(reportId)) {
     return NextResponse.json({ error: "Report not found." }, { status: 404 });
   }
   try {

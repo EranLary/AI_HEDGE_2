@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
@@ -20,6 +21,7 @@ export const revalidate = 0;
 async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
   const merged = new Map<string, LoadedDashboard>();
   const deletedFilter = await getDeletedReportFilter();
+  const dbEnabled = isDbEnabled();
 
   try {
     const dbRows = await listAllDashboardsForHitRate();
@@ -33,6 +35,11 @@ async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.generatedAt}`;
       merged.set(key, row);
+    }
+    if (dbEnabled) {
+      return Array.from(merged.values()).sort(
+        (a, b) => Date.parse(String(b.generatedAt || "")) - Date.parse(String(a.generatedAt || "")),
+      );
     }
   } catch (err) {
     console.warn("[hit-rate] DB read failed:", err);

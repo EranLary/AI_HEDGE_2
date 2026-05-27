@@ -50,6 +50,9 @@ export type TradingAgentsPayload = {
   selected_analysts?: string[];
   excluded_analysts?: string[];
   error?: string;
+  research_brief?: string;
+  compacted?: boolean;
+  summary_model?: string;
   fundamentals_report?: string;
   news_report?: string;
   sentiment_report?: string;

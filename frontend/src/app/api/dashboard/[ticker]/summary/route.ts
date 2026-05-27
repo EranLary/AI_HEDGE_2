@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import {
   computeTickerSummaryAggregation,
@@ -25,6 +26,7 @@ function parseWindow(value: string | null): SummaryWindow {
 async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport[]> {
   const merged = new Map<string, SummarySourceReport>();
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  const dbEnabled = isDbEnabled();
 
   try {
     const dbRows = await listDashboardsForTicker(ticker);
@@ -38,6 +40,11 @@ async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport
       const runId = String((r as { source_run_id?: unknown }).source_run_id || "").trim();
       const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.generatedAt}`;
       merged.set(key, row);
+    }
+    if (dbEnabled) {
+      return Array.from(merged.values()).sort(
+        (a, b) => Date.parse(String(b.generatedAt || "")) - Date.parse(String(a.generatedAt || "")),
+      );
     }
   } catch (err) {
     console.warn("[ticker-summary] DB read failed:", err);

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import { findLatestByFileName, outputsRoot, resolveDashboardReportPath } from "@/lib/server-outputs";
@@ -54,6 +55,12 @@ function isExistingFile(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim(),
+  );
 }
 
 function r2PublicUrl(r2Key: string): string | null {
@@ -112,8 +119,29 @@ async function resolveReportScopedFile(
   reportId: string,
   fileName: string,
 ): Promise<{ foundPath: string; r2Url: string | null }> {
+  const dbEnabled = isDbEnabled();
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
   if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null };
+
+  if (dbEnabled) {
+    if (!isUuid(reportId)) return { foundPath: "", r2Url: null };
+    try {
+      const row = await fetchReportById(reportId);
+      if (!row) return { foundPath: "", r2Url: null };
+      if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null };
+
+      const r2Key = String(row.r2_keys?.[kind] || "").trim();
+      const url = r2PublicUrl(r2Key);
+      if (url) return { foundPath: "", r2Url: url };
+
+      for (const root of collectDbCandidateRoots(row)) {
+        const foundPath = resolveFromRoot(root, fileName);
+        if (foundPath) return { foundPath, r2Url: null };
+      }
+    } catch {
+      // DB unreachable or invalid UUID parse; fall through to filesystem compatibility.
+    }
+  }
 
   const reportPath = resolveDashboardReportPath(reportId);
   if (reportPath) {
@@ -177,11 +205,15 @@ export async function GET(
     }
   } else {
     // No explicit report scope: prefer latest DB report's R2 object when available.
+    const dbEnabled = isDbEnabled();
     try {
       const row = await fetchLatestReport(ticker);
       const r2Key = String(row?.r2_keys?.[kind] || "").trim();
       const r2Url = r2PublicUrl(r2Key);
       if (r2Url) return NextResponse.redirect(r2Url, 302);
+      if (dbEnabled && !row) {
+        return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
+      }
     } catch {
       // DB unreachable / missing row: fall through to FS path below.
     }

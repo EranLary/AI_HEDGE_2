@@ -527,6 +527,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
       ? `Generated fresh ${generatedAt}`
       : `Unavailable ${generatedAt}`;
   const sections = [
+    ["Research Brief", payload.research_brief],
     ["Final Committee View", payload.final_committee_view],
     ["Fundamentals Report", payload.fundamentals_report],
     ["News Report", payload.news_report],
@@ -545,12 +546,14 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
           </span>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-          This is another independent view of the company. It is not a target price, score, or instruction, and the market/technical analyst is excluded.
+          This is a separate research memo from a small agent team. It reads the business, recent news, and market
+          sentiment, then stages bull, bear, and risk debates before a final committee view. The memo itself does not
+          set the target price or score, and chart/technical analysis is left out so this stays focused on business
+          evidence.
         </p>
         <p className="mt-2 text-xs text-zinc-500">
-          Analysts: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}
-          {" · "}
-          Excluded: {(payload.excluded_analysts || []).join(", ") || "market"}
+          Independent Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}.
+          {payload.compacted ? " compacted version." : ""}
         </p>
         {status !== "success" && payload.error ? (
           <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>
@@ -561,7 +564,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
         const cleanText = String(text || "").trim();
         if (!cleanText) return null;
         return (
-          <details key={title} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index < 2}>
+          <details key={title} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index === 0}>
             <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{title}</summary>
             <div className="mt-2 max-h-[24rem] overflow-auto break-words text-zinc-200">
               <MarkdownBlock text={cleanText} />

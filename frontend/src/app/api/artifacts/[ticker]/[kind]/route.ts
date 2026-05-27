@@ -14,6 +14,8 @@ const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = 
   "prices-explain-pdf": { fileName: "{TICKER}_prices_explain.pdf", contentType: "application/pdf" },
   "dashboard-json": { fileName: "{TICKER}_dashboard.json", contentType: "application/json; charset=utf-8" },
   "prices-chart": { fileName: "{TICKER}_prices_valuation.png", contentType: "image/png" },
+  "trading-agents-json": { fileName: "{TICKER}_trading_agents.json", contentType: "application/json; charset=utf-8" },
+  "trading-agents-txt": { fileName: "{TICKER}_trading_agents.txt", contentType: "text/plain; charset=utf-8" },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {

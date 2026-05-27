@@ -11,3 +11,4 @@ xhtml2pdf>=0.2.16
 python-dotenv>=1.0.1
 psycopg[binary]>=3.2
 pypdf>=5.0
+tradingagents @ https://github.com/TauricResearch/TradingAgents/archive/refs/tags/v0.2.4.zip

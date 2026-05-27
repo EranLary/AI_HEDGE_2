@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -169,9 +171,24 @@ def _safe_float(value: Any) -> Optional[float]:
     try:
         if value is None:
             return None
-        return float(value)
+        result = float(value)
+        if not math.isfinite(result):
+            return None
+        return result
     except Exception:
         return None
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 def _mean(values: List[float]) -> Optional[float]:
@@ -1134,10 +1151,16 @@ def _extract_overall_triplet(metric_dict: Dict[str, Any]) -> Tuple[Optional[floa
 
 
 def _compute_price_performance_pct(ticker: str) -> Dict[str, Optional[float]]:
-    try:
-        hist = yf.Ticker(str(ticker or "").strip()).history(period="max")
-    except Exception:
-        return {}
+    hist = None
+    for attempt in range(3):
+        try:
+            hist = yf.Ticker(str(ticker or "").strip()).history(period="max")
+        except Exception:
+            hist = None
+        if hist is not None and not getattr(hist, "empty", True):
+            break
+        if attempt < 2:
+            time.sleep(2.0 * (attempt + 1))
     if hist is None or getattr(hist, "empty", True):
         return {}
     try:
@@ -1175,7 +1198,8 @@ def _compute_price_performance_pct(ticker: str) -> Dict[str, Optional[float]]:
     returns: Dict[str, Optional[float]] = {}
     for label, days in periods.items():
         value = calc_return(days)
-        returns[label] = round(value, 2) if value is not None else None
+        rounded = round(value, 2) if value is not None else None
+        returns[label] = _safe_float(rounded)
     return returns
 
 
@@ -1381,6 +1405,7 @@ def build_dashboard_payload(
     sec_short_text: str,
     artifacts: Dict[str, str],
     technical_analysis: Optional[Dict[str, Any]] = None,
+    trading_agents: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     filings: Optional[Dict[str, Any]] = None,
@@ -1624,6 +1649,7 @@ def build_dashboard_payload(
             "rationale": "Score blends 40% investment allocation and 60% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
+        "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},
         "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,
     }
@@ -1632,5 +1658,6 @@ def build_dashboard_payload(
 def write_dashboard_payload(path: str | Path, payload: Dict[str, Any]) -> str:
     target = Path(path).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    clean_payload = _json_safe(payload)
+    target.write_text(json.dumps(clean_payload, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return str(target)

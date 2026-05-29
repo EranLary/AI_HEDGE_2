@@ -98,14 +98,12 @@ def build_trading_agents_context(payload: Dict[str, Any]) -> str:
     if research_brief:
         sections = [
             CONTEXT_INTRO,
-            "The TradingAgents market/technical analyst is intentionally excluded from this context.",
             _section("Compact Research Brief", research_brief),
         ]
         return "\n\n".join(part.strip() for part in sections if str(part or "").strip()).strip()
 
     sections = [
         CONTEXT_INTRO,
-        "The TradingAgents market/technical analyst is intentionally excluded from this context.",
         _section("Fundamentals Report", payload.get("fundamentals_report")),
         _section("News Report", payload.get("news_report")),
         _section("Social / Sentiment Report", payload.get("sentiment_report")),
@@ -174,12 +172,27 @@ def _summarize_trading_agents_payload(payload: Dict[str, Any], *, api_key: str) 
         return _fallback_compact_research_brief(payload)
 
     prompt = f"""
-You are compressing a verbose multi-agent equity research transcript into the only TradingAgents artifact we will keep.
+You are compressing a verbose multi-agent equity research transcript into the canonical TradingAgents investment memory artifact.
+This is the only TradingAgents artifact we will keep.
+The goal is long-horizon valuation usefulness and retrieval efficiency.
 
-Write a compact research brief of 1,000-1,600 words. Preserve the highest-signal ideas only.
+Write a dense research brief for this TradingAgents raw transcript. Preserve the highest-signal ideas only.
+Target length: typically 1,000-1,600 words, but optimize for signal density rather than strict length.
+
+Preserve:
+- business quality
+- growth durability
+- earnings quality
+- margin structure and operating leverage
+- free cash flow quality and capital intensity
+- competitive positioning
+- valuation-relevant macro exposure
+- key catalysts
+- core bull/bear thesis conflicts
+- important uncertainty drivers
 
 Rules:
-- Keep it useful for valuation work: business quality, growth durability, earnings quality, margin drivers, capital intensity, competitive position, key news, sentiment, bull case, bear case, and risk debate.
+- Keep it useful for valuation work: business quality, growth durability, earnings quality, margin drivers, capital intensity, competitive position, key news, sentiment, bull case, bear case, risk debate, and any other points that are relevant to fundamental valuation.
 - Do not add a target price, score, instruction, or trading order.
 - Do not include chart or technical-analysis claims.
 - Do not mention that you are summarizing.
@@ -191,9 +204,10 @@ Rules:
   ### Bear Case
   ### Risk Debate
   ### What Valuators Should Watch
+- Do not use any other Markdown headers or subheaders. Inside each section, use bullets, paragraphs, and **bold labels** only as needed for clarity.
 - Be specific. Avoid generic filler.
 
-TradingAgents transcript:
+TradingAgents raw transcript:
 <TradingAgents_Raw>
 {raw_bundle}
 </TradingAgents_Raw>

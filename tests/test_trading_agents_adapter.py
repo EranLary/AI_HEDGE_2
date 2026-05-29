@@ -103,7 +103,8 @@ def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):
     assert calls[0]["model"] == ta.SUMMARY_LLM
     assert calls[0]["temperature"] == 0.1
     assert calls[0]["short_answer"] is False
-    assert "TradingAgents transcript:" in calls[0]["prompt"]
+    assert "TradingAgents raw transcript:" in calls[0]["prompt"]
+    assert "Do not use any other Markdown headers or subheaders" in calls[0]["prompt"]
 
 
 def test_reuse_accepts_fresh_success_with_matching_config(tmp_path):

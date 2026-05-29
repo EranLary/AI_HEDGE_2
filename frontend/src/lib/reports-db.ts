@@ -14,6 +14,7 @@ export interface DbReportSummary {
   currency: string | null;
   recommendation: string | null;
   mean_target_price: number | null;
+  allocation_pct: number | null;
   score: number | null;
   source: string;
   source_run_id: string | null;
@@ -59,6 +60,12 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
            COALESCE(
+             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+           ) AS allocation_pct,
+           COALESCE(
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
@@ -93,6 +100,12 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
            r.currency,
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+           ) AS allocation_pct,
            COALESCE(
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
@@ -150,6 +163,12 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
            r.currency,
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+           ) AS allocation_pct,
            COALESCE(
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
@@ -253,6 +272,14 @@ function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedR
         Number.isFinite(dashboard.valuation_hub.consensus.mean_target_price)
           ? Number(dashboard.valuation_hub.consensus.mean_target_price)
           : null,
+      allocation_pct:
+        typeof (dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional === "number" &&
+        Number.isFinite((dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional)
+          ? Number((dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional)
+          : typeof (dashboard.score_card || dashboard.decision_card)?.mean_investment_amount === "number" &&
+              Number.isFinite((dashboard.score_card || dashboard.decision_card)?.mean_investment_amount)
+            ? Number((dashboard.score_card || dashboard.decision_card)?.mean_investment_amount) / 100000.0
+            : null,
       score:
         typeof (dashboard.score_card || dashboard.decision_card)?.adjusted_score === "number" &&
         Number.isFinite((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
@@ -312,6 +339,12 @@ export async function listAllReports(): Promise<DbReportSummary[]> {
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
            COALESCE(
+             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+           ) AS allocation_pct,
+           COALESCE(
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
@@ -337,6 +370,12 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
            r.currency,
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           COALESCE(
+             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+           ) AS allocation_pct,
            COALESCE(
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
@@ -365,6 +404,12 @@ export async function listCommunityReports(): Promise<DbReportSummary[]> {
                r.currency,
                 NULLIF(r.recommendation, '') AS recommendation,
                 r.mean_target_price::float8 AS mean_target_price,
+                COALESCE(
+                  (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+                  (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+                  (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+                  (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+                ) AS allocation_pct,
                 COALESCE(
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
@@ -421,6 +466,12 @@ export async function listCommunityReportsPaged(opts: {
                r.currency,
                 NULLIF(r.recommendation, '') AS recommendation,
                 r.mean_target_price::float8 AS mean_target_price,
+                COALESCE(
+                  (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
+                  (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
+                  (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
+                  (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+                ) AS allocation_pct,
                 COALESCE(
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8

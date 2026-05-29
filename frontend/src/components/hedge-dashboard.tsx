@@ -556,7 +556,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
       : `Unavailable ${generatedAt}`;
   const sections = [
     ["Research Brief", payload.research_brief],
-    ["Final Committee View", payload.final_committee_view],
+    ["Final Committee Decision", payload.final_committee_view],
     ["Fundamentals Report", payload.fundamentals_report],
     ["News Report", payload.news_report],
     ["Social / Sentiment Report", payload.sentiment_report],
@@ -582,10 +582,6 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
           This is a separate research memo from a small agent team. It reads the business, recent news, and market
           sentiment, then stages bull, bear, and risk debates before a final committee view. The memo itself does not
           set the target price or score.
-        </p>
-        <p className="mt-2 text-xs text-zinc-500">
-          Independent Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}.
-          {payload.compacted ? " compacted version." : ""}
         </p>
         {status !== "success" && payload.error ? (
           <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>

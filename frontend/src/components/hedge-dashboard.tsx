@@ -513,6 +513,34 @@ export function MarkdownBlock({ text }: { text: string }) {
   );
 }
 
+function splitMarkdownHeadingBlocks(title: string, text: string): Array<{ title: string; text: string }> {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks: Array<{ title: string; lines: string[] }> = [];
+  let current: { title: string; lines: string[] } = { title, lines: [] };
+
+  for (const line of lines) {
+    const heading = line.match(/^\s{0,3}#{2,4}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      if (current.lines.join("\n").trim()) {
+        blocks.push(current);
+      }
+      current = { title: heading[1].trim(), lines: [] };
+      continue;
+    }
+    current.lines.push(line);
+  }
+
+  if (current.lines.join("\n").trim()) {
+    blocks.push(current);
+  }
+
+  if (blocks.length === 0) {
+    return [{ title, text: String(text || "").trim() }].filter((block) => block.text);
+  }
+
+  return blocks.map((block) => ({ title: block.title, text: block.lines.join("\n").trim() }));
+}
+
 function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_agents"] }) {
   if (!payload || !Object.keys(payload).length) {
     return <p className="mt-3 text-sm text-zinc-500">No TradingAgents lens was stored for this report.</p>;
@@ -535,6 +563,11 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
     ["Bull/Bear Debate", payload.bull_bear_debate],
     ["Risk Debate", payload.risk_debate],
   ] as const;
+  const renderedSections = sections.flatMap(([title, text]) => {
+    const cleanText = String(text || "").trim();
+    if (!cleanText) return [];
+    return splitMarkdownHeadingBlocks(title, cleanText);
+  });
 
   return (
     <div className="mt-3 space-y-3">
@@ -548,8 +581,7 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">
           This is a separate research memo from a small agent team. It reads the business, recent news, and market
           sentiment, then stages bull, bear, and risk debates before a final committee view. The memo itself does not
-          set the target price or score, and chart/technical analysis is left out so this stays focused on business
-          evidence.
+          set the target price or score.
         </p>
         <p className="mt-2 text-xs text-zinc-500">
           Independent Research team: {(payload.selected_analysts || []).join(", ") || "fundamentals, news, social"}.
@@ -560,14 +592,12 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
         ) : null}
       </div>
 
-      {sections.map(([title, text], index) => {
-        const cleanText = String(text || "").trim();
-        if (!cleanText) return null;
+      {renderedSections.map((section, index) => {
         return (
-          <details key={title} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index === 0}>
-            <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{title}</summary>
+          <details key={`${section.title}-${index}`} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index === 0}>
+            <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{section.title}</summary>
             <div className="mt-2 max-h-[24rem] overflow-auto break-words text-zinc-200">
-              <MarkdownBlock text={cleanText} />
+              <MarkdownBlock text={section.text} />
             </div>
           </details>
         );

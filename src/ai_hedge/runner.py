@@ -63,13 +63,22 @@ class RunArtifacts:
     r2_keys: Optional[Dict[str, str]] = None
 
 
-def _copy_combined_pdf_artifact(pdf_paths: List[Optional[Path]], output_pdf: Path) -> str:
+def _combine_pdf_artifacts(pdf_paths: List[Optional[Path]], output_pdf: Path) -> str:
     existing = [Path(p) for p in pdf_paths if p and Path(p).exists()]
     if not existing:
         return ""
 
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    for pdf_path in existing:
+        reader = PdfReader(str(pdf_path))
+        for page in reader.pages:
+            writer.add_page(page)
+
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(existing[0], output_pdf)
+    with output_pdf.open("wb") as f:
+        writer.write(f)
     return str(output_pdf.resolve()) if output_pdf.exists() else ""
 
 
@@ -1556,14 +1565,6 @@ def _run_ticker_valuation_impl(
             base_analysis_text = regular_text
 
         merged_analysis_text = str(base_analysis_text or "").strip()
-        if prices_explain_txt.exists():
-            prices_section_text = prices_explain_txt.read_text(encoding="utf-8")
-            if str(prices_section_text or "").strip():
-                merged_analysis_text = _upsert_markdown_block(
-                    merged_analysis_text,
-                    f"# {ticker} Prices Explain",
-                    prices_section_text,
-                )
         if str(technical_analysis_markdown or "").strip():
             merged_analysis_text = _upsert_markdown_block(
                 merged_analysis_text,
@@ -1643,9 +1644,6 @@ def _run_ticker_valuation_impl(
             elif analysis_dst.exists():
                 analysis_text_for_pdf = analysis_dst.read_text(encoding="utf-8")
                 merged_parts.append(analysis_text_for_pdf)
-            analysis_has_prices_section = f"# {ticker} Prices Explain" in analysis_text_for_pdf
-            if prices_explain_txt.exists() and not analysis_has_prices_section:
-                merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
 
             merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
             sources_footer = _build_sec_sources_footer(files_dict)
@@ -1675,7 +1673,7 @@ def _run_ticker_valuation_impl(
     combined_pdf = ""
     if pdf_dst or prices_explain_pdf:
         try:
-            combined_pdf = _copy_combined_pdf_artifact(
+            combined_pdf = _combine_pdf_artifacts(
                 [
                     Path(pdf_dst) if pdf_dst else None,
                     Path(prices_explain_pdf) if prices_explain_pdf else None,

@@ -832,6 +832,147 @@ def _avg_numeric_dict_values(payload: Any) -> Optional[float]:
     return float(sum(vals) / len(vals))
 
 
+def _avg_numeric_values(values: Any) -> Optional[float]:
+    if not isinstance(values, list):
+        return None
+    nums: List[float] = []
+    for raw in values:
+        num = _first_float(raw)
+        if num is not None:
+            nums.append(float(num))
+    if not nums:
+        return None
+    return float(sum(nums) / len(nums))
+
+
+def _std_numeric_values(values: Any) -> Optional[float]:
+    if not isinstance(values, list):
+        return None
+    nums: List[float] = []
+    for raw in values:
+        num = _first_float(raw)
+        if num is not None:
+            nums.append(float(num))
+    if not nums:
+        return None
+    avg = float(sum(nums) / len(nums))
+    var = sum((v - avg) ** 2 for v in nums) / len(nums)
+    return float(var ** 0.5)
+
+
+def _collect_targets_from_methods(methods: Dict[str, Any]) -> List[float]:
+    out: List[float] = []
+    if not isinstance(methods, dict):
+        return out
+    for items in methods.values():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            val = _first_float(item.get("target_price"))
+            if val is not None:
+                out.append(float(val))
+    return out
+
+
+def _fmt_target_with_change(value: Any, current_price: Any) -> str:
+    target = _first_float(value)
+    if target is None:
+        return "N/A"
+    current = _first_float(current_price)
+    if current is None or abs(float(current)) <= 1e-9:
+        return _fmt_money(target)
+    change_pct = ((float(target) - float(current)) / float(current)) * 100.0
+    return f"{_fmt_money(target)} ({_fmt_signed_pct(change_pct)})"
+
+
+def _build_valuation_summary_table(
+    methods: Dict[str, Any],
+    aggregate_targets: Dict[str, Any],
+    aggregate_investments: Dict[str, Any],
+    current_price: Any,
+) -> str:
+    if not isinstance(methods, dict):
+        methods = {}
+    if not isinstance(aggregate_targets, dict):
+        aggregate_targets = {}
+    if not isinstance(aggregate_investments, dict):
+        aggregate_investments = {}
+
+    rows: List[tuple[str, str, str]] = []
+    method_names = list(methods.keys()) or sorted(
+        set(aggregate_targets.keys()) | set(aggregate_investments.keys())
+    )
+    for method_name in method_names:
+        rows.append(
+            (
+                str(method_name),
+                _fmt_target_with_change(aggregate_targets.get(method_name), current_price),
+                _fmt_money(aggregate_investments.get(method_name)),
+            )
+        )
+
+    all_targets = _collect_targets_from_methods(methods)
+    all_investments = _collect_investments_from_methods(methods)
+    target_model_values = [
+        float(v)
+        for v in (_first_float(raw) for raw in aggregate_targets.values())
+        if v is not None
+    ]
+    investment_model_values = [
+        float(v)
+        for v in (_first_float(raw) for raw in aggregate_investments.values())
+        if v is not None
+    ]
+
+    mean_target_models = _avg_numeric_values(target_model_values)
+    mean_target_all = _avg_numeric_values(all_targets)
+    mean_investment_models = _avg_numeric_values(investment_model_values)
+    mean_investment_all = _avg_numeric_values(all_investments)
+    std_target_models = _std_numeric_values(target_model_values)
+    std_target_all = _std_numeric_values(all_targets)
+    std_investment_models = _std_numeric_values(investment_model_values)
+    std_investment_all = _std_numeric_values(all_investments)
+
+    rows.extend(
+        [
+            (
+                "Mean",
+                (
+                    f"Across models: {_fmt_target_with_change(mean_target_models, current_price)}; "
+                    f"Across all: {_fmt_target_with_change(mean_target_all, current_price)}"
+                ),
+                (
+                    f"Across models: {_fmt_money(mean_investment_models)}; "
+                    f"Across all: {_fmt_money(mean_investment_all)}"
+                ),
+            ),
+            (
+                "STD",
+                (
+                    f"Across models: {_fmt_money(std_target_models)}; "
+                    f"Across all: {_fmt_money(std_target_all)}"
+                ),
+                (
+                    f"Across models: {_fmt_money(std_investment_models)}; "
+                    f"Across all: {_fmt_money(std_investment_all)}"
+                ),
+            ),
+        ]
+    )
+
+    table_lines = [
+        "## Valuation Summary",
+        "",
+        "| Model / Valuator | Price Target (Change From Current) | Investment Allocation |",
+        "|---|---:|---:|",
+    ]
+    for name, target, allocation in rows:
+        table_lines.append(f"| {name} | {target} | {allocation} |")
+    return "\n".join(table_lines).strip()
+
+
 def _build_assumptions_means_text(final_dict: Dict[str, Any], explain_payload: Optional[Dict[str, Any]] = None) -> str:
     lines: List[str] = []
 
@@ -1007,56 +1148,14 @@ def _build_prices_explain_text(
         f"Current Price: {_fmt_money(current_price)}",
     ]
 
-    mean_target_across_methods = _avg_numeric_dict_values(aggregate_targets)
-    mean_investment_across_methods = _avg_numeric_dict_values(aggregate_investments)
-    if mean_target_across_methods is not None or mean_investment_across_methods is not None:
-        lines.extend(
-            [
-                "",
-                "## Across Methods Summary",
-                f"Mean Target Across Methods: {_fmt_money(mean_target_across_methods)}",
-                f"Mean Investment Across Methods: {_fmt_money(mean_investment_across_methods)}",
-            ]
-        )
-
-    all_investments = explain_payload.get("all_investments", []) if isinstance(explain_payload, dict) else []
-    if not isinstance(all_investments, list) or not all_investments:
-        all_investments = _collect_investments_from_methods(methods)
-    all_investments = [float(v) for v in all_investments if isinstance(v, (int, float))]
-
-    mean_investment = explain_payload.get("mean_investment") if isinstance(explain_payload, dict) else None
-    std_investment = explain_payload.get("investment_std") if isinstance(explain_payload, dict) else None
-    lmil = explain_payload.get("lmil") if isinstance(explain_payload, dict) else None
-    if not isinstance(mean_investment, (int, float)):
-        mean_investment = (sum(all_investments) / len(all_investments)) if all_investments else 0.0
-    if not isinstance(std_investment, (int, float)):
-        if all_investments:
-            avg = float(mean_investment)
-            var = sum((float(v) - avg) ** 2 for v in all_investments) / len(all_investments)
-            std_investment = var ** 0.5
-        else:
-            std_investment = 0.0
-    if not (isinstance(lmil, (list, tuple)) and len(lmil) >= 2):
-        mean_pct = (float(mean_investment) / 100000.0) * 100.0
-        lmil_cv = (float(std_investment) / float(mean_investment)) if abs(float(mean_investment)) > 1e-9 else 0.0
-        lmil = [mean_pct, lmil_cv]
-
-    lines.extend(
-        [
-            "",
-            "## Investment Signal",
-            f"Total Investment Votes: {len(all_investments)}",
-            (
-                "Investment Votes (USD): "
-                + ", ".join(_fmt_money(v) for v in all_investments)
-                if all_investments
-                else "Investment Votes (USD): None"
-            ),
-            f"Mean Investment Amount: {_fmt_money(mean_investment)}",
-            f"Investment STD: {_fmt_money(std_investment)}",
-            f"LMIL: [{float(lmil[0]):.2f}%, {float(lmil[1]):.2f}]",
-        ]
+    summary_table = _build_valuation_summary_table(
+        methods if isinstance(methods, dict) else {},
+        aggregate_targets if isinstance(aggregate_targets, dict) else {},
+        aggregate_investments if isinstance(aggregate_investments, dict) else {},
+        current_price,
     )
+    if summary_table:
+        lines.extend(["", summary_table])
 
     assumptions_pack = _build_assumptions_pack_text(
         final_dict if isinstance(final_dict, dict) else {},
@@ -1068,19 +1167,6 @@ def _build_prices_explain_text(
                 "",
                 "## Assumptions Pack",
                 assumptions_pack,
-            ]
-        )
-
-    assumptions_means = _build_assumptions_means_text(
-        final_dict if isinstance(final_dict, dict) else {},
-        explain_payload if isinstance(explain_payload, dict) else {},
-    )
-    if assumptions_means:
-        lines.extend(
-            [
-                "",
-                "## Assumptions Means (Report-Aligned)",
-                assumptions_means,
             ]
         )
 
@@ -1490,6 +1576,7 @@ def _run_ticker_valuation_impl(
     prices_explain_pdf = ""
     prices_explain_html = out_dir / f"{ticker}_prices_explain.html"
     dashboard_json = ""
+    dashboard_signal_snapshot_text = ""
     explain_text = ""
     try:
         explain_text = _build_prices_explain_text(
@@ -1500,21 +1587,6 @@ def _run_ticker_valuation_impl(
         prices_explain_txt.write_text(explain_text, encoding="utf-8")
     except Exception as explain_err:
         notes.append(f"Prices explain TXT generation failed: {explain_err}")
-
-    if prices_explain_txt.exists():
-        try:
-            from .text_to_pdf_check import convert_text_to_pdf
-
-            convert_text_to_pdf(
-                prices_explain_txt,
-                out_dir / f"{ticker}_prices_explain.pdf",
-                prices_explain_html,
-            )
-            pdf_candidate = out_dir / f"{ticker}_prices_explain.pdf"
-            if pdf_candidate.exists():
-                prices_explain_pdf = str(pdf_candidate.resolve())
-        except Exception as explain_pdf_err:
-            notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
 
     technical_analysis_payload: Dict[str, Any] = {}
     technical_analysis_markdown = ""
@@ -1609,24 +1681,36 @@ def _run_ticker_valuation_impl(
         )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
         try:
-            snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)
-            if snapshot_text:
-                if analysis_src.exists():
-                    base_analysis_text = analysis_src.read_text(encoding="utf-8")
-                elif analysis_dst.exists():
-                    base_analysis_text = analysis_dst.read_text(encoding="utf-8")
-                else:
-                    base_analysis_text = regular_text
-
-                enriched_text = _upsert_dashboard_signal_snapshot_section(base_analysis_text, snapshot_text)
-                if enriched_text.strip():
-                    analysis_src.write_text(enriched_text, encoding="utf-8")
-                    analysis_dst.write_text(enriched_text, encoding="utf-8")
-                    regular_text = enriched_text.strip()
+            dashboard_signal_snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)
         except Exception as signal_snapshot_err:
-            notes.append(f"Dashboard signal snapshot append failed: {signal_snapshot_err}")
+            notes.append(f"Dashboard signal snapshot generation failed: {signal_snapshot_err}")
     except Exception as dashboard_err:
         notes.append(f"Dashboard JSON generation failed: {dashboard_err}")
+
+    if prices_explain_txt.exists():
+        try:
+            if dashboard_signal_snapshot_text:
+                base_explain_text = prices_explain_txt.read_text(encoding="utf-8")
+                enriched_explain_text = _upsert_markdown_block(
+                    base_explain_text,
+                    "## Dashboard Signal Snapshot",
+                    dashboard_signal_snapshot_text,
+                )
+                if enriched_explain_text.strip():
+                    prices_explain_txt.write_text(enriched_explain_text + "\n", encoding="utf-8")
+
+            from .text_to_pdf_check import convert_text_to_pdf
+
+            convert_text_to_pdf(
+                prices_explain_txt,
+                out_dir / f"{ticker}_prices_explain.pdf",
+                prices_explain_html,
+            )
+            pdf_candidate = out_dir / f"{ticker}_prices_explain.pdf"
+            if pdf_candidate.exists():
+                prices_explain_pdf = str(pdf_candidate.resolve())
+        except Exception as explain_pdf_err:
+            notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
 
     pdf_dst = ""
     if save_pdf:

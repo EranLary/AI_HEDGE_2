@@ -49,6 +49,7 @@ class RunArtifacts:
     analysis_pdf: str
     prices_explain_txt: str
     prices_explain_pdf: str
+    combined_pdf: str
     dashboard_json: str
     trading_agents_json: str
     trading_agents_txt: str
@@ -60,6 +61,25 @@ class RunArtifacts:
     sec_fallback_used: bool
     sec_fallback_message: str
     r2_keys: Optional[Dict[str, str]] = None
+
+
+def _combine_pdf_artifacts(pdf_paths: List[Optional[Path]], output_pdf: Path) -> str:
+    existing = [Path(p) for p in pdf_paths if p and Path(p).exists()]
+    if not existing:
+        return ""
+
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    for pdf_path in existing:
+        reader = PdfReader(str(pdf_path))
+        for page in reader.pages:
+            writer.add_page(page)
+
+    output_pdf.parent.mkdir(parents=True, exist_ok=True)
+    with output_pdf.open("wb") as f:
+        writer.write(f)
+    return str(output_pdf.resolve()) if output_pdf.exists() else ""
 
 
 
@@ -1362,33 +1382,6 @@ def _run_ticker_valuation_impl(
     except Exception:
         pass
 
-    pre_dashboard_red_flags = deterministic_red_flags(
-        price_cv=None,
-        lmil=None,
-    )
-    with _obs.llm_context(stage="dashboard.extract"):
-        qualitative_sections = generate_dashboard_sections(
-            ticker=ticker,
-            analysis_text=regular_text,
-            sec_short_text=sec_short_text,
-            financial_dict=financial_dict,
-            deterministic_red_flags=pre_dashboard_red_flags,
-            enable_llm_extractions=True,
-        )
-    _append_progress(progress_file, "Finished Dashboard Extraction (Pre-Valuation)")
-
-    try:
-        appendix_text = build_dashboard_appendix_text(ticker, qualitative_sections)
-        legacy.append_text_to_file(
-            text=appendix_text,
-            header="Dashboard Extraction Pack",
-        )
-        latest_text = legacy.load_text_from_file("analysis.txt")
-        if str(latest_text or "").strip():
-            regular_text = str(latest_text or "").strip()
-    except Exception as extraction_err:
-        notes.append(f"Dashboard extraction append failed: {extraction_err}")
-
     try:
         from .trading_agents_adapter import (
             CONTEXT_HEADER as TRADING_AGENTS_CONTEXT_HEADER,
@@ -1423,6 +1416,33 @@ def _run_ticker_valuation_impl(
         if trading_agents_executor is not None:
             trading_agents_executor.shutdown(wait=False)
     _append_progress(progress_file, "Finished TradingAgents Research Lens")
+
+    pre_dashboard_red_flags = deterministic_red_flags(
+        price_cv=None,
+        lmil=None,
+    )
+    with _obs.llm_context(stage="dashboard.extract"):
+        qualitative_sections = generate_dashboard_sections(
+            ticker=ticker,
+            analysis_text=regular_text,
+            sec_short_text=sec_short_text,
+            financial_dict=financial_dict,
+            deterministic_red_flags=pre_dashboard_red_flags,
+            enable_llm_extractions=True,
+        )
+    _append_progress(progress_file, "Finished Dashboard Extraction (Pre-Valuation)")
+
+    try:
+        appendix_text = build_dashboard_appendix_text(ticker, qualitative_sections)
+        legacy.append_text_to_file(
+            text=appendix_text,
+            header="Dashboard Extraction Pack",
+        )
+        latest_text = legacy.load_text_from_file("analysis.txt")
+        if str(latest_text or "").strip():
+            regular_text = str(latest_text or "").strip()
+    except Exception as extraction_err:
+        notes.append(f"Dashboard extraction append failed: {extraction_err}")
 
     valuation_contexts = [regular_text]
 
@@ -1545,14 +1565,6 @@ def _run_ticker_valuation_impl(
             base_analysis_text = regular_text
 
         merged_analysis_text = str(base_analysis_text or "").strip()
-        if prices_explain_txt.exists():
-            prices_section_text = prices_explain_txt.read_text(encoding="utf-8")
-            if str(prices_section_text or "").strip():
-                merged_analysis_text = _upsert_markdown_block(
-                    merged_analysis_text,
-                    f"# {ticker} Prices Explain",
-                    prices_section_text,
-                )
         if str(technical_analysis_markdown or "").strip():
             merged_analysis_text = _upsert_markdown_block(
                 merged_analysis_text,
@@ -1632,9 +1644,6 @@ def _run_ticker_valuation_impl(
             elif analysis_dst.exists():
                 analysis_text_for_pdf = analysis_dst.read_text(encoding="utf-8")
                 merged_parts.append(analysis_text_for_pdf)
-            analysis_has_prices_section = f"# {ticker} Prices Explain" in analysis_text_for_pdf
-            if prices_explain_txt.exists() and not analysis_has_prices_section:
-                merged_parts.append(prices_explain_txt.read_text(encoding="utf-8"))
 
             merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
             sources_footer = _build_sec_sources_footer(files_dict)
@@ -1661,12 +1670,26 @@ def _run_ticker_valuation_impl(
             if html_src.exists():
                 shutil.move(str(html_src), target_html)
 
+    combined_pdf = ""
+    if pdf_dst or prices_explain_pdf:
+        try:
+            combined_pdf = _combine_pdf_artifacts(
+                [
+                    Path(pdf_dst) if pdf_dst else None,
+                    Path(prices_explain_pdf) if prices_explain_pdf else None,
+                ],
+                out_dir / f"{ticker}_combined.pdf",
+            )
+        except Exception as combined_pdf_err:
+            notes.append(f"Combined PDF generation failed: {combined_pdf_err}")
+
     store = get_artifact_store()
     artifact_local_paths: Dict[str, Path] = {
         "analysis-txt": analysis_dst,
         "analysis-pdf": Path(pdf_dst) if pdf_dst else None,
         "prices-explain-txt": prices_explain_txt,
         "prices-explain-pdf": Path(prices_explain_pdf) if prices_explain_pdf else None,
+        "combined-pdf": Path(combined_pdf) if combined_pdf else None,
         "dashboard-json": Path(dashboard_json) if dashboard_json else None,
         "prices-chart": out_dir / f"{ticker}_prices_valuation.png",
         "revenue-chart": out_dir / f"{ticker}_revenue_valuation.png",
@@ -1707,6 +1730,7 @@ def _run_ticker_valuation_impl(
         analysis_pdf=pdf_dst,
         prices_explain_txt=str(prices_explain_txt.resolve()) if prices_explain_txt.exists() else "",
         prices_explain_pdf=prices_explain_pdf,
+        combined_pdf=combined_pdf,
         dashboard_json=dashboard_json,
         trading_agents_json=trading_agents_json,
         trading_agents_txt=trading_agents_txt,
@@ -1730,6 +1754,7 @@ def _run_ticker_valuation_impl(
         "analysis_pdf": artifacts.analysis_pdf,
         "prices_explain_txt": artifacts.prices_explain_txt,
         "prices_explain_pdf": artifacts.prices_explain_pdf,
+        "combined_pdf": artifacts.combined_pdf,
         "dashboard_json": artifacts.dashboard_json,
         "trading_agents_json": artifacts.trading_agents_json,
         "trading_agents_txt": artifacts.trading_agents_txt,

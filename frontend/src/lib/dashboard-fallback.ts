@@ -91,6 +91,9 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
     artifacts: {},
     downloads: {
       analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,
+      prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf`,
+      valuation_pdf: `/api/artifacts/${tk}/valuation-pdf`,
+      combined_pdf: `/api/artifacts/${tk}/combined-pdf`,
     },
   };
 }

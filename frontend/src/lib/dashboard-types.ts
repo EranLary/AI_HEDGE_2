@@ -285,6 +285,7 @@ export type DashboardPayload = {
     prices_explain_txt?: string;
     analysis_pdf?: string;
     prices_explain_pdf?: string;
+    combined_pdf?: string;
     dashboard_json?: string;
     technical_analysis_json?: string;
     trading_agents_json?: string;
@@ -294,6 +295,8 @@ export type DashboardPayload = {
     analysis_pdf: string;
     prices_explain_txt?: string;
     prices_explain_pdf?: string;
+    valuation_pdf?: string;
+    combined_pdf?: string;
     dashboard_json?: string;
     analysis_txt?: string;
   };

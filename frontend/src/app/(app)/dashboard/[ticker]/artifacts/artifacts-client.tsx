@@ -61,6 +61,7 @@ export function ArtifactsClient({
   push("revenue_plot", "Revenue Chart", artifacts.revenue_plot);
   push("net_income_plot", "Net Income Chart", artifacts.net_income_plot);
   push("prices_explain_pdf", "Prices Explainer PDF", downloads.prices_explain_pdf || artifacts.prices_explain_pdf);
+  push("combined_pdf", "Combined PDF", downloads.combined_pdf || artifacts.combined_pdf);
   push("prices_explain_txt", "Prices Explainer TXT", downloads.prices_explain_txt || artifacts.prices_explain_txt);
   push("dashboard_json", "Dashboard JSON", downloads.dashboard_json || artifacts.dashboard_json);
   push("technical_analysis_json", "Technical Analysis JSON", artifacts.technical_analysis_json);

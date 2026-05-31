@@ -35,6 +35,29 @@ ul {{
 li {{
     margin-bottom: 10px;
 }}
+
+table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 9.5pt;
+}}
+
+th, td {{
+    border: 1px solid #d0d7de;
+    padding: 6px 8px;
+    vertical-align: top;
+}}
+
+th {{
+    background: #f6f8fa;
+    font-weight: 700;
+    text-align: left;
+}}
+
+td {{
+    word-break: normal;
+}}
 </style>
 </head>
 <body>

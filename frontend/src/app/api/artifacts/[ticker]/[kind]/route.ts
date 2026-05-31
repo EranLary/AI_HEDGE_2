@@ -8,11 +8,26 @@ import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/de
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import { findLatestByFileName, outputsRoot, resolveDashboardReportPath } from "@/lib/server-outputs";
 
-const KIND_TO_FILE: Record<string, { fileName: string; contentType: string }> = {
+const KIND_TO_FILE: Record<
+  string,
+  { fileName: string; contentType: string; downloadName?: string; r2Kind?: string; fallbackFileName?: string; fallbackR2Kind?: string }
+> = {
   "analysis-pdf": { fileName: "{TICKER}_analysis.pdf", contentType: "application/pdf" },
   "analysis-txt": { fileName: "{TICKER}_analysis.txt", contentType: "text/plain; charset=utf-8" },
   "prices-explain-txt": { fileName: "{TICKER}_prices_explain.txt", contentType: "text/plain; charset=utf-8" },
   "prices-explain-pdf": { fileName: "{TICKER}_prices_explain.pdf", contentType: "application/pdf" },
+  "valuation-pdf": {
+    fileName: "{TICKER}_prices_explain.pdf",
+    downloadName: "{TICKER}_valuation.pdf",
+    r2Kind: "prices-explain-pdf",
+    contentType: "application/pdf",
+  },
+  "combined-pdf": {
+    fileName: "{TICKER}_combined.pdf",
+    fallbackFileName: "{TICKER}_analysis.pdf",
+    fallbackR2Kind: "analysis-pdf",
+    contentType: "application/pdf",
+  },
   "dashboard-json": { fileName: "{TICKER}_dashboard.json", contentType: "application/json; charset=utf-8" },
   "prices-chart": { fileName: "{TICKER}_prices_valuation.png", contentType: "image/png" },
   "trading-agents-json": { fileName: "{TICKER}_trading_agents.json", contentType: "application/json; charset=utf-8" },
@@ -118,7 +133,9 @@ async function resolveReportScopedFile(
   kind: string,
   reportId: string,
   fileName: string,
+  fallbackFileName = "",
 ): Promise<{ foundPath: string; r2Url: string | null }> {
+  const spec = KIND_TO_FILE[kind];
   const dbEnabled = isDbEnabled();
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
   if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null };
@@ -130,12 +147,15 @@ async function resolveReportScopedFile(
       if (!row) return { foundPath: "", r2Url: null };
       if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null };
 
-      const r2Key = String(row.r2_keys?.[kind] || "").trim();
+      const r2Key = String(row.r2_keys?.[spec?.r2Kind || kind] || "").trim();
       const url = r2PublicUrl(r2Key);
       if (url) return { foundPath: "", r2Url: url };
+      const fallbackR2Key = String(row.r2_keys?.[spec?.fallbackR2Kind || ""] || "").trim();
+      const fallbackUrl = r2PublicUrl(fallbackR2Key);
+      if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl };
 
       for (const root of collectDbCandidateRoots(row)) {
-        const foundPath = resolveFromRoot(root, fileName);
+        const foundPath = resolveFromRoot(root, fileName) || (fallbackFileName ? resolveFromRoot(root, fallbackFileName) : "");
         if (foundPath) return { foundPath, r2Url: null };
       }
     } catch {
@@ -149,6 +169,9 @@ async function resolveReportScopedFile(
       return { foundPath: "", r2Url: null };
     }
     const foundPath = resolveFromRoot(path.dirname(reportPath), fileName);
+    if (!foundPath && fallbackFileName) {
+      return { foundPath: resolveFromRoot(path.dirname(reportPath), fallbackFileName), r2Url: null };
+    }
     return { foundPath, r2Url: null };
   }
 
@@ -158,12 +181,15 @@ async function resolveReportScopedFile(
     if (!row) return { foundPath: "", r2Url: null };
     if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null };
 
-    const r2Key = String(row.r2_keys?.[kind] || "").trim();
+    const r2Key = String(row.r2_keys?.[spec?.r2Kind || kind] || "").trim();
     const url = r2PublicUrl(r2Key);
     if (url) return { foundPath: "", r2Url: url };
+    const fallbackR2Key = String(row.r2_keys?.[spec?.fallbackR2Kind || ""] || "").trim();
+    const fallbackUrl = r2PublicUrl(fallbackR2Key);
+    if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl };
 
     for (const root of collectDbCandidateRoots(row)) {
-      const foundPath = resolveFromRoot(root, fileName);
+      const foundPath = resolveFromRoot(root, fileName) || (fallbackFileName ? resolveFromRoot(root, fallbackFileName) : "");
       if (foundPath) return { foundPath, r2Url: null };
     }
   } catch {
@@ -186,12 +212,13 @@ export async function GET(
 
   const spec = KIND_TO_FILE[kind];
   const fileName = spec.fileName.replace("{TICKER}", ticker);
+  const fallbackFileName = spec.fallbackFileName?.replace("{TICKER}", ticker) || "";
   const url = new URL(request.url);
   const reportId = String(url.searchParams.get("report_id") || "").trim();
 
   let foundPath = "";
   if (reportId) {
-    const resolved = await resolveReportScopedFile(ticker, kind, reportId, fileName);
+    const resolved = await resolveReportScopedFile(ticker, kind, reportId, fileName, fallbackFileName);
     if (resolved.r2Url) {
       return NextResponse.redirect(resolved.r2Url, 302);
     }
@@ -208,9 +235,12 @@ export async function GET(
     const dbEnabled = isDbEnabled();
     try {
       const row = await fetchLatestReport(ticker);
-      const r2Key = String(row?.r2_keys?.[kind] || "").trim();
+      const r2Key = String(row?.r2_keys?.[spec.r2Kind || kind] || "").trim();
       const r2Url = r2PublicUrl(r2Key);
       if (r2Url) return NextResponse.redirect(r2Url, 302);
+      const fallbackR2Key = String(row?.r2_keys?.[spec.fallbackR2Kind || ""] || "").trim();
+      const fallbackR2Url = r2PublicUrl(fallbackR2Key);
+      if (fallbackR2Url) return NextResponse.redirect(fallbackR2Url, 302);
       if (dbEnabled && !row) {
         return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
       }
@@ -220,7 +250,9 @@ export async function GET(
   }
 
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
-  const latestPath = foundPath ? foundPath : findLatestByFileName(fileName)?.path || "";
+  const latestPath = foundPath
+    ? foundPath
+    : findLatestByFileName(fileName)?.path || (fallbackFileName ? findLatestByFileName(fallbackFileName)?.path : "") || "";
   const found =
     latestPath && !deletedFilter.isDeleted("", ticker, siteRunIdFromPathLike(latestPath))
       ? { path: latestPath }
@@ -238,6 +270,7 @@ export async function GET(
 
   const headers = new Headers();
   headers.set("Content-Type", spec.contentType);
-  headers.set("Content-Disposition", `attachment; filename="${path.basename(found.path)}"`);
+  const downloadName = spec.downloadName?.replace("{TICKER}", ticker) || path.basename(found.path);
+  headers.set("Content-Disposition", `attachment; filename="${downloadName}"`);
   return new NextResponse(new Uint8Array(buf), { status: 200, headers });
 }

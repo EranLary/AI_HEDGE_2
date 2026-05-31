@@ -1038,6 +1038,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         "chart_path": "",
         "prices_explain_txt": "",
         "prices_explain_pdf": "",
+        "combined_pdf": "",
         "dashboard_json": "",
         "trading_agents_json": "",
         "trading_agents_txt": "",
@@ -1084,6 +1085,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         chart_target = out_dir / f"{ticker_u}_prices_valuation.png"
         prices_explain_txt_target = out_dir / f"{ticker_u}_prices_explain.txt"
         prices_explain_pdf_target = out_dir / f"{ticker_u}_prices_explain.pdf"
+        combined_pdf_target = out_dir / f"{ticker_u}_combined.pdf"
         dashboard_json_target = out_dir / f"{ticker_u}_dashboard.json"
         trading_agents_json_target = out_dir / f"{ticker_u}_trading_agents.json"
         trading_agents_txt_target = out_dir / f"{ticker_u}_trading_agents.txt"
@@ -1093,6 +1095,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         chart_src = Path(str(full_out.get("prices_plot", "")))
         prices_explain_txt_src = Path(str(full_out.get("prices_explain_txt", "")))
         prices_explain_pdf_src = Path(str(full_out.get("prices_explain_pdf", "")))
+        combined_pdf_src = Path(str(full_out.get("combined_pdf", "")))
         dashboard_json_src = Path(str(full_out.get("dashboard_json", "")))
         trading_agents_json_src = Path(str(full_out.get("trading_agents_json", "")))
         trading_agents_txt_src = Path(str(full_out.get("trading_agents_txt", "")))
@@ -1102,6 +1105,7 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         copied_chart = _copy_artifact(chart_src, chart_target)
         copied_prices_explain_txt = _copy_artifact(prices_explain_txt_src, prices_explain_txt_target)
         copied_prices_explain_pdf = _copy_artifact(prices_explain_pdf_src, prices_explain_pdf_target)
+        copied_combined_pdf = _copy_artifact(combined_pdf_src, combined_pdf_target)
         copied_dashboard_json = _copy_artifact(dashboard_json_src, dashboard_json_target)
         copied_trading_agents_json = _copy_artifact(trading_agents_json_src, trading_agents_json_target)
         copied_trading_agents_txt = _copy_artifact(trading_agents_txt_src, trading_agents_txt_target)
@@ -1129,6 +1133,11 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
         else:
             errors.append("Prices explain PDF was not generated.")
 
+        if copied_combined_pdf:
+            result["combined_pdf"] = str(combined_pdf_target)
+        else:
+            errors.append("Combined PDF was not generated.")
+
         if copied_dashboard_json:
             result["dashboard_json"] = str(dashboard_json_target)
         else:
@@ -1153,9 +1162,10 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
             + int(copied_chart)
             + int(copied_prices_explain_txt)
             + int(copied_prices_explain_pdf)
+            + int(copied_combined_pdf)
             + int(copied_dashboard_json)
         )
-        if generated_count == 5:
+        if generated_count == 6:
             result["status"] = "success"
         elif generated_count > 0:
             result["status"] = "partial_success"

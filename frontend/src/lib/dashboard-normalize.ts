@@ -267,6 +267,8 @@ export function normalizePayload(
     analysis_txt: `/api/artifacts/${tk}/analysis-txt${reportQuery}`,
     prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt${reportQuery}`,
     prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf${reportQuery}`,
+    valuation_pdf: `/api/artifacts/${tk}/valuation-pdf${reportQuery}`,
+    combined_pdf: `/api/artifacts/${tk}/combined-pdf${reportQuery}`,
     dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
   };
 

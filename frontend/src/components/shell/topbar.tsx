@@ -18,6 +18,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
+  { slug: "download", label: "Download", icon: Download },
 ];
 
 type TopbarProps = {

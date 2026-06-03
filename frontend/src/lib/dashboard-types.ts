@@ -67,10 +67,18 @@ export type MarketReviewPayload = {
   status?: "success" | "unavailable" | "error" | string;
   generated_at?: string | null;
   name_of_market?: string;
+  original_company?: {
+    ticker?: string;
+    company_name?: string;
+    info?: Record<string, unknown>;
+    annual_financials?: string;
+  };
   competitors?: Array<{
     rank?: number;
     ticker?: string;
     company_name?: string;
+    info?: Record<string, unknown>;
+    annual_financials?: string;
     similarity_rationale?: string;
     overlap_notes?: string;
     confidence?: string | number | null;

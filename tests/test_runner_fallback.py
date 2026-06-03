@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from ai_hedge import runner
 
 
@@ -45,3 +47,31 @@ def test_build_sec_sources_footer_for_sec_reports():
     assert "Source: SEC" in footer
     assert "Annual report date: 2026-02-10" in footer
     assert "Quarterly report date: 2026-05-05" in footer
+
+
+def test_attach_market_agent_markdown_persists_analysis_section(tmp_path):
+    analysis_text = """
+# What It Does:
+Company context.
+
+# Market Analysis:
+This is the exact market-agent body.
+
+It should be copied as-is.
+
+# SWOT Analysis:
+Next section.
+""".strip()
+
+    payload, json_path = runner._attach_market_agent_markdown(
+        payload={"status": "success", "review_markdown": "competitor text"},
+        analysis_text=analysis_text,
+        out_dir=tmp_path,
+        ticker="CHKP",
+    )
+
+    expected = "This is the exact market-agent body.\n\nIt should be copied as-is."
+    assert payload["market_agent_markdown"] == expected
+    stored = json.loads((tmp_path / "CHKP_market_review.json").read_text(encoding="utf-8"))
+    assert json_path.endswith("CHKP_market_review.json")
+    assert stored["market_agent_markdown"] == expected

@@ -152,6 +152,92 @@ def test_default_annual_table_fetcher_uses_financials_and_csv_engine(monkeypatch
     assert "Reporting_Period,Revenue" in table
 
 
+def test_build_original_company_context_uses_info_and_annual_income_statement():
+    annual_calls = []
+
+    def fake_annual(ticker, info_data):
+        annual_calls.append((ticker, info_data["info"]["financial_currency_to_USD"]))
+        return "### Annual Income Statement\n```csv\nRevenue,Net Income\n100,30\n```\n\n"
+
+    context = cmr.build_original_company_context(
+        ticker="CHKP",
+        info_dict={
+            "info": {
+                "shortName": "Check Point",
+                "symbol": "CHKP",
+                "marketCap": 123,
+                "financial_currency_to_USD": 1,
+                "longBusinessSummary": "Cybersecurity platform.",
+            }
+        },
+        annual_table_fetcher=fake_annual,
+    )
+
+    assert annual_calls == [("CHKP", 1)]
+    assert context["ticker"] == "CHKP"
+    assert context["company_name"] == "Check Point"
+    assert context["info"]["marketCap"] == 123
+    assert "Revenue,Net Income" in context["annual_financials"]
+
+
+def test_review_prompt_requires_original_company_financial_comparison():
+    prompt = cmr.build_review_prompt(
+        {
+            "ticker": "CHKP",
+            "name_of_market": "Enterprise Cybersecurity",
+            "original_company": {
+                "ticker": "CHKP",
+                "info": {"shortName": "Check Point", "marketCap": 123},
+                "annual_financials": "### Annual Income Statement\n```csv\nRevenue\n```",
+            },
+            "competitors": [{"ticker": "PANW", "annual_financials": "### Annual Income Statement\nNot available"}],
+        }
+    )
+
+    assert 'original company info_dict["info"]' in prompt
+    assert "original company annual income-statement table" in prompt
+    assert "Include the original company in the financial and strategic comparison" in prompt
+    assert '"original_company"' in prompt
+
+
+def test_run_competitor_market_review_includes_original_company_payload(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        cmr,
+        "discover_competitors",
+        lambda **_kwargs: {"name_of_market": "Enterprise Cybersecurity", "competitors": []},
+    )
+    monkeypatch.setattr(cmr, "collect_competitor_context", lambda **_kwargs: [{"ticker": "PANW"}])
+    monkeypatch.setattr(
+        cmr,
+        "build_original_company_context",
+        lambda **_kwargs: {
+            "ticker": "CHKP",
+            "info": {"shortName": "Check Point"},
+            "annual_financials": "### Annual Income Statement\n```csv\nRevenue\n```",
+        },
+    )
+
+    def fake_generate_market_review(*, payload, api_key):
+        captured["payload"] = payload
+        captured["api_key"] = api_key
+        return "review"
+
+    monkeypatch.setattr(cmr, "generate_market_review", fake_generate_market_review)
+
+    out = cmr.run_competitor_market_review(
+        ticker="CHKP",
+        info_dict={"info": {"shortName": "Check Point"}},
+        api_key="key",
+    )
+
+    assert captured["payload"]["original_company"]["ticker"] == "CHKP"
+    assert "Revenue" in captured["payload"]["original_company"]["annual_financials"]
+    assert captured["payload"]["competitors"] == [{"ticker": "PANW"}]
+    assert out["original_company"]["ticker"] == "CHKP"
+
+
 def test_result_degrades_to_unavailable_and_writes_sidecar(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 

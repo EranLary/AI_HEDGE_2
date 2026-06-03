@@ -228,6 +228,29 @@ def _fetch_annual_with_retries(
     raise RuntimeError(f"Annual financial table unavailable for {ticker}: {last_error}")
 
 
+def build_original_company_context(
+    *,
+    ticker: str,
+    info_dict: Dict[str, Any],
+    annual_table_fetcher: Optional[AnnualTableFetcher] = None,
+) -> Dict[str, Any]:
+    info = info_dict.get("info") if isinstance(info_dict, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    info_data = {"info": info}
+    fetch_annual = annual_table_fetcher or _default_annual_table_fetcher
+    try:
+        annual_financials = fetch_annual(ticker, info_data)
+    except Exception as exc:
+        annual_financials = f"### Annual Income Statement\nUnavailable: {type(exc).__name__}: {str(exc)[:300]}\n\n"
+    return {
+        "ticker": ticker.upper().strip(),
+        "company_name": str(info.get("shortName") or info.get("longName") or "").strip(),
+        "info": _compact_info_for_llm(info),
+        "annual_financials": annual_financials,
+    }
+
+
 def build_discovery_prompt(ticker: str, info: Dict[str, Any]) -> str:
     original_country = str(info.get("country") or "").strip()
     suffix_guidance = COUNTRY_SUFFIX_GUIDANCE.get(_country_key(original_country))
@@ -363,9 +386,11 @@ You are a senior buy-side market analyst writing a dashboard-ready market review
 You receive:
 - the original ticker
 - the market name
+- original company info_dict["info"]
+- original company annual income-statement table
 - ranked public competitors
 - normalized competitor info produced by the same info engine used for the original company
-- annual income-statement tables produced by the same financial table engine used for the original company
+- competitor annual income-statement tables produced by the same financial table engine
 
 Payload:
 {json.dumps(payload, ensure_ascii=False, default=str)}
@@ -383,8 +408,11 @@ Required sections:
 
 Rules:
 - Focus on what matters to investors and valuation.
-- Use the competitor financials when available; explicitly say when data is unavailable.
+- Include the original company in the financial and strategic comparison wherever the payload provides data.
+- Use the original company and competitor annual income-statement data when available; explicitly say when data is unavailable.
 - Compare business model, scale, profitability, growth, pricing power, cyclicality, and competitive intensity.
+- Prefer Markdown tables for ranked competitors, financial comparison, product/customer overlap, and any exact-data comparison.
+- Make tables compact and directly useful: include tickers, latest available annual figures, growth or margin cues when present, and clear "n/a" cells when data is missing.
 - Do not make buy/sell/hold recommendations.
 - Do not include raw JSON.
 """.strip()
@@ -434,10 +462,12 @@ def run_competitor_market_review(
         raise RuntimeError("Missing DEEPSEEK_API_KEY for competitor market review.")
 
     discovery = discover_competitors(ticker=ticker, info_dict=info_dict, api_key=key)
+    original_company = build_original_company_context(ticker=ticker, info_dict=info_dict)
     competitors = collect_competitor_context(discovery=discovery, original_ticker=ticker)
     review_payload = {
         "ticker": ticker.upper().strip(),
         "name_of_market": discovery.get("name_of_market") or "",
+        "original_company": original_company,
         "competitors": competitors,
     }
     review_markdown = generate_market_review(payload=review_payload, api_key=key)
@@ -446,6 +476,7 @@ def run_competitor_market_review(
         "ticker": ticker.upper().strip(),
         "generated_at": _utc_now(),
         "name_of_market": discovery.get("name_of_market") or "",
+        "original_company": original_company,
         "competitors": competitors,
         "review_markdown": review_markdown,
         "error": "",

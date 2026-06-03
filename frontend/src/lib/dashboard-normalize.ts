@@ -251,6 +251,11 @@ export function normalizePayload(
       ...base.artifacts,
       ...(payload.artifacts || {}),
     },
+    market_review: {
+      ...(base.market_review || {}),
+      ...(payload.market_review || {}),
+      competitors: Array.isArray(payload.market_review?.competitors) ? payload.market_review.competitors : base.market_review?.competitors || [],
+    },
     red_flag_shield: payload.red_flag_shield || [],
     dream_team: payload.dream_team || [],
     report_id: reportMeta?.reportId || payload.report_id,
@@ -270,6 +275,7 @@ export function normalizePayload(
     valuation_pdf: `/api/artifacts/${tk}/valuation-pdf${reportQuery}`,
     combined_pdf: `/api/artifacts/${tk}/combined-pdf${reportQuery}`,
     dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
+    market_review_json: `/api/artifacts/${tk}/market-review-json${reportQuery}`,
   };
 
   const scale = inferLegacyModelTargetScale(merged);

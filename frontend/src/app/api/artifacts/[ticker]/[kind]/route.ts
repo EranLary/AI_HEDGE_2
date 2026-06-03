@@ -32,6 +32,7 @@ const KIND_TO_FILE: Record<
   "prices-chart": { fileName: "{TICKER}_prices_valuation.png", contentType: "image/png" },
   "trading-agents-json": { fileName: "{TICKER}_trading_agents.json", contentType: "application/json; charset=utf-8" },
   "trading-agents-txt": { fileName: "{TICKER}_trading_agents.txt", contentType: "text/plain; charset=utf-8" },
+  "market-review-json": { fileName: "{TICKER}_market_review.json", contentType: "application/json; charset=utf-8" },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .dashboard import (
+    _extract_analysis_section,
     build_dashboard_appendix_text,
     build_dashboard_payload,
     deterministic_red_flags,
@@ -115,6 +116,36 @@ def _append_progress(progress_file: Optional[str], message: str) -> None:
             fh.write(f"{message.strip()}\n")
     except Exception:
         pass
+
+
+def _attach_market_agent_markdown(
+    *,
+    payload: Dict[str, Any],
+    analysis_text: str,
+    out_dir: Path,
+    ticker: str,
+    market_review_json: str = "",
+) -> tuple[Dict[str, Any], str]:
+    raw = payload if isinstance(payload, dict) else {}
+    market_agent_text = _extract_analysis_section(analysis_text, "Market Analysis")
+    if market_agent_text:
+        raw["market_agent_markdown"] = market_agent_text
+        raw.setdefault("status", "success")
+        raw.setdefault("ticker", ticker.upper().strip())
+
+    if not raw:
+        return raw, market_review_json
+
+    target = Path(market_review_json) if market_review_json else out_dir / f"{ticker}_market_review.json"
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        return raw, str(target.resolve())
+    except Exception:
+        return raw, market_review_json
 
 
 def _first_float(value) -> Optional[float]:
@@ -1679,6 +1710,14 @@ def _run_ticker_valuation_impl(
             regular_text = merged_analysis_text.strip()
     except Exception as analysis_merge_err:
         notes.append(f"Full analysis text merge failed: {analysis_merge_err}")
+
+    market_review_payload, market_review_json = _attach_market_agent_markdown(
+        payload=market_review_payload,
+        analysis_text=regular_text,
+        out_dir=out_dir,
+        ticker=ticker,
+        market_review_json=market_review_json,
+    )
 
     try:
         analysis_duration_minutes = round((time.perf_counter() - run_started) / 60.0, 2)

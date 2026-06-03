@@ -320,11 +320,15 @@ def _normalize_market_review_payload(
     competitors = raw.get("competitors")
     if not isinstance(competitors, list):
         competitors = []
+    original_company = raw.get("original_company")
+    if not isinstance(original_company, dict):
+        original_company = {}
     status = str(raw.get("status") or ("success" if competitor_text else "unavailable")).strip() or "unavailable"
     return {
         "status": status,
         "generated_at": raw.get("generated_at"),
         "name_of_market": str(raw.get("name_of_market") or "").strip(),
+        "original_company": original_company,
         "competitors": competitors,
         "review_markdown": competitor_text,
         "market_agent_markdown": market_agent_text,

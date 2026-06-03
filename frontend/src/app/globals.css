@@ -661,6 +661,67 @@ html[data-theme="light"] .hib-bear-prob-value {
   margin: 0.8rem 0;
   border-color: rgba(148, 163, 184, 0.45);
 }
+.hib-market-markdown {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.hib-market-markdown > * {
+  max-width: 100%;
+}
+.hib-market-markdown pre {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.hib-market-markdown code {
+  white-space: pre-wrap;
+}
+.hib-market-table-wrap {
+  margin: 0.85rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface-elevated) 78%, transparent);
+}
+.hib-market-table {
+  width: 100%;
+  min-width: 52rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+.hib-market-table-head {
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-overlay);
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.hib-market-table-cell,
+.hib-market-table-head {
+  max-width: 20rem;
+  padding: 0.7rem 0.75rem;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+.hib-market-table-cell {
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+.hib-market-table tbody tr:last-child .hib-market-table-cell {
+  border-bottom: 0;
+}
+.hib-market-table tbody tr:hover .hib-market-table-cell {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
 
 .font-display {
   font-family: var(--font-space-grotesk), sans-serif;

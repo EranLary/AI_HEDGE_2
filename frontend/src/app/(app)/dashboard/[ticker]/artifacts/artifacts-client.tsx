@@ -67,6 +67,7 @@ export function ArtifactsClient({
   push("technical_analysis_json", "Technical Analysis JSON", artifacts.technical_analysis_json);
   push("trading_agents_json", "TradingAgents JSON", artifacts.trading_agents_json);
   push("trading_agents_txt", "TradingAgents TXT", artifacts.trading_agents_txt);
+  push("market_review_json", "Market Review JSON", downloads.market_review_json || artifacts.market_review_json);
 
   const images = items.filter((it) => it.kind === "png");
   const docs = items.filter((it) => it.kind !== "png");

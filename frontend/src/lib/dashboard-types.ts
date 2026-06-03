@@ -63,6 +63,25 @@ export type TradingAgentsPayload = {
   artifact_txt?: string;
 };
 
+export type MarketReviewPayload = {
+  status?: "success" | "unavailable" | "error" | string;
+  generated_at?: string | null;
+  name_of_market?: string;
+  competitors?: Array<{
+    rank?: number;
+    ticker?: string;
+    company_name?: string;
+    similarity_rationale?: string;
+    overlap_notes?: string;
+    confidence?: string | number | null;
+    status?: string;
+    error?: string;
+  }>;
+  review_markdown?: string;
+  market_agent_markdown?: string;
+  error?: string;
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
@@ -261,6 +280,7 @@ export type DashboardPayload = {
     };
   };
   trading_agents?: TradingAgentsPayload;
+  market_review?: MarketReviewPayload;
   filings?: {
     annual?: {
       available?: boolean;
@@ -290,6 +310,7 @@ export type DashboardPayload = {
     technical_analysis_json?: string;
     trading_agents_json?: string;
     trading_agents_txt?: string;
+    market_review_json?: string;
   };
   downloads?: {
     analysis_pdf: string;
@@ -299,6 +320,7 @@ export type DashboardPayload = {
     combined_pdf?: string;
     dashboard_json?: string;
     analysis_txt?: string;
+    market_review_json?: string;
   };
 };
 

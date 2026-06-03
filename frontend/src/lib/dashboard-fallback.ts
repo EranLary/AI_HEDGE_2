@@ -88,6 +88,14 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       analysis: {},
       error: "Technical analysis is not available for this report yet.",
     },
+    market_review: {
+      status: "unavailable",
+      name_of_market: "",
+      competitors: [],
+      review_markdown: "",
+      market_agent_markdown: "",
+      error: "Market review is not available for this report yet.",
+    },
     artifacts: {},
     downloads: {
       analysis_pdf: `/api/artifacts/${tk}/analysis-pdf`,

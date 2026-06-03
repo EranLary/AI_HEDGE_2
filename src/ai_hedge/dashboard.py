@@ -283,6 +283,55 @@ def _is_reason_key(key: str) -> bool:
     return key_l == "step_by_step_analysis" or "rationale" in key_l or "reason" in key_l
 
 
+def _extract_analysis_section(text: str, header: str) -> str:
+    src = str(text or "").replace("\r\n", "\n")
+    if not src.strip():
+        return ""
+    target = str(header or "").strip().rstrip(":").lower()
+    lines = src.split("\n")
+    start: Optional[int] = None
+    for idx, line in enumerate(lines):
+        match = re.match(r"^\s*#\s+(.+?)\s*:?\s*$", line)
+        if match and match.group(1).strip().rstrip(":").lower() == target:
+            start = idx + 1
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for idx in range(start, len(lines)):
+        if re.match(r"^\s*#\s+.+?\s*:?\s*$", lines[idx]):
+            end = idx
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def _normalize_market_review_payload(
+    payload: Optional[Dict[str, Any]],
+    *,
+    analysis_text: str,
+) -> Dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    competitor_text = str(raw.get("review_markdown") or "").strip()
+    if not competitor_text:
+        competitor_text = _extract_analysis_section(analysis_text, "Competitor Market Review")
+    market_agent_text = str(raw.get("market_agent_markdown") or "").strip()
+    if not market_agent_text:
+        market_agent_text = _extract_analysis_section(analysis_text, "Market Analysis")
+    competitors = raw.get("competitors")
+    if not isinstance(competitors, list):
+        competitors = []
+    status = str(raw.get("status") or ("success" if competitor_text else "unavailable")).strip() or "unavailable"
+    return {
+        "status": status,
+        "generated_at": raw.get("generated_at"),
+        "name_of_market": str(raw.get("name_of_market") or "").strip(),
+        "competitors": competitors,
+        "review_markdown": competitor_text,
+        "market_agent_markdown": market_agent_text,
+        "error": str(raw.get("error") or "").strip(),
+    }
+
+
 def _as_readable_text(value: Any) -> str:
     if value is None:
         return ""
@@ -1406,6 +1455,7 @@ def build_dashboard_payload(
     artifacts: Dict[str, str],
     technical_analysis: Optional[Dict[str, Any]] = None,
     trading_agents: Optional[Dict[str, Any]] = None,
+    market_review: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     filings: Optional[Dict[str, Any]] = None,
@@ -1650,6 +1700,7 @@ def build_dashboard_payload(
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},
+        "market_review": _normalize_market_review_payload(market_review, analysis_text=analysis_text),
         "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,
     }

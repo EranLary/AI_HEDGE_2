@@ -53,6 +53,7 @@ class RunArtifacts:
     dashboard_json: str
     trading_agents_json: str
     trading_agents_txt: str
+    market_review_json: str
     notes: List[str]
     current_revenue: Optional[float]
     target_revenue: Optional[float]
@@ -1314,6 +1315,12 @@ def _run_ticker_valuation_impl(
     run_started = time.perf_counter()
 
     legacy.ticker = ticker
+    try:
+        from .competitor_market_review import SIDECAR_FILENAME as MARKET_REVIEW_SIDECAR
+
+        Path(MARKET_REVIEW_SIDECAR).unlink(missing_ok=True)
+    except Exception:
+        pass
 
     with _obs.llm_context(stage="analyst"):
         info_dict, files_dict, financial_dict, variables_dict = legacy.make_analysis_file(
@@ -1327,6 +1334,29 @@ def _run_ticker_valuation_impl(
     text = legacy.load_text_from_file("analysis.txt")
     regular_text = str(text or "").strip()
     notes: List[str] = []
+    market_review_payload: Dict[str, Any] = {}
+    market_review_json = ""
+    try:
+        from .competitor_market_review import SIDECAR_FILENAME as MARKET_REVIEW_SIDECAR
+
+        market_review_sidecar = Path(MARKET_REVIEW_SIDECAR)
+        if market_review_sidecar.exists():
+            market_review_payload = json.loads(market_review_sidecar.read_text(encoding="utf-8"))
+            if isinstance(market_review_payload, dict):
+                market_review_target = out_dir / f"{ticker}_market_review.json"
+                market_review_target.write_text(
+                    json.dumps(market_review_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                market_review_json = str(market_review_target.resolve())
+            else:
+                market_review_payload = {}
+    except Exception as market_review_err:
+        market_review_payload = {
+            "status": "unavailable",
+            "error": str(market_review_err),
+        }
+        notes.append(f"Competitor market review payload load failed: {market_review_err}")
     trading_agents_payload: Dict[str, Any] = {}
     trading_agents_context = ""
     trading_agents_json = ""
@@ -1665,6 +1695,7 @@ def _run_ticker_valuation_impl(
             qualitative_sections=qualitative_sections,
             technical_analysis=technical_analysis_payload,
             trading_agents=trading_agents_payload,
+            market_review=market_review_payload,
             filings=filing_sources,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
@@ -1677,6 +1708,7 @@ def _run_ticker_valuation_impl(
                 "technical_analysis_json": technical_analysis_json,
                 "trading_agents_json": trading_agents_json,
                 "trading_agents_txt": trading_agents_txt,
+                "market_review_json": market_review_json,
             },
         )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
@@ -1780,6 +1812,7 @@ def _run_ticker_valuation_impl(
         "net-income-chart": out_dir / f"{ticker}_net_income_valuation.png",
         "trading-agents-json": Path(trading_agents_json) if trading_agents_json else None,
         "trading-agents-txt": Path(trading_agents_txt) if trading_agents_txt else None,
+        "market-review-json": Path(market_review_json) if market_review_json else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     collected_keys: Dict[str, str] = {}
@@ -1818,6 +1851,7 @@ def _run_ticker_valuation_impl(
         dashboard_json=dashboard_json,
         trading_agents_json=trading_agents_json,
         trading_agents_txt=trading_agents_txt,
+        market_review_json=market_review_json,
         notes=notes,
         current_revenue=current_revenue,
         target_revenue=target_revenue,
@@ -1842,6 +1876,7 @@ def _run_ticker_valuation_impl(
         "dashboard_json": artifacts.dashboard_json,
         "trading_agents_json": artifacts.trading_agents_json,
         "trading_agents_txt": artifacts.trading_agents_txt,
+        "market_review_json": artifacts.market_review_json,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,
         "target_revenue": artifacts.target_revenue,

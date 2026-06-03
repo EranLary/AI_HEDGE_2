@@ -2896,10 +2896,13 @@ def make_analysis_file(
         print("No valid ticker")
         return info_dict, files_dict, financial_dict, variables_dict
 
+    from .competitor_market_review import competitor_market_review_result
+
     parallel_tasks: List[Tuple[Callable[..., Any], tuple, dict]] = [
         (what_it_does_insights_result, (info_dict,), {}),
         (info_insights_result, (info_dict,), {}),
         (news_insights_result, (info_dict,), {}),
+        (competitor_market_review_result, (ticker, info_dict), {}),
         (financials_annual_insights_result, (financial_dict, info_dict), {}),
         (financials_quarterly_insights_result, (financial_dict, info_dict), {}),
         (financials_all_insights_result, (financial_dict, info_dict), {}),

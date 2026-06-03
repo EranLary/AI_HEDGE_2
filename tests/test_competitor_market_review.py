@@ -197,6 +197,7 @@ def test_review_prompt_requires_original_company_financial_comparison():
     assert 'original company info_dict["info"]' in prompt
     assert "original company annual income-statement table" in prompt
     assert "Include the original company in the financial and strategic comparison" in prompt
+    assert 'clear "-" cells when data is missing' in prompt
     assert '"original_company"' in prompt
 
 

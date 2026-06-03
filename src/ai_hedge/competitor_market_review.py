@@ -412,7 +412,7 @@ Rules:
 - Use the original company and competitor annual income-statement data when available; explicitly say when data is unavailable.
 - Compare business model, scale, profitability, growth, pricing power, cyclicality, and competitive intensity.
 - Prefer Markdown tables for ranked competitors, financial comparison, product/customer overlap, and any exact-data comparison.
-- Make tables compact and directly useful: include tickers, latest available annual figures, growth or margin cues when present, and clear "n/a" cells when data is missing.
+- Make tables compact and directly useful: include tickers, latest available annual figures, growth or margin cues when present, and clear "-" cells when data is missing.
 - Do not make buy/sell/hold recommendations.
 - Do not include raw JSON.
 """.strip()

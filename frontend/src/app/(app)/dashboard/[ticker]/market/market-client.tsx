@@ -30,6 +30,17 @@ function markdownText(value: unknown): string {
   return String(value || "").trim();
 }
 
+function normalizeTableMissingValues(text: string): string {
+  return String(text || "")
+    .split("\n")
+    .map((line) => (
+      line.includes("|")
+        ? line.replace(/(\|\s*)(?:n\/a|N\/A)(\s*(?=\|))/g, "$1-$2")
+        : line
+    ))
+    .join("\n");
+}
+
 function numeric(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -37,7 +48,7 @@ function numeric(value: unknown): number | null {
 
 function formatLarge(value: unknown): string {
   const n = numeric(value);
-  if (n === null) return "n/a";
+  if (n === null) return "-";
   const abs = Math.abs(n);
   if (abs >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
   if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
@@ -47,14 +58,14 @@ function formatLarge(value: unknown): string {
 
 function formatPercent(value: unknown): string {
   const n = numeric(value);
-  if (n === null) return "n/a";
+  if (n === null) return "-";
   const pct = Math.abs(n) <= 1 ? n * 100 : n;
   return `${pct.toFixed(1)}%`;
 }
 
 function formatMultiple(value: unknown): string {
   const n = numeric(value);
-  if (n === null || n <= 0) return "n/a";
+  if (n === null || n <= 0) return "-";
   return `${n.toFixed(1)}x`;
 }
 
@@ -176,10 +187,11 @@ function sectionMeta(title: string) {
 }
 
 function MarketMarkdown({ text }: { text: string }) {
+  const normalized = normalizeTableMissingValues(text);
   return (
     <div className="hib-markdown hib-market-markdown min-w-0 max-w-full text-sm leading-relaxed text-zinc-200">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={marketMarkdownComponents}>
-        {text}
+        {normalized}
       </ReactMarkdown>
     </div>
   );
@@ -320,7 +332,7 @@ function MarketDataComparison({ market, ticker }: { market: MarketReviewPayload;
                 <tr key={`${row.ticker || row.company_name}-${idx}`}>
                   <td className="hib-market-table-cell font-mono text-xs">{row.rank}</td>
                   <td className="hib-market-table-cell">
-                    <span className="block font-mono font-semibold">{row.ticker || "N/A"}</span>
+                    <span className="block font-mono font-semibold">{row.ticker || "-"}</span>
                     <span className="block text-[color:var(--text-muted)]">{row.company_name || "Unnamed company"}</span>
                   </td>
                   <td className="hib-market-table-cell font-mono">{formatLarge(info.marketCap)}</td>

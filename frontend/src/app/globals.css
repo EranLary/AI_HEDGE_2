@@ -686,10 +686,10 @@ html[data-theme="light"] .hib-bear-prob-value {
 }
 .hib-market-table {
   width: 100%;
-  min-width: 42rem;
+  min-width: 52rem;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   line-height: 1.35;
 }
 .hib-market-table-head {
@@ -705,10 +705,12 @@ html[data-theme="light"] .hib-bear-prob-value {
 }
 .hib-market-table-cell,
 .hib-market-table-head {
-  max-width: 18rem;
+  max-width: 20rem;
   padding: 0.7rem 0.75rem;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 .hib-market-table-cell {
   border-bottom: 1px solid var(--border-subtle);

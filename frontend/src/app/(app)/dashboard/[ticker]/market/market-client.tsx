@@ -418,7 +418,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
         <MarketDataComparison market={market} ticker={ticker} />
         <MarketReviewSections text={reviewMarkdown} />
         <MarkdownPanel
-          title="Current Market Agent"
+          title="Market Analysis"
           text={marketAgentMarkdown}
           emptyText="No current market-agent text was found for this report."
         />

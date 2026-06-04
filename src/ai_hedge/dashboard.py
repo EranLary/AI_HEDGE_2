@@ -289,17 +289,47 @@ def _extract_analysis_section(text: str, header: str) -> str:
         return ""
     target = str(header or "").strip().rstrip(":").lower()
     lines = src.split("\n")
+    plain_headers = {
+        "what the company is doing",
+        "general information insights",
+        "news review",
+        "options insights",
+        "analyst expectations insights",
+        "holders analysis",
+        "swot analysis",
+        "market analysis",
+        "bull vs bear thesis",
+        "significant change analysis",
+        "key insights for valuation",
+        "street analysis",
+        "overall valuations",
+        "our analysts price valuations",
+        "final table",
+        "competitor market review",
+    }
+
+    def _section_heading(line: str) -> Optional[str]:
+        match = re.match(r"^\s*#{1,6}\s+(.+?)\s*:?\s*$", line)
+        if match:
+            return match.group(1).strip().rstrip(":")
+        match = re.match(r"^\s*([A-Z][A-Za-z0-9 &/().,'+-]{2,80})\s*:\s*$", line)
+        if match:
+            heading = match.group(1).strip().rstrip(":")
+            if heading.lower() in plain_headers or heading.lower().endswith(" insights"):
+                return heading
+        return None
+
     start: Optional[int] = None
     for idx, line in enumerate(lines):
-        match = re.match(r"^\s*#\s+(.+?)\s*:?\s*$", line)
-        if match and match.group(1).strip().rstrip(":").lower() == target:
+        heading = _section_heading(line)
+        if heading and heading.lower() == target:
             start = idx + 1
             break
     if start is None:
         return ""
     end = len(lines)
     for idx in range(start, len(lines)):
-        if re.match(r"^\s*#\s+.+?\s*:?\s*$", lines[idx]):
+        if _section_heading(lines[idx]):
             end = idx
             break
     return "\n".join(lines[start:end]).strip()

@@ -75,3 +75,28 @@ Next section.
     stored = json.loads((tmp_path / "CHKP_market_review.json").read_text(encoding="utf-8"))
     assert json_path.endswith("CHKP_market_review.json")
     assert stored["market_agent_markdown"] == expected
+
+
+def test_attach_market_agent_markdown_accepts_plain_legacy_header(tmp_path):
+    analysis_text = """
+What It Does:
+Company context.
+
+Market Analysis:
+Legacy plain header body.
+
+Still in the market section.
+
+SWOT Analysis:
+Next section.
+""".strip()
+
+    payload, _json_path = runner._attach_market_agent_markdown(
+        payload={"status": "success", "review_markdown": "competitor text"},
+        analysis_text=analysis_text,
+        out_dir=tmp_path,
+        ticker="POET",
+    )
+
+    expected = "Legacy plain header body.\n\nStill in the market section."
+    assert payload["market_agent_markdown"] == expected

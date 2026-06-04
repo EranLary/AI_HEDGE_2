@@ -88,7 +88,7 @@ type MarketSectionMeta = {
 const SECTION_META: MarketSectionMeta[] = [
   {
     key: "market definition",
-    eyebrow: "Where The Company Really Plays",
+    eyebrow: "Market Scope",
     icon: Store,
   },
   {
@@ -98,7 +98,7 @@ const SECTION_META: MarketSectionMeta[] = [
   },
   {
     key: "financial comparison",
-    eyebrow: "Exact Reported Data",
+    eyebrow: "Reported Metrics",
     icon: BarChart3,
     wide: true,
   },
@@ -109,7 +109,7 @@ const SECTION_META: MarketSectionMeta[] = [
   },
   {
     key: "competitive positioning",
-    eyebrow: "Who Has The Edge",
+    eyebrow: "Relative Position",
     icon: Building2,
   },
   {
@@ -219,7 +219,7 @@ function MarketReviewSections({ text }: { text: string }) {
   if (!sections.length) {
     return (
       <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Competitor Market Review</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Peer Market Review</h2>
         <p className="mt-3 text-sm text-zinc-500">No competitor market review was stored for this report.</p>
       </section>
     );
@@ -230,11 +230,11 @@ function MarketReviewSections({ text }: { text: string }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
-            Competitor Market Review
+            Peer Market Review
           </p>
-          <h2 className="font-display text-xl text-[color:var(--text-primary)]">Market Intelligence Map</h2>
+          <h2 className="font-display text-xl text-[color:var(--text-primary)]">Competitive Landscape</h2>
         </div>
-        <SmallCopyButton text={text} label="Copy Competitor Market Review" />
+        <SmallCopyButton text={text} label="Copy Peer Market Review" />
       </div>
       <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         {sections.map((section, idx) => {
@@ -300,7 +300,7 @@ function MarketDataComparison({ market, ticker }: { market: MarketReviewPayload;
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-            Exact Data Layer
+            Peer Comparison
           </p>
           <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
             Original Company vs Public Peers
@@ -392,7 +392,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
 
       {rows.length ? (
         <section className="mb-4 min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Closest Public Companies</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Closest Public Peers</h2>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {rows.map((row, idx) => (
               <article key={`${row.ticker || "competitor"}-${idx}`} className="min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/25 p-3">

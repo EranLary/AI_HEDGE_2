@@ -55,13 +55,18 @@ INSTRUCTION_BULL_CASE = """
 Build a strong "bull case" for the company.
 
 Goal:
-Extract and present 10-15 clear, high-quality reasons why this company could be a good investment.
+Extract and present up to 10-15 clear, high-quality reasons why this company could be a good investment.
 
 Important requirements:
 - Each point must be specific, meaningful, and grounded in the provided materials
 - Focus on business quality, growth potential, market opportunity, competitive positioning, and financial trajectory
 - Include both current strengths and future upside
 - Prefer insight over obvious statements
+- If the evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a non-obvious insight when the provided materials do not support one.
+- Distinguish evidence, inference, and speculation.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the bull case stronger than the provided data supports.
 - Avoid generic or vague bullets (e.g. "the company has potential")
 - Avoid repeating the same idea in different wording
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
@@ -92,6 +97,7 @@ Do NOT:
 - give a final recommendation
 - write long explanations
 - include filler or weak points just to reach the count
+- include 10 reasons if fewer than 10 are genuinely supported
 
 Return JSON in exactly this structure:
 
@@ -112,13 +118,18 @@ INSTRUCTION_BEAR_CASE = """
 Build a strong "bear case" for the company.
 
 Goal:
-Extract and present 10-15 clear, high-quality reasons why this company could be a bad investment.
+Extract and present up to 10-15 clear, high-quality reasons why this company could be a bad investment.
 
 Important requirements:
 - Focus on real risks, weaknesses, and red flags
 - Each point must be specific, concrete, and grounded in the provided materials
 - Prefer serious risks over minor concerns
 - Be skeptical and critical, like a short-seller or risk manager
+- If the evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a non-obvious risk when the provided materials do not support one.
+- Distinguish evidence, inference, and speculation.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the bear case stronger than the provided data supports.
 - Avoid generic statements (e.g. "competition exists")
 - Avoid repeating the same idea in different wording
 - Keep each bullet short, sharp, and easy to read (1-2 lines max)
@@ -151,6 +162,7 @@ Do NOT:
 - give a final recommendation
 - write long explanations
 - include weak or obvious risks just to fill space
+- include 10 risks if fewer than 10 are genuinely supported
 
 Return JSON in exactly this structure:
 

@@ -1433,6 +1433,17 @@ def load_text_from_file(file_path: str = "analysis.txt") -> str:
 
 
 from typing import Tuple
+
+ANALYSIS_CALIBRATION_RULES = """
+Calibration rules:
+- If the evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a non-obvious insight when the provided material does not support one.
+- Distinguish evidence, inference, and speculation.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the thesis stronger than the provided data supports.
+""".strip()
+
+
 def what_it_does_insights_result(info_dict) -> Tuple[str, str]:
     """
     Generate a clear, plain-language explanation of what the company actually does.
@@ -1463,6 +1474,8 @@ Guidelines:
 - Explain who the customers are and what problem the company solves.
 - Translate business jargon into plain, concrete language.
 - If multiple activities exist, explain the main one first and mention others briefly.
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Write 5-7 short sentences.
 """.strip()
@@ -1522,6 +1535,8 @@ Rules:
 - If valuation implies extreme expectations, articulate them clearly.
 - If governance, ownership, margins, growth, or capital structure stand out, explain the consequences.
 - Connect business model, financials, and market expectations into a single coherent story.
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Output format:
 - Bullet points only.
@@ -1593,6 +1608,8 @@ What to extract:
 - Market sentiment and expectation drift
 - Emerging risks or unresolved uncertainties
 - Upside optionality implied by recurring themes
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Output rules:
 - Bullet points only
@@ -1668,6 +1685,8 @@ Output requirement:
 - No tables, no mechanics, no strike-by-strike listing
 - No trading recommendations
 - Each point should clearly connect option pricing to market perception of the company
+
+{ANALYSIS_CALIBRATION_RULES}
 
 What to extract:
 - Market-implied company narrative
@@ -1759,6 +1778,8 @@ Output rules:
 - Prioritize depth, judgment, and interpretation
 - Be precise, skeptical, and professional
 - No generic textbook explanations
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Input:
 Name of company: {name_of_company}
@@ -1891,6 +1912,8 @@ Output rules:
 - No generic explanations, no filler
 - If the JSONs are missing key context (e.g., dates, sample size), state how that limits confidence
 
+{ANALYSIS_CALIBRATION_RULES}
+
 Inputs:
 Price targets:
 {info_dict["price_targets"]}
@@ -2021,6 +2044,8 @@ Output requirements:
 - Separate ownership structure, institutional behavior, and insider trading insights
 - No generic explanations
 
+{ANALYSIS_CALIBRATION_RULES}
+
 Your goal is to understand who owns the company, how that is changing, and why it matters.
 """.strip()
 
@@ -2098,6 +2123,8 @@ Output rules:
 - No raw table repetition
 - No generic explanations
 - Be analytical and opinionated
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Inputs:
 Company: {company_name}
@@ -2215,6 +2242,8 @@ Output rules:
 - Do not mechanically repeat numbers without interpretation
 - Be direct, analytical, and opinionated
 - Prioritize insight over completeness
+
+{ANALYSIS_CALIBRATION_RULES}
 
 Inputs:
 Company: {company_name}
@@ -2358,7 +2387,9 @@ def swot_analysis(ticker):
   * Be analytical, not descriptive.
   * Avoid repeating the input text verbatim.
   * Prioritize insight over completeness.
-  * Assume the reader is sophisticated and time-constrained."""
+  * Assume the reader is sophisticated and time-constrained.
+
+  {ANALYSIS_CALIBRATION_RULES}"""
 
   answer = deepseek_simple_text(
       api_key=DEEPSEEK_API_KEY,
@@ -2445,6 +2476,8 @@ def market_analyst(ticker):
   - Avoid repeating the input text verbatim.
   - Prioritize clarity, depth, and economic relevance over length.
 
+  {ANALYSIS_CALIBRATION_RULES}
+
   The final output should read as a **decision-grade market characterization**, not a generic industry overview.
   """
 
@@ -2499,6 +2532,8 @@ def bear_vs_bull_insights(ticker):
   - Be specific, causal, and thoughtful.
   - Write as if presenting to a skeptical investment committee.
   - The goal is not balance, but clarity of scenarios.
+
+  {ANALYSIS_CALIBRATION_RULES}
 
   Your objective is to define the upside and downside boundaries of reality for this company.
   """
@@ -2579,6 +2614,8 @@ def change_up_anaysis(ticker, change):
   2) Secondary contributing factors
   3) Whether the company is structurally stronger than 52 weeks ago
   4) Whether the magnitude of the move appears rational, stretched, or speculative
+
+  {ANALYSIS_CALIBRATION_RULES}
 
   Reason step by step and explain your reasoning clearly.
   Deliver a deep analytical narrative, not a summary.
@@ -2663,6 +2700,8 @@ def change_down_anaysis(ticker, change):
   3) Whether the business model is structurally weaker or temporarily pressured
   4) Whether the magnitude of the decline appears rational, excessive, or signaling deeper risk
 
+  {ANALYSIS_CALIBRATION_RULES}
+
   Reason step by step and explain your reasoning clearly.
   Deliver a rigorous analytical narrative, not a summary.
   """
@@ -2715,6 +2754,8 @@ def for_value_insights(financial_dict, ticker):
 
   Do not explain the company. Do not explain valuation methods.
   Just extract the truths that matter most for valuation.
+
+  {ANALYSIS_CALIBRATION_RULES}
 
   Write as if you are briefing a strong analyst who will build the valuation themselves.
   Bullets only. Quality over quantity.

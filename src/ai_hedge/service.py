@@ -80,6 +80,11 @@ Analytical Principles:
 - Focus on material drivers, not trivial details
 - Avoid generic statements (e.g., "strong growth", "competitive market") unless quantified or justified
 - Use calibrated language: avoid absolute claims unless directly proven by the provided data; when uncertainty exists, state it explicitly with probability-oriented wording (for example: likely, may, could)
+- If the evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a non-obvious insight when the provided filings do not support one.
+- Distinguish evidence, inference, and speculation.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the thesis stronger than the provided data supports.
 
 Skepticism Mandate:
 - Assume management may present an overly favorable view

@@ -290,6 +290,11 @@ Important:
 - Separate observations from conclusions.
 - Compare weekly, daily 6-month, and recent hourly 2-month datasets.
 - Highlight agreement and disagreement between timeframes.
+- If the evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a bullish or bearish signal when the chart evidence is neutral.
+- Distinguish observed price/volume evidence from analyst inference.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the setup stronger than the provided data supports.
 
 Additional requirements:
 - Estimate bullish and bearish probabilities based on the strength of signals.

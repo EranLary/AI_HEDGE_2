@@ -160,7 +160,7 @@ function buildComparisonRows(market: MarketReviewPayload, ticker: string): Compa
         ticker: String(row.ticker || ""),
         company_name: String(row.company_name || ""),
         info,
-        rationale: compactText(row.similarity_rationale || row.overlap_notes, 360),
+        rationale: markdownText(row.similarity_rationale || row.overlap_notes),
         confidence: row.confidence,
       };
     }),

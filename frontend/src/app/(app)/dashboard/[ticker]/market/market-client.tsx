@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BarChart3,
   Building2,
   Store,
 } from "lucide-react";
@@ -48,6 +47,15 @@ function formatMultiple(value: unknown): string {
   return `${n.toFixed(1)}x`;
 }
 
+function formatResemblance(value: unknown): string {
+  const text = markdownText(value);
+  if (!text) return "-";
+  const n = Number(text);
+  if (!Number.isFinite(n)) return text;
+  if (n > 0 && n <= 1) return `${Math.round(n * 100)}%`;
+  return `${Math.round(n)}%`;
+}
+
 function infoRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -91,9 +99,9 @@ function buildComparisonRows(market: MarketReviewPayload, ticker: string): Compa
   ].filter((row) => row.ticker || row.company_name || Object.keys(row.info).length);
 }
 
-function PeerOverviewTable({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
+function PeerComparisonMatrix({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
   const rows = buildComparisonRows(market, ticker);
-  if (rows.length <= 1) return null;
+  if (!rows.length) return null;
 
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -103,10 +111,10 @@ function PeerOverviewTable({ market, ticker }: { market: MarketReviewPayload; ti
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-            Peer Set
+            Peer Matrix
           </p>
           <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
-            Closest Public Comparables
+            Competitive And Financial Comparison
           </h2>
         </div>
       </div>
@@ -119,60 +127,7 @@ function PeerOverviewTable({ market, ticker }: { market: MarketReviewPayload; ti
               <th className="hib-market-table-head">Company</th>
               <th className="hib-market-table-head">Comparable Basis</th>
               <th className="hib-market-table-head">Resemblance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.slice(1).map((row, idx) => (
-              <tr key={`${row.ticker || row.company_name}-${idx}`}>
-                <td className="hib-market-table-cell font-mono text-xs">{row.rank}</td>
-                <td className="hib-market-table-cell">
-                  <span className="font-mono font-semibold">{row.ticker || "-"}</span>
-                  <span className="block text-[color:var(--text-muted)]">{row.company_name || "Unnamed company"}</span>
-                </td>
-                <td className="hib-market-table-cell">{row.rationale || "-"}</td>
-                <td className="hib-market-table-cell font-mono">{row.confidence ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function competitorRows(payload: MarketReviewPayload | undefined) {
-  return Array.isArray(payload?.competitors) ? payload.competitors.slice(0, 5) : [];
-}
-
-function MarketDataComparison({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
-  const rows = buildComparisonRows(market, ticker);
-
-  if (!rows.length || rows.every((row) => !Object.keys(row.info).length)) return null;
-
-  return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <div className="mb-3 flex min-w-0 items-start gap-3">
-        <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
-          <BarChart3 size={18} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-            Peer Comparison
-          </p>
-          <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
-            Original Company vs Public Peers
-          </h2>
-        </div>
-      </div>
-
-      <div className="hib-market-table-wrap">
-        <table className="hib-market-table">
-          <thead>
-            <tr>
-              <th className="hib-market-table-head">Rank</th>
-              <th className="hib-market-table-head">Company</th>
               <th className="hib-market-table-head">Market Cap</th>
-              <th className="hib-market-table-head">EV</th>
               <th className="hib-market-table-head">Revenue</th>
               <th className="hib-market-table-head">Rev Growth</th>
               <th className="hib-market-table-head">Gross Margin</th>
@@ -192,8 +147,9 @@ function MarketDataComparison({ market, ticker }: { market: MarketReviewPayload;
                     <span className="font-mono font-semibold">{row.ticker || "-"}</span>
                     <span className="block text-[color:var(--text-muted)]">{row.company_name || "Unnamed company"}</span>
                   </td>
+                  <td className="hib-market-table-cell">{row.rationale || (idx === 0 ? "Original company" : "-")}</td>
+                  <td className="hib-market-table-cell font-mono">{idx === 0 ? "100%" : formatResemblance(row.confidence)}</td>
                   <td className="hib-market-table-cell font-mono">{formatLarge(info.marketCap)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatLarge(info.enterpriseValue)}</td>
                   <td className="hib-market-table-cell font-mono">{formatLarge(info.totalRevenue)}</td>
                   <td className="hib-market-table-cell font-mono">{formatPercent(info.revenueGrowth)}</td>
                   <td className="hib-market-table-cell font-mono">{formatPercent(info.grossMargins)}</td>
@@ -209,6 +165,10 @@ function MarketDataComparison({ market, ticker }: { market: MarketReviewPayload;
       </div>
     </section>
   );
+}
+
+function competitorRows(payload: MarketReviewPayload | undefined) {
+  return Array.isArray(payload?.competitors) ? payload.competitors.slice(0, 5) : [];
 }
 
 export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId }: MarketClientProps) {
@@ -245,12 +205,8 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
         </section>
       ) : null}
 
-      {rows.length ? (
-        <PeerOverviewTable market={market} ticker={ticker} />
-      ) : null}
-
       <div className="grid gap-4">
-        <MarketDataComparison market={market} ticker={ticker} />
+        <PeerComparisonMatrix market={market} ticker={ticker} />
       </div>
     </div>
   );

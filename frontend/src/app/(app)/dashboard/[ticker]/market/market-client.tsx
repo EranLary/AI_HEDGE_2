@@ -3,9 +3,13 @@
 import {
   BarChart3,
   Building2,
+  Layers3,
   Store,
   TrendingUp,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { DashboardPayload, MarketReviewPayload, ReportListItem } from "@/lib/dashboard-types";
@@ -62,6 +66,22 @@ function infoRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+const marketMarkdownComponents: Components = {
+  table({ node: _node, ...props }) {
+    return (
+      <div className="hib-market-table-wrap">
+        <table className="hib-market-table" {...props} />
+      </div>
+    );
+  },
+  th({ node: _node, ...props }) {
+    return <th className="hib-market-table-head" {...props} />;
+  },
+  td({ node: _node, ...props }) {
+    return <td className="hib-market-table-cell" {...props} />;
+  },
+};
+
 type ComparisonRow = {
   rank: string;
   ticker: string;
@@ -75,6 +95,52 @@ function compactText(value: unknown, maxLength = 190): string {
   const clean = markdownText(value).replace(/\s+/g, " ");
   if (clean.length <= maxLength) return clean;
   return `${clean.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function markdownSection(text: string, sectionName: string): string {
+  const source = markdownText(text).replace(/\r\n/g, "\n");
+  if (!source) return "";
+
+  const target = sectionName.trim().toLowerCase();
+  const lines = source.split("\n");
+  const body: string[] = [];
+  let collecting = false;
+
+  for (const line of lines) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      if (collecting) break;
+      collecting = heading[1].trim().toLowerCase() === target;
+      continue;
+    }
+    if (collecting) body.push(line);
+  }
+
+  return body.join("\n").trim();
+}
+
+function markdownTables(text: string): string[] {
+  const lines = markdownText(text).replace(/\r\n/g, "\n").split("\n");
+  const tables: string[] = [];
+  let block: string[] = [];
+
+  const flush = () => {
+    if (block.length >= 2 && block.some((line) => /\|\s*:?-{3,}:?\s*\|/.test(line))) {
+      tables.push(block.join("\n").trim());
+    }
+    block = [];
+  };
+
+  for (const line of lines) {
+    if (line.includes("|")) {
+      block.push(line);
+    } else {
+      flush();
+    }
+  }
+  flush();
+
+  return tables;
 }
 
 function buildComparisonRows(market: MarketReviewPayload, ticker: string): ComparisonRow[] {
@@ -154,6 +220,68 @@ function PeerStrategyTable({ market, ticker }: { market: MarketReviewPayload; ti
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function ProductOverlapTable({ market }: { market: MarketReviewPayload }) {
+  const section = markdownSection(String(market.review_markdown || ""), "Product And Customer Overlap");
+  const tables = markdownTables(section);
+  const rows = competitorRows(market).filter((row) => markdownText(row.overlap_notes));
+
+  if (!tables.length && !rows.length) return null;
+
+  return (
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <div className="mb-3 flex min-w-0 items-start gap-3">
+        <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
+          <Layers3 size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Product Overlap
+          </p>
+          <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
+            Where They Compete
+          </h2>
+        </div>
+      </div>
+
+      {tables.length ? (
+        <div className="grid gap-3">
+          {tables.slice(0, 2).map((table, idx) => (
+            <div key={`product-overlap-${idx}`} className="min-w-0">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={marketMarkdownComponents}>
+                {table}
+              </ReactMarkdown>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="hib-market-table-wrap">
+          <table className="hib-market-table">
+            <thead>
+              <tr>
+                <th className="hib-market-table-head">Company</th>
+                <th className="hib-market-table-head">Product / Customer Overlap</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={`${row.ticker || row.company_name}-${idx}`}>
+                  <td className="hib-market-table-cell">
+                    <span className="font-mono font-semibold">{row.ticker || "-"}</span>
+                    <span className="block text-[color:var(--text-muted)]">{row.company_name || "Unnamed company"}</span>
+                  </td>
+                  <td className="hib-market-table-cell max-w-[44rem] whitespace-normal break-words leading-relaxed">
+                    {compactText(row.overlap_notes, 420)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -306,6 +434,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
 
       <div className="grid gap-4">
         <PeerStrategyTable market={market} ticker={ticker} />
+        <ProductOverlapTable market={market} />
         <FinancialScaleTable market={market} ticker={ticker} />
         <MarginValuationTable market={market} ticker={ticker} />
       </div>

@@ -314,7 +314,7 @@ function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; 
               <th className="hib-market-table-head">Company</th>
               <th className="hib-market-table-head">Market Cap</th>
               <th className="hib-market-table-head">EV</th>
-              <th className="hib-market-table-head">Revenue</th>
+              <th className="hib-market-table-head">Revenue (TTM)</th>
               <th className="hib-market-table-head">Rev Growth</th>
             </tr>
           </thead>
@@ -365,11 +365,11 @@ function MarginValuationTable({ market, ticker }: { market: MarketReviewPayload;
             <tr>
               <th className="hib-market-table-head">Rank</th>
               <th className="hib-market-table-head">Company</th>
-              <th className="hib-market-table-head">Gross Margin</th>
-              <th className="hib-market-table-head">EBITDA Margin</th>
-              <th className="hib-market-table-head">Net Margin</th>
-              <th className="hib-market-table-head">P/E</th>
-              <th className="hib-market-table-head">EV/Revenue</th>
+              <th className="hib-market-table-head">Gross Margin (TTM)</th>
+              <th className="hib-market-table-head">EBITDA Margin (TTM)</th>
+              <th className="hib-market-table-head">Net Margin (TTM)</th>
+              <th className="hib-market-table-head">P/E (TTM)</th>
+              <th className="hib-market-table-head">EV/Revenue (TTM)</th>
             </tr>
           </thead>
           <tbody>

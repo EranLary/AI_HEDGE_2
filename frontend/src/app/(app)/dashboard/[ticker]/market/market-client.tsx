@@ -197,12 +197,20 @@ function PeerStrategyTable({ market, ticker }: { market: MarketReviewPayload; ti
       </div>
 
       <div className="hib-market-table-wrap">
-        <table className="hib-market-table">
+        <table className="hib-market-table min-w-[58rem] table-fixed">
+          <colgroup>
+            <col className="w-[5rem]" />
+            <col className="w-[14rem]" />
+            <col className="w-[32rem]" />
+            <col className="w-[7rem]" />
+          </colgroup>
           <thead>
             <tr>
               <th className="hib-market-table-head">Rank</th>
               <th className="hib-market-table-head">Company</th>
-              <th className="hib-market-table-head">Comparable Basis</th>
+              <th className="hib-market-table-head">
+                <span className="whitespace-nowrap">Comparable Basis</span>
+              </th>
               <th className="hib-market-table-head">Resemblance</th>
             </tr>
           </thead>

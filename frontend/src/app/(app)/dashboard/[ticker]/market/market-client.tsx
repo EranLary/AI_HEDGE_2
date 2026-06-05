@@ -410,6 +410,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
   const market = data.market_review || {};
   const rows = competitorRows(market);
   const status = String(market.status || "unavailable");
+  const showStatus = status.trim().toLowerCase() !== "success";
   const hasReview = Boolean(rows.length);
   const marketName = markdownText(market.name_of_market) || "Market context";
   const error = markdownText(market.error);
@@ -424,10 +425,12 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
           <h1 className="font-display text-2xl text-zinc-100">Market</h1>
           <p className="mt-1 max-w-full break-words text-sm text-zinc-400">{marketName}</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-300">
-          <Store size={14} />
-          <span className="font-semibold uppercase tracking-[0.14em]">{status}</span>
-        </div>
+        {showStatus ? (
+          <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-300">
+            <Store size={14} />
+            <span className="font-semibold uppercase tracking-[0.14em]">{status}</span>
+          </div>
+        ) : null}
       </header>
 
       {!hasReview ? (

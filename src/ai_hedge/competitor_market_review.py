@@ -115,6 +115,12 @@ def normalize_competitors(
                 "company_name": str(item.get("company_name") or item.get("name") or "").strip(),
                 "similarity_rationale": str(item.get("similarity_rationale") or item.get("rationale") or "").strip(),
                 "overlap_notes": str(item.get("overlap_notes") or item.get("product_overlap") or "").strip(),
+                "direct_revenue_overlap": str(item.get("direct_revenue_overlap") or "").strip(),
+                "customer_overlap": str(item.get("customer_overlap") or "").strip(),
+                "business_model_overlap": str(item.get("business_model_overlap") or "").strip(),
+                "geography_overlap": str(item.get("geography_overlap") or "").strip(),
+                "similarity_score": item.get("similarity_score"),
+                "disqualifier_check": str(item.get("disqualifier_check") or "").strip(),
                 "country": country,
                 "exchange": str(item.get("exchange") or item.get("listing_exchange") or "").strip(),
                 "confidence": item.get("confidence"),
@@ -275,6 +281,10 @@ You are a senior public-equity industry analyst.
 Your task is to identify public companies most similar to the original company.
 Use the company's business description, sector, industry, products, customers, geography, and revenue model.
 
+Think in two passes before producing the JSON:
+1. Define the narrow investable market the original company actually competes in.
+2. Rank public companies by real business overlap, not by broad sector similarity.
+
 Original ticker: {ticker}
 Original country: {original_country or "Unknown"}
 Original company info_dict["info"]:
@@ -292,6 +302,12 @@ Return ONLY valid JSON with this exact shape:
       "exchange": "listing exchange",
       "similarity_rationale": "why this public company is similar",
       "overlap_notes": "products, customers, or business model overlap",
+      "direct_revenue_overlap": "high|medium|low - explain whether the companies make money from the same products/services",
+      "customer_overlap": "high|medium|low - explain whether they sell to the same buyer/user group",
+      "business_model_overlap": "high|medium|low - explain whether pricing, delivery model, and unit economics are comparable",
+      "geography_overlap": "high|medium|low - explain whether listing geography or operating geography improves comparability",
+      "similarity_score": 0,
+      "disqualifier_check": "state if this is a direct competitor, adjacent peer, supplier/customer, conglomerate segment, or weak broad-sector match",
       "confidence": "high|medium|low"
     }}
   ]
@@ -303,9 +319,15 @@ Rules:
 - Rank from most similar to least similar.
 - Return a ranked list of all strong public-company matches you can identify. It is okay to return more than 5.
 - The next stage will use only the top 5 ranked companies for financial enrichment, so put the best matches first.
+- Score similarity from 0 to 100. Use 80-100 for direct competitors, 60-79 for strong adjacent public peers, 40-59 for imperfect but useful comparables, and below 40 only when no better public peers exist.
+- Prefer direct revenue and customer overlap over generic sector, theme, or technology overlap.
+- Exclude ETFs, funds, indexes, private companies, suppliers/customers that are not competitors, and conglomerates where the comparable business is only a small or unclear segment.
+- If you include an adjacent peer rather than a direct competitor, say that clearly in "disqualifier_check" and rank it below direct competitors.
+- If the company operates in several markets, prioritize the market that appears most important to revenue and valuation today, not the most exciting optionality.
 - For non-US companies, use Yahoo Finance-compatible exchange suffixes.
 - {local_guidance or "For US companies, use the normal US ticker without an exchange suffix."}
 - Keep the market name specific, not a broad sector label.
+- Output JSON only. No markdown, commentary, or extra top-level keys.
 """.strip()
 
 
@@ -413,8 +435,21 @@ Rules:
 - Compare business model, scale, profitability, growth, pricing power, cyclicality, and competitive intensity.
 - Prefer Markdown tables for ranked competitors, financial comparison, product/customer overlap, and any exact-data comparison.
 - Make tables compact and directly useful: include tickers, latest available annual figures, growth or margin cues when present, and clear "-" cells when data is missing.
+- Ground every material claim in the payload. Use only:
+  1. original company info,
+  2. original annual income-statement table,
+  3. competitor discovery fields,
+  4. normalized competitor info,
+  5. competitor annual income-statement tables.
+- If a conclusion is an analyst inference rather than a directly stated fact, label it as an inference in the sentence or table cell.
+- Do not claim precise market share, growth rate, margin rank, or competitive superiority unless the payload provides enough data to support it.
+- In the Ranked Competitor Map table, include a compact "Why comparable" or "Evidence basis" column that uses the discovery overlap fields.
+- In the Financial Comparison table, include the original company plus competitors; use "-" for unavailable data and avoid filling gaps from memory.
+- In Product And Customer Overlap, separate direct competitors from adjacent comparables, suppliers/customers, or conglomerate segment peers when relevant.
+- In Valuation Implications, translate the peer comparison into valuation-relevant questions and risks; do not produce a target price or recommendation.
 - Do not make buy/sell/hold recommendations.
 - Do not include raw JSON.
+- Do not mention these instructions.
 """.strip()
 
 

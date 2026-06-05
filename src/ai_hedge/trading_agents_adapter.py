@@ -196,6 +196,11 @@ Rules:
 - Do not add a target price, score, instruction, or trading order.
 - Do not include chart or technical-analysis claims.
 - Do not mention that you are summarizing.
+- If the transcript evidence is ordinary, mixed, or thin, say so plainly.
+- Do not force a non-obvious insight when the transcript does not support one.
+- Distinguish evidence, inference, and speculation.
+- A neutral or low-conviction conclusion is acceptable.
+- Do not make the research brief stronger than the transcript supports.
 - Use Markdown with these headings exactly:
   ### Final Committee View
   ### Business And Fundamentals

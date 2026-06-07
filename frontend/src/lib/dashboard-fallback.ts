@@ -21,6 +21,8 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
         "No structured dashboard summary exists yet for this ticker. Run the valuation pipeline again to generate Executive Summary, Bull Case, and Bear Case from analysis + SEC + reports.",
       bull_case_reasons: [],
       bear_case_reasons: [],
+      main_thesis_questions: [],
+      watchlist_kpis: [],
       key_insights: [],
       bull_insights: [],
       red_flag_insights: [],
@@ -40,6 +42,13 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
           company: tk,
           document_type: "bear_case",
           reasons: [],
+        },
+        main_thesis: {
+          company: tk,
+          document_type: "main_thesis_kpis",
+          valuation_revolves_around: "",
+          main_questions: [],
+          kpis: [],
         },
       },
       swot: {
@@ -95,6 +104,14 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       review_markdown: "",
       market_agent_markdown: "",
       error: "Market review is not available for this report yet.",
+    },
+    sec_qna: {
+      status: "unavailable",
+      ticker: tk,
+      text: "",
+      questions: [],
+      answers: [],
+      errors: [],
     },
     artifacts: {},
     downloads: {

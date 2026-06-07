@@ -16,6 +16,18 @@ type SwotData = {
   threats: string[];
 };
 
+type WatchlistKpi = {
+  name?: string;
+  why_it_matters?: string;
+  direction_to_watch?: string;
+};
+
+type MainThesisDoc = {
+  valuation_revolves_around?: string;
+  main_questions?: string[];
+  kpis?: WatchlistKpi[];
+};
+
 function SwotAccordion({ swot }: { swot: SwotData }) {
   const [open, setOpen] = useState(false);
   const sections: Array<{ key: keyof SwotData; label: string; tone: string }> = [
@@ -127,6 +139,78 @@ function ScenarioColumn({
   );
 }
 
+function MainThesisPanel({
+  questions,
+  kpis,
+  doc,
+}: {
+  questions: string[];
+  kpis: WatchlistKpi[];
+  doc?: MainThesisDoc;
+}) {
+  const thesisLine = doc?.valuation_revolves_around || "";
+  const questionItems = questions.length ? questions : doc?.main_questions || [];
+  const kpiItems = kpis.length ? kpis : doc?.kpis || [];
+  if (!thesisLine && !questionItems.length && !kpiItems.length) return null;
+
+  const copyText = [
+    thesisLine,
+    "",
+    "Main questions",
+    ...questionItems.map((item, idx) => `${idx + 1}. ${item}`),
+    "",
+    "KPIs to watch",
+    ...kpiItems.map((item, idx) => {
+      const name = item.name || "KPI";
+      const details = [item.why_it_matters, item.direction_to_watch].filter(Boolean).join(" ");
+      return `${idx + 1}. ${name}${details ? ` - ${details}` : ""}`;
+    }),
+  ].join("\n").trim();
+
+  return (
+    <section className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-lg text-zinc-100">Main Thesis & KPIs</h2>
+          {thesisLine ? <p className="mt-1 text-sm text-zinc-300">{thesisLine}</p> : null}
+        </div>
+        <SmallCopyButton text={copyText} label="Copy Main Thesis & KPIs" iconOnly />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+        {questionItems.length ? (
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Valuation Questions</p>
+            <ol className="space-y-2 text-sm text-zinc-200">
+              {questionItems.map((question, idx) => (
+                <li key={`question-${idx}`} className="flex gap-2">
+                  <span className="mt-0.5 min-w-5 text-xs font-semibold text-zinc-500">{idx + 1}.</span>
+                  <span>{question}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+
+        {kpiItems.length ? (
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">KPI Watchlist</p>
+            <div className="space-y-2">
+              {kpiItems.map((item, idx) => (
+                <div key={`kpi-${idx}`} className="rounded-xl border border-white/10 bg-zinc-900/50 p-3">
+                  <p className="text-sm font-semibold text-zinc-100">{item.name || "KPI"}</p>
+                  {item.why_it_matters ? <p className="mt-1 text-xs text-zinc-300">{item.why_it_matters}</p> : null}
+                  {item.direction_to_watch ? <p className="mt-1 text-xs text-zinc-500">{item.direction_to_watch}</p> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export type ScenariosClientProps = {
   ticker: string;
   data: DashboardPayload;
@@ -144,6 +228,9 @@ export function ScenariosClient({
   const matrix = data.analysis_matrix || { bull_case_reasons: [], bear_case_reasons: [], documents: undefined };
   const bullReasons = matrix.bull_case_reasons || matrix.documents?.bull_case?.reasons || [];
   const bearReasons = matrix.bear_case_reasons || matrix.documents?.bear_case?.reasons || [];
+  const mainThesisDoc = matrix.documents?.main_thesis;
+  const mainQuestions = matrix.main_thesis_questions || mainThesisDoc?.main_questions || [];
+  const watchlistKpis = matrix.watchlist_kpis || mainThesisDoc?.kpis || [];
 
   const metricMeans = data.valuation_hub.all_values?.metric_means || [];
   function probFor(label: string): number | null {
@@ -176,6 +263,7 @@ export function ScenariosClient({
         <ScenarioColumn title="Bull Case" tone="bull" reasons={bullReasons} probability={bullProb} doc={matrix.documents?.bull_case} />
         <ScenarioColumn title="Bear Case" tone="bear" reasons={bearReasons} probability={bearProb} doc={matrix.documents?.bear_case} />
       </div>
+      <MainThesisPanel questions={mainQuestions} kpis={watchlistKpis} doc={mainThesisDoc} />
     </div>
   );
 }

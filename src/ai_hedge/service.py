@@ -406,7 +406,7 @@ def _looks_like_table_line(line: str) -> bool:
 
 def _format_short_sec_output(answer: str) -> str:
     """
-    Normalize SEC short output so each bullet is its own row with spacing.
+    Normalize SEC summary output so each bullet is its own row with spacing.
     """
     lines = (answer or "").splitlines()
     out: List[str] = []
@@ -632,9 +632,33 @@ def _normalize_question_list(payload: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _normalize_sec_answer_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_rows = payload.get("answers", [])
+    if not isinstance(raw_rows, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        filing_refs = row.get("filing_refs", [])
+        if not isinstance(filing_refs, list):
+            filing_refs = []
+        normalized = {
+            "question": str(row.get("question", "") or "").strip(),
+            "answer": str(row.get("answer", "") or "").strip(),
+            "evidence": str(row.get("evidence", "") or "").strip(),
+            "filing_refs": [str(x).strip() for x in filing_refs if str(x).strip()],
+            "confidence": str(row.get("confidence", "") or "").strip(),
+        }
+        if normalized["question"] or normalized["answer"]:
+            out.append(normalized)
+        if len(out) >= 12:
+            break
+    return out
+
+
 def _format_sec_qna_markdown(questions: List[str], answers_payload: Dict[str, Any]) -> str:
-    answer_rows = answers_payload.get("answers", [])
-    rows: List[Dict[str, Any]] = answer_rows if isinstance(answer_rows, list) else []
+    rows = _normalize_sec_answer_rows(answers_payload)
     lines: List[str] = [
         "## SEC Pre-Score Q&A",
     ]
@@ -685,6 +709,7 @@ def build_sec_question_answer_text(
         "ticker": ticker_u,
         "text": "",
         "questions": [],
+        "answers": [],
         "errors": errors,
     }
 
@@ -769,6 +794,7 @@ def build_sec_question_answer_text(
             short_answer=False,
         )
         answers_obj = _parse_json_object_from_text(raw_answers)
+        answer_rows = _normalize_sec_answer_rows(answers_obj)
         qna_markdown = _format_sec_qna_markdown(questions, answers_obj)
         if not qna_markdown:
             errors.append("Failed to generate SEC Q&A markdown.")
@@ -776,6 +802,7 @@ def build_sec_question_answer_text(
 
         out["status"] = "success"
         out["questions"] = questions
+        out["answers"] = answer_rows
         out["text"] = qna_markdown
         return out
     except Exception as exc:
@@ -791,7 +818,7 @@ def build_sec_short_analysis_text(
     financial_dict: Dict[str, Any],
 ) -> Dict[str, object]:
     """
-    Build SEC-short analysis text from in-memory dicts.
+    Build SEC summary text from in-memory dicts.
 
     Returns:
       {
@@ -829,7 +856,7 @@ def build_sec_short_analysis_text(
             out["text"] = text
         return out
     except Exception as exc:
-        errors.append(f"Unhandled SEC short builder error: {exc}")
+        errors.append(f"Unhandled SEC summary builder error: {exc}")
         errors.append(traceback.format_exc(limit=3))
         return out
 
@@ -884,7 +911,7 @@ def _run_sec_analysis(
             return result
 
         header = (
-            f"# {ticker_u} - {'SEC Short' if short_mode else 'SEC Full'} Analysis\n\n"
+            f"# {ticker_u} - {'SEC Summary' if short_mode else 'SEC Full'} Analysis\n\n"
             "This report is based strictly on official filing text + info_dict['info'] + financial_dict['All Reports'].\n\n"
             "\n\n"
         )

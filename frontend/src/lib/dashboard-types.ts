@@ -90,6 +90,21 @@ export type MarketReviewPayload = {
   error?: string;
 };
 
+export type SecQnaPayload = {
+  status?: "success" | "unavailable" | "failed" | "error" | string;
+  ticker?: string;
+  text?: string;
+  questions?: string[];
+  answers?: Array<{
+    question?: string;
+    answer?: string;
+    evidence?: string;
+    filing_refs?: string[];
+    confidence?: string;
+  }>;
+  errors?: string[];
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
@@ -129,6 +144,12 @@ export type DashboardPayload = {
     executive_summary_markdown: string;
     bull_case_reasons?: string[];
     bear_case_reasons?: string[];
+    main_thesis_questions?: string[];
+    watchlist_kpis?: Array<{
+      name?: string;
+      why_it_matters?: string;
+      direction_to_watch?: string;
+    }>;
     key_insights: string[];
     bull_insights: string[];
     red_flag_insights: string[];
@@ -154,6 +175,17 @@ export type DashboardPayload = {
         company?: string;
         document_type?: string;
         reasons?: string[];
+      };
+      main_thesis?: {
+        company?: string;
+        document_type?: string;
+        valuation_revolves_around?: string;
+        main_questions?: string[];
+        kpis?: Array<{
+          name?: string;
+          why_it_matters?: string;
+          direction_to_watch?: string;
+        }>;
       };
     };
     structural_shift?: {
@@ -289,6 +321,7 @@ export type DashboardPayload = {
   };
   trading_agents?: TradingAgentsPayload;
   market_review?: MarketReviewPayload;
+  sec_qna?: SecQnaPayload;
   filings?: {
     annual?: {
       available?: boolean;

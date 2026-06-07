@@ -1419,21 +1419,30 @@ def _run_ticker_valuation_impl(
         }
         notes.append(f"TradingAgents research lens failed to start: {trading_agents_start_err}")
 
+    sec_qna_payload: Dict[str, Any] = {
+        "status": "unavailable",
+        "ticker": ticker,
+        "text": "",
+        "questions": [],
+        "answers": [],
+        "errors": [],
+    }
+
     # SEC/MAYA pre-score Q&A: run only when filing text exists.
     if _has_filing_text(files_dict):
         try:
             from .service import build_sec_question_answer_text
 
             with _obs.llm_context(stage="sec.qa"):
-                sec_qna_out = build_sec_question_answer_text(
+                sec_qna_payload = build_sec_question_answer_text(
                     ticker=ticker,
                     analysis_text=regular_text,
                     files_dict=files_dict,
                     financial_dict=financial_dict,
                 )
-            sec_qna_errors = [str(e) for e in sec_qna_out.get("errors", [])]
-            sec_qna_text = str(sec_qna_out.get("text", "") or "").strip()
-            if sec_qna_out.get("status") == "success" and sec_qna_text:
+            sec_qna_errors = [str(e) for e in sec_qna_payload.get("errors", [])]
+            sec_qna_text = str(sec_qna_payload.get("text", "") or "").strip()
+            if sec_qna_payload.get("status") == "success" and sec_qna_text:
                 legacy.append_text_to_file(
                     text=sec_qna_text,
                     header="SEC Pre-Score Questions & Answers",
@@ -1450,7 +1459,7 @@ def _run_ticker_valuation_impl(
     if not _has_filing_text(files_dict):
         legacy.append_text_to_file(
             text="No filing text available in files_dict (SEC/MAYA). Continuing with regular analysis only.",
-            header="SEC Short Analysis Context (Warning)",
+            header="SEC Summary (Warning)",
         )
         sec_fallback_used = True
         sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
@@ -1476,41 +1485,41 @@ def _run_ticker_valuation_impl(
                 sec_short_text = sec_candidate
                 legacy.append_text_to_file(
                     text=sec_short_text,
-                    header="SEC Short Analysis Context",
+                    header="SEC Summary",
                 )
-                print(f"SEC short analysis generated successfully for {ticker}")
+                print(f"SEC summary generated successfully for {ticker}")
 
                 if sec_errors:
                     legacy.append_text_to_file(
                         text="\n".join(sec_errors[:3]),
-                        header="SEC Short Analysis Notes",
+                        header="SEC Summary Notes",
                     )
                     notes.extend(sec_errors[:3])
             else:
-                warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC short analysis generation failed."
+                warn = "\n".join(sec_errors[:3]) if sec_errors else "SEC summary generation failed."
                 legacy.append_text_to_file(
                     text=warn,
-                    header="SEC Short Analysis Context (Warning)",
+                    header="SEC Summary (Warning)",
                 )
                 sec_fallback_used = True
                 sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
                 notes.append(
-                    "SEC short analysis failed or was empty. "
+                    "SEC summary failed or was empty. "
                     "Valuation fallback applied: using regular analysis text for the combined pass."
                 )
                 if sec_errors:
                     notes.extend(sec_errors[:3])
         except Exception as sec_exc:
-            warn_text = f"SEC short analysis generation failed: {sec_exc}"
+            warn_text = f"SEC summary generation failed: {sec_exc}"
             legacy.append_text_to_file(
                 text=warn_text,
-                header="SEC Short Analysis Context (Warning)",
+                header="SEC Summary (Warning)",
             )
-            print(f"Warning: SEC short analysis generation failed for {ticker}.")
+            print(f"Warning: SEC summary generation failed for {ticker}.")
             sec_fallback_used = True
             sec_fallback_message = "Filing download/parse failed or no filing text available; continuing without filing context."
             notes.append(
-                "SEC short analysis generation raised an exception. "
+                "SEC summary generation raised an exception. "
                 "Valuation fallback applied: using regular analysis text for the combined pass."
             )
             notes.append(warn_text)
@@ -1731,6 +1740,7 @@ def _run_ticker_valuation_impl(
             explain_payload=explain_payload,
             analysis_text=regular_text,
             sec_short_text=sec_short_text,
+            sec_qna=sec_qna_payload,
             qualitative_sections=qualitative_sections,
             technical_analysis=technical_analysis_payload,
             trading_agents=trading_agents_payload,

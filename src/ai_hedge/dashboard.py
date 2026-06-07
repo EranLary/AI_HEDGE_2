@@ -55,12 +55,14 @@ INSTRUCTION_BULL_CASE = """
 Build a strong "bull case" for the company.
 
 Goal:
-Extract and present up to 10-15 clear, high-quality reasons why this company could be a good investment.
+Extract and present the 4-7 most important, high-quality reasons why this company could be a good investment.
 
 Important requirements:
 - Each point must be specific, meaningful, and grounded in the provided materials
 - Focus on business quality, growth potential, market opportunity, competitive positioning, and financial trajectory
 - Include both current strengths and future upside
+- Select only the most important supported points; do not include every possible positive bullet
+- Order reasons by importance, with the strongest and most valuation-relevant point first
 - Prefer insight over obvious statements
 - If the evidence is ordinary, mixed, or thin, say so plainly.
 - Do not force a non-obvious insight when the provided materials do not support one.
@@ -97,7 +99,8 @@ Do NOT:
 - give a final recommendation
 - write long explanations
 - include filler or weak points just to reach the count
-- include 10 reasons if fewer than 10 are genuinely supported
+- include more than 7 reasons
+- include 4 reasons if fewer than 4 are genuinely supported
 
 Return JSON in exactly this structure:
 
@@ -108,7 +111,7 @@ Return JSON in exactly this structure:
     "<reason 1>",
     "<reason 2>",
     "<reason 3>",
-    "... up to 10-15 total"
+    "... 4-7 total, ranked strongest first"
   ]
 }
 """.strip()
@@ -118,11 +121,13 @@ INSTRUCTION_BEAR_CASE = """
 Build a strong "bear case" for the company.
 
 Goal:
-Extract and present up to 10-15 clear, high-quality reasons why this company could be a bad investment.
+Extract and present the 4-7 most important, high-quality reasons why this company could be a bad investment.
 
 Important requirements:
 - Focus on real risks, weaknesses, and red flags
 - Each point must be specific, concrete, and grounded in the provided materials
+- Select only the most important supported risks; do not include every possible negative bullet
+- Order reasons by importance, with the strongest and most valuation-relevant risk first
 - Prefer serious risks over minor concerns
 - Be skeptical and critical, like a short-seller or risk manager
 - If the evidence is ordinary, mixed, or thin, say so plainly.
@@ -162,7 +167,8 @@ Do NOT:
 - give a final recommendation
 - write long explanations
 - include weak or obvious risks just to fill space
-- include 10 risks if fewer than 10 are genuinely supported
+- include more than 7 risks
+- include 4 risks if fewer than 4 are genuinely supported
 
 Return JSON in exactly this structure:
 
@@ -173,7 +179,52 @@ Return JSON in exactly this structure:
     "<reason 1>",
     "<reason 2>",
     "<reason 3>",
-    "... up to 10-15 total"
+    "... 4-7 total, ranked strongest first"
+  ]
+}
+""".strip()
+
+
+INSTRUCTION_MAIN_THESIS_KPIS = """
+Build the stock's "main thesis and KPI watchlist" for the dashboard.
+
+Goal:
+Extract the 1-3 most important questions an investor must answer about this stock, and the 3-7 most important KPIs to monitor to understand where the company is going.
+
+Important requirements:
+- Think like a sharp portfolio manager setting up the real debate on the stock
+- The questions should frame what valuation mainly revolves around, not generic business questions
+- Start each question with "Can", "Will", "Is", "Does", "How", or "What" when natural
+- Each question must be answerable by future evidence, numbers, execution, or market behavior
+- Prioritize questions that would most change the intrinsic value, multiple, or margin of safety
+- Order questions by importance, with the most valuation-critical question first
+- KPIs must be concrete signals to watch, not vague ideas
+- KPIs may be financial, operating, customer, margin, cash-flow, balance-sheet, market-share, pricing, retention, regulatory, or execution metrics
+- For each KPI, explain why it matters and what direction or threshold would be good or bad when the materials support it
+- Order KPIs by importance, with the most thesis-critical KPI first
+- Use only the provided materials; do not invent company-specific metrics that are not supported
+- If the evidence is thin, prefer broad but still concrete KPIs that can be tracked from future reports
+- Keep every field concise, readable, and investor-grade
+- Distinguish evidence from inference when needed
+- Do not give a target price, final recommendation, or portfolio action
+
+Return JSON in exactly this structure:
+
+{
+  "company": "<ticker or company name if clearly known>",
+  "document_type": "main_thesis_kpis",
+  "valuation_revolves_around": "<one concise sentence beginning with 'The questions surrounding valuation revolve around...'>",
+  "main_questions": [
+    "<question 1>",
+    "<question 2>",
+    "<question 3>"
+  ],
+  "kpis": [
+    {
+      "name": "<short KPI name>",
+      "why_it_matters": "<why this KPI is thesis-relevant>",
+      "direction_to_watch": "<what improving or worsening evidence would look like>"
+    }
   ]
 }
 """.strip()
@@ -249,14 +300,40 @@ def _parse_json_blob(text: str) -> Dict[str, Any]:
     return {}
 
 
-def _as_str_list(value: Any, max_items: int = 12) -> List[str]:
+def _as_str_list(value: Any, max_items: Optional[int] = 12) -> List[str]:
     if not isinstance(value, list):
         return []
     out: List[str] = []
-    for item in value[:max_items]:
+    items = value if max_items is None else value[:max_items]
+    for item in items:
         txt = str(item or "").strip()
         if txt:
             out.append(txt)
+    return out
+
+
+def _as_kpi_list(value: Any, max_items: Optional[int] = 7) -> List[Dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    out: List[Dict[str, str]] = []
+    items = value if max_items is None else value[:max_items]
+    for item in items:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("metric") or item.get("kpi") or "").strip()
+            why = str(item.get("why_it_matters") or item.get("why") or item.get("importance") or "").strip()
+            direction = str(item.get("direction_to_watch") or item.get("watch") or item.get("trend_to_watch") or "").strip()
+        else:
+            name = str(item or "").strip()
+            why = ""
+            direction = ""
+        if name or why or direction:
+            out.append(
+                {
+                    "name": name,
+                    "why_it_matters": why,
+                    "direction_to_watch": direction,
+                }
+            )
     return out
 
 
@@ -852,15 +929,25 @@ def _fallback_qualitative_sections(
         "document_type": "bear_case",
         "reasons": bear_reasons[:15],
     }
+    main_thesis_doc = {
+        "company": "",
+        "document_type": "main_thesis_kpis",
+        "valuation_revolves_around": "",
+        "main_questions": [],
+        "kpis": [],
+    }
     return {
         "documents": {
             "executive_summary": exec_doc,
             "bull_case": bull_doc,
             "bear_case": bear_doc,
+            "main_thesis": main_thesis_doc,
         },
         "executive_summary_markdown": exec_summary,
         "bull_case_reasons": _as_str_list(bull_doc.get("reasons"), max_items=15),
         "bear_case_reasons": _as_str_list(bear_doc.get("reasons"), max_items=15),
+        "main_thesis_questions": [],
+        "watchlist_kpis": [],
         "key_insights": [],
         "bull_insights": _as_str_list(bull_doc.get("reasons"), max_items=10),
         "red_flags": [],
@@ -986,6 +1073,16 @@ def _has_reasons(doc: Dict[str, Any]) -> bool:
     return bool(_as_str_list(doc.get("reasons"), max_items=1))
 
 
+def _has_main_thesis(doc: Dict[str, Any]) -> bool:
+    if not isinstance(doc, dict):
+        return False
+    return bool(
+        _first_non_empty(doc.get("valuation_revolves_around"))
+        or _as_str_list(doc.get("main_questions"), max_items=1)
+        or _as_kpi_list(doc.get("kpis"), max_items=1)
+    )
+
+
 def generate_dashboard_sections(
     *,
     ticker: str,
@@ -997,7 +1094,7 @@ def generate_dashboard_sections(
 ) -> Dict[str, Any]:
     merged_text = (analysis_text or "").strip()
     if sec_short_text:
-        merged_text = f"{merged_text}\n\n# SEC Short Analysis Context\n{sec_short_text}"
+        merged_text = f"{merged_text}\n\n# SEC Summary Context\n{sec_short_text}"
 
     if not enable_llm_extractions:
         out = _fallback_qualitative_sections(
@@ -1026,6 +1123,7 @@ def generate_dashboard_sections(
     exec_doc: Dict[str, Any] = {}
     bull_doc: Dict[str, Any] = {}
     bear_doc: Dict[str, Any] = {}
+    main_thesis_doc: Dict[str, Any] = {}
     for _ in range(max_attempts):
         try:
             cand_exec = _run_json_extraction_prompt(
@@ -1063,7 +1161,19 @@ def generate_dashboard_sections(
         except Exception:
             pass
 
-        if _has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc):
+        try:
+            cand_main_thesis = _run_json_extraction_prompt(
+                ticker=ticker,
+                financial_dict=financial_dict,
+                text=merged_text,
+                instruction=INSTRUCTION_MAIN_THESIS_KPIS,
+            )
+            if _has_main_thesis(cand_main_thesis):
+                main_thesis_doc = cand_main_thesis
+        except Exception:
+            pass
+
+        if _has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc) and _has_main_thesis(main_thesis_doc):
             break
 
     fallback = _fallback_qualitative_sections(
@@ -1079,16 +1189,22 @@ def generate_dashboard_sections(
         bull_doc = fallback_docs.get("bull_case", {}) if isinstance(fallback_docs.get("bull_case"), dict) else {}
     if not _has_reasons(bear_doc):
         bear_doc = fallback_docs.get("bear_case", {}) if isinstance(fallback_docs.get("bear_case"), dict) else {}
+    if not _has_main_thesis(main_thesis_doc):
+        main_thesis_doc = fallback_docs.get("main_thesis", {}) if isinstance(fallback_docs.get("main_thesis"), dict) else {}
 
-    bull_reasons = _as_str_list(bull_doc.get("reasons"), max_items=15)
-    bear_reasons = _as_str_list(bear_doc.get("reasons"), max_items=15)
+    bull_reasons = _as_str_list(bull_doc.get("reasons"), max_items=None)
+    bear_reasons = _as_str_list(bear_doc.get("reasons"), max_items=None)
+    main_questions = _as_str_list(main_thesis_doc.get("main_questions"), max_items=None)
+    watchlist_kpis = _as_kpi_list(main_thesis_doc.get("kpis"), max_items=None)
+    main_thesis_doc["main_questions"] = main_questions
+    main_thesis_doc["kpis"] = watchlist_kpis
 
     executive_summary = _first_non_empty(exec_doc.get("executive_summary"), exec_doc.get("executive_summary_markdown"))
     if not executive_summary:
         executive_summary = "Executive summary extraction was empty."
 
     source = "llm"
-    if not (_has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc)):
+    if not (_has_exec_summary(exec_doc) and _has_reasons(bull_doc) and _has_reasons(bear_doc) and _has_main_thesis(main_thesis_doc)):
         source = "mixed_fallback"
 
     return {
@@ -1096,10 +1212,13 @@ def generate_dashboard_sections(
             "executive_summary": exec_doc,
             "bull_case": bull_doc,
             "bear_case": bear_doc,
+            "main_thesis": main_thesis_doc,
         },
         "executive_summary_markdown": executive_summary,
         "bull_case_reasons": bull_reasons,
         "bear_case_reasons": bear_reasons,
+        "main_thesis_questions": main_questions,
+        "watchlist_kpis": watchlist_kpis,
         "key_insights": [],
         "bull_insights": bull_reasons[:10],
         "red_flags": [],
@@ -1113,6 +1232,7 @@ def build_dashboard_appendix_text(ticker: str, qualitative: Dict[str, Any]) -> s
     exec_doc = docs.get("executive_summary", {}) if isinstance(docs.get("executive_summary"), dict) else {}
     bull_doc = docs.get("bull_case", {}) if isinstance(docs.get("bull_case"), dict) else {}
     bear_doc = docs.get("bear_case", {}) if isinstance(docs.get("bear_case"), dict) else {}
+    main_thesis_doc = docs.get("main_thesis", {}) if isinstance(docs.get("main_thesis"), dict) else {}
 
     lines: List[str] = [
         f"# Dashboard Extraction Pack ({ticker})",
@@ -1138,6 +1258,27 @@ def build_dashboard_appendix_text(ticker: str, qualitative: Dict[str, Any]) -> s
         bear_reasons = _as_str_list(qualitative.get("bear_case_reasons"), max_items=15)
     for item in bear_reasons:
         lines.append(f"- {item}")
+
+    lines.extend(["", "## Main Thesis Questions"])
+    valuation_revolves = _first_non_empty(main_thesis_doc.get("valuation_revolves_around"))
+    if valuation_revolves:
+        lines.append(valuation_revolves)
+    main_questions = _as_str_list(main_thesis_doc.get("main_questions"), max_items=None)
+    if not main_questions:
+        main_questions = _as_str_list(qualitative.get("main_thesis_questions"), max_items=None)
+    for item in main_questions:
+        lines.append(f"- {item}")
+
+    lines.extend(["", "## KPI Watchlist"])
+    watchlist_kpis = _as_kpi_list(main_thesis_doc.get("kpis"), max_items=None)
+    if not watchlist_kpis:
+        watchlist_kpis = _as_kpi_list(qualitative.get("watchlist_kpis"), max_items=None)
+    for item in watchlist_kpis:
+        name = item.get("name", "").strip()
+        why = item.get("why_it_matters", "").strip()
+        direction = item.get("direction_to_watch", "").strip()
+        detail = " ".join(part for part in [why, direction] if part).strip()
+        lines.append(f"- {name}: {detail}" if name and detail else f"- {name or detail}")
 
     return "\n".join(lines).strip() + "\n"
 
@@ -1499,6 +1640,7 @@ def build_dashboard_payload(
     analysis_text: str,
     sec_short_text: str,
     artifacts: Dict[str, str],
+    sec_qna: Optional[Dict[str, Any]] = None,
     technical_analysis: Optional[Dict[str, Any]] = None,
     trading_agents: Optional[Dict[str, Any]] = None,
     market_review: Optional[Dict[str, Any]] = None,
@@ -1530,6 +1672,14 @@ def build_dashboard_payload(
         deterministic_red_flags=deterministic_red_flags,
         enable_llm_extractions=enable_llm_extractions,
     )
+    sec_qna_payload = sec_qna if isinstance(sec_qna, dict) else {
+        "status": "unavailable",
+        "ticker": ticker,
+        "text": "",
+        "questions": [],
+        "answers": [],
+        "errors": [],
+    }
 
     method_details = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
@@ -1698,6 +1848,8 @@ def build_dashboard_payload(
             "executive_summary_markdown": qualitative.get("executive_summary_markdown", ""),
             "bull_case_reasons": qualitative.get("bull_case_reasons", []),
             "bear_case_reasons": qualitative.get("bear_case_reasons", []),
+            "main_thesis_questions": qualitative.get("main_thesis_questions", []),
+            "watchlist_kpis": qualitative.get("watchlist_kpis", []),
             "key_insights": qualitative.get("key_insights", []),
             "bull_insights": qualitative.get("bull_insights", []),
             "red_flag_insights": [],
@@ -1747,6 +1899,7 @@ def build_dashboard_payload(
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},
         "market_review": _normalize_market_review_payload(market_review, analysis_text=analysis_text),
+        "sec_qna": sec_qna_payload,
         "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,
     }

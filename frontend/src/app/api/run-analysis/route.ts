@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     attributed: false,
     runner_pid: null,
     worker_pid: null,
-    llm_total_estimated: 30,
+    llm_total_estimated: 45,
     llm_completed: 0,
     llm_progress_pct: 0,
     llm_calls_note: "Estimated total calls for one full valuation + dashboard extraction run.",

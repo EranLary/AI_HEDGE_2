@@ -76,12 +76,12 @@ def _job_id_from_status(existing_status: Dict[str, Any], output_dir: str) -> str
 
 
 def _estimate_total_llm_calls() -> int:
-    raw = str(os.getenv("SITE_RUN_LLM_TOTAL_ESTIMATE", "30") or "30").strip()
+    raw = str(os.getenv("SITE_RUN_LLM_TOTAL_ESTIMATE", "45") or "45").strip()
     try:
         n = int(raw)
         return max(1, n)
     except Exception:
-        return 30
+        return 45
 
 
 def _looks_like_material_success_result(result: Any) -> bool:

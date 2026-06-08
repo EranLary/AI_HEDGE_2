@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, FileText, ShieldCheck } from "lucide-react";
+import { FileText, ShieldCheck } from "lucide-react";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import { SmallCopyButton } from "@/components/hedge-dashboard";
@@ -107,14 +107,7 @@ export function SecQaClient({
                     </div>
                     <h2 className="min-w-0 text-base font-semibold leading-snug text-[color:var(--text-primary)]">{question}</h2>
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Copy SEC Q&A ${idx + 1}`}
-                    onClick={() => navigator.clipboard?.writeText(answerCopyText(row, idx + 1))}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-[color:var(--text-secondary)] transition hover:border-white/30 hover:text-[color:var(--text-primary)]"
-                  >
-                    <Copy size={13} />
-                  </button>
+                  <SmallCopyButton text={answerCopyText(row, idx + 1)} label={`Copy SEC Q&A ${idx + 1}`} iconOnly />
                 </div>
 
                 <div className="space-y-3 pl-0 sm:pl-11">

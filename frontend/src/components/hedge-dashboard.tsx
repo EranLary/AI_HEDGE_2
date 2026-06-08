@@ -40,6 +40,7 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   pe_multiple: "P/E Multiple",
   revenue_3y: "Revenue (3Y)",
   ev_sales_multiple: "EV/Sales Multiple",
+  representative_ev_current: "Representative EV",
   target_market_cap: "Target Market Cap",
   bull_probability: "Bull Probability",
   base_probability: "Base Probability",
@@ -70,6 +71,7 @@ const MONEY_METRIC_KEYS = new Set([
   "bear_net_income",
   "net_income_3y",
   "revenue_3y",
+  "representative_ev_current",
   "fcf_next_year",
 ]);
 
@@ -96,6 +98,7 @@ const METHOD_METRIC_ORDER: Record<string, string[]> = {
     "bull_probability",
     "base_probability",
     "bear_probability",
+    "representative_ev_current",
     "fcf_next_year",
     "growth_rate",
     "wacc",
@@ -118,6 +121,7 @@ const METHOD_METRIC_ORDER: Record<string, string[]> = {
     "bull_probability",
     "base_probability",
     "bear_probability",
+    "representative_ev_current",
     "ev_sales_multiple",
     "revenue_3y",
   ],
@@ -436,8 +440,8 @@ export function SmallCopyButton({
       disabled={!hasText || busy}
       title={label}
       aria-label={label}
-      className={`inline-flex items-center rounded-full border border-white/15 bg-white/5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${
-        iconOnly ? "h-7 w-7 justify-center p-0" : "gap-1 px-2 py-1"
+      className={`inline-flex items-center border border-white/15 bg-white/5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${
+        iconOnly ? "h-8 w-8 justify-center rounded-lg p-0" : "gap-1 rounded-full px-2 py-1"
       } ${className}`}
     >
       {copied ? <Check size={10} /> : <Copy size={10} />}

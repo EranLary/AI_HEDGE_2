@@ -791,6 +791,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
+            "representative_ev_current": avg_num("representative_ev_current"),
             "fcf_next_year": avg_mid("fcf_next_year"),
             "growth_rate": avg_mid("g"),
             "wacc": avg_mid("WACC"),
@@ -816,6 +817,7 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
             "bull_probability": avg_scenario_value("bull", 0),
             "base_probability": avg_scenario_value("base", 0),
             "bear_probability": avg_scenario_value("bear", 0),
+            "representative_ev_current": avg_num("representative_ev_current"),
             "revenue_3y": coalesce(avg_num("revenue_3y"), avg_weighted_scenario_value(1)),
             "ev_sales_multiple": avg_mid("ev_sales_multiple"),
         }

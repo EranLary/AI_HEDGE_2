@@ -440,11 +440,11 @@ export function SmallCopyButton({
       disabled={!hasText || busy}
       title={label}
       aria-label={label}
-      className={`inline-flex items-center border border-white/15 bg-white/5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${
-        iconOnly ? "h-8 w-8 justify-center rounded-lg p-0" : "gap-1 rounded-full px-2 py-1"
+      className={`inline-flex shrink-0 items-center border border-white/15 bg-white/5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/35 hover:bg-white/10 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-zinc-500 ${
+        iconOnly ? "h-12 w-12 justify-center rounded-xl p-0" : "min-h-9 gap-1.5 rounded-xl px-3 py-2"
       } ${className}`}
     >
-      {copied ? <Check size={10} /> : <Copy size={10} />}
+      {copied ? <Check size={iconOnly ? 16 : 12} /> : <Copy size={iconOnly ? 16 : 12} />}
       {iconOnly ? <span className="sr-only">{copied ? "Copied" : "Copy"}</span> : <span>{copied ? "Copied" : "Copy"}</span>}
     </button>
   );

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ai_hedge.dashboard import build_wall_st_payload
+from ai_hedge.runner import _wall_st_synthesis_to_markdown
 
 
 def _table(columns, values, index=None):
@@ -84,3 +85,21 @@ def test_build_wall_st_payload_handles_partial_hold_heavy_tables():
     assert payload["metrics"]["recent_actions"] == []
     assert payload["metrics"]["earnings_rows"] == []
     assert payload["metrics"]["revenue_rows"][0]["numberOfAnalysts"] == 1.0
+
+
+def test_wall_st_synthesis_markdown_is_post_valuation_section():
+    markdown = _wall_st_synthesis_to_markdown(
+        {
+            "synthesis": {
+                "status": "success",
+                "bullets": [
+                    "Consensus is hold-heavy despite a positive target spread.",
+                    "Revenue estimates imply only modest growth.",
+                ],
+            }
+        }
+    )
+
+    assert markdown.startswith("## Wall ST Analyst Read")
+    assert "not part of the valuation prompt context" in markdown
+    assert "- Consensus is hold-heavy" in markdown

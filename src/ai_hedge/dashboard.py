@@ -1812,16 +1812,31 @@ def generate_wall_st_synthesis(*, ticker: str, wall_st_payload: Dict[str, Any]) 
         "revenue_rows": ((wall_st_payload.get("metrics") or {}).get("revenue_rows") or []),
     }
     prompt = f"""
-You are building a dashboard-only Wall Street analyst read for {ticker}.
+You are writing a dashboard-only Wall Street analyst read for {ticker}.
 
 Use only this analyst payload. It is intentionally in original reported units, not normalized for valuation.
 Do not produce a target price recommendation, portfolio recommendation, or valuation output.
+
+Write for a busy investor scanning the dashboard:
+- concise, plain English, and user friendly
+- useful at a fast glance
+- specific to the data, not generic
+- no jargon unless the data requires it
+- no long paragraphs
+- each bullet should be one sentence, ideally under 24 words
+
+Focus on:
+- what the Street consensus is saying
+- whether conviction is strong, split, or hold-heavy
+- whether analyst actions/revisions look improving or deteriorating
+- what revenue and EPS estimates imply
+- any contradiction, such as bullish ratings with weak growth or target cuts
 
 Return JSON only:
 {{
   "status": "success",
   "bullets": [
-    "4 to 7 concise bullets on consensus posture, conviction/disagreement, estimate direction, recent revision behavior, and contradictions"
+    "4 to 6 concise, user-friendly bullets"
   ]
 }}
 

@@ -500,6 +500,23 @@ def _upsert_markdown_block(text: str, marker: str, block: str) -> str:
     return f"{block_txt}\n"
 
 
+def _wall_st_synthesis_to_markdown(wall_st_payload: Dict[str, Any]) -> str:
+    synthesis = wall_st_payload.get("synthesis") if isinstance(wall_st_payload, dict) else {}
+    synthesis = synthesis if isinstance(synthesis, dict) else {}
+    bullets = synthesis.get("bullets") if isinstance(synthesis.get("bullets"), list) else []
+    clean_bullets = [str(item or "").strip() for item in bullets if str(item or "").strip()]
+    if not clean_bullets:
+        return ""
+    lines = [
+        "## Wall ST Analyst Read",
+        "",
+        "This section summarizes Wall Street analyst data after valuation is complete. It is not part of the valuation prompt context.",
+        "",
+    ]
+    lines.extend(f"- {item}" for item in clean_bullets[:6])
+    return "\n".join(lines).strip()
+
+
 def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
     if not isinstance(final_dict, dict):
         return None
@@ -1727,6 +1744,13 @@ def _run_ticker_valuation_impl(
             base_analysis_text = regular_text
 
         merged_analysis_text = str(base_analysis_text or "").strip()
+        wall_st_markdown = _wall_st_synthesis_to_markdown(wall_st_payload)
+        if str(wall_st_markdown or "").strip():
+            merged_analysis_text = _upsert_markdown_block(
+                merged_analysis_text,
+                "## Wall ST Analyst Read",
+                wall_st_markdown,
+            )
         if str(technical_analysis_markdown or "").strip():
             merged_analysis_text = _upsert_markdown_block(
                 merged_analysis_text,

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, CandlestickChart, Download, FileQuestion, FileText, LineChart, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, CandlestickChart, Download, FileQuestion, FileText, Landmark, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -15,10 +15,10 @@ type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: n
 const SECTIONS: SectionItem[] = [
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
-  { slug: "wall-st", label: "Wall ST", icon: LineChart },
   { slug: "market", label: "Market", icon: Store },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "sec-qa", label: "SEC Q&A", icon: FileQuestion },
+  { slug: "wall-st", label: "Wall ST", icon: Landmark },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
   { slug: "download", label: "Download", icon: Download },

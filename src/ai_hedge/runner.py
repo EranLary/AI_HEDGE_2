@@ -15,7 +15,9 @@ from .dashboard import (
     _extract_analysis_section,
     build_dashboard_appendix_text,
     build_dashboard_payload,
+    build_wall_st_payload,
     deterministic_red_flags,
+    generate_wall_st_synthesis,
     generate_dashboard_sections,
     write_dashboard_payload,
 )
@@ -1619,6 +1621,24 @@ def _run_ticker_valuation_impl(
         )
     _append_progress(progress_file, "Finished Valuations")
 
+    wall_st_payload: Dict[str, Any] = {}
+    try:
+        wall_st_payload = build_wall_st_payload(ticker=ticker, info_dict=info_dict)
+        with _obs.llm_context(stage="wall_st"):
+            wall_st_synthesis = generate_wall_st_synthesis(ticker=ticker, wall_st_payload=wall_st_payload)
+        wall_st_payload = build_wall_st_payload(
+            ticker=ticker,
+            info_dict=info_dict,
+            synthesis=wall_st_synthesis,
+        )
+    except Exception as wall_st_err:
+        wall_st_payload = build_wall_st_payload(
+            ticker=ticker,
+            info_dict=info_dict,
+            errors=[str(wall_st_err)],
+        )
+        notes.append(f"Wall ST dashboard payload failed: {wall_st_err}")
+
     revenue_dict = final_dict.get("Revenue", {}) if isinstance(final_dict, dict) else {}
     earnings_dict = final_dict.get("Net Income", {}) if isinstance(final_dict, dict) else {}
     revenue_overall = revenue_dict.get("Overall", []) if isinstance(revenue_dict, dict) else []
@@ -1745,6 +1765,7 @@ def _run_ticker_valuation_impl(
             technical_analysis=technical_analysis_payload,
             trading_agents=trading_agents_payload,
             market_review=market_review_payload,
+            wall_st=wall_st_payload,
             filings=filing_sources,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,

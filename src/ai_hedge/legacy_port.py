@@ -554,11 +554,13 @@ def get_info_data(ticker: str) -> dict:
 
     # --- Analyst data ---
     try:
-        info_dict["price_targets"] = ticker_obj.analyst_price_targets
+        raw_price_targets = dict(ticker_obj.analyst_price_targets or {})
+        info_dict["price_targets"] = dict(raw_price_targets)
         for k, v in info_dict["price_targets"].items():
             info_dict["price_targets"][k] = v / price_rate
 
     except:
+        raw_price_targets = {}
         info_dict["price_targets"] = []
 
     try:
@@ -587,6 +589,32 @@ def get_info_data(ticker: str) -> dict:
         )
     except:
         info_dict["num_of_analysts"] = 0
+
+    try:
+        info_dict["wall_st_raw"] = {
+            "targets": raw_price_targets,
+            "recommendations": deepcopy(info_dict.get("recommendations")),
+            "down_upgrades": deepcopy(info_dict.get("down_upgrades")),
+            "earnings_estimate": deepcopy(info_dict.get("earnings_estimate")),
+            "revenue_estimate": deepcopy(info_dict.get("revenue_estimate")),
+            "num_of_analysts": info_dict.get("num_of_analysts", 0),
+            "currency": {
+                "original_price_currency": price_curr_name,
+                "original_financial_currency": fin_curr_name,
+                "price_currency_to_USD": price_rate,
+                "financial_currency_to_USD": fin_rate,
+            },
+        }
+    except:
+        info_dict["wall_st_raw"] = {
+            "targets": raw_price_targets,
+            "recommendations": info_dict.get("recommendations"),
+            "down_upgrades": info_dict.get("down_upgrades"),
+            "earnings_estimate": info_dict.get("earnings_estimate"),
+            "revenue_estimate": info_dict.get("revenue_estimate"),
+            "num_of_analysts": info_dict.get("num_of_analysts", 0),
+            "currency": {},
+        }
 
     # --- News ---
     try:

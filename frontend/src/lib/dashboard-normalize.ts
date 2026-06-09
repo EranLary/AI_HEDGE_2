@@ -256,6 +256,23 @@ export function normalizePayload(
       ...(payload.market_review || {}),
       competitors: Array.isArray(payload.market_review?.competitors) ? payload.market_review.competitors : base.market_review?.competitors || [],
     },
+    wall_st: {
+      ...(base.wall_st || {}),
+      ...(payload.wall_st || {}),
+      raw: {
+        ...(base.wall_st?.raw || {}),
+        ...(payload.wall_st?.raw || {}),
+      },
+      metrics: {
+        ...(base.wall_st?.metrics || {}),
+        ...(payload.wall_st?.metrics || {}),
+      },
+      synthesis: {
+        ...(base.wall_st?.synthesis || {}),
+        ...(payload.wall_st?.synthesis || {}),
+      },
+      errors: Array.isArray(payload.wall_st?.errors) ? payload.wall_st.errors : base.wall_st?.errors || [],
+    },
     red_flag_shield: payload.red_flag_shield || [],
     dream_team: payload.dream_team || [],
     report_id: reportMeta?.reportId || payload.report_id,

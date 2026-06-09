@@ -1631,6 +1631,220 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
     }
 
 
+def _is_table_payload(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("columns"), list)
+        and isinstance(value.get("values"), list)
+    )
+
+
+def _table_payload_rows(value: Any, *, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
+    if not _is_table_payload(value):
+        return []
+    columns = [str(c) for c in value.get("columns", [])]
+    indexes = [str(i) for i in value.get("index", [])] if isinstance(value.get("index"), list) else []
+    values = value.get("values", [])
+    rows: List[Dict[str, Any]] = []
+    limit_values = values if max_rows is None else values[:max_rows]
+    for idx, raw_row in enumerate(limit_values):
+        if not isinstance(raw_row, list):
+            continue
+        row = {columns[col_idx]: raw_row[col_idx] if col_idx < len(raw_row) else None for col_idx in range(len(columns))}
+        row["_index"] = indexes[idx] if idx < len(indexes) else str(idx)
+        rows.append(_json_safe(row))
+    return rows
+
+
+def _latest_recommendation_mix(recommendations: Any) -> Dict[str, Any]:
+    rows = _table_payload_rows(recommendations)
+    if not rows:
+        return {
+            "latest": {},
+            "previous": {},
+            "total": 0,
+            "stance_score": None,
+            "buy_side_pct": None,
+            "sell_side_pct": None,
+            "trend": "unavailable",
+        }
+
+    def _score(row: Mapping[str, Any]) -> Tuple[float, int, float, float]:
+        strong_buy = _safe_float(row.get("strongBuy")) or 0.0
+        buy = _safe_float(row.get("buy")) or 0.0
+        hold = _safe_float(row.get("hold")) or 0.0
+        sell = _safe_float(row.get("sell")) or 0.0
+        strong_sell = _safe_float(row.get("strongSell")) or 0.0
+        total_f = strong_buy + buy + hold + sell + strong_sell
+        if total_f <= 0:
+            return 0.0, 0, 0.0, 0.0
+        weighted = ((2 * strong_buy) + buy - sell - (2 * strong_sell)) / total_f
+        buy_side = ((strong_buy + buy) / total_f) * 100.0
+        sell_side = ((sell + strong_sell) / total_f) * 100.0
+        return weighted, int(total_f), buy_side, sell_side
+
+    latest = rows[0]
+    latest_score, latest_total, buy_side, sell_side = _score(latest)
+    previous = rows[1] if len(rows) > 1 else {}
+    trend = "flat"
+    if previous:
+        previous_score, _, _, _ = _score(previous)
+        delta = latest_score - previous_score
+        if delta > 0.05:
+            trend = "improving"
+        elif delta < -0.05:
+            trend = "deteriorating"
+    if latest_total and buy_side >= 60:
+        posture = "buy-skewed"
+    elif latest_total and sell_side >= 20:
+        posture = "sell-skewed"
+    elif latest_total and ((_safe_float(latest.get("hold")) or 0) / latest_total) >= 0.5:
+        posture = "hold-heavy"
+    else:
+        posture = "balanced"
+    return {
+        "latest": latest,
+        "previous": previous,
+        "total": latest_total,
+        "stance_score": latest_score if latest_total else None,
+        "buy_side_pct": buy_side if latest_total else None,
+        "sell_side_pct": sell_side if latest_total else None,
+        "trend": trend,
+        "posture": posture,
+    }
+
+
+def _target_metrics(targets: Any) -> Dict[str, Any]:
+    raw = targets if isinstance(targets, dict) else {}
+    current = _safe_float(raw.get("current"))
+    mean = _safe_float(raw.get("mean"))
+    median = _safe_float(raw.get("median"))
+    low = _safe_float(raw.get("low"))
+    high = _safe_float(raw.get("high"))
+    upside_pct = ((mean - current) / current) * 100.0 if mean is not None and current not in (None, 0) else None
+    range_spread_pct = ((high - low) / current) * 100.0 if high is not None and low is not None and current not in (None, 0) else None
+    if upside_pct is None or abs(upside_pct) <= 1e-9:
+        tone = "neutral"
+    else:
+        tone = "up" if upside_pct > 0 else "down"
+    return {
+        "current": current,
+        "mean": mean,
+        "median": median,
+        "low": low,
+        "high": high,
+        "upside_pct": upside_pct,
+        "range_spread_pct": range_spread_pct,
+        "tone": tone,
+    }
+
+
+def build_wall_st_payload(
+    *,
+    ticker: str,
+    info_dict: Dict[str, Any],
+    synthesis: Optional[Dict[str, Any]] = None,
+    errors: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    raw = info_dict.get("wall_st_raw") if isinstance(info_dict, dict) else {}
+    raw = raw if isinstance(raw, dict) else {}
+    info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
+    info = info if isinstance(info, dict) else {}
+    currency = raw.get("currency") if isinstance(raw.get("currency"), dict) else {}
+    currency_context = {
+        "original_price_currency": _first_non_empty(currency.get("original_price_currency"), info.get("original_price_currency"), info.get("currency"), "USD"),
+        "original_financial_currency": _first_non_empty(currency.get("original_financial_currency"), info.get("original_financial_currency"), info.get("financialCurrency"), "USD"),
+        "price_currency_to_USD": _safe_float(currency.get("price_currency_to_USD") or info.get("price_currency_to_USD")) or 1.0,
+        "financial_currency_to_USD": _safe_float(currency.get("financial_currency_to_USD") or info.get("financial_currency_to_USD")) or 1.0,
+    }
+    targets = raw.get("targets") if isinstance(raw.get("targets"), dict) else {}
+    recommendations = raw.get("recommendations", info_dict.get("recommendations") if isinstance(info_dict, dict) else None)
+    down_upgrades = raw.get("down_upgrades", info_dict.get("down_upgrades") if isinstance(info_dict, dict) else None)
+    earnings_estimate = raw.get("earnings_estimate", info_dict.get("earnings_estimate") if isinstance(info_dict, dict) else None)
+    revenue_estimate = raw.get("revenue_estimate", info_dict.get("revenue_estimate") if isinstance(info_dict, dict) else None)
+    rec_metrics = _latest_recommendation_mix(recommendations)
+    errors_out = [str(e) for e in (errors or []) if str(e or "").strip()]
+    table_count = sum(
+        1
+        for payload in (recommendations, down_upgrades, earnings_estimate, revenue_estimate)
+        if _table_payload_rows(payload, max_rows=1)
+    )
+    status = "success" if targets or table_count else "unavailable"
+    return {
+        "status": status,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "raw": {
+            "targets": _json_safe(targets),
+            "recommendations": _json_safe(recommendations),
+            "down_upgrades": _json_safe(down_upgrades),
+            "earnings_estimate": _json_safe(earnings_estimate),
+            "revenue_estimate": _json_safe(revenue_estimate),
+            "num_of_analysts": int(_safe_float(raw.get("num_of_analysts", info_dict.get("num_of_analysts", 0) if isinstance(info_dict, dict) else 0)) or 0),
+            "currency": currency_context,
+        },
+        "metrics": {
+            "targets": _target_metrics(targets),
+            "recommendations": rec_metrics,
+            "recent_actions": _table_payload_rows(down_upgrades, max_rows=80),
+            "earnings_rows": _table_payload_rows(earnings_estimate),
+            "revenue_rows": _table_payload_rows(revenue_estimate),
+        },
+        "synthesis": synthesis if isinstance(synthesis, dict) else {"status": "unavailable", "bullets": []},
+        "errors": errors_out,
+    }
+
+
+def generate_wall_st_synthesis(*, ticker: str, wall_st_payload: Dict[str, Any]) -> Dict[str, Any]:
+    from . import legacy_port as legacy
+
+    if not isinstance(wall_st_payload, dict) or wall_st_payload.get("status") != "success":
+        return {"status": "unavailable", "bullets": []}
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        return {"status": "unavailable", "bullets": []}
+    compact_payload = {
+        "ticker": ticker,
+        "currency": ((wall_st_payload.get("raw") or {}).get("currency") or {}),
+        "targets": ((wall_st_payload.get("raw") or {}).get("targets") or {}),
+        "recommendation_metrics": ((wall_st_payload.get("metrics") or {}).get("recommendations") or {}),
+        "recent_actions": ((wall_st_payload.get("metrics") or {}).get("recent_actions") or [])[:20],
+        "earnings_rows": ((wall_st_payload.get("metrics") or {}).get("earnings_rows") or []),
+        "revenue_rows": ((wall_st_payload.get("metrics") or {}).get("revenue_rows") or []),
+    }
+    prompt = f"""
+You are building a dashboard-only Wall Street analyst read for {ticker}.
+
+Use only this analyst payload. It is intentionally in original reported units, not normalized for valuation.
+Do not produce a target price recommendation, portfolio recommendation, or valuation output.
+
+Return JSON only:
+{{
+  "status": "success",
+  "bullets": [
+    "4 to 7 concise bullets on consensus posture, conviction/disagreement, estimate direction, recent revision behavior, and contradictions"
+  ]
+}}
+
+Analyst payload:
+{json.dumps(_json_safe(compact_payload), ensure_ascii=False)}
+""".strip()
+    try:
+        raw = legacy.deepseek_simple_text(
+            api_key=api_key,
+            prompt=prompt,
+            model="deepseek-chat",
+            temperature=0.2,
+            short_answer=False,
+        )
+        parsed = _parse_json_blob(raw)
+        bullets = _as_str_list(parsed.get("bullets"), max_items=7)
+        if bullets:
+            return {"status": "success", "bullets": bullets}
+    except Exception as err:
+        return {"status": "error", "bullets": [], "error": str(err)[:300]}
+    return {"status": "unavailable", "bullets": []}
+
+
 def build_dashboard_payload(
     *,
     ticker: str,
@@ -1646,6 +1860,7 @@ def build_dashboard_payload(
     technical_analysis: Optional[Dict[str, Any]] = None,
     trading_agents: Optional[Dict[str, Any]] = None,
     market_review: Optional[Dict[str, Any]] = None,
+    wall_st: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     filings: Optional[Dict[str, Any]] = None,
@@ -1901,6 +2116,7 @@ def build_dashboard_payload(
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},
         "market_review": _normalize_market_review_payload(market_review, analysis_text=analysis_text),
+        "wall_st": wall_st if isinstance(wall_st, dict) else build_wall_st_payload(ticker=ticker, info_dict=info_dict),
         "sec_qna": sec_qna_payload,
         "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,

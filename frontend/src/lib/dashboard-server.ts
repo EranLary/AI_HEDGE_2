@@ -59,6 +59,15 @@ async function loadReportsList(): Promise<ReportListItem[]> {
         generated_at: new Date(r.generated_at).toISOString(),
         report_file: r.source_run_id || r.id,
         updated_at: new Date(r.generated_at).toISOString(),
+        score: typeof r.score === "number" && Number.isFinite(r.score) ? Number(r.score) : null,
+        mean_target_price:
+          typeof r.mean_target_price === "number" && Number.isFinite(r.mean_target_price)
+            ? Number(r.mean_target_price)
+            : null,
+        allocation_pct:
+          typeof r.allocation_pct === "number" && Number.isFinite(r.allocation_pct)
+            ? Number(r.allocation_pct)
+            : null,
       };
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
@@ -87,6 +96,24 @@ async function loadReportsList(): Promise<ReportListItem[]> {
       generated_at: generatedAt,
       report_file: report.path,
       updated_at: new Date(report.mtimeMs).toISOString(),
+      score:
+        typeof (payload?.score_card || payload?.decision_card)?.adjusted_score === "number" &&
+        Number.isFinite((payload?.score_card || payload?.decision_card)?.adjusted_score)
+          ? Number((payload?.score_card || payload?.decision_card)?.adjusted_score)
+          : null,
+      mean_target_price:
+        typeof payload?.valuation_hub?.consensus?.mean_target_price === "number" &&
+        Number.isFinite(payload.valuation_hub.consensus.mean_target_price)
+          ? Number(payload.valuation_hub.consensus.mean_target_price)
+          : null,
+      allocation_pct:
+        typeof (payload?.score_card || payload?.decision_card)?.position_size_pct_of_notional === "number" &&
+        Number.isFinite((payload?.score_card || payload?.decision_card)?.position_size_pct_of_notional)
+          ? Number((payload?.score_card || payload?.decision_card)?.position_size_pct_of_notional)
+          : typeof (payload?.score_card || payload?.decision_card)?.mean_investment_amount === "number" &&
+              Number.isFinite((payload?.score_card || payload?.decision_card)?.mean_investment_amount)
+            ? Number((payload?.score_card || payload?.decision_card)?.mean_investment_amount) / 100000.0
+            : null,
     };
     const runId = siteRunIdFromPathLike(report.path);
     const key = runId ? `run:${report.ticker}:${runId}` : `file:${report.path}`;

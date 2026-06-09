@@ -114,7 +114,7 @@ export function SecQaClient({
                   <p className="text-sm leading-relaxed text-[color:var(--text-secondary)]">{answer}</p>
 
                   {evidence ? (
-                    <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-3">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                       <p className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
                         <ShieldCheck size={12} />
                         Evidence

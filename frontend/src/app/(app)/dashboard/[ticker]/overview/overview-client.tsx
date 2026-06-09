@@ -18,18 +18,6 @@ function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
 }
 
-function directionOf(v?: number | null): -1 | 0 | 1 | null {
-  if (typeof v !== "number" || !Number.isFinite(v)) return null;
-  if (Math.abs(v) <= 1e-9) return 0;
-  return v > 0 ? 1 : -1;
-}
-
-function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "✔" | "✖" | "-" {
-  if (predicted === null || actual === null) return "-";
-  if (predicted === 0 || actual === 0) return "-";
-  return predicted === actual ? "✔" : "✖";
-}
-
 function combinedScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
   const hasInvestment = typeof investmentPct === "number" && Number.isFinite(investmentPct);
   const hasTarget = typeof targetReturnPct === "number" && Number.isFinite(targetReturnPct);
@@ -90,15 +78,6 @@ export function OverviewClient({
         ? "hib-target-up"
         : "hib-target-down"
       : "text-zinc-200";
-  const actualDirection = directionOf(
-    typeof liveCurrentPrice === "number" && typeof current === "number" ? liveCurrentPrice - current : null,
-  );
-  const targetDirection = directionOf(
-    typeof mean === "number" && typeof current === "number" ? mean - current : null,
-  );
-  const allocationDirection = directionOf(positionPct);
-  const meanTargetVerdict = verdictMark(targetDirection, actualDirection);
-  const investmentVerdict = verdictMark(allocationDirection, actualDirection);
   const generatedDateRaw = data.generated_at || data.report_mtime || "";
   const generatedDate = new Date(String(generatedDateRaw || ""));
   const generatedDateLabel =
@@ -215,7 +194,7 @@ export function OverviewClient({
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-              Mean Target <span className="text-zinc-300">({meanTargetVerdict})</span>
+              Mean Target
             </p>
             <p className={`mt-1 text-2xl font-bold ${typeof mean === "number" && typeof current === "number" ? (mean > current ? "hib-target-up" : "hib-target-down") : "text-zinc-200"}`}>
               {fmtMoney(mean, ctx, "price")}
@@ -224,7 +203,7 @@ export function OverviewClient({
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-              Investment Sizing <span className="text-zinc-300">({investmentVerdict})</span>
+              Investment Sizing
             </p>
             <p className={`mt-1 text-2xl font-bold ${positionToneClass}`}>
               {typeof scoreCard?.position_size_pct_of_notional === "number"
@@ -242,6 +221,17 @@ export function OverviewClient({
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Executive Summary</h2>
+        {execMarkdown ? (
+          <div className="hib-markdown text-sm leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{execMarkdown}</ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500">Executive summary not available for this report.</p>
+        )}
       </section>
 
       <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -359,16 +349,6 @@ export function OverviewClient({
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Executive Summary</h2>
-        {execMarkdown ? (
-          <div className="hib-markdown text-sm leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{execMarkdown}</ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-sm text-zinc-500">Executive summary not available for this report.</p>
-        )}
-      </section>
     </div>
   );
 }

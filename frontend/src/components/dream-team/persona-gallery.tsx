@@ -767,6 +767,15 @@ function fmtReportLabel(report: ReportListItem): string {
   });
 }
 
+function fmtReportScore(value?: number | null): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "N/A";
+}
+
+function reportScoreToneClass(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) <= 1e-9) return "text-zinc-300";
+  return value > 0 ? "hib-target-up" : "hib-target-down";
+}
+
 function PersonaDropdown({
   personas,
   activePersona,
@@ -894,6 +903,9 @@ function ReportVersionDropdown({
       >
         <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">{ticker} · Report</span>
         <span className="font-mono text-[11px] text-zinc-100">{fmtReportLabel(current)}</span>
+        <span className={`font-mono text-[11px] font-semibold ${reportScoreToneClass(current.score)}`}>
+          {fmtReportScore(current.score)}
+        </span>
         {!single && <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />}
       </button>
 
@@ -923,6 +935,9 @@ function ReportVersionDropdown({
                 }`}
               >
                 <span className="font-mono">{fmtReportLabel(report)}</span>
+                <span className={`font-mono font-semibold ${reportScoreToneClass(report.score)}`}>
+                  {fmtReportScore(report.score)}
+                </span>
                 {isCurrent ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
               </button>
             );

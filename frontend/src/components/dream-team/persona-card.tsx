@@ -85,7 +85,6 @@ export function PersonaCard({
   activePersona,
   ctx,
   currentPrice,
-  liveCurrentPrice,
   index,
   total,
   canUseChat,
@@ -247,27 +246,6 @@ export function PersonaCard({
     };
   }, [chatOpen]);
 
-  const directionOf = (value?: number | null): -1 | 0 | 1 | null => {
-    if (typeof value !== "number" || !Number.isFinite(value)) return null;
-    if (Math.abs(value) < 1e-9) return 0;
-    return value > 0 ? 1 : -1;
-  };
-
-  const targetDirectionWithFloor = (target?: number | null, reportPrice?: number | null): -1 | 0 | 1 | null => {
-    if (typeof reportPrice !== "number" || !Number.isFinite(reportPrice)) return null;
-    const effectiveTarget =
-      typeof target === "number" && Number.isFinite(target)
-        ? (target < 0 ? 0 : target)
-        : 0;
-    return directionOf(effectiveTarget - reportPrice);
-  };
-
-  const verdictMark = (predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "OK" | "NO" | "-" => {
-    if (predicted === null || actual === null) return "-";
-    if (predicted === 0 || actual === 0) return "-";
-    return predicted === actual ? "OK" : "NO";
-  };
-
   const changePct =
     typeof currentPrice === "number" && typeof member.target_price === "number" && Math.abs(currentPrice) > 1e-9
       ? ((Number(member.target_price) - currentPrice) / currentPrice) * 100
@@ -289,13 +267,19 @@ export function PersonaCard({
         ? "hib-target-up"
         : "hib-target-down"
       : "text-zinc-200";
-  const actualDirection = directionOf(
-    typeof liveCurrentPrice === "number" && typeof currentPrice === "number"
-      ? liveCurrentPrice - currentPrice
-      : null,
-  );
-  const targetVerdict = verdictMark(targetDirectionWithFloor(member.target_price, currentPrice), actualDirection);
-  const allocationVerdict = verdictMark(directionOf(allocationPct), actualDirection);
+  const valuatorScore =
+    typeof changePct === "number" && Number.isFinite(changePct) && typeof allocationPct === "number" && Number.isFinite(allocationPct)
+      ? (0.6 * changePct) + (0.4 * allocationPct)
+      : typeof changePct === "number" && Number.isFinite(changePct)
+        ? changePct
+        : typeof allocationPct === "number" && Number.isFinite(allocationPct)
+          ? allocationPct
+          : null;
+  const valuatorScoreTone = typeof valuatorScore === "number" && Math.abs(valuatorScore) > 1e-9
+    ? valuatorScore > 0
+      ? "hib-target-up"
+      : "hib-target-down"
+    : "text-zinc-100";
 
   const sections = member.reason_sections.filter((s) => normalizeReasonText(String(s.text || "")));
   const dreamBlogCopyText = sections
@@ -368,9 +352,7 @@ export function PersonaCard({
 
         <dl className="mt-4 grid grid-cols-3 gap-3 sm:gap-6">
           <div className="min-w-0 leading-tight">
-            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">
-              Target <span className="text-zinc-300">({targetVerdict})</span>
-            </dt>
+            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">Target</dt>
             <dd className={`mt-0.5 truncate font-mono text-sm font-semibold ${priceTone}`}>
               {fmtMoney(member.target_price, ctx, "price")}
             </dd>
@@ -385,9 +367,7 @@ export function PersonaCard({
             </dd>
           </div>
           <div className="min-w-0 leading-tight">
-            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">
-              Allocation <span className="text-zinc-300">({allocationVerdict})</span>
-            </dt>
+            <dt className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">Allocation</dt>
             <dd className={`mt-0.5 truncate font-mono text-sm font-semibold ${allocationTone}`}>
               {typeof allocationPct === "number"
                 ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%`
@@ -441,9 +421,20 @@ export function PersonaCard({
               </button>
             </div>
           </div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px]">
-            <span className="uppercase tracking-[0.14em] text-zinc-500">Talking now</span>
-            <span className="font-semibold text-zinc-100">{activePersona}</span>
+          <div className="mb-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px]">
+            <span className="uppercase tracking-[0.14em] text-zinc-500">Talking to</span>
+            <span className={`font-semibold ${valuatorScoreTone}`}>{activePersona}</span>
+            <span className="font-mono text-zinc-300">
+              (Target:{" "}
+              <span className={priceTone}>
+                {typeof changePct === "number" ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%` : "N/A"}
+              </span>
+              , Allocation:{" "}
+              <span className={allocationTone}>
+                {typeof allocationPct === "number" ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%` : "N/A"}
+              </span>
+              )
+            </span>
           </div>
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -466,7 +457,7 @@ export function PersonaCard({
                         : "border-white/20 bg-white/5 text-zinc-300"
                   );
                 const activeClass = row.isActive
-                  ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
+                  ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-sm"
                   : "hover:border-white/40";
                 return (
                   <button

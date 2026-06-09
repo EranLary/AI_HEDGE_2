@@ -19,6 +19,15 @@ function fmtDateTimeNoSeconds(value: string): string {
   });
 }
 
+function fmtScore(value?: number | null): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "N/A";
+}
+
+function scoreToneClass(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) <= 1e-9) return "text-zinc-300";
+  return value > 0 ? "hib-target-up" : "hib-target-down";
+}
+
 export function DashboardSkeleton({ message }: { message?: string }) {
   return (
     <div>
@@ -79,6 +88,9 @@ export function ReportChipRow({
           <span className="font-mono text-[11px] text-zinc-100">
             {fmtDateTimeNoSeconds(String(current.generated_at || current.updated_at || ""))}
           </span>
+          <span className={`font-mono text-[11px] font-semibold ${scoreToneClass(current.score)}`}>
+            {fmtScore(current.score)}
+          </span>
           <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />
         </button>
 
@@ -101,15 +113,16 @@ export function ReportChipRow({
                     router.replace(`?${nextParams.toString()}`, { scroll: false });
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition ${
-                    active
-                      ? "bg-emerald-500/10 text-emerald-100"
-                      : "text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
-                  }`}
-                >
-                  <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
-                  {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
-                </button>
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition ${
+                  active
+                    ? "bg-emerald-500/10 text-emerald-100"
+                    : "text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
+                }`}
+              >
+                <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
+                <span className={`font-mono font-semibold ${scoreToneClass(report.score)}`}>{fmtScore(report.score)}</span>
+                {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
+              </button>
               );
             })}
           </div>

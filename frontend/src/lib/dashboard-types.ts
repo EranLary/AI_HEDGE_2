@@ -90,6 +90,68 @@ export type MarketReviewPayload = {
   error?: string;
 };
 
+export type WallStPayload = {
+  status?: "success" | "unavailable" | "error" | string;
+  generated_at?: string;
+  raw?: {
+    targets?: {
+      current?: number | null;
+      mean?: number | null;
+      median?: number | null;
+      low?: number | null;
+      high?: number | null;
+    };
+    recommendations?: TablePayload | string | null;
+    down_upgrades?: TablePayload | string | null;
+    earnings_estimate?: TablePayload | string | null;
+    revenue_estimate?: TablePayload | string | null;
+    num_of_analysts?: number;
+    currency?: {
+      original_price_currency?: string;
+      original_financial_currency?: string;
+      price_currency_to_USD?: number | null;
+      financial_currency_to_USD?: number | null;
+    };
+  };
+  metrics?: {
+    targets?: {
+      current?: number | null;
+      mean?: number | null;
+      median?: number | null;
+      low?: number | null;
+      high?: number | null;
+      upside_pct?: number | null;
+      range_spread_pct?: number | null;
+      tone?: "up" | "down" | "neutral" | string;
+    };
+    recommendations?: {
+      latest?: Record<string, unknown>;
+      previous?: Record<string, unknown>;
+      total?: number;
+      stance_score?: number | null;
+      buy_side_pct?: number | null;
+      sell_side_pct?: number | null;
+      trend?: string;
+      posture?: string;
+    };
+    recent_actions?: Array<Record<string, unknown>>;
+    earnings_rows?: Array<Record<string, unknown>>;
+    revenue_rows?: Array<Record<string, unknown>>;
+  };
+  synthesis?: {
+    status?: "success" | "unavailable" | "error" | string;
+    bullets?: string[];
+    error?: string;
+  };
+  errors?: string[];
+};
+
+export type TablePayload = {
+  index?: string[];
+  columns?: string[];
+  values?: unknown[][];
+};
+
 export type SecQnaPayload = {
   status?: "success" | "unavailable" | "failed" | "error" | string;
   ticker?: string;
@@ -321,6 +383,7 @@ export type DashboardPayload = {
   };
   trading_agents?: TradingAgentsPayload;
   market_review?: MarketReviewPayload;
+  wall_st?: WallStPayload;
   sec_qna?: SecQnaPayload;
   filings?: {
     annual?: {
@@ -384,4 +447,7 @@ export type ReportListItem = {
   generated_at: string;
   report_file: string;
   updated_at: string;
+  score?: number | null;
+  mean_target_price?: number | null;
+  allocation_pct?: number | null;
 };

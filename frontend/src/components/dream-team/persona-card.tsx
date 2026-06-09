@@ -444,6 +444,12 @@ export function PersonaCard({
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px]">
             <span className="uppercase tracking-[0.14em] text-zinc-500">Talking now</span>
             <span className="font-semibold text-zinc-100">{activePersona}</span>
+            <span className={`font-mono font-semibold ${priceTone}`}>
+              Target: {typeof changePct === "number" ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%` : "N/A"}
+            </span>
+            <span className={`font-mono font-semibold ${allocationTone}`}>
+              Allocation: {typeof allocationPct === "number" ? `${allocationPct > 0 ? "+" : ""}${allocationPct.toFixed(2)}%` : "N/A"}
+            </span>
           </div>
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -466,7 +472,7 @@ export function PersonaCard({
                         : "border-white/20 bg-white/5 text-zinc-300"
                   );
                 const activeClass = row.isActive
-                  ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
+                  ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-sm"
                   : "hover:border-white/40";
                 return (
                   <button

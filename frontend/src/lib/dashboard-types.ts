@@ -384,4 +384,7 @@ export type ReportListItem = {
   generated_at: string;
   report_file: string;
   updated_at: string;
+  score?: number | null;
+  mean_target_price?: number | null;
+  allocation_pct?: number | null;
 };

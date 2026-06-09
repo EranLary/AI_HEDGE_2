@@ -245,6 +245,17 @@ export function OverviewClient({
       </section>
 
       <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Executive Summary</h2>
+        {execMarkdown ? (
+          <div className="hib-markdown text-sm leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{execMarkdown}</ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500">Executive summary not available for this report.</p>
+        )}
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Top Targets</h2>
           <Link
@@ -359,16 +370,6 @@ export function OverviewClient({
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Executive Summary</h2>
-        {execMarkdown ? (
-          <div className="hib-markdown text-sm leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{execMarkdown}</ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-sm text-zinc-500">Executive summary not available for this report.</p>
-        )}
-      </section>
     </div>
   );
 }

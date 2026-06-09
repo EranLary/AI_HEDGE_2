@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BarChart3, CandlestickChart, Download, FileQuestion, FileText, Menu, Scale, Store, Users } from "lucide-react";
@@ -8,6 +8,7 @@ import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
+import type { ReportListItem } from "@/lib/dashboard-types";
 
 type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
 
@@ -43,7 +44,7 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
           </button>
         ) : null}
         {activeTicker ? (
-          <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" />}>
+          <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" score={null} />}>
             <TickerBadgeWithReport activeTicker={activeTicker} />
           </Suspense>
         ) : (
@@ -68,13 +69,28 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
   );
 }
 
-function TickerBadge({ activeTicker, suffix }: { activeTicker: string; suffix: string }) {
+function scoreTone(value?: number | null): "up" | "down" | "neutral" {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) <= 1e-9) return "neutral";
+  return value > 0 ? "up" : "down";
+}
+
+function scoreBadgeClass(value?: number | null): string {
+  const tone = scoreTone(value);
+  if (tone === "up") return "border-emerald-500/45 bg-emerald-500/10 text-emerald-100";
+  if (tone === "down") return "border-red-500/45 bg-red-500/10 text-red-100";
+  return "border-white/15 bg-white/5 text-zinc-100";
+}
+
+function TickerBadge({ activeTicker, suffix, score }: { activeTicker: string; suffix: string; score?: number | null }) {
   return (
     <Link
       href={`/dashboard/${encodeURIComponent(activeTicker)}/summary${suffix}`}
-      className="hib-breadcrumb inline-flex items-center rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+      className={`hib-breadcrumb inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ring-1 ring-sky-300/70 ring-offset-1 ring-offset-zinc-950 ${scoreBadgeClass(score)}`}
     >
       <strong>{activeTicker}</strong>
+      <span className="font-mono normal-case tracking-normal">
+        {typeof score === "number" && Number.isFinite(score) ? score.toFixed(2) : "N/A"}
+      </span>
     </Link>
   );
 }
@@ -83,7 +99,29 @@ function TickerBadgeWithReport({ activeTicker }: { activeTicker: string }) {
   const search = useSearchParams();
   const reportParam = search?.get("report");
   const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
-  return <TickerBadge activeTicker={activeTicker} suffix={suffix} />;
+  const [reports, setReports] = useState<ReportListItem[]>([]);
+
+  useEffect(() => {
+    let canceled = false;
+    fetch("/api/reports", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { reports: [] }))
+      .then((json) => {
+        if (canceled) return;
+        setReports(Array.isArray(json?.reports) ? (json.reports as ReportListItem[]) : []);
+      })
+      .catch(() => {
+        if (!canceled) setReports([]);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  const tickerReports = reports.filter((r) => String(r.ticker || "").toUpperCase() === activeTicker.toUpperCase());
+  const current = reportParam
+    ? tickerReports.find((r) => r.report_id === reportParam)
+    : tickerReports[0];
+  return <TickerBadge activeTicker={activeTicker} suffix={suffix} score={current?.score} />;
 }
 
 function SectionPills({

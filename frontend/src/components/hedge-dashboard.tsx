@@ -256,6 +256,23 @@ const toneClassFromTarget = (target?: number | null, current?: number | null) =>
   if (typeof current !== "number" || !Number.isFinite(current) || Math.abs(target - current) < 1e-9) return "text-zinc-200";
   return target > current ? "hib-target-up" : "hib-target-down";
 };
+const targetChangePctFromCurrent = (target?: number | null, current?: number | null): number | null => {
+  if (
+    typeof target !== "number" ||
+    !Number.isFinite(target) ||
+    typeof current !== "number" ||
+    !Number.isFinite(current) ||
+    Math.abs(current) <= 1e-9
+  ) {
+    return null;
+  }
+  return ((target - current) / current) * 100;
+};
+const tabToneFromTarget = (target?: number | null, current?: number | null): TabTone => {
+  const changePct = targetChangePctFromCurrent(target, current);
+  if (typeof changePct !== "number" || !Number.isFinite(changePct) || Math.abs(changePct) <= 1e-9) return "neutral";
+  return changePct > 0 ? "up" : "down";
+};
 const fmtNotionalPct = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const pct = (v / NOTIONAL_BASE_USD) * 100;
@@ -360,16 +377,47 @@ function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" |
   );
 }
 
-function Tab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+type TabTone = "up" | "down" | "neutral";
+
+function tabToneClass(tone: TabTone, active: boolean): string {
+  if (tone === "up") {
+    return active
+      ? "border-emerald-500/60 bg-emerald-500/24 text-emerald-100"
+      : "border-emerald-500/35 bg-emerald-500/8 text-zinc-300 hover:border-emerald-500/55";
+  }
+  if (tone === "down") {
+    return active
+      ? "border-red-500/60 bg-red-500/24 text-red-100"
+      : "border-red-500/35 bg-red-500/8 text-zinc-300 hover:border-red-500/55";
+  }
+  return active
+    ? "border-white/25 bg-white/10 text-zinc-100"
+    : "border-white/15 bg-white/5 text-zinc-300 hover:border-white/35";
+}
+
+function Tab({
+  active,
+  onClick,
+  label,
+  tone = "neutral",
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  tone?: TabTone;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`hib-tab rounded-lg border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
-        active ? "hib-tab-active border-emerald-400/60 bg-emerald-500/20 text-emerald-100" : "hib-tab-inactive border-white/15 bg-white/5 text-zinc-300"
+      className={`hib-tab rounded-lg border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${tabToneClass(tone, active)} ${
+        active ? "ring-2 ring-sky-300/90 ring-offset-1 ring-offset-zinc-950 shadow-sm" : ""
       }`}
     >
-      {label}
+      <span className="inline-flex items-center gap-1">
+        {active ? <span className="text-[10px] leading-none text-sky-200">●</span> : null}
+        <span>{label}</span>
+      </span>
     </button>
   );
 }
@@ -789,6 +837,15 @@ function fmtDateTimeNoSeconds(value: string): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function fmtReportScore(value?: number | null): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "N/A";
+}
+
+function reportScoreToneClass(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) <= 1e-9) return "text-zinc-300";
+  return value > 0 ? "hib-target-up" : "hib-target-down";
 }
 
 function normalizeMetricLabel(raw: string): string {
@@ -1219,7 +1276,6 @@ export function HedgeDashboard({
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
   const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
   const consensusChangeText = typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A";
-  const consensusCvText = typeof consensusCvRaw === "number" ? fmtNum(consensusCvRaw) : "N/A";
   const overallDisagreement =
     [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
       ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
@@ -1281,6 +1337,33 @@ export function HedgeDashboard({
       return String(a.name).localeCompare(String(b.name));
     });
   }, [consensus, data?.valuation_hub?.method_blocks]);
+  const dreamTeamTableRows = useMemo(() => {
+    const currentPrice =
+      typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
+        ? Number(consensus.current_price)
+        : null;
+    return (data?.dream_team || [])
+      .map((member, idx) => {
+        const target =
+          typeof member.target_price === "number" && Number.isFinite(Number(member.target_price))
+            ? Number(member.target_price)
+            : null;
+        const investment =
+          typeof member.investment_amount === "number" && Number.isFinite(Number(member.investment_amount))
+            ? Number(member.investment_amount)
+            : null;
+        const changePct = targetChangePctFromCurrent(target, currentPrice);
+        return {
+          name: String(member.persona || `Valuator ${idx + 1}`).trim(),
+          target,
+          investment,
+          changePct,
+          combinedScore: combinedScore(investment, changePct),
+        };
+      })
+      .filter((row) => row.name)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [consensus?.current_price, data?.dream_team]);
   const bullReasons =
     data?.analysis_matrix?.bull_case_reasons ||
     data?.analysis_matrix?.documents?.bull_case?.reasons ||
@@ -1502,6 +1585,13 @@ export function HedgeDashboard({
     ...bearReasons.map((item, idx) => `${idx + 1}. ${normalizeReasonText(String(item || ""))}`),
   ].join("\n").trim();
   const scoreCard = data?.score_card || data?.decision_card || {};
+  const meanAllocationPct =
+    typeof scoreCard?.position_size_pct_of_notional === "number" &&
+    Number.isFinite(scoreCard.position_size_pct_of_notional)
+      ? Number(scoreCard.position_size_pct_of_notional)
+      : typeof scoreCard?.mean_investment_amount === "number" && Number.isFinite(scoreCard.mean_investment_amount)
+        ? Number(scoreCard.mean_investment_amount) / NOTIONAL_BASE_USD * 100
+        : null;
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
@@ -1511,6 +1601,14 @@ export function HedgeDashboard({
       ? Number(scoreCard.adjusted_score)
       : confidenceAdjustedScore(finalCombinedScore, overallDisagreement);
   const scoreToneClass = toneClassFromSign(finalAdjustedScore);
+  const openMethodTab = (methodName: string, outputName?: string) => {
+    const cleanMethod = String(methodName || "").trim();
+    if (!cleanMethod) return;
+    setValuationTab(cleanMethod);
+    if (outputName) {
+      setOutputTab((prev) => ({ ...prev, [cleanMethod]: outputName }));
+    }
+  };
 
   return (
     <div className={hideNavHeader ? "min-h-full" : "hib-shell min-h-screen"}>
@@ -1574,6 +1672,16 @@ export function HedgeDashboard({
                     ),
                   )}
                 </span>
+                <span
+                  className={`font-mono text-[11px] font-semibold ${reportScoreToneClass(
+                    (reportsForSelectedTicker.find((r) => r.report_id === currentReportId) || reportsForSelectedTicker[0])?.score,
+                  )}`}
+                >
+                  Score{" "}
+                  {fmtReportScore(
+                    (reportsForSelectedTicker.find((r) => r.report_id === currentReportId) || reportsForSelectedTicker[0])?.score,
+                  )}
+                </span>
                 <ChevronDown size={12} className={`transition ${reportPickerOpen ? "rotate-180" : ""}`} />
               </button>
               {reportPickerOpen ? (
@@ -1601,6 +1709,9 @@ export function HedgeDashboard({
                         }`}
                       >
                         <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
+                        <span className={`font-mono font-semibold ${reportScoreToneClass(report.score)}`}>
+                          Score {fmtReportScore(report.score)}
+                        </span>
                         {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
                       </button>
                     );
@@ -1660,7 +1771,7 @@ export function HedgeDashboard({
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Target Price</p>
                       <AutoFitMetric
@@ -1689,9 +1800,18 @@ export function HedgeDashboard({
                       />
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Target Disagreement Score</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Allocation (%)</p>
                       <AutoFitMetric
-                        text={consensusCvText}
+                        text={fmtScoreInputPctOnly(meanAllocationPct)}
+                        maxPx={32}
+                        minPx={14}
+                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(meanAllocationPct)}`}
+                      />
+                    </div>
+                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Disagreement Score</p>
+                      <AutoFitMetric
+                        text={typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                         maxPx={32}
                         minPx={14}
                         className="hib-metric-subvalue mt-1 font-bold leading-tight text-zinc-100"
@@ -1701,7 +1821,15 @@ export function HedgeDashboard({
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tab active={valuationTab === "overview"} onClick={() => setValuationTab("overview")} label="Overview" />
-                  {methodTabs.map((m) => <Tab key={m.name} active={valuationTab === m.name} onClick={() => setValuationTab(m.name)} label={m.name} />)}
+                  {methodTabs.map((m) => (
+                    <Tab
+                      key={m.name}
+                      active={valuationTab === m.name}
+                      onClick={() => setValuationTab(m.name)}
+                      label={m.name}
+                      tone={tabToneFromTarget(m.target_price, consensusCurrent)}
+                    />
+                  ))}
                   {hasTradingAgents ? (
                     <Tab active={valuationTab === "trading-agents"} onClick={() => setValuationTab("trading-agents")} label="TradingAgents" />
                   ) : null}
@@ -1714,9 +1842,17 @@ export function HedgeDashboard({
                     <div className="space-y-2 sm:hidden">
                       {targetTableRows.map((row) => {
                         const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                        const hasMethodTab = methodTabs.some((m) => m.name === row.name);
                         return (
                           <article key={`${row.name}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.name}</p>
+                            <button
+                              type="button"
+                              onClick={() => hasMethodTab && openMethodTab(row.name)}
+                              disabled={!hasMethodTab}
+                              className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:text-zinc-100 disabled:cursor-default disabled:hover:text-zinc-300"
+                            >
+                              {row.name}
+                            </button>
                             <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
                               {fmtTargetOrFloor(row.target, currencyContext)}
                             </p>
@@ -1754,6 +1890,7 @@ export function HedgeDashboard({
                       <tbody>
                         {targetTableRows.map((row) => {
                           const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                          const hasMethodTab = methodTabs.some((m) => m.name === row.name);
                           const rowTargetVerdict = verdictMark(
                             targetDirectionWithFloor(row.target, consensusCurrent),
                             actualDirection,
@@ -1764,7 +1901,16 @@ export function HedgeDashboard({
                           );
                           return (
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
-                            <td className="px-3 py-2 font-medium text-zinc-200">{row.name}</td>
+                            <td className="px-3 py-2 font-medium text-zinc-200">
+                              <button
+                                type="button"
+                                onClick={() => hasMethodTab && openMethodTab(row.name)}
+                                disabled={!hasMethodTab}
+                                className="font-semibold text-zinc-200 underline-offset-4 transition hover:text-zinc-100 hover:underline disabled:cursor-default disabled:no-underline disabled:hover:text-zinc-200"
+                              >
+                                {row.name}
+                              </button>
+                            </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
                               {fmtTargetOrFloor(row.target, currencyContext)}{" "}
                               <span className="text-zinc-300">({rowTargetVerdict})</span>
@@ -1784,6 +1930,95 @@ export function HedgeDashboard({
                       </tbody>
                     </table>
                   </div>
+                    {dreamTeamTableRows.length ? (
+                      <div className="mt-5">
+                        <div className="mb-2 px-1 text-xs text-zinc-400">
+                          Dream Team table
+                        </div>
+                        <div className="space-y-2 sm:hidden">
+                          {dreamTeamTableRows.map((row) => {
+                            const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                            return (
+                              <article key={`${row.name}-dream-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                                <button
+                                  type="button"
+                                  onClick={() => openMethodTab("Dream Team", row.name)}
+                                  className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:text-zinc-100"
+                                >
+                                  {row.name}
+                                </button>
+                                <p className={`mt-1 text-xl font-bold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
+                                  {fmtTargetOrFloor(row.target, currencyContext)}
+                                </p>
+                                <div className="mt-1 flex items-center justify-between gap-2 text-sm">
+                                  <span className={`font-semibold ${toneClassFromSign(row.changePct)}`}>
+                                    {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
+                                  </span>
+                                  <span className={`font-semibold ${toneClassFromSign(row.investment)}`}>
+                                    {fmtNotionalPct(row.investment)}
+                                  </span>
+                                </div>
+                                <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
+                                  Score {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
+                                </p>
+                              </article>
+                            );
+                          })}
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
+                          <table className="hidden w-full min-w-[640px] text-sm sm:table">
+                            <thead className="border-b border-white/10 text-zinc-400">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Valuator Name</th>
+                                <th className="px-3 py-2 text-right font-medium">Target Price</th>
+                                <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
+                                <th className="px-3 py-2 text-right font-medium">Investment %</th>
+                                <th className="px-3 py-2 text-right font-medium">Score</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dreamTeamTableRows.map((row) => {
+                                const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
+                                const rowTargetVerdict = verdictMark(
+                                  targetDirectionWithFloor(row.target, consensusCurrent),
+                                  actualDirection,
+                                );
+                                const rowInvestmentVerdict = verdictMark(
+                                  directionOf(investmentAmountToPct(row.investment)),
+                                  actualDirection,
+                                );
+                                return (
+                                  <tr key={`${row.name}-dream`} className="border-b border-white/5 text-xs sm:text-sm">
+                                    <td className="px-3 py-2 font-medium text-zinc-200">
+                                      <button
+                                        type="button"
+                                        onClick={() => openMethodTab("Dream Team", row.name)}
+                                        className="font-semibold text-zinc-200 underline-offset-4 transition hover:text-zinc-100 hover:underline"
+                                      >
+                                        {row.name}
+                                      </button>
+                                    </td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
+                                      {fmtTargetOrFloor(row.target, currencyContext)}{" "}
+                                      <span className="text-zinc-300">({rowTargetVerdict})</span>
+                                    </td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.changePct)}`}>
+                                      {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
+                                    </td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
+                                      {fmtNotionalPct(row.investment)} <span className="text-zinc-300">({rowInvestmentVerdict})</span>
+                                    </td>
+                                    <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
+                                      {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : valuationTab === "trading-agents" ? (
                   <TradingAgentsPanel payload={tradingAgentsPayload} />
@@ -1819,7 +2054,21 @@ export function HedgeDashboard({
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
                       {activeMethod.outputs.length ? (
                         <>
-                          <div className="mb-2 flex flex-wrap gap-2">{activeMethod.outputs.map((o) => { const key = o.persona || `Output ${o.output_id}`; return <Tab key={key} active={(outputTab[activeMethod.name] || (activeMethod.outputs[0].persona || `Output ${activeMethod.outputs[0].output_id}`)) === key} onClick={() => setOutputTab((p) => ({ ...p, [activeMethod.name]: key }))} label={key} />; })}</div>
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {activeMethod.outputs.map((o) => {
+                              const key = o.persona || `Output ${o.output_id}`;
+                              const activeKey = outputTab[activeMethod.name] || (activeMethod.outputs[0].persona || `Output ${activeMethod.outputs[0].output_id}`);
+                              return (
+                                <Tab
+                                  key={key}
+                                  active={activeKey === key}
+                                  onClick={() => setOutputTab((p) => ({ ...p, [activeMethod.name]: key }))}
+                                  label={key}
+                                  tone={tabToneFromTarget(o.target_price, consensusCurrent)}
+                                />
+                              );
+                            })}
+                          </div>
                           {selectedOutput ? (
                             <>
                               <div className="space-y-1 text-sm text-zinc-400">

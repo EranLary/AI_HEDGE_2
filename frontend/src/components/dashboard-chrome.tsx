@@ -89,7 +89,7 @@ export function ReportChipRow({
             {fmtDateTimeNoSeconds(String(current.generated_at || current.updated_at || ""))}
           </span>
           <span className={`font-mono text-[11px] font-semibold ${scoreToneClass(current.score)}`}>
-            Score {fmtScore(current.score)}
+            {fmtScore(current.score)}
           </span>
           <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />
         </button>
@@ -120,7 +120,7 @@ export function ReportChipRow({
                 }`}
               >
                 <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
-                <span className={`font-mono font-semibold ${scoreToneClass(report.score)}`}>Score {fmtScore(report.score)}</span>
+                <span className={`font-mono font-semibold ${scoreToneClass(report.score)}`}>{fmtScore(report.score)}</span>
                 {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
               </button>
               );

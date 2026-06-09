@@ -284,27 +284,6 @@ const fmtTargetOrFloor = (v: number | null | undefined, ctx: CurrencyContext) =>
   return fmtMoneyCompact(v, ctx, "price");
 };
 
-function directionOf(value?: number | null): -1 | 0 | 1 | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  if (Math.abs(value) < 1e-9) return 0;
-  return value > 0 ? 1 : -1;
-}
-
-function targetDirectionWithFloor(target?: number | null, reportPrice?: number | null): -1 | 0 | 1 | null {
-  if (typeof reportPrice !== "number" || !Number.isFinite(reportPrice)) return null;
-  const effectiveTarget =
-    typeof target === "number" && Number.isFinite(target)
-      ? (target < 0 ? 0 : target)
-      : 0;
-  return directionOf(effectiveTarget - reportPrice);
-}
-
-function verdictMark(predicted: -1 | 0 | 1 | null, actual: -1 | 0 | 1 | null): "✔" | "✖" | "-" {
-  if (predicted === null || actual === null) return "-";
-  if (predicted === 0 || actual === 0) return "-";
-  return predicted === actual ? "✔" : "✖";
-}
-
 function formatMethodMetric(metricKey: string, value: number | null | undefined, ctx: CurrencyContext): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
   const normalizedKey = String(metricKey || "").trim().toLowerCase();
@@ -1228,11 +1207,6 @@ export function HedgeDashboard({
     Array.isArray(consensus?.lmil) && typeof consensus?.lmil?.[1] === "number"
       ? Math.abs(Number(consensus.lmil[1]))
       : null;
-  const actualDirection = directionOf(
-    typeof liveCurrentPrice === "number" && typeof consensusCurrent === "number"
-      ? liveCurrentPrice - consensusCurrent
-      : null,
-  );
   const activeMethodTargetClass = toneClassFromTarget(activeMethod?.target_price, consensusCurrent);
   const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
   const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
@@ -1255,22 +1229,6 @@ export function HedgeDashboard({
       : null;
   const activeMethodTargetChangeClass = toneClassFromSign(activeMethodTargetChangePct);
   const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
-  const activeMethodTargetVerdict = verdictMark(
-    targetDirectionWithFloor(activeMethod?.target_price ?? null, consensusCurrent),
-    actualDirection,
-  );
-  const activeMethodInvestmentVerdict = verdictMark(
-    directionOf(investmentAmountToPct(activeMethod?.investment_amount ?? null)),
-    actualDirection,
-  );
-  const selectedOutputTargetVerdict = verdictMark(
-    targetDirectionWithFloor(selectedOutput?.target_price ?? null, consensusCurrent),
-    actualDirection,
-  );
-  const selectedOutputInvestmentVerdict = verdictMark(
-    directionOf(investmentAmountToPct(selectedOutput?.investment_amount ?? null)),
-    actualDirection,
-  );
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
   const consensusChangeClass = toneClassFromSign(consensusChangePct);
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
@@ -1362,7 +1320,12 @@ export function HedgeDashboard({
         };
       })
       .filter((row) => row.name)
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      .sort((a, b) => {
+        const at = typeof a.target === "number" ? a.target : Number.NEGATIVE_INFINITY;
+        const bt = typeof b.target === "number" ? b.target : Number.NEGATIVE_INFINITY;
+        if (bt !== at) return bt - at;
+        return String(a.name).localeCompare(String(b.name));
+      });
   }, [consensus?.current_price, data?.dream_team]);
   const bullReasons =
     data?.analysis_matrix?.bull_case_reasons ||
@@ -1710,7 +1673,7 @@ export function HedgeDashboard({
                       >
                         <span className="font-mono">{fmtDateTimeNoSeconds(String(report.generated_at || report.updated_at || ""))}</span>
                         <span className={`font-mono font-semibold ${reportScoreToneClass(report.score)}`}>
-                          Score {fmtReportScore(report.score)}
+                          {fmtReportScore(report.score)}
                         </span>
                         {active ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
                       </button>
@@ -1782,7 +1745,9 @@ export function HedgeDashboard({
                       />
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Price ({reportDateIso})</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">
+                        Price <span className="whitespace-nowrap">({reportDateIso})</span>
+                      </p>
                       <AutoFitMetric
                         text={consensusCurrentText}
                         maxPx={42}
@@ -1891,14 +1856,6 @@ export function HedgeDashboard({
                         {targetTableRows.map((row) => {
                           const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
                           const hasMethodTab = methodTabs.some((m) => m.name === row.name);
-                          const rowTargetVerdict = verdictMark(
-                            targetDirectionWithFloor(row.target, consensusCurrent),
-                            actualDirection,
-                          );
-                          const rowInvestmentVerdict = verdictMark(
-                            directionOf(investmentAmountToPct(row.investment)),
-                            actualDirection,
-                          );
                           return (
                           <tr key={row.name} className="border-b border-white/5 text-xs sm:text-sm">
                             <td className="px-3 py-2 font-medium text-zinc-200">
@@ -1912,14 +1869,13 @@ export function HedgeDashboard({
                               </button>
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
-                              {fmtTargetOrFloor(row.target, currencyContext)}{" "}
-                              <span className="text-zinc-300">({rowTargetVerdict})</span>
+                              {fmtTargetOrFloor(row.target, currencyContext)}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.changePct)}`}>
                               {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
-                              {fmtNotionalPct(row.investment)} <span className="text-zinc-300">({rowInvestmentVerdict})</span>
+                              {fmtNotionalPct(row.investment)}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
                               {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
@@ -1979,14 +1935,6 @@ export function HedgeDashboard({
                             <tbody>
                               {dreamTeamTableRows.map((row) => {
                                 const rowAdjustedScore = confidenceAdjustedScore(row.combinedScore, overallDisagreement);
-                                const rowTargetVerdict = verdictMark(
-                                  targetDirectionWithFloor(row.target, consensusCurrent),
-                                  actualDirection,
-                                );
-                                const rowInvestmentVerdict = verdictMark(
-                                  directionOf(investmentAmountToPct(row.investment)),
-                                  actualDirection,
-                                );
                                 return (
                                   <tr key={`${row.name}-dream`} className="border-b border-white/5 text-xs sm:text-sm">
                                     <td className="px-3 py-2 font-medium text-zinc-200">
@@ -1999,14 +1947,13 @@ export function HedgeDashboard({
                                       </button>
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromTarget(row.target, consensusCurrent)}`}>
-                                      {fmtTargetOrFloor(row.target, currencyContext)}{" "}
-                                      <span className="text-zinc-300">({rowTargetVerdict})</span>
+                                      {fmtTargetOrFloor(row.target, currencyContext)}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.changePct)}`}>
                                       {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
-                                      {fmtNotionalPct(row.investment)} <span className="text-zinc-300">({rowInvestmentVerdict})</span>
+                                      {fmtNotionalPct(row.investment)}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
                                       {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
@@ -2031,11 +1978,9 @@ export function HedgeDashboard({
                         <span className={`text-xs font-semibold ${activeMethodTargetChangeClass}`}>
                           ({typeof activeMethodTargetChangePct === "number" ? fmtPct(activeMethodTargetChangePct) : "N/A"})
                         </span>{" "}
-                        <span className="text-zinc-300">({activeMethodTargetVerdict})</span>
                       </p>
                       <p className="text-sm text-zinc-400">
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>{" "}
-                        <span className="text-zinc-300">({activeMethodInvestmentVerdict})</span>
                       </p>
                       {[...activeMethodProbabilityItems, ...activeMethodOtherMetricItems].map((item) => (
                         <p key={item.key} className="text-xs text-zinc-500">
@@ -2077,11 +2022,9 @@ export function HedgeDashboard({
                                   <span className={`text-xs font-semibold ${selectedOutputTargetChangeClass}`}>
                                     ({typeof selectedOutputTargetChangePct === "number" ? fmtPct(selectedOutputTargetChangePct) : "N/A"})
                                   </span>{" "}
-                                  <span className="text-zinc-300">({selectedOutputTargetVerdict})</span>
                                 </p>
                                 <p>
                                   Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>{" "}
-                                  <span className="text-zinc-300">({selectedOutputInvestmentVerdict})</span>
                                 </p>
                               </div>
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">

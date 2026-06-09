@@ -904,7 +904,7 @@ function ReportVersionDropdown({
         <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">{ticker} · Report</span>
         <span className="font-mono text-[11px] text-zinc-100">{fmtReportLabel(current)}</span>
         <span className={`font-mono text-[11px] font-semibold ${reportScoreToneClass(current.score)}`}>
-          Score {fmtReportScore(current.score)}
+          {fmtReportScore(current.score)}
         </span>
         {!single && <ChevronDown size={12} className={`transition ${open ? "rotate-180" : ""}`} />}
       </button>
@@ -936,7 +936,7 @@ function ReportVersionDropdown({
               >
                 <span className="font-mono">{fmtReportLabel(report)}</span>
                 <span className={`font-mono font-semibold ${reportScoreToneClass(report.score)}`}>
-                  Score {fmtReportScore(report.score)}
+                  {fmtReportScore(report.score)}
                 </span>
                 {isCurrent ? <Check size={13} className="text-emerald-300" aria-hidden /> : null}
               </button>

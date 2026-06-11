@@ -38,6 +38,34 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     assert [row["metric"] for row in normalized["rows"][: len(REQUIRED_METRICS)]] == REQUIRED_METRICS
     assert len(normalized["rows"]) == len(REQUIRED_METRICS) + 7
     assert normalized["rows"][0]["values"]["2024-12-31_A"] == 100
+    assert "Total Assets" in [row["metric"] for row in normalized["rows"]]
+    assert "Net Liquidity: Liquid Assets Less Debt" in [row["metric"] for row in normalized["rows"]]
+    equity_to_assets = next(row for row in normalized["rows"] if row["metric"] == "Equity-to-Assets Ratio")
+    pb = next(row for row in normalized["rows"] if row["metric"] == "Price-to-Book Ratio (P/B)")
+    assert equity_to_assets["kind"] == "percent"
+    assert pb["kind"] == "ratio"
+
+
+def test_normalize_financials_analysis_canonicalizes_curly_shareholders_equity():
+    normalized = normalize_financials_analysis(
+        {
+            "periods": [{"key": "2024-12-31_A", "label": "FY 2024", "date": "2024-12-31", "period_type": "annual"}],
+            "rows": [
+                {
+                    "metric": "Total Shareholders’ Equity",
+                    "kind": "currency",
+                    "values": {"2024-12-31_A": 500},
+                    "quality": "reported",
+                    "note": "",
+                }
+            ],
+        },
+        ticker="TEST",
+        currency="USD",
+    )
+
+    row = next(row for row in normalized["rows"] if row["metric"] == "Total Shareholders' Equity")
+    assert row["values"]["2024-12-31_A"] == 500
 
 
 def test_financials_markdown_includes_currency_and_table():

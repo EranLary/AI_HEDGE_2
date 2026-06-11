@@ -27,6 +27,18 @@ REQUIRED_METRICS = [
     "(+/-) One-Time Expenses/Income, Net",
     "(+/-) Additional Adjustments, if any",
     "Estimated Net Income (Non-GAAP)",
+    "Total Assets",
+    "Customers / Accounts Receivable",
+    "Inventory",
+    "Liquid Assets: Cash, Cash Equivalents, and Short-Term Investments",
+    "Total Liabilities",
+    "Total Shareholders' Equity",
+    "Total Debt: Short-Term and Long-Term",
+    "Net Liquidity: Liquid Assets Less Debt",
+    "Equity-to-Assets Ratio",
+    "Market Capitalization",
+    "Enterprise Value (EV)",
+    "Price-to-Book Ratio (P/B)",
 ]
 
 
@@ -122,6 +134,13 @@ def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict
         "financial_currency": financial_currency,
         "original_price_currency": info.get("original_price_currency") or info.get("currency"),
         "financial_currency_to_USD": info.get("financial_currency_to_USD") or info.get("financial_currency_to_usd"),
+        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+        "shares_outstanding": info.get("sharesOutstanding") or info.get("impliedSharesOutstanding"),
+        "market_cap": info.get("marketCap"),
+        "enterprise_value": info.get("enterpriseValue"),
+        "price_to_book": info.get("priceToBook"),
+        "total_debt": info.get("totalDebt"),
+        "total_cash": info.get("totalCash"),
     }
     return {
         "ticker": str(ticker).upper(),
@@ -171,6 +190,20 @@ Non-GAAP logic:
 - Put adjustments in the relevant adjustment rows with notes.
 - If the data is insufficient, keep the estimate close to GAAP and explain why.
 
+Balance sheet and market-value logic:
+- Total Assets, receivables, inventory, liquid assets, liabilities, equity, debt, and net liquidity should come from the balance sheet whenever available.
+- Liquid Assets means cash + cash equivalents + short-term investments / marketable securities. If yfinance reports only cash and equivalents, use that and say so in the note.
+- Total Debt means short-term debt plus long-term debt. If only total debt is available from quote info, use it only where period-specific statement debt is missing and mark the row "derived" or "mixed".
+- Net Liquidity = Liquid Assets - Total Debt.
+- Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
+- Market Capitalization, Enterprise Value (EV), and Price-to-Book Ratio (P/B) are mandatory rows, but fill them only when defensible:
+  - If a period-specific market cap or EV is available in the provided data, use it.
+  - If shares outstanding and a period-end/current price are available, derive Market Cap = shares * price and explain the basis.
+  - EV = Market Cap + Total Debt - Liquid Assets when those pieces are available for the same period.
+  - P/B = Market Cap / Total Shareholders' Equity when both values are available.
+  - If only current quote info exists, you may populate the newest period and leave older periods null, with a note saying it is current quote data, not historical period-end pricing.
+  - Do not invent historical market caps, EV, or P/B when price/share data is not provided.
+
 Return ONLY valid JSON with this exact shape:
 {{
   "ticker": "string",
@@ -216,6 +249,19 @@ def _as_list(value: Any, limit: int = 12) -> List[Any]:
     if not isinstance(value, list):
         return []
     return value[:limit]
+
+
+def _default_kind_for_metric(metric: str) -> str:
+    text = str(metric or "").lower()
+    if "margin" in text or "growth" in text or "equity-to-assets" in text:
+        return "percent"
+    if "ratio" in text or "p/b" in text or "fcf / net income" in text:
+        return "ratio"
+    return "currency"
+
+
+def _metric_key(metric: str) -> str:
+    return re.sub(r"\s+", " ", str(metric or "").replace("’", "'").replace("`", "'").strip().lower())
 
 
 def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency: str) -> Dict[str, Any]:
@@ -267,11 +313,17 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
         })
 
     ordered_rows: List[Dict[str, Any]] = []
-    by_metric = {str(row.get("metric")): row for row in rows}
+    required_by_key = {_metric_key(metric): metric for metric in REQUIRED_METRICS}
+    by_metric = {}
+    for row in rows:
+        raw_metric = str(row.get("metric") or "")
+        canonical = required_by_key.get(_metric_key(raw_metric), raw_metric)
+        row["metric"] = canonical
+        by_metric[canonical] = row
     for metric in REQUIRED_METRICS:
         ordered_rows.append(by_metric.pop(metric, {
             "metric": metric,
-            "kind": "percent" if "Margin" in metric or metric == "Sales Growth" else "currency",
+            "kind": _default_kind_for_metric(metric),
             "values": {key: None for key in period_keys},
             "quality": "unavailable",
             "note": "Not available in the provided statements.",

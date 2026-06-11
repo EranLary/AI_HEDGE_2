@@ -419,6 +419,18 @@ function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" |
 
 type TabTone = "up" | "down" | "neutral";
 
+function tradingAgentsDecisionTone(text?: string): TabTone {
+  const src = String(text || "").toLowerCase();
+  const compact = src.replace(/[\s_-]+/g, "");
+  if (/\b(strong\s*buy|buy|overweight|overwhight|outperform|accumulate)\b/.test(src) || compact.includes("strongbuy")) {
+    return "up";
+  }
+  if (/\b(strong\s*sell|sell|underweight|underwhight|underperform|reduce)\b/.test(src) || compact.includes("strongsell")) {
+    return "down";
+  }
+  return "neutral";
+}
+
 function tabToneClass(tone: TabTone, active: boolean): string {
   if (tone === "up") {
     return active
@@ -660,6 +672,13 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
     if (!cleanText) return [];
     return splitMarkdownHeadingBlocks(title, cleanText);
   });
+  const decisionTone = tradingAgentsDecisionTone(payload.final_committee_view);
+  const decisionPanelClass =
+    decisionTone === "up"
+      ? "border-emerald-500/45 bg-emerald-500/10"
+      : decisionTone === "down"
+        ? "border-red-500/45 bg-red-500/10"
+        : "border-white/10 bg-black/30";
 
   return (
     <div className="mt-3 space-y-3">
@@ -681,8 +700,13 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
       </div>
 
       {renderedSections.map((section, index) => {
+        const isDecision = section.title.toLowerCase() === "final committee decision";
         return (
-          <details key={`${section.title}-${index}`} className="rounded-xl border border-white/10 bg-black/30 p-3" open={index === 0}>
+          <details
+            key={`${section.title}-${index}`}
+            className={`rounded-xl border p-3 ${isDecision ? decisionPanelClass : "border-white/10 bg-black/30"}`}
+            open={index === 0}
+          >
             <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{section.title}</summary>
             <div className="mt-2 max-h-[24rem] overflow-auto break-words text-zinc-200">
               <MarkdownBlock text={section.text} />
@@ -1229,6 +1253,7 @@ export function HedgeDashboard({
   }, [methodTabs]);
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
   const tradingAgentsPayload = data?.trading_agents;
+  const tradingAgentsTone = tradingAgentsDecisionTone(tradingAgentsPayload?.final_committee_view);
   const hasTradingAgents =
     !!tradingAgentsPayload &&
     (Object.keys(tradingAgentsPayload).length > 0 || String(tradingAgentsPayload.status || "").trim().length > 0);
@@ -1886,7 +1911,7 @@ export function HedgeDashboard({
                     />
                   ))}
                   {hasTradingAgents ? (
-                    <Tab active={valuationTab === "trading-agents"} onClick={() => setValuationTab("trading-agents")} label="TradingAgents" />
+                    <Tab active={valuationTab === "trading-agents"} onClick={() => setValuationTab("trading-agents")} label="TradingAgents" tone={tradingAgentsTone} />
                   ) : null}
                 </div>
                 {valuationTab === "overview" ? (
@@ -2188,38 +2213,40 @@ export function HedgeDashboard({
                     {showAssumptionsRangeMobile ? "Hide Min/Max" : "Show Min/Max"}
                   </button>
                 </div>
-                {showAssumptionsRangeMobile ? (
-                  <div className="space-y-2 sm:hidden">
-                    {assumptionsDisplayRows.map((entry) =>
-                      entry?.type === "spacer" ? (
-                        <div key={entry.key} className="h-2" />
-                      ) : entry?.type === "metric" ? (
-                        <article key={entry.key} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                          <p className="text-sm font-semibold text-zinc-100">{entry.row.label}</p>
-                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <p className="uppercase tracking-[0.12em] text-zinc-500">Mean</p>
-                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</p>
-                            </div>
-                            <div>
-                              <p className="uppercase tracking-[0.12em] text-zinc-500">Current</p>
-                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionCurrentValue(entry.row.label, currentAssumptionValue(entry.row.label), currencyContext)}</p>
-                            </div>
-                            <div>
-                              <p className="uppercase tracking-[0.12em] text-zinc-500">Min</p>
-                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</p>
-                            </div>
-                            <div>
-                              <p className="uppercase tracking-[0.12em] text-zinc-500">Max</p>
-                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</p>
-                            </div>
+                <div className="space-y-2 sm:hidden">
+                  {assumptionsDisplayRows.map((entry) =>
+                    entry?.type === "spacer" ? (
+                      <div key={entry.key} className="h-2" />
+                    ) : entry?.type === "metric" ? (
+                      <article key={entry.key} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <p className="text-sm font-semibold leading-snug text-zinc-100">{entry.row.label}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <p className="uppercase tracking-[0.12em] text-zinc-500">Mean</p>
+                            <p className="mt-1 break-words font-mono text-base text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</p>
                           </div>
-                        </article>
-                      ) : null,
-                    )}
-                  </div>
-                ) : null}
-                <div className={`${showAssumptionsRangeMobile ? "hidden sm:block" : "block"} overflow-auto`}>
+                          <div>
+                            <p className="uppercase tracking-[0.12em] text-zinc-500">Current</p>
+                            <p className="mt-1 break-words font-mono text-base text-zinc-100">{formatAssumptionCurrentValue(entry.row.label, currentAssumptionValue(entry.row.label), currencyContext)}</p>
+                          </div>
+                          {showAssumptionsRangeMobile ? (
+                            <>
+                              <div>
+                                <p className="uppercase tracking-[0.12em] text-zinc-500">Min</p>
+                                <p className="mt-1 break-words font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</p>
+                              </div>
+                              <div>
+                                <p className="uppercase tracking-[0.12em] text-zinc-500">Max</p>
+                                <p className="mt-1 break-words font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</p>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </article>
+                    ) : null,
+                  )}
+                </div>
+                <div className="hidden overflow-auto sm:block">
                   <table className="hib-values-table w-full text-sm sm:min-w-[620px]">
                     <thead className="border-b border-white/10 text-zinc-500">
                       <tr>

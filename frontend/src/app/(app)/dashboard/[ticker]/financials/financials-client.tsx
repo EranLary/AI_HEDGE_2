@@ -143,7 +143,7 @@ function FinancialTable({
           </colgroup>
           <thead className="border-b border-[color:var(--border-subtle)] text-[color:var(--text-muted)]">
             <tr>
-              <th className="sticky left-0 z-10 bg-[color:var(--surface-elevated)] px-3 py-3 text-left font-medium">Metric</th>
+              <th className="bg-[color:var(--surface-elevated)] px-3 py-3 text-left font-medium sm:sticky sm:left-0 sm:z-10">Metric</th>
               {periods.map((period) => (
                 <th key={period.key} className="px-3 py-3 text-right align-bottom font-medium">
                   <span className="block text-base leading-5 text-[color:var(--text-primary)]">{periodChip(period).replace(/\s+/g, " ")}</span>
@@ -163,7 +163,7 @@ function FinancialTable({
           <tbody>
             {rows.map((row, idx) => (
               <tr key={`${row.metric}-${idx}`} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
-                <td className="sticky left-0 z-10 bg-[color:var(--surface-elevated)] px-3 py-2 font-medium text-[color:var(--text-primary)]">
+                <td className="bg-[color:var(--surface-elevated)] px-3 py-2 font-medium text-[color:var(--text-primary)] sm:sticky sm:left-0 sm:z-10">
                   {row.metric}
                 </td>
                 {periods.map((period) => (

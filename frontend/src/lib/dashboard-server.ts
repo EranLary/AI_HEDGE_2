@@ -45,6 +45,12 @@ export type LivePerformance = {
   };
 };
 
+export type LiveFundamentals = {
+  ticker: string;
+  financial_currency?: string;
+  assumption_current_values?: Record<string, number | null>;
+};
+
 async function loadReportsList(): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
   const deletedFilter = await getDeletedReportFilter();
@@ -332,6 +338,46 @@ function runLivePricesBatchScript(tickers: string[]): Promise<Record<string, num
   });
 }
 
+function runLiveFundamentalsScript(ticker: string): Promise<LiveFundamentals> {
+  return new Promise((resolve, reject) => {
+    const root = repoRoot();
+    const scriptPath = path.resolve(root, "scripts", "live_fundamentals.py");
+    const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
+
+    const child = spawn(pythonExe, [scriptPath, "--ticker", ticker], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        PYTHONPATH: path.resolve(root, "src"),
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (err) => {
+      reject(err);
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `live_fundamentals.py exited with ${code}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout) as LiveFundamentals);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
 export const getLivePerformance = unstable_cache(
   async (ticker: string): Promise<LivePerformance> => {
     const tk = ticker.toUpperCase();
@@ -351,6 +397,24 @@ export const getLivePerformance = unstable_cache(
   },
   ["live-performance-v1"],
   { revalidate: 120 },
+);
+
+export const getLiveFundamentals = unstable_cache(
+  async (ticker: string): Promise<LiveFundamentals> => {
+    const tk = ticker.toUpperCase();
+    try {
+      const result = await runLiveFundamentalsScript(tk);
+      return {
+        ticker: tk,
+        financial_currency: String(result?.financial_currency || "USD").toUpperCase(),
+        assumption_current_values: result?.assumption_current_values || {},
+      };
+    } catch {
+      return { ticker: tk, financial_currency: "USD", assumption_current_values: {} };
+    }
+  },
+  ["live-fundamentals-v1"],
+  { revalidate: 300 },
 );
 
 export async function getLiveCurrentPricesBatch(tickers: string[]): Promise<Record<string, number | null>> {

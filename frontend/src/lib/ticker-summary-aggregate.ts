@@ -23,6 +23,7 @@ export type SummaryAssumptionRow = {
   key: string;
   label: string;
   mean_value: number | null;
+  current_value?: number | null;
   samples: number;
 };
 

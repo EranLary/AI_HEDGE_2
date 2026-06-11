@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
-import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { getLiveCurrentPricesBatch, getLiveFundamentals } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import {
@@ -18,9 +18,31 @@ export const revalidate = 0;
 
 const WINDOW_VALUES = new Set<SummaryWindow>(["all", "1y", "3m", "1m", "1w"]);
 
+const ASSUMPTION_CURRENT_KEYS: Record<string, string> = {
+  "representative fcf": "representative_fcf",
+  "representative revenue": "representative_revenue",
+  "representative ev sales": "representative_ev_sales",
+  "representative earnings": "representative_earnings",
+  "representative p e": "representative_pe",
+};
+
 function parseWindow(value: string | null): SummaryWindow {
   const raw = String(value || "").trim().toLowerCase();
   return WINDOW_VALUES.has(raw as SummaryWindow) ? (raw as SummaryWindow) : "all";
+}
+
+function normalizeAssumptionLabel(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[_/]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function safeNumber(value: unknown): number | null {
+  if (typeof value !== "number") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport[]> {
@@ -85,13 +107,27 @@ export async function GET(
   const window = parseWindow(url.searchParams.get("window"));
   const reports = await loadTickerDashboards(tk);
   const aggregation = computeTickerSummaryAggregation(reports, window);
-  const livePriceMap = await getLiveCurrentPricesBatch([tk]);
+  const [livePriceMap, liveFundamentals] = await Promise.all([
+    getLiveCurrentPricesBatch([tk]),
+    getLiveFundamentals(tk),
+  ]);
   const liveCurrentPrice = typeof livePriceMap[tk] === "number" ? Number(livePriceMap[tk]) : null;
+  const currentAssumptions = liveFundamentals.assumption_current_values || {};
+  const assumptions = aggregation.assumptions.map((row) => {
+    const currentKey = ASSUMPTION_CURRENT_KEYS[normalizeAssumptionLabel(row.label)];
+    return {
+      ...row,
+      current_value: currentKey ? safeNumber(currentAssumptions[currentKey]) : null,
+    };
+  });
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
     ticker: tk,
     window,
+    currency_context: {
+      financial_currency: String(liveFundamentals.financial_currency || "USD").toUpperCase(),
+    },
     coverage: aggregation.coverage,
     overview: {
       ...aggregation.overview,
@@ -99,6 +135,6 @@ export async function GET(
     },
     by_model: aggregation.by_model,
     by_valuator: aggregation.by_valuator,
-    assumptions: aggregation.assumptions,
+    assumptions,
   });
 }

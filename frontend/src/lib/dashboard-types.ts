@@ -301,6 +301,7 @@ export type DashboardPayload = {
         method_count: number;
         methods: string[];
         source_paths: string[];
+        current_value?: number | null;
       }>;
       source_values?: Array<{
         method: string;
@@ -310,6 +311,7 @@ export type DashboardPayload = {
         label: string;
         value: number;
       }>;
+      assumption_current_values?: Record<string, number | null>;
     };
     consensus: {
       current_price?: number | null;

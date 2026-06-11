@@ -564,6 +564,13 @@ html[data-theme="light"] .hib-wallst-strong-buy-tone {
   color: #166534 !important;
 }
 
+.hib-wallst-range-rail {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+html[data-theme="light"] .hib-wallst-range-rail {
+  background-color: rgba(51, 65, 85, 0.32) !important;
+}
+
 .hib-info-tip-btn {
   border-color: rgba(148, 163, 184, 0.7) !important;
   background-color: rgba(15, 23, 42, 0.9) !important;

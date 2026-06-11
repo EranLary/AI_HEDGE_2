@@ -244,19 +244,23 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const mean = num(targets?.mean);
   const median = num(targets?.median);
   const valid = low !== null && high !== null && high > low;
-  const meanPct = valid && mean !== null ? clampPct(mean, low, high) : 50;
-  const currentPct = valid && current !== null ? clampPct(current, low, high) : 50;
-  const medianPct = valid && median !== null ? clampPct(median, low, high) : 50;
+  const railLow = valid ? Math.min(low, current ?? low) : null;
+  const railHigh = valid ? Math.max(high, current ?? high) : null;
+  const lowPct = valid && railLow !== null && railHigh !== null ? clampPct(low, railLow, railHigh) : 0;
+  const highPct = valid && railLow !== null && railHigh !== null ? clampPct(high, railLow, railHigh) : 100;
+  const meanPct = valid && railLow !== null && railHigh !== null && mean !== null ? clampPct(mean, railLow, railHigh) : 50;
+  const currentPct = valid && railLow !== null && railHigh !== null && current !== null ? clampPct(current, railLow, railHigh) : 50;
+  const medianPct = valid && railLow !== null && railHigh !== null && median !== null ? clampPct(median, railLow, railHigh) : 50;
   const lowChangePct = pctFromCurrent(low, current);
   const highChangePct = pctFromCurrent(high, current);
   const medianChangePct = pctFromCurrent(median, current);
   const railPct = (pct: number) => 3 + (pct * 94) / 100;
   const markers = [
-    { label: "Low", value: low, change: lowChangePct, pct: railPct(0), lane: "top", translateClass: "translate-x-0", dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
+    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
     { label: "Current", value: current, change: null, pct: railPct(currentPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
     { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--text-primary)]", labelClass: "text-[color:var(--text-primary)]" },
     { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--accent)]", labelClass: toneClass(targets?.upside_pct) },
-    { label: "High", value: high, change: highChangePct, pct: railPct(100), lane: "top", translateClass: "-translate-x-full", dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
+    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), lane: "top", translateClass: "-translate-x-full", dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
   ];
 
   return (
@@ -275,7 +279,7 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
       ) : (
         <div className="px-2 py-5">
           <div className="relative h-36">
-            <div className="absolute left-[3%] right-[3%] top-16 h-2 rounded-full bg-white/10" aria-label="Analyst low to high target range" />
+            <div className="hib-wallst-range-rail absolute left-[3%] right-[3%] top-16 h-2 rounded-full" aria-label="Current price and analyst target range" />
             {markers.map((marker) => (
               <div
                 key={`marker-${marker.label}`}

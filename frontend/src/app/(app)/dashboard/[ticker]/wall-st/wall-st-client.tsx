@@ -255,12 +255,14 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const highChangePct = pctFromCurrent(high, current);
   const medianChangePct = pctFromCurrent(median, current);
   const railPct = (pct: number) => 3 + (pct * 94) / 100;
+  const analystDotClass = "bg-[color:var(--text-primary)]";
+  const analystLabelClass = "text-[color:var(--text-primary)]";
   const markers = [
-    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
+    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
     { label: "Current", value: current, change: null, pct: railPct(currentPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
-    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--text-primary)]", labelClass: "text-[color:var(--text-primary)]" },
-    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--accent)]", labelClass: toneClass(targets?.upside_pct) },
-    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), lane: "top", translateClass: "-translate-x-full", dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
+    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), lane: "top", translateClass: "-translate-x-full", dotClass: analystDotClass, labelClass: analystLabelClass },
   ];
 
   return (

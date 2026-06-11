@@ -198,9 +198,9 @@ function MainThesisPanel({
             <div className="space-y-2">
               {kpiItems.map((item, idx) => (
                 <div key={`kpi-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-sm font-semibold text-zinc-100">{item.name || "KPI"}</p>
-                  {item.why_it_matters ? <p className="mt-1 text-xs text-zinc-300">{item.why_it_matters}</p> : null}
-                  {item.direction_to_watch ? <p className="mt-1 text-xs text-zinc-500">{item.direction_to_watch}</p> : null}
+                  <p className="text-base font-bold leading-snug text-[color:var(--text-primary)]">{item.name || "KPI"}</p>
+                  {item.why_it_matters ? <p className="mt-2 text-sm leading-relaxed text-[color:var(--text-primary)]">{item.why_it_matters}</p> : null}
+                  {item.direction_to_watch ? <p className="mt-2 text-sm leading-relaxed text-[color:var(--text-secondary)]">{item.direction_to_watch}</p> : null}
                 </div>
               ))}
             </div>

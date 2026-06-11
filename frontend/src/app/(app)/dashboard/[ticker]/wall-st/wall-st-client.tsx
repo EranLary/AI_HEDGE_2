@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BarChart3, FileText, Gauge, LineChart, ListChecks, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, FileText, Gauge, Info, LineChart, ListChecks, TrendingDown, TrendingUp } from "lucide-react";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { DashboardPayload, ReportListItem, WallStPayload } from "@/lib/dashboard-types";
@@ -33,6 +33,12 @@ function fmtPct(value: unknown): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+function fmtSignedNum(value: unknown): string {
+  const n = num(value);
+  if (n === null) return "-";
+  return `${n > 0 ? "+" : ""}${fmtNum(n)}`;
+}
+
 function fmtLarge(value: unknown): string {
   const n = num(value);
   if (n === null) return "-";
@@ -49,6 +55,48 @@ function fmtGrowth(value: unknown): string {
   if (n === null) return "-";
   const pct = Math.abs(n) <= 4 ? n * 100 : n;
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+function pctFromCurrent(value: unknown, current: unknown): number | null {
+  const v = num(value);
+  const c = num(current);
+  if (v === null || c === null || Math.abs(c) <= 1e-9) return null;
+  return ((v - c) / c) * 100;
+}
+
+function periodLabel(value: unknown): string {
+  const raw = text(value);
+  const normalized = raw.toLowerCase().replace(/\s+/g, "");
+  const match = normalized.match(/^([+-]?\d+)([qym])$/) || normalized.match(/^([qym])(\d+)\+$/);
+  if (!match) return raw || "-";
+  const unit = Number.isNaN(Number(match[1])) ? match[1] : match[2];
+  const offset = Number.isNaN(Number(match[1])) ? Number(match[2]) : Number(match[1]);
+  if (unit === "q") {
+    if (offset === 0) return "Current Q";
+    if (offset === 1) return "Next Q";
+    if (offset > 1) return `Q+${offset}`;
+    return `Q${offset}`;
+  }
+  if (unit === "y") {
+    if (offset === 0) return "This FY";
+    if (offset === 1) return "Next FY";
+    if (offset > 1) return `FY+${offset}`;
+    return `FY${offset}`;
+  }
+  if (unit === "m") {
+    if (offset === 0) return "Current";
+    if (offset === -1) return "1M ago";
+    if (offset < 0) return `${Math.abs(offset)}M ago`;
+    return `${offset}M ahead`;
+  }
+  return raw || "-";
+}
+
+function dateLabel(value: unknown): string {
+  const raw = text(value);
+  if (!raw) return "-";
+  const dateOnly = raw.split(/[T\s]/)[0];
+  return dateOnly || raw;
 }
 
 function toneClass(value: unknown): string {
@@ -68,6 +116,26 @@ function actionTone(row: Record<string, unknown>): string {
   return "border-[color:var(--border-strong)] text-[color:var(--text-muted)]";
 }
 
+function targetActionTone(row: Record<string, unknown>): string {
+  const action = `${text(row.priceTargetAction)} ${text(row.Action)}`.toLowerCase();
+  const prior = num(row.priorPriceTarget);
+  const current = num(row.currentPriceTarget);
+  if (action.includes("raise") || action.includes("increase") || (prior !== null && current !== null && current > prior)) {
+    return "hib-target-up";
+  }
+  if (action.includes("lower") || action.includes("cut") || action.includes("reduce") || (prior !== null && current !== null && current < prior)) {
+    return "hib-target-down";
+  }
+  return "text-[color:var(--text-muted)]";
+}
+
+function targetChange(row: Record<string, unknown>): number | null {
+  const prior = num(row.priorPriceTarget);
+  const current = num(row.currentPriceTarget);
+  if (prior === null || current === null || Math.abs(current - prior) <= 1e-9) return null;
+  return current - prior;
+}
+
 function clampPct(value: number, low: number, high: number): number {
   if (!Number.isFinite(value) || !Number.isFinite(low) || !Number.isFinite(high) || high <= low) return 50;
   return Math.max(0, Math.min(100, ((value - low) / (high - low)) * 100));
@@ -76,13 +144,20 @@ function clampPct(value: number, low: number, high: number): number {
 function recommendationCounts(metrics: NonNullable<WallStPayload["metrics"]>["recommendations"]) {
   const latest = metrics?.latest || {};
   const keys = [
-    ["strongBuy", "Strong Buy", "bg-[color:var(--signal-strong)]"],
-    ["buy", "Buy", "bg-[color:var(--signal-buy)]"],
-    ["hold", "Hold", "bg-[color:var(--signal-hold)]"],
-    ["sell", "Sell", "bg-[color:var(--signal-sell)]"],
-    ["strongSell", "Strong Sell", "bg-[color:var(--danger)]"],
+    ["strongSell", "Strong Sell", "hib-wallst-strong-sell-bg", "hib-wallst-strong-sell-tone", "hib-wallst-strong-sell-tone"],
+    ["sell", "Sell", "hib-wallst-sell-bg", "hib-wallst-sell-tone", "hib-wallst-sell-tone"],
+    ["hold", "Hold", "bg-[color:var(--signal-hold)]", "border-[color:var(--signal-hold)]", "hib-signal-hold"],
+    ["buy", "Buy", "hib-wallst-buy-bg", "hib-wallst-buy-tone", "hib-wallst-buy-tone"],
+    ["strongBuy", "Strong Buy", "hib-wallst-strong-buy-bg", "hib-wallst-strong-buy-tone", "hib-wallst-strong-buy-tone"],
   ] as const;
-  return keys.map(([key, label, cls]) => ({ key, label, cls, value: num(latest[key]) || 0 }));
+  return keys.map(([key, label, barClass, borderClass, textClass]) => ({
+    key,
+    label,
+    barClass,
+    borderClass,
+    textClass,
+    value: num(latest[key]) || 0,
+  }));
 }
 
 function EmptyWallSt({ errors }: { errors: string[] }) {
@@ -93,7 +168,7 @@ function EmptyWallSt({ errors }: { errors: string[] }) {
           <LineChart size={16} />
         </div>
         <div>
-          <h2 className="font-display text-lg text-[color:var(--text-primary)]">Wall ST unavailable</h2>
+          <h2 className="font-display text-lg text-[color:var(--text-primary)]">WALL ST. unavailable</h2>
           <p className="mt-1 text-sm text-[color:var(--text-secondary)]">
             {errors[0] || "Run a fresh analysis to populate analyst expectation data."}
           </p>
@@ -107,18 +182,57 @@ function MetricCard({
   label,
   value,
   detail,
+  detailTone,
   tone,
+  info,
 }: {
   label: string;
   value: string;
   detail?: string;
+  detailTone?: string;
   tone?: string;
+  info?: string;
 }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">{label}</p>
+        {info ? (
+          <span
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/10 text-[color:var(--text-muted)]"
+            title={info}
+            aria-label={info}
+          >
+            <Info size={10} />
+          </span>
+        ) : null}
+      </div>
       <p className={`mt-2 font-display text-2xl leading-none ${tone || "text-[color:var(--text-primary)]"}`}>{value}</p>
-      {detail ? <p className="mt-2 text-xs text-[color:var(--text-muted)]">{detail}</p> : null}
+      {detail ? <p className={`mt-2 text-xs ${detailTone || "text-[color:var(--text-muted)]"}`}>{detail}</p> : null}
+    </article>
+  );
+}
+
+function RangeMetricCard({ low, high, current }: { low: unknown; high: unknown; current: unknown }) {
+  const lowPct = pctFromCurrent(low, current);
+  const highPct = pctFromCurrent(high, current);
+  return (
+    <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Range</p>
+      <div className="mt-2 space-y-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Low</p>
+          <p className={`font-display text-xl leading-none ${toneClass(lowPct)}`}>
+            {fmtNum(low)} <span className="text-xs">({fmtPct(lowPct)})</span>
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">High</p>
+          <p className={`font-display text-xl leading-none ${toneClass(highPct)}`}>
+            {fmtNum(high)} <span className="text-xs">({fmtPct(highPct)})</span>
+          </p>
+        </div>
+      </div>
     </article>
   );
 }
@@ -130,14 +244,29 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const mean = num(targets?.mean);
   const median = num(targets?.median);
   const valid = low !== null && high !== null && high > low;
-  const meanPct = valid && mean !== null ? clampPct(mean, low, high) : 50;
-  const currentPct = valid && current !== null ? clampPct(current, low, high) : 50;
-  const medianPct = valid && median !== null ? clampPct(median, low, high) : 50;
-  const positive = mean !== null && current !== null && mean > current;
-  const negative = mean !== null && current !== null && mean < current;
+  const railLow = valid ? Math.min(low, current ?? low) : null;
+  const railHigh = valid ? Math.max(high, current ?? high) : null;
+  const lowPct = valid && railLow !== null && railHigh !== null ? clampPct(low, railLow, railHigh) : 0;
+  const highPct = valid && railLow !== null && railHigh !== null ? clampPct(high, railLow, railHigh) : 100;
+  const meanPct = valid && railLow !== null && railHigh !== null && mean !== null ? clampPct(mean, railLow, railHigh) : 50;
+  const currentPct = valid && railLow !== null && railHigh !== null && current !== null ? clampPct(current, railLow, railHigh) : 50;
+  const medianPct = valid && railLow !== null && railHigh !== null && median !== null ? clampPct(median, railLow, railHigh) : 50;
+  const lowChangePct = pctFromCurrent(low, current);
+  const highChangePct = pctFromCurrent(high, current);
+  const medianChangePct = pctFromCurrent(median, current);
+  const railPct = (pct: number) => 3 + (pct * 94) / 100;
+  const analystDotClass = "bg-[color:var(--text-primary)]";
+  const analystLabelClass = "text-[color:var(--text-primary)]";
+  const markers = [
+    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "Current", value: current, change: null, pct: railPct(currentPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
+    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), lane: "top", translateClass: "-translate-x-full", dotClass: analystDotClass, labelClass: analystLabelClass },
+  ];
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+    <section className="min-w-0 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Street Range</p>
@@ -151,20 +280,37 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
         <p className="text-sm text-[color:var(--text-secondary)]">No usable low/high analyst target range was returned.</p>
       ) : (
         <div className="px-2 py-5">
-          <div className="relative h-3 rounded-full bg-white/5">
-            <div
-              className={`absolute inset-y-0 left-0 rounded-full ${positive ? "bg-[color:var(--success)]" : negative ? "bg-[color:var(--danger)]" : "bg-[color:var(--text-disabled)]"}`}
-              style={{ width: `${Math.max(4, meanPct)}%` }}
-            />
-            <div className="absolute -top-3 h-9 w-px bg-[color:var(--warning)]" style={{ left: `${currentPct}%` }} />
-            <div className="absolute -top-2 h-7 w-px bg-[color:var(--text-primary)]" style={{ left: `${medianPct}%` }} />
-            <div className="absolute -top-4 h-11 w-1 rounded-full bg-[color:var(--accent)]" style={{ left: `${meanPct}%` }} />
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[color:var(--text-muted)] sm:grid-cols-4">
-            <span>Low {fmtNum(low)}</span>
-            <span>Current {fmtNum(current)}</span>
-            <span>Median {fmtNum(median)}</span>
-            <span>High {fmtNum(high)}</span>
+          <div className="relative h-36">
+            <div className="hib-wallst-range-rail absolute left-[3%] right-[3%] top-16 h-2 rounded-full" aria-label="Current price and analyst target range" />
+            {markers.map((marker) => (
+              <div
+                key={`marker-${marker.label}`}
+                className={`absolute inset-y-0 w-max ${marker.translateClass}`}
+                style={{ left: `${marker.pct}%` }}
+                title={`${marker.label}: ${fmtNum(marker.value)}${marker.change !== null ? ` (${fmtPct(marker.change)})` : ""}`}
+              >
+                {marker.lane === "top" ? (
+                  <div className="absolute top-0 flex flex-col gap-0.5">
+                    <span className={`whitespace-nowrap text-xs font-semibold ${marker.labelClass}`}>{marker.label}</span>
+                    <span className="whitespace-nowrap font-mono text-[11px] text-[color:var(--text-secondary)]">{fmtNum(marker.value)}</span>
+                    {marker.change !== null ? (
+                      <span className={`whitespace-nowrap font-mono text-[11px] ${toneClass(marker.change)}`}>{fmtPct(marker.change)}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <span className={`absolute left-1/2 h-7 w-px -translate-x-1/2 ${marker.lane === "top" ? "top-9" : "top-16"} ${marker.dotClass}`} />
+                <span className={`absolute left-1/2 top-[3.625rem] h-3 w-3 -translate-x-1/2 rounded-full ring-2 ring-[color:var(--surface)] ${marker.dotClass}`} />
+                {marker.lane === "bottom" ? (
+                  <div className="absolute top-24 flex flex-col gap-0.5">
+                    <span className={`whitespace-nowrap text-xs font-semibold ${marker.labelClass}`}>{marker.label}</span>
+                    <span className="whitespace-nowrap font-mono text-[11px] text-[color:var(--text-secondary)]">{fmtNum(marker.value)}</span>
+                    {marker.change !== null ? (
+                      <span className={`whitespace-nowrap font-mono text-[11px] ${toneClass(marker.change)}`}>{fmtPct(marker.change)}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -179,7 +325,7 @@ function RecommendationMix({ metrics }: { metrics: NonNullable<WallStPayload["me
   const posture = text(metrics?.posture || "unavailable");
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+    <section className="min-w-0 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <div className="mb-4 flex items-start gap-3">
         <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
           <BarChart3 size={18} />
@@ -187,28 +333,31 @@ function RecommendationMix({ metrics }: { metrics: NonNullable<WallStPayload["me
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Recommendation Mix</p>
           <h2 className="font-display text-lg text-[color:var(--text-primary)]">{posture.replace("-", " ")}</h2>
-          <p className="text-xs text-[color:var(--text-muted)]">Trend: {trend}</p>
+          <p className="text-xs text-[color:var(--text-muted)]">
+            {total} analysts in the latest mix. Trend: {trend}.
+          </p>
         </div>
       </div>
       {total <= 0 ? (
         <p className="text-sm text-[color:var(--text-secondary)]">No recommendation mix was returned.</p>
       ) : (
         <>
-          <div className="flex h-4 overflow-hidden rounded-full bg-white/5">
+          <div className="flex h-5 overflow-hidden rounded-full bg-white/5" aria-label="Recommendation mix by analyst count">
             {counts.map((item) => (
               <div
                 key={item.key}
-                className={item.cls}
-                title={`${item.label}: ${item.value}`}
+                className={item.barClass}
+                title={`${item.label}: ${item.value} (${((item.value / total) * 100).toFixed(0)}%)`}
                 style={{ width: `${(item.value / total) * 100}%` }}
               />
             ))}
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-5">
             {counts.map((item) => (
-              <div key={item.key} className="rounded-xl border border-white/10 bg-white/5 p-2">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{item.label}</p>
-                <p className="mt-1 font-mono text-sm font-semibold text-[color:var(--text-primary)]">{item.value}</p>
+              <div key={item.key} className={`flex min-h-28 flex-col rounded-xl border bg-white/5 p-2 ${item.borderClass}`}>
+                <p className="min-h-8 text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{item.label}</p>
+                <p className={`mt-auto font-mono text-lg font-semibold ${item.textClass}`}>{item.value}</p>
+                <p className="text-[10px] text-[color:var(--text-muted)]">{((item.value / total) * 100).toFixed(0)}%</p>
               </div>
             ))}
           </div>
@@ -230,7 +379,7 @@ function EstimateTable({
   mode: "earnings" | "revenue";
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+    <section className="min-w-0 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <div className="mb-3 flex items-start gap-3">
         <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
           <FileText size={18} />
@@ -243,8 +392,8 @@ function EstimateTable({
       {!rows.length ? (
         <p className="text-sm text-[color:var(--text-secondary)]">No {title.toLowerCase()} table was returned.</p>
       ) : (
-        <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[46rem]">
+        <div className="hib-market-table-wrap w-full">
+          <table className="hib-market-table min-w-[42rem]">
             <thead>
               <tr>
                 <th className="hib-market-table-head">Period</th>
@@ -262,7 +411,7 @@ function EstimateTable({
                 const valueFmt = mode === "revenue" ? fmtLarge : fmtNum;
                 return (
                   <tr key={`${text(row._index)}-${idx}`}>
-                    <td className="hib-market-table-cell font-mono text-xs">{text(row._index) || "-"}</td>
+                    <td className="hib-market-table-cell font-semibold">{periodLabel(row._index)}</td>
                     <td className="hib-market-table-cell font-mono">{valueFmt(row.avg)}</td>
                     <td className="hib-market-table-cell font-mono">{valueFmt(row.low)}</td>
                     <td className="hib-market-table-cell font-mono">{valueFmt(row.high)}</td>
@@ -282,7 +431,7 @@ function EstimateTable({
 
 function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+    <section className="min-w-0 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <div className="mb-3 flex items-start gap-3">
         <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
           <Activity size={18} />
@@ -296,14 +445,14 @@ function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
         <p className="text-sm text-[color:var(--text-secondary)]">No recent upgrade or downgrade tape was returned.</p>
       ) : (
         <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[62rem] table-fixed">
+          <table className="hib-market-table min-w-[54rem] table-fixed">
             <colgroup>
-              <col className="w-[10rem]" />
-              <col className="w-[13rem]" />
               <col className="w-[7rem]" />
               <col className="w-[10rem]" />
+              <col className="w-[6.5rem]" />
               <col className="w-[10rem]" />
-              <col className="w-[8rem]" />
+              <col className="w-[10rem]" />
+              <col className="w-[7.5rem]" />
               <col className="w-[7rem]" />
               <col className="w-[7rem]" />
             </colgroup>
@@ -322,7 +471,7 @@ function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
             <tbody>
               {rows.slice(0, 20).map((row, idx) => (
                 <tr key={`${text(row.Firm)}-${text(row._index)}-${idx}`}>
-                  <td className="hib-market-table-cell whitespace-nowrap font-mono text-xs">{text(row._index) || "-"}</td>
+                  <td className="hib-market-table-cell whitespace-nowrap font-mono text-xs">{dateLabel(row._index)}</td>
                   <td className="hib-market-table-cell break-words font-semibold">{text(row.Firm) || "-"}</td>
                   <td className="hib-market-table-cell">
                     <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${actionTone(row)}`}>
@@ -331,7 +480,10 @@ function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
                   </td>
                   <td className="hib-market-table-cell">{text(row.FromGrade) || "-"}</td>
                   <td className="hib-market-table-cell">{text(row.ToGrade) || "-"}</td>
-                  <td className="hib-market-table-cell">{text(row.priceTargetAction) || "-"}</td>
+                  <td className={`hib-market-table-cell font-semibold ${targetActionTone(row)}`}>
+                    {text(row.priceTargetAction) || "-"}
+                    {targetChange(row) !== null ? <span className="ml-1 text-[10px]">({fmtSignedNum(targetChange(row))})</span> : null}
+                  </td>
                   <td className="hib-market-table-cell font-mono">{fmtNum(row.priorPriceTarget)}</td>
                   <td className="hib-market-table-cell font-mono">{fmtNum(row.currentPriceTarget)}</td>
                 </tr>
@@ -367,7 +519,7 @@ export function WallStClient({ ticker, data, reportsForTicker, resolvedReportId 
       <ReportChipRow ticker={ticker} reports={reportsForTicker} currentReportId={resolvedReportId} />
       <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl text-[color:var(--text-primary)]">Wall ST</h1>
+          <h1 className="font-display text-2xl text-[color:var(--text-primary)]">WALL ST.</h1>
           <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
             {ticker} - analyst expectations in original reported units
           </p>
@@ -387,11 +539,29 @@ export function WallStClient({ ticker, data, reportsForTicker, resolvedReportId 
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <MetricCard label="Current" value={fmtNum(targets.current)} detail={priceCurrency} tone="text-[color:var(--warning)]" />
-            <MetricCard label="Mean Target" value={fmtNum(targets.mean)} detail={fmtPct(targets.upside_pct)} tone={toneClass(targets.upside_pct)} />
-            <MetricCard label="Range" value={`${fmtNum(targets.low)} - ${fmtNum(targets.high)}`} detail={priceCurrency} />
-            <MetricCard label="Median" value={fmtNum(targets.median)} detail={priceCurrency} />
+            <MetricCard
+              label="Mean Target"
+              value={fmtNum(targets.mean)}
+              detail={fmtPct(targets.upside_pct)}
+              detailTone={toneClass(targets.upside_pct)}
+              tone={toneClass(targets.upside_pct)}
+            />
+            <RangeMetricCard low={targets.low} high={targets.high} current={targets.current} />
+            <MetricCard
+              label="Median"
+              value={fmtNum(targets.median)}
+              detail={fmtPct(pctFromCurrent(targets.median, targets.current))}
+              detailTone={toneClass(pctFromCurrent(targets.median, targets.current))}
+              tone={toneClass(pctFromCurrent(targets.median, targets.current))}
+            />
             <MetricCard label="Analysts" value={fmtNum(analystCount, 0)} detail="latest coverage count" />
-            <MetricCard label="Street Score" value={stanceScore === null ? "-" : stanceScore.toFixed(2)} detail={text(recommendations.posture || "recommendations")} tone={toneClass(stanceScore)} />
+            <MetricCard
+              label="Street Score"
+              value={stanceScore === null ? "-" : stanceScore.toFixed(2)}
+              detail={text(recommendations.posture || "recommendations")}
+              tone={toneClass(stanceScore)}
+              info="A -2 to +2 rating mix score: Strong Buy is +2, Buy +1, Hold 0, Sell -1, and Strong Sell -2."
+            />
           </div>
 
           {synthesisBullets.length ? (

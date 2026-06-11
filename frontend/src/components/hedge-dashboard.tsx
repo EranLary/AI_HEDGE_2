@@ -26,6 +26,8 @@ export type HedgeDashboardProps = {
 export type CurrencyContext = {
   code: string;
   symbol: string;
+  financialCode: string;
+  financialSymbol: string;
   isIsraeli: boolean;
   priceUsdToDisplay: number;
   financialUsdToDisplay: number;
@@ -164,15 +166,51 @@ type MethodMetricItem = {
 
 export function buildCurrencyContext(data: DashboardPayload | null): CurrencyContext {
   const isIsraeli = String(data?.ticker || "").toUpperCase().endsWith(".TA");
+  const priceCode = String(data?.header?.display_currency || data?.header?.currency || (isIsraeli ? "ILS" : "USD")).toUpperCase();
+  const financialCode = String(data?.header?.original_financial_currency || priceCode || "USD").toUpperCase();
   return {
-    code: isIsraeli ? "ILS" : "USD",
-    symbol: isIsraeli ? "₪" : "$",
+    code: priceCode,
+    symbol: currencySymbol(priceCode),
+    financialCode,
+    financialSymbol: currencySymbol(financialCode),
     isIsraeli,
     // Dashboard numeric values are already emitted in display scale.
     // Do not apply an extra multiplier in the UI.
     priceUsdToDisplay: 1,
     financialUsdToDisplay: 1,
   };
+}
+
+function currencySymbol(code: string): string {
+  const normalized = String(code || "").trim().toUpperCase();
+  const symbols: Record<string, string> = {
+    USD: "$",
+    ILS: "₪",
+    ILA: "₪",
+    EUR: "€",
+    GBP: "£",
+    GBX: "£",
+    JPY: "¥",
+    CNY: "¥",
+    CNH: "¥",
+    KRW: "₩",
+    INR: "₹",
+    CAD: "C$",
+    AUD: "A$",
+    NZD: "NZ$",
+    HKD: "HK$",
+    SGD: "S$",
+    CHF: "CHF",
+    SEK: "kr",
+    NOK: "kr",
+    DKK: "kr",
+    ZAR: "R",
+    ZAC: "R",
+    BRL: "R$",
+    MXN: "Mex$",
+    TRY: "₺",
+  };
+  return symbols[normalized] || `${normalized} `;
 }
 
 function toDisplayAmount(v: number, ctx: CurrencyContext, kind: "price" | "financial" = "price"): number {
@@ -227,7 +265,8 @@ export function fmtMoneyCompact(v: number | null | undefined, ctx: CurrencyConte
 
 export function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
-  return fmtMoneyCompact(v, ctx, "financial");
+  const usdContext = { ...ctx, code: "USD", symbol: "$" };
+  return fmtMoneyCompact(v, usdContext, "price");
 }
 
 const fmtNum = (v?: number | null) =>
@@ -303,12 +342,34 @@ function formatAssumptionValue(label: string, value: number | null | undefined, 
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
   const normalizedLabel = String(label || "").trim().toLowerCase();
   if (ASSUMPTION_MONEY_LABELS.has(normalizedLabel)) {
-    return fmtMoneyCompact(value, ctx, "financial");
+    return fmtFinancialCompact(value, ctx);
   }
   const abs = Math.abs(value);
   if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   return fmtNum(value);
+}
+
+function formatAssumptionCurrentValue(label: string, value: number | null | undefined, ctx: CurrencyContext): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return formatAssumptionValue(label, value, ctx);
+}
+
+function fmtFinancialCompact(value: number, ctx: CurrencyContext): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const prefix = `${sign}${ctx.financialSymbol}`;
+  if (abs >= 1_000_000_000) return `${prefix}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${prefix}${(abs / 1_000_000).toFixed(2)}M`;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: ctx.financialCode,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${prefix}${abs.toFixed(2)}`;
+  }
 }
 
 function modelExplanation(modelName: string): string {
@@ -1487,10 +1548,39 @@ export function HedgeDashboard({
         method_count: methods.length,
         methods,
         source_paths: [],
+        current_value: null,
       });
     }
     return rows;
   }, [data?.valuation_hub.all_values?.metric_means]);
+
+  const assumptionCurrentValues = useMemo(() => {
+    const raw = data?.valuation_hub.all_values?.assumption_current_values || {};
+    return raw && typeof raw === "object" ? raw : {};
+  }, [data?.valuation_hub.all_values?.assumption_current_values]);
+
+  const currentAssumptionValue = useCallback(
+    (label: string) => {
+      const normalized = normalizeMetricLabel(label);
+      const key =
+        normalized === "representative fcf"
+          ? "representative_fcf"
+          : normalized === "representative revenue"
+            ? "representative_revenue"
+            : normalized === "representative ev sales"
+              ? "representative_ev_sales"
+              : normalized === "representative earnings"
+                ? "representative_earnings"
+                : normalized === "representative p e"
+                  ? "representative_pe"
+                  : "";
+      if (!key) return null;
+      const raw = assumptionCurrentValues[key as keyof typeof assumptionCurrentValues];
+      const value = typeof raw === "number" ? raw : null;
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
+    },
+    [assumptionCurrentValues],
+  );
 
   const assumptionsByNorm = useMemo(() => {
     const m = new Map<string, (typeof assumptionsModelRows)[number]>();
@@ -2098,28 +2188,61 @@ export function HedgeDashboard({
                     {showAssumptionsRangeMobile ? "Hide Min/Max" : "Show Min/Max"}
                   </button>
                 </div>
-                <div className="overflow-auto">
+                {showAssumptionsRangeMobile ? (
+                  <div className="space-y-2 sm:hidden">
+                    {assumptionsDisplayRows.map((entry) =>
+                      entry?.type === "spacer" ? (
+                        <div key={entry.key} className="h-2" />
+                      ) : entry?.type === "metric" ? (
+                        <article key={entry.key} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-sm font-semibold text-zinc-100">{entry.row.label}</p>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Mean</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</p>
+                            </div>
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Current</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionCurrentValue(entry.row.label, currentAssumptionValue(entry.row.label), currencyContext)}</p>
+                            </div>
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Min</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</p>
+                            </div>
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Max</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</p>
+                            </div>
+                          </div>
+                        </article>
+                      ) : null,
+                    )}
+                  </div>
+                ) : null}
+                <div className={`${showAssumptionsRangeMobile ? "hidden sm:block" : "block"} overflow-auto`}>
                   <table className="hib-values-table w-full text-sm sm:min-w-[620px]">
                     <thead className="border-b border-white/10 text-zinc-500">
                       <tr>
                         <th className="py-1 text-left font-normal">Metric</th>
                         <th className="py-1 text-right font-normal">Mean</th>
-                        <th className={`py-1 text-right font-normal sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>Min</th>
-                        <th className={`py-1 text-right font-normal sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>Max</th>
+                        <th className="py-1 text-right font-normal">Current</th>
+                        <th className="hidden py-1 text-right font-normal sm:table-cell">Min</th>
+                        <th className="hidden py-1 text-right font-normal sm:table-cell">Max</th>
                       </tr>
                     </thead>
                     <tbody>
                       {assumptionsDisplayRows.map((entry) =>
                         entry?.type === "spacer" ? (
                           <tr key={entry.key}>
-                            <td colSpan={4} className="h-3" />
+                            <td colSpan={5} className="h-3" />
                           </tr>
                         ) : entry?.type === "metric" ? (
                           <tr key={entry.key} className="border-b border-white/5">
                             <td className="py-1 pr-2">{entry.row.label}</td>
                             <td className="py-1 text-right font-mono">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</td>
+                            <td className="py-1 text-right font-mono">{formatAssumptionCurrentValue(entry.row.label, currentAssumptionValue(entry.row.label), currencyContext)}</td>
+                            <td className="hidden py-1 text-right font-mono sm:table-cell">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</td>
+                            <td className="hidden py-1 text-right font-mono sm:table-cell">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</td>
                           </tr>
                         ) : null,
                       )}

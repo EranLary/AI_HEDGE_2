@@ -88,5 +88,6 @@ export async function GET(request: Request) {
     overview: aggregation.overview,
     by_model: aggregation.by_model,
     by_valuator: aggregation.by_valuator,
+    by_signal: aggregation.by_signal,
   });
 }

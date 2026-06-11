@@ -28,6 +28,7 @@ export type MetricCounts = {
 export type MetricCountsSet = {
   targets: MetricCounts;
   allocations: MetricCounts;
+  signals: MetricCounts;
   combined: MetricCounts;
 };
 
@@ -36,12 +37,14 @@ export type HitRateRow = {
   label: string;
   targets: MetricCounts;
   allocations: MetricCounts;
+  signals: MetricCounts;
   combined: MetricCounts;
 };
 
 type MetricAccSet = {
   targets: HitRateAccumulator;
   allocations: HitRateAccumulator;
+  signals: HitRateAccumulator;
 };
 
 export type HitRateCoverage = {
@@ -59,6 +62,7 @@ export type HitRateAggregation = {
   overview: MetricCountsSet;
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
+  by_signal: HitRateRow[];
 };
 
 export type HitRateMode = "all" | "positive_only";
@@ -67,6 +71,7 @@ function createMetricSet(): MetricAccSet {
   return {
     targets: createAccumulator(),
     allocations: createAccumulator(),
+    signals: createAccumulator(),
   };
 }
 
@@ -78,8 +83,9 @@ function toNumOrNull(v: unknown): number | null {
 function rowFromMetricSet(key: string, label: string, metric: MetricAccSet): HitRateRow {
   const targets = finalizeAccumulator(metric.targets);
   const allocations = finalizeAccumulator(metric.allocations);
-  const combined = finalizeAccumulator(mergeAccumulators(metric.targets, metric.allocations));
-  return { key, label, targets, allocations, combined };
+  const signals = finalizeAccumulator(metric.signals);
+  const combined = finalizeAccumulator(mergeAccumulators(mergeAccumulators(metric.targets, metric.allocations), metric.signals));
+  return { key, label, targets, allocations, signals, combined };
 }
 
 function compareRows(a: HitRateRow, b: HitRateRow): number {
@@ -98,13 +104,17 @@ function isPlaceholderValuatorLabel(label: string): boolean {
 
 function applyPrediction(
   metric: MetricAccSet,
-  type: "target" | "allocation",
+  type: "target" | "allocation" | "signal",
   predictedDirection: -1 | 0 | 1 | null,
   actualDirection: -1 | 0 | 1 | null,
 ): void {
   const verdict = verdictFromDirections(predictedDirection, actualDirection);
   if (type === "target") {
     applyVerdict(metric.targets, verdict);
+    return;
+  }
+  if (type === "signal") {
+    applyVerdict(metric.signals, verdict);
     return;
   }
   applyVerdict(metric.allocations, verdict);
@@ -120,8 +130,40 @@ function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -1 | 0 |
 function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {
   const targets = finalizeAccumulator(metric.targets);
   const allocations = finalizeAccumulator(metric.allocations);
-  const combined = finalizeAccumulator(mergeAccumulators(metric.targets, metric.allocations));
-  return { targets, allocations, combined };
+  const signals = finalizeAccumulator(metric.signals);
+  const combined = finalizeAccumulator(mergeAccumulators(mergeAccumulators(metric.targets, metric.allocations), metric.signals));
+  return { targets, allocations, signals, combined };
+}
+
+function coerceProbability(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const decimal = Math.abs(n) > 1 ? n / 100 : n;
+  return Math.max(0, Math.min(1, decimal));
+}
+
+function technicalSignalDirection(payload: DashboardPayload): -1 | 0 | 1 | null {
+  const technical = payload.technical_analysis;
+  if (!technical || !technical.analysis) return null;
+  const status = String(technical.status || "").trim().toLowerCase();
+  if (status && status !== "success") return null;
+
+  const rawDecision = String(technical.analysis.final_decision || "").trim().toLowerCase();
+  if (rawDecision === "bullish") return 1;
+  if (rawDecision === "bearish") return -1;
+  if (rawDecision === "neutral") return 0;
+
+  const bullish = coerceProbability(technical.analysis.bullish_probability);
+  const bearish = coerceProbability(technical.analysis.bearish_probability);
+  if (bullish === null && bearish === null) return null;
+  const bullishNorm = bullish ?? Math.max(0, Math.min(1, 1 - (bearish ?? 0.5)));
+  const bearishNorm = bearish ?? Math.max(0, Math.min(1, 1 - bullishNorm));
+  const total = bullishNorm + bearishNorm;
+  if (total <= 0) return 0;
+  const bullishShare = bullishNorm / total;
+  const bearishShare = bearishNorm / total;
+  if (Math.abs(bullishShare - bearishShare) < 0.1) return 0;
+  return bullishShare > bearishShare ? 1 : -1;
 }
 
 export function computeHitRateAggregation(
@@ -134,6 +176,7 @@ export function computeHitRateAggregation(
   const overview = createMetricSet();
   const byModelMap = new Map<string, MetricAccSet>();
   const byValuatorMap = new Map<string, MetricAccSet>();
+  const bySignalMap = new Map<string, MetricAccSet>();
 
   let reportsWithBaselinePrice = 0;
 
@@ -247,6 +290,17 @@ export function computeHitRateAggregation(
         }
       }
     }
+
+    const technicalDirection = technicalSignalDirection(payload);
+    if (technicalDirection !== null) {
+      const signalKey = "Technical Analysis";
+      if (!bySignalMap.has(signalKey)) {
+        bySignalMap.set(signalKey, createMetricSet());
+      }
+      const signalMetric = bySignalMap.get(signalKey)!;
+      applyPrediction(signalMetric, "signal", technicalDirection, actualDirection);
+      applyPrediction(overview, "signal", technicalDirection, actualDirection);
+    }
   }
 
   const overviewFinal = finalizeMetricSet(overview);
@@ -255,6 +309,9 @@ export function computeHitRateAggregation(
     .map(([key, metric]) => rowFromMetricSet(key, key, metric))
     .sort(compareRows);
   const by_valuator = Array.from(byValuatorMap.entries())
+    .map(([key, metric]) => rowFromMetricSet(key, key, metric))
+    .sort(compareRows);
+  const by_signal = Array.from(bySignalMap.entries())
     .map(([key, metric]) => rowFromMetricSet(key, key, metric))
     .sort(compareRows);
 
@@ -273,5 +330,6 @@ export function computeHitRateAggregation(
     overview: overviewFinal,
     by_model,
     by_valuator,
+    by_signal,
   };
 }

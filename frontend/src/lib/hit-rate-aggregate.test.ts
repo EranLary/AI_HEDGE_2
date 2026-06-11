@@ -134,3 +134,78 @@ test("positive_only mode counts only positive target/allocation predictions", ()
   assert.equal(dcf.allocations.considered, 0);
   assert.equal(dcf.allocations.hit_rate_pct, null);
 });
+
+test("technical analysis bearish signal hits when price direction moves down", () => {
+  const payload = basePayload();
+  payload.technical_analysis = {
+    status: "success",
+    analysis: {
+      final_decision: "bearish",
+      bullish_probability: 0.3,
+      bearish_probability: 0.7,
+    },
+  };
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
+
+  const agg = computeHitRateAggregation(reports, live);
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
+  assert.ok(technical);
+
+  assert.equal(technical.signals.hits, 1);
+  assert.equal(technical.signals.misses, 0);
+  assert.equal(technical.signals.neutral, 0);
+  assert.equal(technical.signals.considered, 1);
+  assert.equal(technical.signals.hit_rate_pct, 100);
+  assert.equal(agg.overview.signals.hits, 1);
+  assert.equal(agg.overview.combined.hits, 1);
+});
+
+test("technical analysis neutral signal has no direction", () => {
+  const payload = basePayload();
+  payload.technical_analysis = {
+    status: "success",
+    analysis: {
+      final_decision: "neutral",
+      bullish_probability: 0.51,
+      bearish_probability: 0.49,
+    },
+  };
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 120]]);
+
+  const agg = computeHitRateAggregation(reports, live);
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
+  assert.ok(technical);
+
+  assert.equal(technical.signals.hits, 0);
+  assert.equal(technical.signals.misses, 0);
+  assert.equal(technical.signals.neutral, 1);
+  assert.equal(technical.signals.considered, 0);
+  assert.equal(technical.signals.hit_rate_pct, null);
+});
+
+test("technical analysis can derive direction from probabilities", () => {
+  const payload = basePayload();
+  payload.technical_analysis = {
+    status: "success",
+    analysis: {
+      bullish_probability: 0.8,
+      bearish_probability: 0.2,
+    },
+  };
+
+  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
+  const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
+
+  const agg = computeHitRateAggregation(reports, live);
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
+  assert.ok(technical);
+
+  assert.equal(technical.signals.hits, 0);
+  assert.equal(technical.signals.misses, 1);
+  assert.equal(technical.signals.considered, 1);
+  assert.equal(technical.signals.hit_rate_pct, 0);
+});

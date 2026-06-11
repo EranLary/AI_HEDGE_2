@@ -33,6 +33,7 @@ const KIND_TO_FILE: Record<
   "trading-agents-json": { fileName: "{TICKER}_trading_agents.json", contentType: "application/json; charset=utf-8" },
   "trading-agents-txt": { fileName: "{TICKER}_trading_agents.txt", contentType: "text/plain; charset=utf-8" },
   "market-review-json": { fileName: "{TICKER}_market_review.json", contentType: "application/json; charset=utf-8" },
+  "financials-json": { fileName: "{TICKER}_financials.json", contentType: "application/json; charset=utf-8" },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {
@@ -92,6 +93,68 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function downloadDateStamp(value: unknown): string {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) return "report_date";
+  return `${date.getDate()}_${date.getMonth() + 1}_${String(date.getFullYear()).slice(-2)}`;
+}
+
+function artifactDownloadBase(kind: string): string {
+  if (kind === "analysis-pdf" || kind === "analysis-txt") return "analysis";
+  if (kind === "valuation-pdf" || kind === "prices-explain-pdf" || kind === "prices-explain-txt") return "valuation";
+  if (kind === "combined-pdf") return "combined";
+  if (kind === "dashboard-json") return "dashboard";
+  if (kind === "market-review-json") return "market_review";
+  if (kind === "financials-json") return "financials";
+  if (kind === "trading-agents-json" || kind === "trading-agents-txt") return "trading_agents";
+  return kind.replace(/-/g, "_");
+}
+
+function extensionForSpec(spec: { fileName: string; downloadName?: string }, ticker: string): string {
+  const candidate = (spec.downloadName || spec.fileName).replace("{TICKER}", ticker);
+  const ext = path.extname(candidate);
+  return ext || "";
+}
+
+function datedDownloadName(ticker: string, kind: string, spec: { fileName: string; downloadName?: string }, dateValue: unknown): string {
+  return `${ticker}_${artifactDownloadBase(kind)}_${downloadDateStamp(dateValue)}${extensionForSpec(spec, ticker)}`;
+}
+
+function dateFromDashboardNear(filePath: string): string | null {
+  try {
+    const dir = path.dirname(filePath);
+    const entries = fs.readdirSync(dir);
+    const dashboardFile = entries.find((entry) => entry.toUpperCase().endsWith("_DASHBOARD.JSON"));
+    if (!dashboardFile) return null;
+    const payload = JSON.parse(fs.readFileSync(path.join(dir, dashboardFile), "utf-8")) as Record<string, unknown>;
+    return String(payload.generated_at || payload.report_mtime || "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function fileDateFallback(filePath: string): string {
+  const dashboardDate = dateFromDashboardNear(filePath);
+  if (dashboardDate) return dashboardDate;
+  try {
+    return fs.statSync(filePath).mtime.toISOString();
+  } catch {
+    return "";
+  }
+}
+
+async function remoteArtifactResponse(url: string, contentType: string, downloadName: string): Promise<NextResponse> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    return NextResponse.json({ error: "Failed to fetch artifact file." }, { status: 502 });
+  }
+  const headers = new Headers();
+  headers.set("Content-Type", res.headers.get("Content-Type") || contentType);
+  headers.set("Content-Disposition", `attachment; filename="${downloadName}"`);
+  const body = new Uint8Array(await res.arrayBuffer());
+  return new NextResponse(body, { status: 200, headers });
+}
+
 function collectDbCandidateRoots(row: Awaited<ReturnType<typeof fetchReportById>>): string[] {
   if (!row) return [];
   const roots = new Set<string>();
@@ -135,29 +198,30 @@ async function resolveReportScopedFile(
   reportId: string,
   fileName: string,
   fallbackFileName = "",
-): Promise<{ foundPath: string; r2Url: string | null }> {
+): Promise<{ foundPath: string; r2Url: string | null; generatedAt: string }> {
   const spec = KIND_TO_FILE[kind];
   const dbEnabled = isDbEnabled();
   const deletedFilter = await getDeletedReportFilterForTicker(ticker);
-  if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null };
+  if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null, generatedAt: "" };
 
   if (dbEnabled) {
-    if (!isUuid(reportId)) return { foundPath: "", r2Url: null };
+    if (!isUuid(reportId)) return { foundPath: "", r2Url: null, generatedAt: "" };
     try {
       const row = await fetchReportById(reportId);
-      if (!row) return { foundPath: "", r2Url: null };
-      if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null };
+      if (!row) return { foundPath: "", r2Url: null, generatedAt: "" };
+      if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null, generatedAt: "" };
+      const generatedAt = String(row.generated_at || "");
 
       const r2Key = String(row.r2_keys?.[spec?.r2Kind || kind] || "").trim();
       const url = r2PublicUrl(r2Key);
-      if (url) return { foundPath: "", r2Url: url };
+      if (url) return { foundPath: "", r2Url: url, generatedAt };
       const fallbackR2Key = String(row.r2_keys?.[spec?.fallbackR2Kind || ""] || "").trim();
       const fallbackUrl = r2PublicUrl(fallbackR2Key);
-      if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl };
+      if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl, generatedAt };
 
       for (const root of collectDbCandidateRoots(row)) {
         const foundPath = resolveFromRoot(root, fileName) || (fallbackFileName ? resolveFromRoot(root, fallbackFileName) : "");
-        if (foundPath) return { foundPath, r2Url: null };
+        if (foundPath) return { foundPath, r2Url: null, generatedAt };
       }
     } catch {
       // DB unreachable or invalid UUID parse; fall through to filesystem compatibility.
@@ -167,37 +231,39 @@ async function resolveReportScopedFile(
   const reportPath = resolveDashboardReportPath(reportId);
   if (reportPath) {
     if (deletedFilter.isDeleted(reportId, ticker, siteRunIdFromPathLike(reportPath))) {
-      return { foundPath: "", r2Url: null };
+      return { foundPath: "", r2Url: null, generatedAt: "" };
     }
     const foundPath = resolveFromRoot(path.dirname(reportPath), fileName);
     if (!foundPath && fallbackFileName) {
-      return { foundPath: resolveFromRoot(path.dirname(reportPath), fallbackFileName), r2Url: null };
+      const fallbackPath = resolveFromRoot(path.dirname(reportPath), fallbackFileName);
+      return { foundPath: fallbackPath, r2Url: null, generatedAt: fileDateFallback(fallbackPath || reportPath) };
     }
-    return { foundPath, r2Url: null };
+    return { foundPath, r2Url: null, generatedAt: fileDateFallback(foundPath || reportPath) };
   }
 
   // UUID report_id path (DB-first): use exact report row, not "latest ticker".
   try {
     const row = await fetchReportById(reportId);
-    if (!row) return { foundPath: "", r2Url: null };
-    if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null };
+    if (!row) return { foundPath: "", r2Url: null, generatedAt: "" };
+    if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null, generatedAt: "" };
+    const generatedAt = String(row.generated_at || "");
 
     const r2Key = String(row.r2_keys?.[spec?.r2Kind || kind] || "").trim();
     const url = r2PublicUrl(r2Key);
-    if (url) return { foundPath: "", r2Url: url };
+    if (url) return { foundPath: "", r2Url: url, generatedAt };
     const fallbackR2Key = String(row.r2_keys?.[spec?.fallbackR2Kind || ""] || "").trim();
     const fallbackUrl = r2PublicUrl(fallbackR2Key);
-    if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl };
+    if (fallbackUrl) return { foundPath: "", r2Url: fallbackUrl, generatedAt };
 
     for (const root of collectDbCandidateRoots(row)) {
       const foundPath = resolveFromRoot(root, fileName) || (fallbackFileName ? resolveFromRoot(root, fallbackFileName) : "");
-      if (foundPath) return { foundPath, r2Url: null };
+      if (foundPath) return { foundPath, r2Url: null, generatedAt };
     }
   } catch {
     // DB unreachable or invalid UUID parse; fall through to "not found for report".
   }
 
-  return { foundPath: "", r2Url: null };
+  return { foundPath: "", r2Url: null, generatedAt: "" };
 }
 
 export async function GET(
@@ -218,10 +284,16 @@ export async function GET(
   const reportId = String(url.searchParams.get("report_id") || "").trim();
 
   let foundPath = "";
+  let artifactDate = "";
   if (reportId) {
     const resolved = await resolveReportScopedFile(ticker, kind, reportId, fileName, fallbackFileName);
+    artifactDate = resolved.generatedAt;
     if (resolved.r2Url) {
-      return NextResponse.redirect(resolved.r2Url, 302);
+      return remoteArtifactResponse(
+        resolved.r2Url,
+        spec.contentType,
+        datedDownloadName(ticker, kind, spec, artifactDate),
+      );
     }
     foundPath = resolved.foundPath;
 
@@ -236,12 +308,15 @@ export async function GET(
     const dbEnabled = isDbEnabled();
     try {
       const row = await fetchLatestReport(ticker);
+      artifactDate = String(row?.generated_at || "");
       const r2Key = String(row?.r2_keys?.[spec.r2Kind || kind] || "").trim();
       const r2Url = r2PublicUrl(r2Key);
-      if (r2Url) return NextResponse.redirect(r2Url, 302);
+      if (r2Url) return remoteArtifactResponse(r2Url, spec.contentType, datedDownloadName(ticker, kind, spec, artifactDate));
       const fallbackR2Key = String(row?.r2_keys?.[spec.fallbackR2Kind || ""] || "").trim();
       const fallbackR2Url = r2PublicUrl(fallbackR2Key);
-      if (fallbackR2Url) return NextResponse.redirect(fallbackR2Url, 302);
+      if (fallbackR2Url) {
+        return remoteArtifactResponse(fallbackR2Url, spec.contentType, datedDownloadName(ticker, kind, spec, artifactDate));
+      }
       if (dbEnabled && !row) {
         return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
       }
@@ -271,7 +346,7 @@ export async function GET(
 
   const headers = new Headers();
   headers.set("Content-Type", spec.contentType);
-  const downloadName = spec.downloadName?.replace("{TICKER}", ticker) || path.basename(found.path);
+  const downloadName = datedDownloadName(ticker, kind, spec, artifactDate || fileDateFallback(found.path));
   headers.set("Content-Disposition", `attachment; filename="${downloadName}"`);
   return new NextResponse(new Uint8Array(buf), { status: 200, headers });
 }

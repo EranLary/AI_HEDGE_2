@@ -14,6 +14,7 @@ type MetricCounts = {
 type MetricCountsSet = {
   targets: MetricCounts;
   allocations: MetricCounts;
+  signals: MetricCounts;
   combined: MetricCounts;
 };
 
@@ -22,6 +23,7 @@ type HitRateRow = {
   label: string;
   targets: MetricCounts;
   allocations: MetricCounts;
+  signals: MetricCounts;
   combined: MetricCounts;
 };
 
@@ -40,6 +42,7 @@ type HitRatePayload = {
   overview: MetricCountsSet;
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
+  by_signal: HitRateRow[];
 };
 
 type HitRateMode = "all" | "positive_only";
@@ -117,7 +120,7 @@ function HitRateTable({
   rows: HitRateRow[];
   lensType: "model" | "valuator";
 }) {
-  const discoveryHrefForRow = (row: HitRateRow): string => {
+  const discoveryHrefForRow = (row: HitRateRow): string | null => {
     if (lensType === "model") {
       if (String(row.key || "").trim().toLowerCase() === "overall") {
         return "/discovery?lens_type=overall";
@@ -133,12 +136,16 @@ function HitRateTable({
       <div className="space-y-2 sm:hidden">
         {rows.map((row) => (
           <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <Link
-              href={discoveryHrefForRow(row)}
-              className="hib-hitrate-link text-[11px] uppercase tracking-[0.12em] underline-offset-2 hover:underline"
-            >
-              {row.label}
-            </Link>
+            {discoveryHrefForRow(row) ? (
+              <Link
+                href={discoveryHrefForRow(row) || "#"}
+                className="hib-hitrate-link text-[11px] uppercase tracking-[0.12em] underline-offset-2 hover:underline"
+              >
+                {row.label}
+              </Link>
+            ) : (
+              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-300">{row.label}</span>
+            )}
             <p className="mt-1 text-xl font-bold text-zinc-100">Combined {fmtHitRate(row.combined.hit_rate_pct)}</p>
             <div className="mt-1 flex items-center justify-between text-sm">
               <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
@@ -168,12 +175,16 @@ function HitRateTable({
             {rows.map((row) => (
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
                 <td className="px-3 py-2 font-medium text-zinc-200">
-                  <Link
-                    href={discoveryHrefForRow(row)}
-                    className="hib-hitrate-link underline-offset-2 hover:underline"
-                  >
-                    {row.label}
-                  </Link>
+                  {discoveryHrefForRow(row) ? (
+                    <Link
+                      href={discoveryHrefForRow(row) || "#"}
+                      className="hib-hitrate-link underline-offset-2 hover:underline"
+                    >
+                      {row.label}
+                    </Link>
+                  ) : (
+                    <span>{row.label}</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.targets.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
@@ -193,6 +204,61 @@ function HitRateTable({
               <tr>
                 <td colSpan={7} className="px-3 py-3 text-zinc-500">
                   No rows available.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SignalHitRateTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: HitRateRow[];
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <article key={`${row.key}-signal-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-300">{row.label}</span>
+            <p className="mt-1 text-xl font-bold text-zinc-100">Signal {fmtHitRate(row.signals.hit_rate_pct)}</p>
+            <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
+              <CountsPills metric={row.signals} />
+            </div>
+          </article>
+        ))}
+        {!rows.length ? <p className="text-sm text-zinc-500">No signal rows available.</p> : null}
+      </div>
+      <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
+        <table className="hidden w-full min-w-[520px] text-sm sm:table">
+          <thead className="border-b border-white/10 text-zinc-400">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Name</th>
+              <th className="px-3 py-2 text-right font-medium">Signal %</th>
+              <th className="px-3 py-2 text-right font-medium">Signal Counts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b border-white/5 last:border-b-0">
+                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
+                <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.signals.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right text-zinc-400">
+                  <CountsPills metric={row.signals} />
+                </td>
+              </tr>
+            ))}
+            {!rows.length ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-3 text-zinc-500">
+                  No signal rows available.
                 </td>
               </tr>
             ) : null}
@@ -233,7 +299,10 @@ export default function HitRatePage() {
 
   const coverageText = useMemo(() => {
     if (!data) return "";
-    const modeLabel = mode === "positive_only" ? "Positive-only mode" : "All predictions mode";
+    const modeLabel =
+      mode === "positive_only"
+        ? "Positive-only valuation mode; technical signals include bullish and bearish calls"
+        : "All predictions mode";
     return `${modeLabel}. Scanned ${data.coverage.reports_scanned} reports across ${data.coverage.tickers_covered} tickers. Considered ${data.coverage.predictions_considered} predictions (${data.coverage.predictions_neutral} neutral).`;
   }, [data, mode]);
 
@@ -294,14 +363,16 @@ export default function HitRatePage() {
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-4">
             <OverviewCard title="Targets" metric={data.overview.targets} />
             <OverviewCard title="Allocations" metric={data.overview.allocations} />
+            <OverviewCard title="Signals" metric={data.overview.signals} />
             <OverviewCard title="Combined" metric={data.overview.combined} />
           </section>
 
           <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
           <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
+          <SignalHitRateTable title="By Signal" rows={data.by_signal || []} />
         </div>
       )}
     </div>

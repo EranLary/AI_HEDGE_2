@@ -18,6 +18,7 @@ type AssumptionRow = {
   key: string;
   label: string;
   mean_value: number | null;
+  current_value?: number | null;
   samples: number;
 };
 
@@ -41,6 +42,9 @@ type SummaryPayload = {
   };
   by_model: MeanRow[];
   by_valuator: MeanRow[];
+  currency_context?: {
+    financial_currency?: string;
+  };
   assumptions: AssumptionRow[];
 };
 
@@ -83,6 +87,11 @@ const WINDOW_OPTIONS: Array<{ key: SummaryWindow; label: string }> = [
   { key: "1m", label: "Last Month" },
   { key: "1w", label: "Last Week" },
 ];
+const MONEY_ASSUMPTION_LABELS = new Set([
+  "representative fcf",
+  "representative revenue",
+  "representative earnings",
+]);
 
 function fmtDateTimeNoSeconds(value: string): string {
   const dt = new Date(value);
@@ -145,6 +154,78 @@ function fmtNum(value: number | null | undefined): string {
   if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   return value.toFixed(3);
+}
+
+function normalizeAssumptionLabel(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[_/]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function currencySymbol(code: string): string {
+  const normalized = String(code || "").trim().toUpperCase();
+  const symbols: Record<string, string> = {
+    USD: "$",
+    ILS: "₪",
+    ILA: "₪",
+    EUR: "€",
+    GBP: "£",
+    GBX: "£",
+    JPY: "¥",
+    CNY: "¥",
+    CNH: "¥",
+    KRW: "₩",
+    INR: "₹",
+    CAD: "C$",
+    AUD: "A$",
+    NZD: "NZ$",
+    HKD: "HK$",
+    SGD: "S$",
+    CHF: "CHF",
+    SEK: "kr",
+    NOK: "kr",
+    DKK: "kr",
+    ZAR: "R",
+    ZAC: "R",
+    BRL: "R$",
+    MXN: "Mex$",
+    TRY: "₺",
+  };
+  return symbols[normalized] || `${normalized} `;
+}
+
+function isMoneyAssumption(label: string): boolean {
+  return MONEY_ASSUMPTION_LABELS.has(normalizeAssumptionLabel(label));
+}
+
+function fmtFinancialCompact(value: number, currencyCode: string): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const prefix = `${sign}${currencySymbol(currencyCode)}`;
+  if (abs >= 1_000_000_000) return `${prefix}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${prefix}${(abs / 1_000_000).toFixed(2)}M`;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${prefix}${abs.toFixed(2)}`;
+  }
+}
+
+function fmtAssumptionValue(label: string, value: number | null | undefined, currencyCode: string): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  if (isMoneyAssumption(label)) return fmtFinancialCompact(value, currencyCode);
+  return fmtNum(value);
+}
+
+function fmtAssumptionCurrentValue(label: string, value: number | null | undefined, currencyCode: string): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return fmtAssumptionValue(label, value, currencyCode);
 }
 
 function toneClassFromSign(value: number | null | undefined): string {
@@ -311,7 +392,7 @@ function MeanTable({
   );
 }
 
-function AssumptionsTable({ rows }: { rows: AssumptionRow[] }) {
+function AssumptionsTable({ rows, financialCurrency }: { rows: AssumptionRow[]; financialCurrency: string }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
       <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">Assumptions Mean Values</h2>
@@ -319,8 +400,17 @@ function AssumptionsTable({ rows }: { rows: AssumptionRow[] }) {
         {rows.map((row) => (
           <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
             <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{row.label}</p>
-            <p className="mt-1 text-lg font-bold text-zinc-100">{fmtNum(row.mean_value)}</p>
-            <p className="mt-1 text-xs text-zinc-400">N {row.samples}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Mean</p>
+                <p className="mt-1 text-lg font-bold text-zinc-100">{fmtAssumptionValue(row.label, row.mean_value, financialCurrency)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Current</p>
+                <p className="mt-1 text-lg font-bold text-zinc-100">{fmtAssumptionCurrentValue(row.label, row.current_value, financialCurrency)}</p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">N {row.samples}</p>
           </article>
         ))}
         {!rows.length ? <p className="text-sm text-zinc-500">No assumptions available.</p> : null}
@@ -331,6 +421,7 @@ function AssumptionsTable({ rows }: { rows: AssumptionRow[] }) {
             <tr>
               <th className="px-3 py-2 text-left font-medium">Assumption</th>
               <th className="px-3 py-2 text-right font-medium">Mean</th>
+              <th className="px-3 py-2 text-right font-medium">Current</th>
               <th className="px-3 py-2 text-right font-medium">N</th>
             </tr>
           </thead>
@@ -338,13 +429,14 @@ function AssumptionsTable({ rows }: { rows: AssumptionRow[] }) {
             {rows.map((row) => (
               <tr key={row.key} className="border-b border-white/5 last:border-b-0">
                 <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
-                <td className="px-3 py-2 text-right text-zinc-100">{fmtNum(row.mean_value)}</td>
+                <td className="px-3 py-2 text-right text-zinc-100">{fmtAssumptionValue(row.label, row.mean_value, financialCurrency)}</td>
+                <td className="px-3 py-2 text-right text-zinc-100">{fmtAssumptionCurrentValue(row.label, row.current_value, financialCurrency)}</td>
                 <td className="px-3 py-2 text-right text-zinc-400">{row.samples}</td>
               </tr>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={3} className="px-3 py-3 text-zinc-500">
+                <td colSpan={4} className="px-3 py-3 text-zinc-500">
                   No assumptions available.
                 </td>
               </tr>
@@ -509,6 +601,7 @@ export default function DashboardSummaryPage({
   );
   const overviewCombinedScore = combinedScore(data?.overview.mean_allocation_pct, meanTargetChangePct);
   const overviewAdjustedScore = confidenceAdjustedScore(overviewCombinedScore, data?.overview.mean_disagreement_score);
+  const financialCurrency = String(data?.currency_context?.financial_currency || "USD").toUpperCase();
 
   return (
     <div className="space-y-4">
@@ -668,7 +761,7 @@ export default function DashboardSummaryPage({
             liveCurrentPrice={data.overview.live_current_price}
             ticker={upper}
           />
-          <AssumptionsTable rows={data.assumptions} />
+          <AssumptionsTable rows={data.assumptions} financialCurrency={financialCurrency} />
         </>
       )}
     </div>

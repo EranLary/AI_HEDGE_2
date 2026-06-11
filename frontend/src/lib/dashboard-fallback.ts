@@ -97,6 +97,19 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       analysis: {},
       error: "Technical analysis is not available for this report yet.",
     },
+    financials: {
+      status: "unavailable",
+      analysis: {
+        ticker: tk,
+        currency: "USD",
+        unit: "raw",
+        periods: [],
+        rows: [],
+        key_takeaways: [],
+        warnings: [],
+      },
+      error: "Financials table is not available for this report yet.",
+    },
     market_review: {
       status: "unavailable",
       name_of_market: "",

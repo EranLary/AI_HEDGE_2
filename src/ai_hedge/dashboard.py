@@ -1479,9 +1479,54 @@ def _currency_context(ticker: str, info: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _build_current_assumption_values(
+    *,
+    info: Mapping[str, Any],
+    variables_dict: Mapping[str, Any],
+    final_dict: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Optional[float]]:
+    financial_currency = _safe_float(info.get("financial_currency_to_USD")) or _safe_float(variables_dict.get("financial_currency")) or 1.0
+    revenue = _safe_float(variables_dict.get("revenue"))
+    earnings = _safe_float(variables_dict.get("net_income"))
+    ev = _safe_float(variables_dict.get("ev"))
+    market_cap = _safe_float(variables_dict.get("market_cap"))
+    fcf = _safe_float(info.get("freeCashflow"))
+
+    def _scaled_financial(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        return float(value) * float(financial_currency)
+
+    ev_sales = _safe_float(info.get("enterpriseToRevenue"))
+    if ev_sales is None and ev is not None and revenue not in (None, 0):
+        ev_sales = ev / revenue
+
+    pe = _safe_float(info.get("trailingPE"))
+    if pe is None and market_cap is not None and earnings not in (None, 0):
+        pe = market_cap / earnings
+
+    if isinstance(final_dict, dict):
+        pe_payload = final_dict.get("P/E")
+        if pe is None and isinstance(pe_payload, dict):
+            pe = _safe_float(pe_payload.get("Current"))
+
+    return {
+        "representative_fcf": _scaled_financial(fcf),
+        "representative_revenue": _scaled_financial(revenue),
+        "representative_ev_sales": ev_sales,
+        "representative_earnings": _scaled_financial(earnings),
+        "representative_pe": pe,
+    }
+
+
+def _build_all_values_payload(
+    method_details: Dict[str, Any],
+    final_dict: Optional[Dict[str, Any]] = None,
+    current_assumption_values: Optional[Dict[str, Optional[float]]] = None,
+) -> Dict[str, Any]:
     metric_map: Dict[str, Dict[str, Any]] = {}
     source_values: List[Dict[str, Any]] = []
+    current_values = current_assumption_values if isinstance(current_assumption_values, dict) else {}
 
     for method_name, items in method_details.items():
         if not isinstance(items, list):
@@ -1535,6 +1580,7 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
                 "method_count": len(rec["methods"]),
                 "methods": sorted(rec["methods"]),
                 "source_paths": sorted(rec["source_paths"])[:12],
+                "current_value": _safe_float(current_values.get(str(rec["metric_key"]))),
             }
         )
 
@@ -1568,6 +1614,7 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
                     "method_count": 1,
                     "methods": ["Overall"],
                     "source_paths": [f"final_dict.{metric_key}.Overall"],
+                    "current_value": _safe_float(current_values.get(metric_key)),
                 }
             )
 
@@ -1628,6 +1675,7 @@ def _build_all_values_payload(method_details: Dict[str, Any], final_dict: Option
     return {
         "metric_means": metric_means,
         "source_values": source_values,
+        "assumption_current_values": _json_safe(current_values),
     }
 
 
@@ -1876,6 +1924,7 @@ def build_dashboard_payload(
     trading_agents: Optional[Dict[str, Any]] = None,
     market_review: Optional[Dict[str, Any]] = None,
     wall_st: Optional[Dict[str, Any]] = None,
+    financials: Optional[Dict[str, Any]] = None,
     analysis_duration_minutes: Optional[float] = None,
     qualitative_sections: Optional[Dict[str, Any]] = None,
     filings: Optional[Dict[str, Any]] = None,
@@ -1980,9 +2029,15 @@ def build_dashboard_payload(
             )
         )
 
+    current_assumption_values = _build_current_assumption_values(
+        info=info if isinstance(info, dict) else {},
+        variables_dict=variables_dict if isinstance(variables_dict, dict) else {},
+        final_dict=final_dict if isinstance(final_dict, dict) else {},
+    )
     all_values_payload = _build_all_values_payload(
         method_details if isinstance(method_details, dict) else {},
         final_dict if isinstance(final_dict, dict) else {},
+        current_assumption_values=current_assumption_values,
     )
 
     dream_cards: List[Dict[str, Any]] = []
@@ -2132,6 +2187,7 @@ def build_dashboard_payload(
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},
         "market_review": _normalize_market_review_payload(market_review, analysis_text=analysis_text),
         "wall_st": wall_st if isinstance(wall_st, dict) else build_wall_st_payload(ticker=ticker, info_dict=info_dict),
+        "financials": financials if isinstance(financials, dict) else {},
         "sec_qna": sec_qna_payload,
         "filings": filings if isinstance(filings, dict) else {},
         "artifacts": artifacts,

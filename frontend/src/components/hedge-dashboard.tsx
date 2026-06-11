@@ -2098,14 +2098,41 @@ export function HedgeDashboard({
                     {showAssumptionsRangeMobile ? "Hide Min/Max" : "Show Min/Max"}
                   </button>
                 </div>
-                <div className="overflow-auto">
+                {showAssumptionsRangeMobile ? (
+                  <div className="space-y-2 sm:hidden">
+                    {assumptionsDisplayRows.map((entry) =>
+                      entry?.type === "spacer" ? (
+                        <div key={entry.key} className="h-2" />
+                      ) : entry?.type === "metric" ? (
+                        <article key={entry.key} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-sm font-semibold text-zinc-100">{entry.row.label}</p>
+                          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Mean</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</p>
+                            </div>
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Min</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</p>
+                            </div>
+                            <div>
+                              <p className="uppercase tracking-[0.12em] text-zinc-500">Max</p>
+                              <p className="mt-1 font-mono text-zinc-100">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</p>
+                            </div>
+                          </div>
+                        </article>
+                      ) : null,
+                    )}
+                  </div>
+                ) : null}
+                <div className={`${showAssumptionsRangeMobile ? "hidden sm:block" : "block"} overflow-auto`}>
                   <table className="hib-values-table w-full text-sm sm:min-w-[620px]">
                     <thead className="border-b border-white/10 text-zinc-500">
                       <tr>
                         <th className="py-1 text-left font-normal">Metric</th>
                         <th className="py-1 text-right font-normal">Mean</th>
-                        <th className={`py-1 text-right font-normal sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>Min</th>
-                        <th className={`py-1 text-right font-normal sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>Max</th>
+                        <th className="hidden py-1 text-right font-normal sm:table-cell">Min</th>
+                        <th className="hidden py-1 text-right font-normal sm:table-cell">Max</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2118,8 +2145,8 @@ export function HedgeDashboard({
                           <tr key={entry.key} className="border-b border-white/5">
                             <td className="py-1 pr-2">{entry.row.label}</td>
                             <td className="py-1 text-right font-mono">{formatAssumptionValue(entry.row.label, entry.row.mean, currencyContext)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</td>
-                            <td className={`py-1 text-right font-mono sm:table-cell ${showAssumptionsRangeMobile ? "table-cell" : "hidden"}`}>{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</td>
+                            <td className="hidden py-1 text-right font-mono sm:table-cell">{formatAssumptionValue(entry.row.label, entry.row.min, currencyContext)}</td>
+                            <td className="hidden py-1 text-right font-mono sm:table-cell">{formatAssumptionValue(entry.row.label, entry.row.max, currencyContext)}</td>
                           </tr>
                         ) : null,
                       )}

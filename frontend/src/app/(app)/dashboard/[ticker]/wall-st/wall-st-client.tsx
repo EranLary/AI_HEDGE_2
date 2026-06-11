@@ -33,6 +33,12 @@ function fmtPct(value: unknown): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+function fmtSignedNum(value: unknown): string {
+  const n = num(value);
+  if (n === null) return "-";
+  return `${n > 0 ? "+" : ""}${fmtNum(n)}`;
+}
+
 function fmtLarge(value: unknown): string {
   const n = num(value);
   if (n === null) return "-";
@@ -123,6 +129,13 @@ function targetActionTone(row: Record<string, unknown>): string {
   return "text-[color:var(--text-muted)]";
 }
 
+function targetChange(row: Record<string, unknown>): number | null {
+  const prior = num(row.priorPriceTarget);
+  const current = num(row.currentPriceTarget);
+  if (prior === null || current === null || Math.abs(current - prior) <= 1e-9) return null;
+  return current - prior;
+}
+
 function clampPct(value: number, low: number, high: number): number {
   if (!Number.isFinite(value) || !Number.isFinite(low) || !Number.isFinite(high) || high <= low) return 50;
   return Math.max(0, Math.min(100, ((value - low) / (high - low)) * 100));
@@ -131,13 +144,20 @@ function clampPct(value: number, low: number, high: number): number {
 function recommendationCounts(metrics: NonNullable<WallStPayload["metrics"]>["recommendations"]) {
   const latest = metrics?.latest || {};
   const keys = [
-    ["strongBuy", "Strong Buy", "bg-[color:var(--signal-strong)]"],
-    ["buy", "Buy", "bg-[color:var(--signal-buy)]"],
-    ["hold", "Hold", "bg-[color:var(--signal-hold)]"],
-    ["sell", "Sell", "bg-[color:var(--signal-sell)]"],
-    ["strongSell", "Strong Sell", "bg-[color:var(--danger)]"],
+    ["strongSell", "Strong Sell", "bg-[color:var(--danger)]", "border-[color:var(--danger)]", "text-[color:var(--danger)]"],
+    ["sell", "Sell", "bg-[color:var(--signal-sell)]", "border-[color:var(--signal-sell)]", "hib-signal-sell"],
+    ["hold", "Hold", "bg-[color:var(--signal-hold)]", "border-[color:var(--signal-hold)]", "hib-signal-hold"],
+    ["buy", "Buy", "bg-[color:var(--signal-buy)]", "border-[color:var(--signal-buy)]", "hib-signal-buy"],
+    ["strongBuy", "Strong Buy", "bg-[color:var(--signal-strong)]", "border-[color:var(--signal-strong)]", "hib-signal-strong"],
   ] as const;
-  return keys.map(([key, label, cls]) => ({ key, label, cls, value: num(latest[key]) || 0 }));
+  return keys.map(([key, label, barClass, borderClass, textClass]) => ({
+    key,
+    label,
+    barClass,
+    borderClass,
+    textClass,
+    value: num(latest[key]) || 0,
+  }));
 }
 
 function EmptyWallSt({ errors }: { errors: string[] }) {
@@ -162,12 +182,14 @@ function MetricCard({
   label,
   value,
   detail,
+  detailTone,
   tone,
   info,
 }: {
   label: string;
   value: string;
   detail?: string;
+  detailTone?: string;
   tone?: string;
   info?: string;
 }) {
@@ -186,7 +208,7 @@ function MetricCard({
         ) : null}
       </div>
       <p className={`mt-2 font-display text-2xl leading-none ${tone || "text-[color:var(--text-primary)]"}`}>{value}</p>
-      {detail ? <p className="mt-2 text-xs text-[color:var(--text-muted)]">{detail}</p> : null}
+      {detail ? <p className={`mt-2 text-xs ${detailTone || "text-[color:var(--text-muted)]"}`}>{detail}</p> : null}
     </article>
   );
 }
@@ -228,12 +250,12 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const lowChangePct = pctFromCurrent(low, current);
   const highChangePct = pctFromCurrent(high, current);
   const medianChangePct = pctFromCurrent(median, current);
-  const positive = mean !== null && current !== null && mean > current;
-  const negative = mean !== null && current !== null && mean < current;
   const markers = [
-    { label: "Current", value: current, className: "bg-[color:var(--warning)]" },
-    { label: "Median", value: median, className: "bg-[color:var(--text-primary)]" },
-    { label: "Mean target", value: mean, className: "bg-[color:var(--accent)]" },
+    { label: "Low", value: low, change: lowChangePct, pct: 0, dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
+    { label: "Current", value: current, change: null, pct: currentPct, dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
+    { label: "Median", value: median, change: medianChangePct, pct: medianPct, dotClass: "bg-[color:var(--text-primary)]", labelClass: "text-[color:var(--text-primary)]" },
+    { label: "Mean", value: mean, change: targets?.upside_pct, pct: meanPct, dotClass: "bg-[color:var(--accent)]", labelClass: toneClass(targets?.upside_pct) },
+    { label: "High", value: high, change: highChangePct, pct: 100, dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
   ];
 
   return (
@@ -251,34 +273,36 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
         <p className="text-sm text-[color:var(--text-secondary)]">No usable low/high analyst target range was returned.</p>
       ) : (
         <div className="px-2 py-5">
-          <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-[color:var(--text-secondary)]">
+          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-[color:var(--text-secondary)]">
             {markers.map((marker) => (
               <span key={marker.label} className="inline-flex items-center gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-full ${marker.className}`} />
+                <span className={`h-2.5 w-2.5 rounded-full ${marker.dotClass}`} />
                 {marker.label}: {fmtNum(marker.value)}
+                {marker.change !== null ? <span className={toneClass(marker.change)}>({fmtPct(marker.change)})</span> : null}
               </span>
             ))}
           </div>
-          <div className="relative h-3 rounded-full bg-white/5">
-            <div
-              className={`absolute inset-y-0 left-0 rounded-full ${positive ? "bg-[color:var(--success)]" : negative ? "bg-[color:var(--danger)]" : "bg-[color:var(--text-disabled)]"}`}
-              style={{ width: `${Math.max(4, meanPct)}%` }}
-            />
-            <div className="absolute -top-3 h-9 w-px bg-[color:var(--warning)]" style={{ left: `${currentPct}%` }} title="Current price" />
-            <div className="absolute -top-2 h-7 w-px bg-[color:var(--text-primary)]" style={{ left: `${medianPct}%` }} title="Median target" />
-            <div className="absolute -top-4 h-11 w-1 rounded-full bg-[color:var(--accent)]" style={{ left: `${meanPct}%` }} title="Mean target" />
+          <div className="relative h-16">
+            <div className="absolute left-0 right-0 top-7 h-2 rounded-full bg-white/10" aria-label="Analyst low to high target range" />
+            {markers.map((marker) => (
+              <div
+                key={`marker-${marker.label}`}
+                className="absolute top-1 flex -translate-x-1/2 flex-col items-center gap-1"
+                style={{ left: `${marker.pct}%` }}
+                title={`${marker.label}: ${fmtNum(marker.value)}${marker.change !== null ? ` (${fmtPct(marker.change)})` : ""}`}
+              >
+                <span className={`h-9 w-px ${marker.dotClass}`} />
+                <span className={`h-3 w-3 rounded-full ring-2 ring-[color:var(--surface)] ${marker.dotClass}`} />
+              </div>
+            ))}
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[color:var(--text-muted)] sm:grid-cols-4">
-            <span>
-              Low {fmtNum(low)} <span className={toneClass(lowChangePct)}>({fmtPct(lowChangePct)})</span>
-            </span>
-            <span>Current {fmtNum(current)}</span>
-            <span>
-              Median {fmtNum(median)} <span className={toneClass(medianChangePct)}>({fmtPct(medianChangePct)})</span>
-            </span>
-            <span>
-              High {fmtNum(high)} <span className={toneClass(highChangePct)}>({fmtPct(highChangePct)})</span>
-            </span>
+          <div className="grid grid-cols-2 gap-2 text-xs text-[color:var(--text-muted)] sm:grid-cols-5">
+            {markers.map((marker) => (
+              <span key={`label-${marker.label}`}>
+                <span className={marker.labelClass}>{marker.label}</span> {fmtNum(marker.value)}
+                {marker.change !== null ? <span className={toneClass(marker.change)}> ({fmtPct(marker.change)})</span> : null}
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -314,7 +338,7 @@ function RecommendationMix({ metrics }: { metrics: NonNullable<WallStPayload["me
             {counts.map((item) => (
               <div
                 key={item.key}
-                className={item.cls}
+                className={item.barClass}
                 title={`${item.label}: ${item.value} (${((item.value / total) * 100).toFixed(0)}%)`}
                 style={{ width: `${(item.value / total) * 100}%` }}
               />
@@ -322,9 +346,9 @@ function RecommendationMix({ metrics }: { metrics: NonNullable<WallStPayload["me
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-5">
             {counts.map((item) => (
-              <div key={item.key} className="rounded-xl border border-white/10 bg-white/5 p-2">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{item.label}</p>
-                <p className="mt-1 font-mono text-sm font-semibold text-[color:var(--text-primary)]">{item.value}</p>
+              <div key={item.key} className={`flex min-h-28 flex-col rounded-xl border bg-white/5 p-2 ${item.borderClass}`}>
+                <p className="min-h-8 text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{item.label}</p>
+                <p className={`mt-auto font-mono text-lg font-semibold ${item.textClass}`}>{item.value}</p>
                 <p className="text-[10px] text-[color:var(--text-muted)]">{((item.value / total) * 100).toFixed(0)}%</p>
               </div>
             ))}
@@ -449,8 +473,11 @@ function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
                   <td className="hib-market-table-cell">{text(row.FromGrade) || "-"}</td>
                   <td className="hib-market-table-cell">{text(row.ToGrade) || "-"}</td>
                   <td className={`hib-market-table-cell font-semibold ${targetActionTone(row)}`}>{text(row.priceTargetAction) || "-"}</td>
-                  <td className="hib-market-table-cell font-mono">{fmtNum(row.priorPriceTarget)}</td>
-                  <td className="hib-market-table-cell font-mono">{fmtNum(row.currentPriceTarget)}</td>
+                  <td className={`hib-market-table-cell font-mono ${toneClass(targetChange(row))}`}>{fmtNum(row.priorPriceTarget)}</td>
+                  <td className={`hib-market-table-cell font-mono font-semibold ${toneClass(targetChange(row))}`}>
+                    {fmtNum(row.currentPriceTarget)}
+                    {targetChange(row) !== null ? <span className="ml-1 text-[10px]">({fmtSignedNum(targetChange(row))})</span> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -504,12 +531,19 @@ export function WallStClient({ ticker, data, reportsForTicker, resolvedReportId 
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <MetricCard label="Current" value={fmtNum(targets.current)} detail={priceCurrency} tone="text-[color:var(--warning)]" />
-            <MetricCard label="Mean Target" value={fmtNum(targets.mean)} detail={fmtPct(targets.upside_pct)} tone={toneClass(targets.upside_pct)} />
+            <MetricCard
+              label="Mean Target"
+              value={fmtNum(targets.mean)}
+              detail={fmtPct(targets.upside_pct)}
+              detailTone={toneClass(targets.upside_pct)}
+              tone={toneClass(targets.upside_pct)}
+            />
             <RangeMetricCard low={targets.low} high={targets.high} current={targets.current} />
             <MetricCard
               label="Median"
               value={fmtNum(targets.median)}
               detail={fmtPct(pctFromCurrent(targets.median, targets.current))}
+              detailTone={toneClass(pctFromCurrent(targets.median, targets.current))}
               tone={toneClass(pctFromCurrent(targets.median, targets.current))}
             />
             <MetricCard label="Analysts" value={fmtNum(analystCount, 0)} detail="latest coverage count" />
@@ -518,7 +552,7 @@ export function WallStClient({ ticker, data, reportsForTicker, resolvedReportId 
               value={stanceScore === null ? "-" : stanceScore.toFixed(2)}
               detail={text(recommendations.posture || "recommendations")}
               tone={toneClass(stanceScore)}
-              info="Calculated from analyst ratings: buys add points, sells subtract points, and holds are neutral."
+              info="A -2 to +2 rating mix score: Strong Buy is +2, Buy +1, Hold 0, Sell -1, and Strong Sell -2."
             />
           </div>
 

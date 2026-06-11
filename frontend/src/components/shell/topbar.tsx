@@ -18,7 +18,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "market", label: "Market", icon: Store },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "sec-qa", label: "SEC Q&A", icon: FileQuestion },
-  { slug: "wall-st", label: "Wall ST", icon: Landmark },
+  { slug: "wall-st", label: "WALL ST.", icon: Landmark },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
   { slug: "download", label: "Download", icon: Download },

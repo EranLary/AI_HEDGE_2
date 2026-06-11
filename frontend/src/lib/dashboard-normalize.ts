@@ -189,6 +189,86 @@ function hydrateTechnicalAnalysis(
   return payload;
 }
 
+function hasUsableFinancials(payload: DashboardPayload): boolean {
+  const financials = payload.financials;
+  if (!financials || typeof financials !== "object") return false;
+  if (String(financials.status || "").toLowerCase() !== "success") return false;
+  const analysis = financials.analysis;
+  if (!analysis || typeof analysis !== "object") return false;
+  const periodCount = Array.isArray(analysis.periods) ? analysis.periods.length : 0;
+  const rowCount = Array.isArray(analysis.rows) ? analysis.rows.length : 0;
+  return periodCount > 0 && rowCount > 0;
+}
+
+function normalizeFinancialsPayload(
+  raw: unknown,
+  ticker: string,
+): DashboardPayload["financials"] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const src = raw as Record<string, unknown>;
+  const analysis = (src.analysis && typeof src.analysis === "object" ? src.analysis : src) as Record<string, unknown>;
+  const periodCount = Array.isArray(analysis.periods) ? analysis.periods.length : 0;
+  const rowCount = Array.isArray(analysis.rows) ? analysis.rows.length : 0;
+  if (periodCount === 0 || rowCount === 0) return null;
+  return {
+    status: String(src.status || "success"),
+    generated_at: typeof src.generated_at === "string" ? src.generated_at : undefined,
+    model: typeof src.model === "string" ? src.model : undefined,
+    analysis: {
+      ...(analysis as NonNullable<NonNullable<DashboardPayload["financials"]>["analysis"]>),
+      ticker: String(analysis.ticker || ticker).toUpperCase(),
+    },
+  };
+}
+
+function hydrateFinancials(
+  payload: DashboardPayload,
+  ticker: string,
+  reportMeta?: { reportId?: string; reportFile?: string; reportMtime?: string },
+): DashboardPayload {
+  if (hasUsableFinancials(payload)) return payload;
+
+  const tk = ticker.toUpperCase();
+  const candidates: string[] = [];
+
+  const artifactJson = payload.artifacts?.financials_json;
+  if (typeof artifactJson === "string" && artifactJson.trim()) {
+    candidates.push(artifactJson.trim());
+  }
+
+  if (reportMeta?.reportFile) {
+    candidates.push(path.join(path.dirname(reportMeta.reportFile), `${tk}_financials.json`));
+  }
+
+  const latestFinancials = findLatestByFileName(`${tk}_financials.json`);
+  if (latestFinancials?.path) {
+    candidates.push(latestFinancials.path);
+  }
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const candidatePath = String(candidate || "").trim();
+    if (!candidatePath || seen.has(candidatePath)) continue;
+    seen.add(candidatePath);
+    if (!fs.existsSync(candidatePath)) continue;
+
+    const parsed = readJson<unknown>(candidatePath);
+    const normalized = normalizeFinancialsPayload(parsed, tk);
+    if (!normalized) continue;
+
+    return {
+      ...payload,
+      financials: normalized,
+      artifacts: {
+        ...(payload.artifacts || {}),
+        financials_json: candidatePath,
+      },
+    };
+  }
+
+  return payload;
+}
+
 export function normalizePayload(
   ticker: string,
   payload: DashboardPayload,
@@ -273,6 +353,14 @@ export function normalizePayload(
       },
       errors: Array.isArray(payload.wall_st?.errors) ? payload.wall_st.errors : base.wall_st?.errors || [],
     },
+    financials: {
+      ...(base.financials || {}),
+      ...(payload.financials || {}),
+      analysis: {
+        ...(base.financials?.analysis || {}),
+        ...(payload.financials?.analysis || {}),
+      },
+    },
     red_flag_shield: payload.red_flag_shield || [],
     dream_team: payload.dream_team || [],
     report_id: reportMeta?.reportId || payload.report_id,
@@ -293,11 +381,12 @@ export function normalizePayload(
     combined_pdf: `/api/artifacts/${tk}/combined-pdf${reportQuery}`,
     dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
     market_review_json: `/api/artifacts/${tk}/market-review-json${reportQuery}`,
+    financials_json: `/api/artifacts/${tk}/financials-json${reportQuery}`,
   };
 
   const scale = inferLegacyModelTargetScale(merged);
   const scaled = applyLegacyModelTargetScale(merged, scale);
-  return hydrateTechnicalAnalysis(scaled, tk, reportMeta);
+  return hydrateFinancials(hydrateTechnicalAnalysis(scaled, tk, reportMeta), tk, reportMeta);
 }
 
 function parseMoney(text: string): number | null {

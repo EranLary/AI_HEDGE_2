@@ -33,6 +33,7 @@ const KIND_TO_FILE: Record<
   "trading-agents-json": { fileName: "{TICKER}_trading_agents.json", contentType: "application/json; charset=utf-8" },
   "trading-agents-txt": { fileName: "{TICKER}_trading_agents.txt", contentType: "text/plain; charset=utf-8" },
   "market-review-json": { fileName: "{TICKER}_market_review.json", contentType: "application/json; charset=utf-8" },
+  "financials-json": { fileName: "{TICKER}_financials.json", contentType: "application/json; charset=utf-8" },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {
@@ -104,6 +105,7 @@ function artifactDownloadBase(kind: string): string {
   if (kind === "combined-pdf") return "combined";
   if (kind === "dashboard-json") return "dashboard";
   if (kind === "market-review-json") return "market_review";
+  if (kind === "financials-json") return "financials";
   if (kind === "trading-agents-json" || kind === "trading-agents-txt") return "trading_agents";
   return kind.replace(/-/g, "_");
 }

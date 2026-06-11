@@ -167,6 +167,36 @@ export type SecQnaPayload = {
   errors?: string[];
 };
 
+export type FinancialsPayload = {
+  status?: "success" | "error" | "unavailable" | string;
+  generated_at?: string;
+  model?: string;
+  error?: string;
+  analysis?: {
+    ticker?: string;
+    currency?: string;
+    unit?: string;
+    title?: string;
+    subtitle?: string;
+    periods?: Array<{
+      key?: string;
+      label?: string;
+      date?: string;
+      period_type?: "annual" | "quarterly" | string;
+    }>;
+    rows?: Array<{
+      metric?: string;
+      kind?: "currency" | "percent" | "ratio" | "count" | string;
+      values?: Record<string, number | null>;
+      quality?: "reported" | "derived" | "unavailable" | "mixed" | string;
+      note?: string;
+    }>;
+    added_rows?: string[];
+    key_takeaways?: string[];
+    warnings?: string[];
+  };
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
@@ -384,6 +414,7 @@ export type DashboardPayload = {
   trading_agents?: TradingAgentsPayload;
   market_review?: MarketReviewPayload;
   wall_st?: WallStPayload;
+  financials?: FinancialsPayload;
   sec_qna?: SecQnaPayload;
   filings?: {
     annual?: {
@@ -412,6 +443,7 @@ export type DashboardPayload = {
     combined_pdf?: string;
     dashboard_json?: string;
     technical_analysis_json?: string;
+    financials_json?: string;
     trading_agents_json?: string;
     trading_agents_txt?: string;
     market_review_json?: string;
@@ -425,6 +457,7 @@ export type DashboardPayload = {
     dashboard_json?: string;
     analysis_txt?: string;
     market_review_json?: string;
+    financials_json?: string;
   };
 };
 

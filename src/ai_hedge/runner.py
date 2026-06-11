@@ -57,6 +57,7 @@ class RunArtifacts:
     trading_agents_json: str
     trading_agents_txt: str
     market_review_json: str
+    financials_json: str
     notes: List[str]
     current_revenue: Optional[float]
     target_revenue: Optional[float]
@@ -1735,6 +1736,47 @@ def _run_ticker_valuation_impl(
         notes.append(f"Technical analysis generation failed: {technical_err}")
     _append_progress(progress_file, "Finished Technical Analysis")
 
+    financials_payload: Dict[str, Any] = {}
+    financials_markdown = ""
+    financials_json = ""
+    try:
+        from .financials_agent import (
+            financials_analysis_to_markdown,
+            run_full_analysis as run_financials_analysis,
+        )
+
+        financials_model = str(os.getenv("FINANCIALS_AGENT_MODEL", "deepseek-reasoner") or "deepseek-reasoner").strip() or "deepseek-reasoner"
+        with _obs.llm_context(stage="financials"):
+            financials_run = run_financials_analysis(
+                ticker=ticker,
+                info_dict=info_dict,
+                api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+                model=financials_model,
+                temperature=0.1,
+            )
+        financials_payload = {
+            "status": "success",
+            "generated_at": financials_run.get("created_at"),
+            "model": financials_run.get("model", financials_model),
+            "analysis": financials_run.get("analysis", {}),
+        }
+        financials_markdown = financials_analysis_to_markdown(
+            financials_payload.get("analysis", {})
+        )
+        financials_json_path = out_dir / f"{ticker}_financials.json"
+        financials_json_path.write_text(
+            json.dumps(financials_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        financials_json = str(financials_json_path.resolve())
+    except Exception as financials_err:
+        financials_payload = {
+            "status": "error",
+            "error": str(financials_err),
+        }
+        notes.append(f"Financials agent generation failed: {financials_err}")
+    _append_progress(progress_file, "Finished Financials Agent")
+
     try:
         if analysis_src.exists():
             base_analysis_text = analysis_src.read_text(encoding="utf-8")
@@ -1756,6 +1798,12 @@ def _run_ticker_valuation_impl(
                 merged_analysis_text,
                 "## Technical Analysis",
                 technical_analysis_markdown,
+            )
+        if str(financials_markdown or "").strip():
+            merged_analysis_text = _upsert_markdown_block(
+                merged_analysis_text,
+                "## Financials",
+                financials_markdown,
             )
         if merged_analysis_text.strip():
             analysis_src.write_text(merged_analysis_text + "\n", encoding="utf-8")
@@ -1790,6 +1838,7 @@ def _run_ticker_valuation_impl(
             trading_agents=trading_agents_payload,
             market_review=market_review_payload,
             wall_st=wall_st_payload,
+            financials=financials_payload,
             filings=filing_sources,
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
@@ -1803,6 +1852,7 @@ def _run_ticker_valuation_impl(
                 "trading_agents_json": trading_agents_json,
                 "trading_agents_txt": trading_agents_txt,
                 "market_review_json": market_review_json,
+                "financials_json": financials_json,
             },
         )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
@@ -1907,6 +1957,7 @@ def _run_ticker_valuation_impl(
         "trading-agents-json": Path(trading_agents_json) if trading_agents_json else None,
         "trading-agents-txt": Path(trading_agents_txt) if trading_agents_txt else None,
         "market-review-json": Path(market_review_json) if market_review_json else None,
+        "financials-json": Path(financials_json) if financials_json else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     collected_keys: Dict[str, str] = {}
@@ -1946,6 +1997,7 @@ def _run_ticker_valuation_impl(
         trading_agents_json=trading_agents_json,
         trading_agents_txt=trading_agents_txt,
         market_review_json=market_review_json,
+        financials_json=financials_json,
         notes=notes,
         current_revenue=current_revenue,
         target_revenue=target_revenue,
@@ -1971,6 +2023,7 @@ def _run_ticker_valuation_impl(
         "trading_agents_json": artifacts.trading_agents_json,
         "trading_agents_txt": artifacts.trading_agents_txt,
         "market_review_json": artifacts.market_review_json,
+        "financials_json": artifacts.financials_json,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,
         "target_revenue": artifacts.target_revenue,

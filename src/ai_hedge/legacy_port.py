@@ -1,5 +1,7 @@
 import os
 from contextlib import contextmanager
+from functools import lru_cache
+from importlib import resources
 
 ticker = "STRS.TA"
 
@@ -3354,6 +3356,37 @@ Rules:
 21) ZERO POLITENESS: output raw JSON only.
 """
 
+DREAM_TEAM_DESCRIPTION_FILES = {
+    "Warren Buffett": "warren_buffett.txt",
+    "Aswath Damodaran": "aswath_damodaran.txt",
+    "Charlie Munger": "charlie_munger.txt",
+    "Peter Lynch": "peter_lynch.txt",
+    "Peter Thiel": "peter_thiel.txt",
+    "Howard Marks": "howard_marks.txt",
+    "Bill Ackman": "bill_ackman.txt",
+    "Cathie Wood": "cathie_wood.txt",
+    "Ray Dalio": "ray_dalio.txt",
+    "Stanley Druckenmiller": "stanley_druckenmiller.txt",
+}
+
+
+@lru_cache(maxsize=32)
+def _dream_team_description_for(name: str) -> str:
+    file_name = DREAM_TEAM_DESCRIPTION_FILES.get(str(name or "").strip())
+    if not file_name:
+        return ""
+    try:
+        return (
+            resources.files(__package__ or "ai_hedge")
+            .joinpath("dream_team_descriptions", file_name)
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+    except Exception as exc:
+        print(f"[WARN] Dream Team description unavailable for {name}: {exc}")
+        return ""
+
+
 def build_prompt_dream_valuation(name):
     output_schema = """{
       "step_by_step_analysis": "string",
@@ -3362,6 +3395,20 @@ def build_prompt_dream_valuation(name):
       "investment_amount": number,
       "investment_rationale": "string"
     }"""
+    persona_context = _dream_team_description_for(name)
+    persona_context_block = (
+        f"""
+
+    Additional context for {name}:
+    The following profile is provided once to sharpen your persona-specific context. Use it as a guide to {name}'s philosophy, but also feel free to draw on your broader base knowledge of {name}'s writings, decisions, and investing style when it is relevant and not contradicted by this profile.
+
+    <valuator_profile>
+    {persona_context}
+    </valuator_profile>
+    """
+        if persona_context
+        else ""
+    )
 
     instructions_dream_team = f"""Act as the digital embodiment of {name}.
     You must fully internalize {name}'s specific investment philosophy, historical writings, famous axioms, and unique 'mental models.'
@@ -3370,6 +3417,7 @@ def build_prompt_dream_valuation(name):
     - If {name} ignores 'Beta' or 'EBITDA', you must ignore them.
     - If {name} prioritizes 'Moat', 'Margin of Safety', or 'DCF', you must make them the core of your valuation.
     - Adopt {name}'s specific attitude towards risk, time horizon, and market psychology.
+    {persona_context_block}
     Based on the input you receive, as {name}, estimate a reasonable TARGET MARKET CAPITALIZATION for the company's common equity, as a professional equity analyst like {name} would, and return it in STRICT JSON.
     Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 

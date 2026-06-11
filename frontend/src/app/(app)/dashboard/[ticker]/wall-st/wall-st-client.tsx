@@ -145,7 +145,7 @@ function recommendationCounts(metrics: NonNullable<WallStPayload["metrics"]>["re
   const latest = metrics?.latest || {};
   const keys = [
     ["strongSell", "Strong Sell", "bg-[color:var(--danger)]", "border-[color:var(--danger)]", "text-[color:var(--danger)]"],
-    ["sell", "Sell", "bg-[color:var(--signal-sell)]", "border-[color:var(--signal-sell)]", "hib-signal-sell"],
+    ["sell", "Sell", "bg-[color:var(--signal-underperform)]", "border-[color:var(--signal-underperform)]", "hib-signal-underperform"],
     ["hold", "Hold", "bg-[color:var(--signal-hold)]", "border-[color:var(--signal-hold)]", "hib-signal-hold"],
     ["buy", "Buy", "bg-[color:var(--signal-buy)]", "border-[color:var(--signal-buy)]", "hib-signal-buy"],
     ["strongBuy", "Strong Buy", "bg-[color:var(--signal-strong)]", "border-[color:var(--signal-strong)]", "hib-signal-strong"],
@@ -250,12 +250,13 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const lowChangePct = pctFromCurrent(low, current);
   const highChangePct = pctFromCurrent(high, current);
   const medianChangePct = pctFromCurrent(median, current);
+  const railPct = (pct: number) => 3 + (pct * 94) / 100;
   const markers = [
-    { label: "Low", value: low, change: lowChangePct, pct: 0, dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
-    { label: "Current", value: current, change: null, pct: currentPct, dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
-    { label: "Median", value: median, change: medianChangePct, pct: medianPct, dotClass: "bg-[color:var(--text-primary)]", labelClass: "text-[color:var(--text-primary)]" },
-    { label: "Mean", value: mean, change: targets?.upside_pct, pct: meanPct, dotClass: "bg-[color:var(--accent)]", labelClass: toneClass(targets?.upside_pct) },
-    { label: "High", value: high, change: highChangePct, pct: 100, dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
+    { label: "Low", value: low, change: lowChangePct, pct: railPct(0), dotClass: "bg-[color:var(--danger)]", labelClass: "text-[color:var(--danger)]" },
+    { label: "Current", value: current, change: null, pct: railPct(currentPct), dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
+    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), dotClass: "bg-[color:var(--text-primary)]", labelClass: "text-[color:var(--text-primary)]" },
+    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), dotClass: "bg-[color:var(--accent)]", labelClass: toneClass(targets?.upside_pct) },
+    { label: "High", value: high, change: highChangePct, pct: railPct(100), dotClass: "bg-[color:var(--success)]", labelClass: "text-[color:var(--success)]" },
   ];
 
   return (
@@ -273,17 +274,8 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
         <p className="text-sm text-[color:var(--text-secondary)]">No usable low/high analyst target range was returned.</p>
       ) : (
         <div className="px-2 py-5">
-          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-[color:var(--text-secondary)]">
-            {markers.map((marker) => (
-              <span key={marker.label} className="inline-flex items-center gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-full ${marker.dotClass}`} />
-                {marker.label}: {fmtNum(marker.value)}
-                {marker.change !== null ? <span className={toneClass(marker.change)}>({fmtPct(marker.change)})</span> : null}
-              </span>
-            ))}
-          </div>
-          <div className="relative h-16">
-            <div className="absolute left-0 right-0 top-7 h-2 rounded-full bg-white/10" aria-label="Analyst low to high target range" />
+          <div className="relative h-24">
+            <div className="absolute left-[3%] right-[3%] top-8 h-2 rounded-full bg-white/10" aria-label="Analyst low to high target range" />
             {markers.map((marker) => (
               <div
                 key={`marker-${marker.label}`}
@@ -291,17 +283,14 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
                 style={{ left: `${marker.pct}%` }}
                 title={`${marker.label}: ${fmtNum(marker.value)}${marker.change !== null ? ` (${fmtPct(marker.change)})` : ""}`}
               >
-                <span className={`h-9 w-px ${marker.dotClass}`} />
+                <span className={`h-10 w-px ${marker.dotClass}`} />
                 <span className={`h-3 w-3 rounded-full ring-2 ring-[color:var(--surface)] ${marker.dotClass}`} />
+                <span className={`mt-1 whitespace-nowrap text-xs font-semibold ${marker.labelClass}`}>{marker.label}</span>
+                <span className="whitespace-nowrap font-mono text-[11px] text-[color:var(--text-secondary)]">{fmtNum(marker.value)}</span>
+                {marker.change !== null ? (
+                  <span className={`whitespace-nowrap font-mono text-[11px] ${toneClass(marker.change)}`}>{fmtPct(marker.change)}</span>
+                ) : null}
               </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-[color:var(--text-muted)] sm:grid-cols-5">
-            {markers.map((marker) => (
-              <span key={`label-${marker.label}`}>
-                <span className={marker.labelClass}>{marker.label}</span> {fmtNum(marker.value)}
-                {marker.change !== null ? <span className={toneClass(marker.change)}> ({fmtPct(marker.change)})</span> : null}
-              </span>
             ))}
           </div>
         </div>

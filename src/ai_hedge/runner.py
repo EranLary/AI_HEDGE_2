@@ -183,6 +183,46 @@ def _format_sec_sources(files_dict: Optional[Dict[str, object]]) -> str:
     return ", ".join(entries)
 
 
+def _build_sec_currency_clarification(info_dict: Optional[Dict[str, Any]]) -> str:
+    info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
+    if not isinstance(info, dict):
+        return ""
+
+    original_currency = str(
+        info.get("original_financial_currency")
+        or info.get("financialCurrency")
+        or info.get("financial_currency")
+        or ""
+    ).strip().upper()
+    if not original_currency or original_currency == "USD":
+        return ""
+
+    conversion_ratio = _first_float(
+        info.get("financial_currency_to_USD")
+        or info.get("financial_currency_to_usd")
+        or info.get("financialCurrencyToUSD")
+    )
+    if conversion_ratio is not None and conversion_ratio > 0:
+        ratio_text = f"{conversion_ratio:g} {original_currency} per USD"
+        conversion_text = (
+            f"those original {original_currency} amounts are divided by {ratio_text} "
+            "to express them in USD"
+        )
+    else:
+        conversion_text = (
+            "they are converted to USD with the available financial-currency conversion rate"
+        )
+
+    return (
+        "### Currency Clarification for Valuation\n\n"
+        f"Many financial figures in the SEC/MAYA filing summary above may still be stated in "
+        f"{original_currency}, the company's original financial reporting currency. "
+        f"The structured annual and quarterly financial tables used by the valuators are USD-converted: "
+        f"{conversion_text}. When comparing filing-summary numbers with the converted tables, "
+        "check the units before drawing a valuation conclusion."
+    )
+
+
 def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
     explicit = str(raw.get("source", "") or "").strip().upper()
     if explicit in {"SEC", "MAYA"}:
@@ -1502,7 +1542,12 @@ def _run_ticker_valuation_impl(
             sec_errors = [str(e) for e in sec_out.get("errors", [])]
             sec_candidate = str(sec_out.get("text", "")).strip()
             if sec_out.get("status") == "success" and sec_candidate:
-                sec_short_text = sec_candidate
+                currency_clarification = _build_sec_currency_clarification(info_dict)
+                sec_short_text = (
+                    f"{sec_candidate}\n\n{currency_clarification}"
+                    if currency_clarification
+                    else sec_candidate
+                )
                 legacy.append_text_to_file(
                     text=sec_short_text,
                     header="SEC Summary",

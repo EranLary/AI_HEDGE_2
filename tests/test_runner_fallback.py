@@ -49,6 +49,36 @@ def test_build_sec_sources_footer_for_sec_reports():
     assert "Quarterly report date: 2026-05-05" in footer
 
 
+def test_build_sec_currency_clarification_for_non_usd_financials():
+    text = runner._build_sec_currency_clarification(
+        {
+            "info": {
+                "original_financial_currency": "ILS",
+                "financial_currency_to_USD": 3.25,
+            }
+        }
+    )
+
+    assert "ILS" in text
+    assert "3.25 ILS per USD" in text
+    assert "divided by" in text
+    assert "USD-converted" in text
+    assert "valuators" in text
+
+
+def test_build_sec_currency_clarification_skips_usd_financials():
+    text = runner._build_sec_currency_clarification(
+        {
+            "info": {
+                "original_financial_currency": "USD",
+                "financial_currency_to_USD": 1,
+            }
+        }
+    )
+
+    assert text == ""
+
+
 def test_attach_market_agent_markdown_persists_analysis_section(tmp_path):
     analysis_text = """
 # What It Does:

@@ -1,9 +1,11 @@
 "use client";
 
 import { AlertTriangle, BadgeDollarSign, FileSpreadsheet, Info } from "lucide-react";
+import { useMemo } from "react";
 
-import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ReportChipRow } from "@/components/dashboard-chrome";
+import { SmallCopyButton } from "@/components/hedge-dashboard";
+import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 
 type FinancialPeriod = {
   key?: string;
@@ -20,17 +22,45 @@ type FinancialRow = {
   note?: string;
 };
 
+type CurrentMetric = {
+  metric?: string;
+  kind?: string;
+  value?: number | null;
+  quality?: string;
+  note?: string;
+};
+
+const BALANCE_METRICS = new Set([
+  "Total Assets",
+  "Customers / Accounts Receivable",
+  "Inventory",
+  "Liquid Assets: Cash, Cash Equivalents, and Short-Term Investments",
+  "Total Liabilities",
+  "Total Shareholders' Equity",
+  "Total Debt: Short-Term and Long-Term",
+  "Net Liquidity: Liquid Assets Less Debt",
+  "Equity-to-Assets Ratio",
+]);
+
+const SNAPSHOT_METRICS = new Set([
+  "Market Capitalization",
+  "Enterprise Value (EV)",
+  "Price-to-Book Ratio (P/B)",
+  "Price-to-Earnings Ratio (P/E)",
+]);
+
 function asList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((v) => String(v || "").trim()).filter(Boolean);
 }
 
 function fmtValue(value: unknown, kind?: string): string {
+  if (value === null || value === undefined || value === "") return "-";
   const n = Number(value);
   if (!Number.isFinite(n)) return "-";
   const type = String(kind || "").toLowerCase();
   if (type === "percent") return `${(n * 100).toFixed(1)}%`;
-  if (type === "ratio") return `${n.toFixed(2)}x`;
+  if (type === "ratio") return n.toFixed(2);
   if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -39,15 +69,121 @@ function fmtValue(value: unknown, kind?: string): string {
 
 function qualityClass(value?: string): string {
   const q = String(value || "").toLowerCase();
-  if (q === "reported") return "border-emerald-400/35 text-emerald-200";
-  if (q === "derived" || q === "mixed") return "border-sky-400/30 text-sky-200";
-  if (q === "unavailable") return "border-zinc-500/30 text-zinc-400";
-  return "border-white/10 text-zinc-300";
+  if (q === "reported") return "border-[color:var(--success)] text-[color:var(--success)]";
+  if (q === "derived" || q === "mixed") return "border-[color:var(--info)] text-[color:var(--info)]";
+  if (q === "unavailable") return "border-[color:var(--border-strong)] text-[color:var(--text-muted)]";
+  return "border-[color:var(--border-subtle)] text-[color:var(--text-secondary)]";
 }
 
 function periodChip(period: FinancialPeriod): string {
-  const type = String(period.period_type || "").toLowerCase() === "annual" ? "FY" : "Q";
-  return `${type} ${period.label || period.date || period.key || ""}`.replace(/^FY FY\s+/i, "FY ").replace(/^Q Q/i, "Q");
+  const raw = String(period.label || period.date || period.key || "").trim();
+  const prefix = String(period.period_type || "").toLowerCase() === "annual" ? "FY" : "Q";
+  return `${prefix} ${raw}`.replace(/^FY FY\s+/i, "FY ").replace(/^Q Q/i, "Q");
+}
+
+function dateParts(date?: string): string[] {
+  const parts = String(date || "").split("-");
+  return parts.length === 3 ? parts : [String(date || "")];
+}
+
+function tableCopyText(title: string, periods: FinancialPeriod[], rows: FinancialRow[]): string {
+  const header = ["Metric", ...periods.map((p) => `${periodChip(p)} ${p.date || ""}`.trim()), "Quality", "Note"];
+  const lines = [title, header.join("\t")];
+  for (const row of rows) {
+    lines.push([
+      row.metric || "",
+      ...periods.map((period) => fmtValue(row.values?.[String(period.key || "")], row.kind)),
+      row.quality || "",
+      row.note || "",
+    ].join("\t"));
+  }
+  return lines.join("\n");
+}
+
+function snapshotCopyText(metrics: CurrentMetric[]): string {
+  const lines = ["Current Snapshot", ["Metric", "Value", "Quality", "Note"].join("\t")];
+  for (const metric of metrics) {
+    lines.push([metric.metric || "", fmtValue(metric.value, metric.kind), metric.quality || "", metric.note || ""].join("\t"));
+  }
+  return lines.join("\n");
+}
+
+function FinancialTable({
+  title,
+  subtitle,
+  periods,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  periods: FinancialPeriod[];
+  rows: FinancialRow[];
+}) {
+  if (!rows.length) return null;
+  const copyText = tableCopyText(title, periods, rows);
+
+  return (
+    <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h2>
+          <p className="mt-1 text-sm text-[color:var(--text-muted)]">{subtitle}</p>
+        </div>
+        <SmallCopyButton text={copyText} label={`Copy ${title}`} />
+      </div>
+      <div className="overflow-auto rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)]">
+        <table className="w-full min-w-[1180px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[260px]" />
+            {periods.map((period) => (
+              <col key={period.key} className="w-[112px]" />
+            ))}
+            <col className="w-[116px]" />
+            <col className="w-[340px]" />
+          </colgroup>
+          <thead className="border-b border-[color:var(--border-subtle)] text-[color:var(--text-muted)]">
+            <tr>
+              <th className="sticky left-0 z-10 bg-[color:var(--surface-elevated)] px-3 py-3 text-left font-medium">Metric</th>
+              {periods.map((period) => (
+                <th key={period.key} className="px-3 py-3 text-right align-bottom font-medium">
+                  <span className="block text-base leading-5 text-[color:var(--text-primary)]">{periodChip(period).replace(/\s+/g, " ")}</span>
+                  <span className="mt-1 block font-mono text-[11px] leading-4 text-[color:var(--text-muted)]">
+                    {dateParts(period.date).map((part) => (
+                      <span key={`${period.key}-${part}`} className="block">
+                        {part}
+                      </span>
+                    ))}
+                  </span>
+                </th>
+              ))}
+              <th className="px-3 py-3 text-left align-bottom font-medium">Quality</th>
+              <th className="px-3 py-3 text-left align-bottom font-medium">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={`${row.metric}-${idx}`} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
+                <td className="sticky left-0 z-10 bg-[color:var(--surface-elevated)] px-3 py-2 font-medium text-[color:var(--text-primary)]">
+                  {row.metric}
+                </td>
+                {periods.map((period) => (
+                  <td key={`${row.metric}-${period.key}`} className="px-3 py-2 text-right font-mono text-[color:var(--text-primary)]">
+                    {fmtValue(row.values?.[String(period.key || "")], row.kind)}
+                  </td>
+                ))}
+                <td className="px-3 py-2">
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] ${qualityClass(row.quality)}`}>
+                    {row.quality || "mixed"}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-xs leading-relaxed text-[color:var(--text-secondary)]">{row.note || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 export type FinancialsClientProps = {
@@ -69,31 +205,60 @@ export function FinancialsClient({
   const analysis = payload.analysis || {};
   const periods = Array.isArray(analysis.periods) ? (analysis.periods as FinancialPeriod[]) : [];
   const rows = Array.isArray(analysis.rows) ? (analysis.rows as FinancialRow[]) : [];
+  const currentMetrics = Array.isArray(analysis.current_metrics) ? (analysis.current_metrics as CurrentMetric[]) : [];
   const takeaways = asList(analysis.key_takeaways);
   const warnings = asList(analysis.warnings);
   const currency = String(analysis.currency || data.header?.original_financial_currency || data.header?.currency || "USD").toUpperCase();
   const unit = String(analysis.unit || "raw");
   const hasTable = status === "success" && periods.length > 0 && rows.length > 0;
 
+  const { snapshotMetrics, incomeRows, balanceRows, copyAllText } = useMemo(() => {
+    const snapshotFromRows: CurrentMetric[] = rows
+      .filter((row) => SNAPSHOT_METRICS.has(String(row.metric || "")))
+      .map((row) => {
+        const values = periods.map((period) => row.values?.[String(period.key || "")]).filter((value) => Number.isFinite(Number(value)));
+        const last = values.length ? Number(values[values.length - 1]) : null;
+        return { metric: row.metric, kind: row.kind, value: last, quality: row.quality, note: row.note };
+      });
+    const snapshot = currentMetrics.length ? currentMetrics : snapshotFromRows;
+    const filteredRows = rows.filter((row) => !SNAPSHOT_METRICS.has(String(row.metric || "")));
+    const balance = filteredRows.filter((row) => BALANCE_METRICS.has(String(row.metric || "")));
+    const income = filteredRows.filter((row) => !BALANCE_METRICS.has(String(row.metric || "")));
+    const copyBlocks = [
+      snapshot.length ? snapshotCopyText(snapshot) : "",
+      tableCopyText("Income and Cash Flow", periods, income),
+      tableCopyText("Balance Sheet", periods, balance),
+    ].filter(Boolean);
+    return {
+      snapshotMetrics: snapshot,
+      incomeRows: income,
+      balanceRows: balance,
+      copyAllText: copyBlocks.join("\n\n"),
+    };
+  }, [currentMetrics, periods, rows]);
+
   return (
     <div>
       <ReportChipRow ticker={upper} reports={reportsForTicker} currentReportId={resolvedReportId} />
 
-      <header className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <header className="mb-4 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="inline-flex items-center gap-2 font-display text-2xl text-zinc-100">
-              <FileSpreadsheet size={18} className="text-emerald-300" />
+            <h1 className="inline-flex items-center gap-2 font-display text-2xl text-[color:var(--text-primary)]">
+              <FileSpreadsheet size={18} className="text-[color:var(--accent)]" />
               Financials
             </h1>
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-              {upper} · original reporting currency
+            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
+              {upper} - original reporting currency
             </p>
           </div>
-          <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-right">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-200">Currency</p>
-            <p className="font-mono text-lg font-semibold text-emerald-100">{currency}</p>
-            <p className="text-[11px] text-zinc-400">{unit}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {hasTable ? <SmallCopyButton text={copyAllText} label="Copy all financial tables" /> : null}
+            <div className="rounded-xl border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-right">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Currency</p>
+              <p className="font-mono text-lg font-semibold text-[color:var(--text-primary)]">{currency}</p>
+              <p className="text-[11px] text-[color:var(--text-muted)]">{unit}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -109,84 +274,66 @@ export function FinancialsClient({
       ) : (
         <div className="space-y-5">
           {takeaways.length ? (
-            <section className="grid gap-3 lg:grid-cols-3">
-              {takeaways.slice(0, 6).map((item, idx) => (
-                <article key={`takeaway-${idx}`} className="rounded-xl border border-white/10 bg-zinc-950/70 p-3">
-                  <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                    <BadgeDollarSign size={13} />
-                    Read {idx + 1}
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed text-zinc-100">{item}</p>
-                </article>
-              ))}
+            <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+              <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
+                <BadgeDollarSign size={14} />
+                What matters most
+              </h2>
+              <ol className="mt-3 grid gap-3 lg:grid-cols-2">
+                {takeaways.slice(0, 10).map((item, idx) => (
+                  <li key={`takeaway-${idx}`} className="flex gap-3 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-strong)] font-mono text-xs text-[color:var(--text-secondary)]">
+                      {idx + 1}
+                    </span>
+                    <span className="text-sm leading-relaxed text-[color:var(--text-primary)]">{item}</span>
+                  </li>
+                ))}
+              </ol>
             </section>
           ) : null}
 
-          <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-300">
-                  {analysis.title || "Financial Statement Bridge"}
-                </h2>
-                {analysis.subtitle ? <p className="mt-1 text-sm text-zinc-400">{analysis.subtitle}</p> : null}
+          {snapshotMetrics.length ? (
+            <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">Current Snapshot</h2>
+                  <p className="mt-1 text-sm text-[color:var(--text-muted)]">Latest market values, separate from historical statement periods.</p>
+                </div>
+                <SmallCopyButton text={snapshotCopyText(snapshotMetrics)} label="Copy current snapshot" />
               </div>
-              <p className="inline-flex items-center gap-1 text-xs text-zinc-400">
-                <Info size={13} />
-                Values stay in {currency}
-              </p>
-            </div>
-            <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-              <table className="w-full min-w-[1180px] text-sm">
-                <thead className="border-b border-white/10 text-zinc-400">
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-zinc-950 px-3 py-2 text-left font-medium">Metric</th>
-                    {periods.map((period) => (
-                      <th key={period.key} className="px-3 py-2 text-right font-medium">
-                        <span className="block text-zinc-200">{periodChip(period)}</span>
-                        <span className="block text-[10px] uppercase tracking-[0.12em] text-zinc-500">{period.date}</span>
-                      </th>
-                    ))}
-                    <th className="px-3 py-2 text-left font-medium">Quality</th>
-                    <th className="px-3 py-2 text-left font-medium">Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={`${row.metric}-${idx}`} className="border-b border-white/5 last:border-b-0">
-                      <td className="sticky left-0 z-10 bg-zinc-950 px-3 py-2 font-medium text-zinc-100">
-                        {row.metric}
-                      </td>
-                      {periods.map((period) => (
-                        <td key={`${row.metric}-${period.key}`} className="px-3 py-2 text-right font-mono text-zinc-100">
-                          {fmtValue(row.values?.[String(period.key || "")], row.kind)}
-                        </td>
-                      ))}
-                      <td className="px-3 py-2">
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] ${qualityClass(row.quality)}`}>
-                          {row.quality || "mixed"}
-                        </span>
-                      </td>
-                      <td className="max-w-[340px] px-3 py-2 text-xs leading-relaxed text-zinc-300">{row.note || ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {snapshotMetrics.map((metric) => (
+                  <article key={metric.metric} className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+                    <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{metric.metric}</p>
+                    <p className="mt-2 font-mono text-lg font-semibold text-[color:var(--text-primary)]">{fmtValue(metric.value, metric.kind)}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-[color:var(--text-secondary)]">{metric.note || ""}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <FinancialTable title={analysis.title || "Income and Cash Flow"} subtitle={`Values stay in ${currency}`} periods={periods} rows={incomeRows} />
+          <FinancialTable title="Balance Sheet" subtitle="Assets, liabilities, equity, debt, and liquidity." periods={periods} rows={balanceRows} />
 
           {warnings.length ? (
-            <section className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-4">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">Caveats</h2>
-              <ul className="mt-3 space-y-2 text-sm text-amber-50/90">
+            <section className="rounded-2xl border border-[color:var(--warning)] bg-[color:var(--surface-elevated)] p-4">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--warning)]">Caveats</h2>
+              <ul className="mt-3 space-y-2 text-sm text-[color:var(--text-secondary)]">
                 {warnings.map((item, idx) => (
                   <li key={`warning-${idx}`} className="flex gap-2">
-                    <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-200" />
+                    <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--warning)]" />
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
             </section>
           ) : null}
+
+          <p className="inline-flex items-center gap-1 text-xs text-[color:var(--text-muted)]">
+            <Info size={13} />
+            Missing data is shown as "-"; a displayed 0 means the source value or formula is actually zero.
+          </p>
         </div>
       )}
     </div>

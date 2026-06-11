@@ -41,9 +41,11 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     assert "Total Assets" in [row["metric"] for row in normalized["rows"]]
     assert "Net Liquidity: Liquid Assets Less Debt" in [row["metric"] for row in normalized["rows"]]
     equity_to_assets = next(row for row in normalized["rows"] if row["metric"] == "Equity-to-Assets Ratio")
-    pb = next(row for row in normalized["rows"] if row["metric"] == "Price-to-Book Ratio (P/B)")
+    tax_rate = next(row for row in normalized["rows"] if row["metric"] == "Tax Rate")
+    sbc_ratio = next(row for row in normalized["rows"] if row["metric"] == "SBC / Revenue")
     assert equity_to_assets["kind"] == "percent"
-    assert pb["kind"] == "ratio"
+    assert tax_rate["kind"] == "percent"
+    assert sbc_ratio["kind"] == "percent"
 
 
 def test_normalize_financials_analysis_canonicalizes_curly_shareholders_equity():
@@ -95,3 +97,40 @@ def test_financials_markdown_includes_currency_and_table():
     assert "## Financials" in markdown
     assert "- Currency: USD" in markdown
     assert "| Revenue | 1,000 | Reported. |" in markdown
+
+
+def test_normalize_financials_analysis_sorts_q4_before_fy_and_moves_market_snapshot():
+    normalized = normalize_financials_analysis(
+        {
+            "ticker": "TEST",
+            "periods": [
+                {"key": "2025-09-30_A", "label": "FY 2025", "date": "2025-09-30", "period_type": "annual"},
+                {"key": "2025-09-30_Q", "label": "Q4 2025", "date": "2025-09-30", "period_type": "quarterly"},
+            ],
+            "rows": [
+                {
+                    "metric": "Market Capitalization",
+                    "kind": "currency",
+                    "values": {"2025-09-30_A": 0, "2025-09-30_Q": 1000},
+                    "quality": "mixed",
+                    "note": "Current quote.",
+                },
+                {
+                    "metric": "(+) Amortization of Intangible Assets",
+                    "kind": "currency",
+                    "values": {"2025-09-30_A": 0, "2025-09-30_Q": 0},
+                    "quality": "unavailable",
+                    "note": "Not separately disclosed.",
+                },
+            ],
+        },
+        ticker="TEST",
+        currency="USD",
+    )
+
+    assert [p["key"] for p in normalized["periods"]] == ["2025-09-30_Q", "2025-09-30_A"]
+    assert "Market Capitalization" not in [row["metric"] for row in normalized["rows"]]
+    market_cap = next(metric for metric in normalized["current_metrics"] if metric["metric"] == "Market Capitalization")
+    assert market_cap["value"] == 1000
+    amortization = next(row for row in normalized["rows"] if row["metric"] == "(+) Amortization of Intangible Assets")
+    assert amortization["values"] == {"2025-09-30_Q": None, "2025-09-30_A": None}

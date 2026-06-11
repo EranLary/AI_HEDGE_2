@@ -191,6 +191,13 @@ export type FinancialsPayload = {
       quality?: "reported" | "derived" | "unavailable" | "mixed" | string;
       note?: string;
     }>;
+    current_metrics?: Array<{
+      metric?: string;
+      kind?: "currency" | "percent" | "ratio" | "count" | string;
+      value?: number | null;
+      quality?: "reported" | "derived" | "unavailable" | "mixed" | string;
+      note?: string;
+    }>;
     added_rows?: string[];
     key_takeaways?: string[];
     warnings?: string[];

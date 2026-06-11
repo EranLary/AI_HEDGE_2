@@ -19,10 +19,12 @@ REQUIRED_METRICS = [
     "Operating Margin",
     "Net Income (GAAP)",
     "Net Margin",
+    "Tax Rate",
     "Operating Cash Flow",
     "Free Cash Flow (FCF)",
     "FCF / Net Income",
     "(+) Stock-Based Compensation (SBC)",
+    "SBC / Revenue",
     "(+) Amortization of Intangible Assets",
     "(+/-) One-Time Expenses/Income, Net",
     "(+/-) Additional Adjustments, if any",
@@ -36,9 +38,13 @@ REQUIRED_METRICS = [
     "Total Debt: Short-Term and Long-Term",
     "Net Liquidity: Liquid Assets Less Debt",
     "Equity-to-Assets Ratio",
+]
+
+MARKET_SNAPSHOT_METRICS = [
     "Market Capitalization",
     "Enterprise Value (EV)",
     "Price-to-Book Ratio (P/B)",
+    "Price-to-Earnings Ratio (P/E)",
 ]
 
 
@@ -160,6 +166,7 @@ def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict
 
 def build_financials_prompt(ticker: str, payload: Dict[str, Any]) -> str:
     required = "\n".join(f"- {metric}" for metric in REQUIRED_METRICS)
+    snapshot = "\n".join(f"- {metric}" for metric in MARKET_SNAPSHOT_METRICS)
     return f"""
 You are a forensic financial statement analyst building a dashboard table for equity research.
 
@@ -175,13 +182,16 @@ Use Deep Reasoning:
 - Never use industry averages, outside memory, estimates, assumptions, or generic financial knowledge to fill a table cell.
 - If an exact line is missing, derive only when defensible from nearby lines and mark confidence as "derived".
 - If unavailable, use null and explain the limitation in the row note. Do not hallucinate.
-- Sort columns chronologically from oldest to newest, mixing annual and quarterly periods intelligently by period end date. Preserve whether each period is annual or quarterly in column metadata.
+- Sort columns chronologically from oldest to newest, mixing annual and quarterly periods intelligently by period end date. Preserve whether each period is annual or quarterly in column metadata. If a fiscal year and its Q4 share the same period-end date, put Q4 before FY.
 - Keep values in the original financial currency. Ratios and margins should be decimals, not strings.
 - Keep currency/count numeric values as raw statement values. Do not rescale to thousands, millions, or billions; the dashboard will handle display formatting.
 - Make the table simple enough for a dashboard but deep enough to explain the economics.
 
 Mandatory rows, in this exact order:
 {required}
+
+Current market snapshot fields, outside the period table:
+{snapshot}
 
 Optional rows:
 - You may add up to 7 additional rows only if truly important for this company type.
@@ -199,13 +209,9 @@ Balance sheet and market-value logic:
 - Total Debt means short-term debt plus long-term debt. If only total debt is available from quote info, use it only where period-specific statement debt is missing and mark the row "derived" or "mixed".
 - Net Liquidity = Liquid Assets - Total Debt.
 - Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
-- Market Capitalization, Enterprise Value (EV), and Price-to-Book Ratio (P/B) are mandatory rows, but fill them only when defensible:
-  - If a period-specific market cap or EV is available in the provided data, use it.
-  - If shares outstanding and a period-end/current price are available, derive Market Cap = shares * price and explain the basis.
-  - EV = Market Cap + Total Debt - Liquid Assets when those pieces are available for the same period.
-  - P/B = Market Cap / Total Shareholders' Equity when both values are available.
-  - If only current quote info exists, you may populate the newest period and leave older periods null, with a note saying it is current quote data, not historical period-end pricing.
-  - Do not invent historical market caps, EV, or P/B when price/share data is not provided.
+- Tax Rate = tax provision / pretax income when both are available. If either line is missing, use null.
+- SBC / Revenue = Stock-Based Compensation / Revenue when both are available. If SBC is not disclosed separately, use null.
+- Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), and Price-to-Earnings Ratio (P/E) are current quote snapshot fields, not period-table rows. Put them in current_metrics only when available from quote info or defensible from quote info plus latest statements. Do not invent historical values for them.
 
 Return ONLY valid JSON with this exact shape:
 {{
@@ -231,8 +237,17 @@ Return ONLY valid JSON with this exact shape:
       "note": "short plain-English note"
     }}
   ],
+  "current_metrics": [
+    {{
+      "metric": "Market Capitalization",
+      "kind": "currency | ratio",
+      "value": null,
+      "quality": "reported | derived | unavailable | mixed",
+      "note": "short plain-English note"
+    }}
+  ],
   "added_rows": ["metric names you added beyond mandatory rows"],
-  "key_takeaways": ["3-6 concise bullets about growth, margins, cash conversion, and accounting adjustments"],
+  "key_takeaways": ["5-10 concise bullets sorted from most important to least important"],
   "warnings": ["short caveats, missing-data notes, or comparability warnings"]
 }}
 
@@ -243,6 +258,8 @@ Dashboard writing style:
 - Use null for missing values.
 - Use null for any number you cannot trace to the payload or to a transparent formula from payload numbers.
 - Do not invent placeholder numbers to make the table look complete.
+- Never output 0 for missing, unavailable, undisclosed, or not separately disclosed data. Output null instead. Only output 0 when the source statement actually reports zero or a formula from available values truly equals zero.
+- Key takeaways should be simple, smart, and useful for a user who wants to understand the table fast: what changed, what looks strong or weak, what is one-off, and what deserves attention.
 - Do not include markdown.
 
 Financial statement payload JSON:
@@ -260,6 +277,8 @@ def _default_kind_for_metric(metric: str) -> str:
     text = str(metric or "").lower()
     if "margin" in text or "growth" in text or "equity-to-assets" in text:
         return "percent"
+    if "tax rate" in text or "sbc / revenue" in text:
+        return "percent"
     if "ratio" in text or "p/b" in text or "fcf / net income" in text:
         return "ratio"
     return "currency"
@@ -267,6 +286,31 @@ def _default_kind_for_metric(metric: str) -> str:
 
 def _metric_key(metric: str) -> str:
     return re.sub(r"\s+", " ", str(metric or "").replace("’", "'").replace("`", "'").strip().lower())
+
+
+def _normalize_quality(value: Any) -> str:
+    quality = str(value or "mixed").strip().lower()
+    return quality if quality in {"reported", "derived", "unavailable", "mixed"} else "mixed"
+
+
+def _coerce_number(value: Any) -> Optional[float]:
+    try:
+        num = float(value)
+        return num if np.isfinite(num) else None
+    except Exception:
+        return None
+
+
+def _snapshot_value_from_rows(rows: List[Any], metric: str) -> Optional[float]:
+    for row in rows:
+        if not isinstance(row, dict) or _metric_key(row.get("metric", "")) != _metric_key(metric):
+            continue
+        values = row.get("values") if isinstance(row.get("values"), dict) else {}
+        for value in reversed(list(values.values())):
+            num = _coerce_number(value)
+            if num is not None and abs(num) > 1e-12:
+                return num
+    return None
 
 
 def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency: str) -> Dict[str, Any]:
@@ -290,30 +334,31 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
             "date": date,
             "period_type": "annual" if period_type == "annual" else "quarterly",
         })
-    periods.sort(key=lambda p: (p.get("date") or "", 0 if p.get("period_type") == "annual" else 1))
+    periods.sort(key=lambda p: (p.get("date") or "", 0 if p.get("period_type") == "quarterly" else 1))
 
     period_keys = {p["key"] for p in periods}
     rows = []
-    for row in _as_list(analysis.get("rows"), limit=len(REQUIRED_METRICS) + 7):
+    raw_rows = _as_list(analysis.get("rows"), limit=len(REQUIRED_METRICS) + len(MARKET_SNAPSHOT_METRICS) + 7)
+    market_keys = {_metric_key(metric) for metric in MARKET_SNAPSHOT_METRICS}
+    for row in raw_rows:
         if not isinstance(row, dict):
             continue
         metric = str(row.get("metric") or "").strip()
         if not metric:
             continue
+        if _metric_key(metric) in market_keys:
+            continue
         values_src = row.get("values") if isinstance(row.get("values"), dict) else {}
         values: Dict[str, Optional[float]] = {}
+        quality = _normalize_quality(row.get("quality"))
         for key in period_keys:
-            value = values_src.get(key)
-            try:
-                num = float(value)
-                values[key] = num if np.isfinite(num) else None
-            except Exception:
-                values[key] = None
+            num = _coerce_number(values_src.get(key))
+            values[key] = None if quality == "unavailable" and num == 0 else num
         rows.append({
             "metric": metric,
             "kind": str(row.get("kind") or "currency").strip().lower(),
             "values": values,
-            "quality": str(row.get("quality") or "mixed").strip().lower(),
+            "quality": quality,
             "note": str(row.get("note") or "").strip(),
         })
 
@@ -335,6 +380,39 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
         }))
     ordered_rows.extend(list(by_metric.values())[:7])
 
+    current_by_key: Dict[str, Dict[str, Any]] = {}
+    for item in _as_list(analysis.get("current_metrics"), limit=12):
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric") or "").strip()
+        if not metric:
+            continue
+        quality = _normalize_quality(item.get("quality"))
+        value = _coerce_number(item.get("value"))
+        current_by_key[_metric_key(metric)] = {
+            "metric": metric,
+            "kind": str(item.get("kind") or _default_kind_for_metric(metric)).strip().lower(),
+            "value": None if quality == "unavailable" and value == 0 else value,
+            "quality": quality,
+            "note": str(item.get("note") or "").strip(),
+        }
+
+    current_metrics = []
+    for metric in MARKET_SNAPSHOT_METRICS:
+        existing = current_by_key.get(_metric_key(metric))
+        if existing:
+            existing["metric"] = metric
+            current_metrics.append(existing)
+            continue
+        fallback_value = _snapshot_value_from_rows(raw_rows, metric)
+        current_metrics.append({
+            "metric": metric,
+            "kind": _default_kind_for_metric(metric),
+            "value": fallback_value,
+            "quality": "mixed" if fallback_value is not None else "unavailable",
+            "note": "Current quote snapshot; not a historical period-table value." if fallback_value is not None else "Not available in the provided quote data.",
+        })
+
     return {
         "ticker": str(analysis.get("ticker") or ticker).upper(),
         "currency": str(analysis.get("currency") or currency or "USD").upper(),
@@ -343,8 +421,9 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
         "subtitle": str(analysis.get("subtitle") or "Original reporting currency").strip(),
         "periods": periods,
         "rows": ordered_rows,
+        "current_metrics": current_metrics,
         "added_rows": [str(x).strip() for x in _as_list(analysis.get("added_rows"), limit=7) if str(x).strip()],
-        "key_takeaways": [str(x).strip() for x in _as_list(analysis.get("key_takeaways"), limit=6) if str(x).strip()],
+        "key_takeaways": [str(x).strip() for x in _as_list(analysis.get("key_takeaways"), limit=10) if str(x).strip()],
         "warnings": [str(x).strip() for x in _as_list(analysis.get("warnings"), limit=8) if str(x).strip()],
     }
 
@@ -365,7 +444,7 @@ def financials_analysis_to_markdown(analysis: Dict[str, Any]) -> str:
     takeaways = analysis.get("key_takeaways") if isinstance(analysis.get("key_takeaways"), list) else []
     if takeaways:
         lines.append("### Key Takeaways")
-        for item in takeaways[:6]:
+        for item in takeaways[:10]:
             lines.append(f"- {item}")
         lines.append("")
     if periods and rows:
@@ -385,7 +464,7 @@ def financials_analysis_to_markdown(analysis: Dict[str, Any]) -> str:
                 elif str(row.get("kind") or "").lower() == "percent":
                     cells.append(f"{float(value) * 100:.1f}%")
                 elif str(row.get("kind") or "").lower() == "ratio":
-                    cells.append(f"{float(value):.2f}x")
+                    cells.append(f"{float(value):.2f}")
                 else:
                     cells.append(f"{float(value):,.0f}")
             cells.append(str(row.get("note") or ""))

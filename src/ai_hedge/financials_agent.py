@@ -170,6 +170,9 @@ Use Deep Reasoning:
 - Understand the business model from the ticker/company info before choosing optional rows.
 - Use income statement, balance sheet, and cash flow statement together.
 - Prefer reported statement line items over inference.
+- EXTREMELY IMPORTANT: do not hallucinate, invent, smooth, backfill, interpolate, or "make reasonable" numbers. Every numeric value must come directly from the provided statements/quote info or from a clearly stated formula using provided numbers.
+- If a real number is not available, output null. A null with a useful note is better than a fake number.
+- Never use industry averages, outside memory, estimates, assumptions, or generic financial knowledge to fill a table cell.
 - If an exact line is missing, derive only when defensible from nearby lines and mark confidence as "derived".
 - If unavailable, use null and explain the limitation in the row note. Do not hallucinate.
 - Sort columns chronologically from oldest to newest, mixing annual and quarterly periods intelligently by period end date. Preserve whether each period is annual or quarterly in column metadata.
@@ -238,6 +241,8 @@ Dashboard writing style:
 - Notes should help a user understand what the row means.
 - Avoid long prose inside table cells.
 - Use null for missing values.
+- Use null for any number you cannot trace to the payload or to a transparent formula from payload numbers.
+- Do not invent placeholder numbers to make the table look complete.
 - Do not include markdown.
 
 Financial statement payload JSON:

@@ -121,10 +121,10 @@ function targetActionTone(row: Record<string, unknown>): string {
   const prior = num(row.priorPriceTarget);
   const current = num(row.currentPriceTarget);
   if (action.includes("raise") || action.includes("increase") || (prior !== null && current !== null && current > prior)) {
-    return "text-[color:var(--success)]";
+    return "hib-target-up";
   }
   if (action.includes("lower") || action.includes("cut") || action.includes("reduce") || (prior !== null && current !== null && current < prior)) {
-    return "text-[color:var(--danger)]";
+    return "hib-target-down";
   }
   return "text-[color:var(--text-muted)]";
 }

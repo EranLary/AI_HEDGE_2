@@ -507,6 +507,63 @@ html[data-theme="light"] .hib-signal-strong {
   color: #166534 !important;
 }
 
+.hib-wallst-strong-sell-bg {
+  background-color: #991b1b !important;
+}
+.hib-wallst-sell-bg {
+  background-color: #ef4444 !important;
+}
+.hib-wallst-buy-bg {
+  background-color: #22c55e !important;
+}
+.hib-wallst-strong-buy-bg {
+  background-color: #15803d !important;
+}
+.hib-wallst-strong-sell-tone {
+  border-color: #991b1b !important;
+  color: #f87171 !important;
+}
+.hib-wallst-sell-tone {
+  border-color: #ef4444 !important;
+  color: #ef4444 !important;
+}
+.hib-wallst-buy-tone {
+  border-color: #22c55e !important;
+  color: #22c55e !important;
+}
+.hib-wallst-strong-buy-tone {
+  border-color: #15803d !important;
+  color: #4ade80 !important;
+}
+html[data-theme="light"] .hib-wallst-strong-sell-bg {
+  background-color: #7f1d1d !important;
+}
+html[data-theme="light"] .hib-wallst-sell-bg {
+  background-color: #dc2626 !important;
+}
+html[data-theme="light"] .hib-wallst-buy-bg {
+  background-color: #16a34a !important;
+}
+html[data-theme="light"] .hib-wallst-strong-buy-bg {
+  background-color: #166534 !important;
+}
+html[data-theme="light"] .hib-wallst-strong-sell-tone {
+  border-color: #7f1d1d !important;
+  color: #7f1d1d !important;
+}
+html[data-theme="light"] .hib-wallst-sell-tone {
+  border-color: #dc2626 !important;
+  color: #dc2626 !important;
+}
+html[data-theme="light"] .hib-wallst-buy-tone {
+  border-color: #16a34a !important;
+  color: #15803d !important;
+}
+html[data-theme="light"] .hib-wallst-strong-buy-tone {
+  border-color: #166534 !important;
+  color: #166534 !important;
+}
+
 .hib-info-tip-btn {
   border-color: rgba(148, 163, 184, 0.7) !important;
   background-color: rgba(15, 23, 42, 0.9) !important;

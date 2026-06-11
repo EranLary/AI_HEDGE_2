@@ -478,12 +478,12 @@ function ActionTape({ rows }: { rows: Array<Record<string, unknown>> }) {
                   </td>
                   <td className="hib-market-table-cell">{text(row.FromGrade) || "-"}</td>
                   <td className="hib-market-table-cell">{text(row.ToGrade) || "-"}</td>
-                  <td className={`hib-market-table-cell font-semibold ${targetActionTone(row)}`}>{text(row.priceTargetAction) || "-"}</td>
-                  <td className={`hib-market-table-cell font-mono ${toneClass(targetChange(row))}`}>{fmtNum(row.priorPriceTarget)}</td>
-                  <td className={`hib-market-table-cell font-mono font-semibold ${toneClass(targetChange(row))}`}>
-                    {fmtNum(row.currentPriceTarget)}
+                  <td className={`hib-market-table-cell font-semibold ${targetActionTone(row)}`}>
+                    {text(row.priceTargetAction) || "-"}
                     {targetChange(row) !== null ? <span className="ml-1 text-[10px]">({fmtSignedNum(targetChange(row))})</span> : null}
                   </td>
+                  <td className="hib-market-table-cell font-mono">{fmtNum(row.priorPriceTarget)}</td>
+                  <td className="hib-market-table-cell font-mono">{fmtNum(row.currentPriceTarget)}</td>
                 </tr>
               ))}
             </tbody>

@@ -150,7 +150,7 @@ test("technical analysis bearish signal hits when price direction moves down", (
   const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
 
   const agg = computeHitRateAggregation(reports, live);
-  const technical = agg.by_model.find((row) => row.key === "Technical Analysis");
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
   assert.ok(technical);
 
   assert.equal(technical.signals.hits, 1);
@@ -177,7 +177,7 @@ test("technical analysis neutral signal has no direction", () => {
   const live = new Map<string, number | null>([["TEST", 120]]);
 
   const agg = computeHitRateAggregation(reports, live);
-  const technical = agg.by_model.find((row) => row.key === "Technical Analysis");
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
   assert.ok(technical);
 
   assert.equal(technical.signals.hits, 0);
@@ -201,7 +201,7 @@ test("technical analysis can derive direction from probabilities", () => {
   const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
 
   const agg = computeHitRateAggregation(reports, live);
-  const technical = agg.by_model.find((row) => row.key === "Technical Analysis");
+  const technical = agg.by_signal.find((row) => row.key === "Technical Analysis");
   assert.ok(technical);
 
   assert.equal(technical.signals.hits, 0);

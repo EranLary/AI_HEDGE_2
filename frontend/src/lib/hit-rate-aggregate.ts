@@ -62,6 +62,7 @@ export type HitRateAggregation = {
   overview: MetricCountsSet;
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
+  by_signal: HitRateRow[];
 };
 
 export type HitRateMode = "all" | "positive_only";
@@ -175,6 +176,7 @@ export function computeHitRateAggregation(
   const overview = createMetricSet();
   const byModelMap = new Map<string, MetricAccSet>();
   const byValuatorMap = new Map<string, MetricAccSet>();
+  const bySignalMap = new Map<string, MetricAccSet>();
 
   let reportsWithBaselinePrice = 0;
 
@@ -291,12 +293,12 @@ export function computeHitRateAggregation(
 
     const technicalDirection = technicalSignalDirection(payload);
     if (technicalDirection !== null) {
-      const modelKey = "Technical Analysis";
-      if (!byModelMap.has(modelKey)) {
-        byModelMap.set(modelKey, createMetricSet());
+      const signalKey = "Technical Analysis";
+      if (!bySignalMap.has(signalKey)) {
+        bySignalMap.set(signalKey, createMetricSet());
       }
-      const modelMetric = byModelMap.get(modelKey)!;
-      applyPrediction(modelMetric, "signal", technicalDirection, actualDirection);
+      const signalMetric = bySignalMap.get(signalKey)!;
+      applyPrediction(signalMetric, "signal", technicalDirection, actualDirection);
       applyPrediction(overview, "signal", technicalDirection, actualDirection);
     }
   }
@@ -307,6 +309,9 @@ export function computeHitRateAggregation(
     .map(([key, metric]) => rowFromMetricSet(key, key, metric))
     .sort(compareRows);
   const by_valuator = Array.from(byValuatorMap.entries())
+    .map(([key, metric]) => rowFromMetricSet(key, key, metric))
+    .sort(compareRows);
+  const by_signal = Array.from(bySignalMap.entries())
     .map(([key, metric]) => rowFromMetricSet(key, key, metric))
     .sort(compareRows);
 
@@ -325,5 +330,6 @@ export function computeHitRateAggregation(
     overview: overviewFinal,
     by_model,
     by_valuator,
+    by_signal,
   };
 }

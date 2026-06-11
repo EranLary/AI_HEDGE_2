@@ -42,6 +42,7 @@ type HitRatePayload = {
   overview: MetricCountsSet;
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
+  by_signal: HitRateRow[];
 };
 
 type HitRateMode = "all" | "positive_only";
@@ -121,9 +122,6 @@ function HitRateTable({
 }) {
   const discoveryHrefForRow = (row: HitRateRow): string | null => {
     if (lensType === "model") {
-      if (String(row.key || "").trim().toLowerCase() === "technical analysis") {
-        return null;
-      }
       if (String(row.key || "").trim().toLowerCase() === "overall") {
         return "/discovery?lens_type=overall";
       }
@@ -153,7 +151,6 @@ function HitRateTable({
               <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
               <span className="text-zinc-300">Alloc {fmtHitRate(row.allocations.hit_rate_pct)}</span>
             </div>
-            <p className="mt-1 text-sm text-zinc-300">Signals {fmtHitRate(row.signals.hit_rate_pct)}</p>
             <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
               <CountsPills metric={row.combined} />
             </div>
@@ -168,11 +165,9 @@ function HitRateTable({
               <th className="px-3 py-2 text-left font-medium">Name</th>
               <th className="px-3 py-2 text-right font-medium">Targets %</th>
               <th className="px-3 py-2 text-right font-medium">Allocations %</th>
-              <th className="px-3 py-2 text-right font-medium">Signals %</th>
               <th className="px-3 py-2 text-right font-medium">Combined %</th>
               <th className="px-3 py-2 text-right font-medium">Targets Counts</th>
               <th className="px-3 py-2 text-right font-medium">Allocations Counts</th>
-              <th className="px-3 py-2 text-right font-medium">Signals Counts</th>
               <th className="px-3 py-2 text-right font-medium">Combined Counts</th>
             </tr>
           </thead>
@@ -193,7 +188,6 @@ function HitRateTable({
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.targets.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
-                <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.signals.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.combined.hit_rate_pct)}</td>
                 <td className="px-3 py-2 text-right text-zinc-400">
                   <CountsPills metric={row.targets} />
@@ -202,17 +196,69 @@ function HitRateTable({
                   <CountsPills metric={row.allocations} />
                 </td>
                 <td className="px-3 py-2 text-right text-zinc-400">
-                  <CountsPills metric={row.signals} />
-                </td>
-                <td className="px-3 py-2 text-right text-zinc-400">
                   <CountsPills metric={row.combined} />
                 </td>
               </tr>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={9} className="px-3 py-3 text-zinc-500">
+                <td colSpan={7} className="px-3 py-3 text-zinc-500">
                   No rows available.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SignalHitRateTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: HitRateRow[];
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <article key={`${row.key}-signal-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-300">{row.label}</span>
+            <p className="mt-1 text-xl font-bold text-zinc-100">Signal {fmtHitRate(row.signals.hit_rate_pct)}</p>
+            <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
+              <CountsPills metric={row.signals} />
+            </div>
+          </article>
+        ))}
+        {!rows.length ? <p className="text-sm text-zinc-500">No signal rows available.</p> : null}
+      </div>
+      <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
+        <table className="hidden w-full min-w-[520px] text-sm sm:table">
+          <thead className="border-b border-white/10 text-zinc-400">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Name</th>
+              <th className="px-3 py-2 text-right font-medium">Signal %</th>
+              <th className="px-3 py-2 text-right font-medium">Signal Counts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b border-white/5 last:border-b-0">
+                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
+                <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.signals.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right text-zinc-400">
+                  <CountsPills metric={row.signals} />
+                </td>
+              </tr>
+            ))}
+            {!rows.length ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-3 text-zinc-500">
+                  No signal rows available.
                 </td>
               </tr>
             ) : null}
@@ -326,6 +372,7 @@ export default function HitRatePage() {
 
           <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
           <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
+          <SignalHitRateTable title="By Signal" rows={data.by_signal || []} />
         </div>
       )}
     </div>

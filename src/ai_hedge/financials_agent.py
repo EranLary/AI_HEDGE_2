@@ -21,6 +21,8 @@ REQUIRED_METRICS = [
     "Net Margin",
     "Tax Rate",
     "Operating Cash Flow",
+    "Capital Expenditures (Capex)",
+    "Capex / Revenue",
     "Free Cash Flow (FCF)",
     "FCF / Net Income",
     "(+) Stock-Based Compensation (SBC)",
@@ -195,7 +197,7 @@ Current market snapshot fields, outside the period table:
 
 Optional rows:
 - You may add up to 7 additional rows only if truly important for this company type.
-- Examples: ARR/RPO for SaaS, deposits/NII for banks, same-store sales for retailers, inventory turns, R&D intensity, capex, deferred revenue, net debt, customer deposits, asset turnover.
+- Examples: ARR/RPO for SaaS, deposits/NII for banks, same-store sales for retailers, inventory turns, R&D intensity, deferred revenue, net debt, customer deposits, asset turnover.
 - Do not add optional rows just to look comprehensive.
 
 Non-GAAP logic:
@@ -210,6 +212,8 @@ Balance sheet and market-value logic:
 - Net Liquidity = Liquid Assets - Total Debt.
 - Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
 - Tax Rate = tax provision / pretax income when both are available. If either line is missing, use null.
+- Capital Expenditures (Capex) should come from the cash flow statement when available. Use the absolute cash outflow amount as a positive currency value even if the statement reports capex as negative.
+- Capex / Revenue = Capital Expenditures (Capex) / Revenue when both are available. It is a ratio decimal, not a percent string.
 - SBC / Revenue = Stock-Based Compensation / Revenue when both are available. If SBC is not disclosed separately, use null.
 - Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), and Price-to-Earnings Ratio (P/E) are current quote snapshot fields, not period-table rows. Put them in current_metrics only when available from quote info or defensible from quote info plus latest statements. Do not invent historical values for them.
 
@@ -277,7 +281,7 @@ def _default_kind_for_metric(metric: str) -> str:
     text = str(metric or "").lower()
     if "margin" in text or "growth" in text or "equity-to-assets" in text:
         return "percent"
-    if "tax rate" in text or "sbc / revenue" in text:
+    if "tax rate" in text or "sbc / revenue" in text or "capex / revenue" in text:
         return "percent"
     if "ratio" in text or "p/b" in text or "fcf / net income" in text:
         return "ratio"

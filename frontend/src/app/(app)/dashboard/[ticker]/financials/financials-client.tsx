@@ -30,6 +30,10 @@ type CurrentMetric = {
   note?: string;
 };
 
+const EMPTY_PERIODS: FinancialPeriod[] = [];
+const EMPTY_ROWS: FinancialRow[] = [];
+const EMPTY_CURRENT_METRICS: CurrentMetric[] = [];
+
 const BALANCE_METRICS = new Set([
   "Total Assets",
   "Customers / Accounts Receivable",
@@ -79,6 +83,10 @@ function periodChip(period: FinancialPeriod): string {
   const raw = String(period.label || period.date || period.key || "").trim();
   const prefix = String(period.period_type || "").toLowerCase() === "annual" ? "FY" : "Q";
   return `${prefix} ${raw}`.replace(/^FY FY\s+/i, "FY ").replace(/^Q Q/i, "Q");
+}
+
+function isAnnualPeriod(period: FinancialPeriod): boolean {
+  return String(period.period_type || "").toLowerCase() === "annual";
 }
 
 function dateParts(date?: string): string[] {
@@ -145,8 +153,15 @@ function FinancialTable({
             <tr>
               <th className="bg-[color:var(--surface-elevated)] px-3 py-3 text-left font-medium sm:sticky sm:left-0 sm:z-10">Metric</th>
               {periods.map((period) => (
-                <th key={period.key} className="px-3 py-3 text-right align-bottom font-medium">
-                  <span className="block text-base leading-5 text-[color:var(--text-primary)]">{periodChip(period).replace(/\s+/g, " ")}</span>
+                <th
+                  key={period.key}
+                  className={`px-3 py-3 text-right align-bottom font-medium ${
+                    isAnnualPeriod(period) ? "border-x border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)]" : ""
+                  }`}
+                >
+                  <span className={`block text-base leading-5 text-[color:var(--text-primary)] ${isAnnualPeriod(period) ? "font-semibold" : ""}`}>
+                    {periodChip(period).replace(/\s+/g, " ")}
+                  </span>
                   <span className="mt-1 block font-mono text-[11px] leading-4 text-[color:var(--text-muted)]">
                     {dateParts(period.date).map((part) => (
                       <span key={`${period.key}-${part}`} className="block">
@@ -167,7 +182,12 @@ function FinancialTable({
                   {row.metric}
                 </td>
                 {periods.map((period) => (
-                  <td key={`${row.metric}-${period.key}`} className="px-3 py-2 text-right font-mono text-[color:var(--text-primary)]">
+                  <td
+                    key={`${row.metric}-${period.key}`}
+                    className={`px-3 py-2 text-right font-mono text-[color:var(--text-primary)] ${
+                      isAnnualPeriod(period) ? "border-x border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)] font-semibold" : ""
+                    }`}
+                  >
                     {fmtValue(row.values?.[String(period.key || "")], row.kind)}
                   </td>
                 ))}
@@ -203,9 +223,9 @@ export function FinancialsClient({
   const payload = data.financials || {};
   const status = String(payload.status || "").toLowerCase();
   const analysis = payload.analysis || {};
-  const periods = Array.isArray(analysis.periods) ? (analysis.periods as FinancialPeriod[]) : [];
-  const rows = Array.isArray(analysis.rows) ? (analysis.rows as FinancialRow[]) : [];
-  const currentMetrics = Array.isArray(analysis.current_metrics) ? (analysis.current_metrics as CurrentMetric[]) : [];
+  const periods = Array.isArray(analysis.periods) ? (analysis.periods as FinancialPeriod[]) : EMPTY_PERIODS;
+  const rows = Array.isArray(analysis.rows) ? (analysis.rows as FinancialRow[]) : EMPTY_ROWS;
+  const currentMetrics = Array.isArray(analysis.current_metrics) ? (analysis.current_metrics as CurrentMetric[]) : EMPTY_CURRENT_METRICS;
   const takeaways = asList(analysis.key_takeaways);
   const warnings = asList(analysis.warnings);
   const currency = String(analysis.currency || data.header?.original_financial_currency || data.header?.currency || "USD").toUpperCase();
@@ -332,7 +352,7 @@ export function FinancialsClient({
 
           <p className="inline-flex items-center gap-1 text-xs text-[color:var(--text-muted)]">
             <Info size={13} />
-            Missing data is shown as "-"; a displayed 0 means the source value or formula is actually zero.
+            Missing data is shown as a dash; a displayed 0 means the source value or formula is actually zero.
           </p>
         </div>
       )}

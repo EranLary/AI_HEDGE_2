@@ -42,9 +42,13 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     assert "Net Liquidity: Liquid Assets Less Debt" in [row["metric"] for row in normalized["rows"]]
     equity_to_assets = next(row for row in normalized["rows"] if row["metric"] == "Equity-to-Assets Ratio")
     tax_rate = next(row for row in normalized["rows"] if row["metric"] == "Tax Rate")
+    capex = next(row for row in normalized["rows"] if row["metric"] == "Capital Expenditures (Capex)")
+    capex_ratio = next(row for row in normalized["rows"] if row["metric"] == "Capex / Revenue")
     sbc_ratio = next(row for row in normalized["rows"] if row["metric"] == "SBC / Revenue")
     assert equity_to_assets["kind"] == "percent"
     assert tax_rate["kind"] == "percent"
+    assert capex["kind"] == "currency"
+    assert capex_ratio["kind"] == "percent"
     assert sbc_ratio["kind"] == "percent"
 
 

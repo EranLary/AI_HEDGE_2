@@ -13,6 +13,7 @@ import {
   fmtMoneyCompact,
 } from "@/components/hedge-dashboard";
 import { INVESTORS_ORDERED, OVERVIEW_FEATURED_PERSONAS } from "@/components/dream-team/persona-themes";
+import { disagreementScoreForReport } from "@/lib/ticker-summary-aggregate";
 
 function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
@@ -84,21 +85,7 @@ export function OverviewClient({
     Number.isFinite(generatedDate.getTime())
       ? `${generatedDate.getFullYear()}-${String(generatedDate.getMonth() + 1).padStart(2, "0")}-${String(generatedDate.getDate()).padStart(2, "0")}`
       : "N/A";
-  const targetDisagreement =
-    typeof consensus?.cv === "number" && Number.isFinite(consensus.cv) ? Math.abs(Number(consensus.cv)) : null;
-  const investmentDisagreement =
-    Array.isArray(consensus?.lmil) && typeof consensus?.lmil?.[1] === "number" && Number.isFinite(consensus.lmil[1])
-      ? Math.abs(Number(consensus.lmil[1]))
-      : null;
-  const disagreementParts = [targetDisagreement, investmentDisagreement].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
-  const disagreementScore =
-    typeof scoreCard?.overall_cv === "number" && Number.isFinite(scoreCard.overall_cv)
-      ? Math.abs(Number(scoreCard.overall_cv))
-      : disagreementParts.length > 0
-        ? disagreementParts.reduce((sum, v) => sum + v, 0) / disagreementParts.length
-        : null;
+  const disagreementScore = disagreementScoreForReport(data);
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)

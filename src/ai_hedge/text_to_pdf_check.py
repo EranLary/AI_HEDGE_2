@@ -58,6 +58,35 @@ th {{
 td {{
     word-break: normal;
 }}
+
+h1, h2, h3 {{
+    break-after: avoid-page;
+    page-break-after: avoid;
+}}
+
+ul, ol {{
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+}}
+
+table {{
+    break-inside: auto;
+    page-break-inside: auto;
+}}
+
+thead {{
+    display: table-header-group;
+}}
+
+tr {{
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+}}
+
+pre, blockquote {{
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+}}
 </style>
 </head>
 <body>

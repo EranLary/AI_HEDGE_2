@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { filterExcludedTickers } from "@/lib/excluded-tickers";
 import { yahooSearch } from "@/lib/yahoo-lookup";
 
 export const runtime = "nodejs";
@@ -13,6 +14,6 @@ export async function GET(req: Request) {
   const limitRaw = Number(url.searchParams.get("limit") || "8");
   const limit = Math.max(1, Math.min(20, Number.isFinite(limitRaw) ? limitRaw : 8));
 
-  const results = await yahooSearch(q, limit);
+  const results = filterExcludedTickers(await yahooSearch(q, limit), (row) => row.s);
   return NextResponse.json({ results });
 }

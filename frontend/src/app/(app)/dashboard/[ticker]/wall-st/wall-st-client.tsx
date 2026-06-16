@@ -141,6 +141,49 @@ function clampPct(value: number, low: number, high: number): number {
   return Math.max(0, Math.min(100, ((value - low) / (high - low)) * 100));
 }
 
+type StreetMarker = {
+  label: string;
+  value: number | null;
+  change: number | null | undefined;
+  pct: number;
+  preferredLane: "top" | "bottom";
+  translateClass: string;
+  dotClass: string;
+  labelClass: string;
+};
+
+type PlacedStreetMarker = StreetMarker & {
+  lane: "top" | "bottom";
+  row: number;
+};
+
+function placeStreetMarkers(markers: StreetMarker[]): PlacedStreetMarker[] {
+  const sorted = markers.slice().sort((a, b) => a.pct - b.pct || a.label.localeCompare(b.label));
+  const lastByLane: Record<"top" | "bottom", number[]> = { top: [], bottom: [] };
+  const minGapPct = 13;
+
+  return sorted.map((marker) => {
+    const laneOrder: Array<"top" | "bottom"> =
+      marker.preferredLane === "top" ? ["top", "bottom"] : ["bottom", "top"];
+    for (const lane of laneOrder) {
+      for (let row = 0; row < 3; row += 1) {
+        const lastPct = lastByLane[lane][row];
+        if (lastPct === undefined || Math.abs(marker.pct - lastPct) >= minGapPct) {
+          lastByLane[lane][row] = marker.pct;
+          return { ...marker, lane, row };
+        }
+      }
+    }
+
+    const fallbackLane = marker.preferredLane;
+    const bestRow = lastByLane[fallbackLane]
+      .map((lastPct, row) => ({ row, distance: Math.abs(marker.pct - lastPct) }))
+      .sort((a, b) => b.distance - a.distance)[0]?.row ?? 0;
+    lastByLane[fallbackLane][bestRow] = marker.pct;
+    return { ...marker, lane: fallbackLane, row: bestRow };
+  });
+}
+
 function recommendationCounts(metrics: NonNullable<WallStPayload["metrics"]>["recommendations"]) {
   const latest = metrics?.latest || {};
   const keys = [
@@ -257,13 +300,15 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
   const railPct = (pct: number) => 3 + (pct * 94) / 100;
   const analystDotClass = "bg-[color:var(--text-primary)]";
   const analystLabelClass = "text-[color:var(--text-primary)]";
-  const markers = [
-    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
-    { label: "Current", value: current, change: null, pct: railPct(currentPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
-    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), lane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
-    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), lane: "bottom", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
-    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), lane: "top", translateClass: "-translate-x-full", dotClass: analystDotClass, labelClass: analystLabelClass },
-  ];
+  const markers = placeStreetMarkers([
+    { label: "Low", value: low, change: lowChangePct, pct: railPct(lowPct), preferredLane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "Current", value: current, change: null, pct: railPct(currentPct), preferredLane: "bottom", translateClass: "-translate-x-1/2", dotClass: "bg-[color:var(--warning)]", labelClass: "text-[color:var(--warning)]" },
+    { label: "Median", value: median, change: medianChangePct, pct: railPct(medianPct), preferredLane: "top", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "Mean", value: mean, change: targets?.upside_pct, pct: railPct(meanPct), preferredLane: "bottom", translateClass: "-translate-x-1/2", dotClass: analystDotClass, labelClass: analystLabelClass },
+    { label: "High", value: high, change: highChangePct, pct: railPct(highPct), preferredLane: "top", translateClass: "-translate-x-full", dotClass: analystDotClass, labelClass: analystLabelClass },
+  ]);
+  const labelTopClass = (row: number) => ["top-0", "top-10", "top-20"][row] || "top-0";
+  const labelBottomClass = (row: number) => ["top-24", "top-32", "top-40"][row] || "top-24";
 
   return (
     <section className="min-w-0 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -280,7 +325,7 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
         <p className="text-sm text-[color:var(--text-secondary)]">No usable low/high analyst target range was returned.</p>
       ) : (
         <div className="px-2 py-5">
-          <div className="relative h-36">
+          <div className="relative h-56">
             <div className="hib-wallst-range-rail absolute left-[3%] right-[3%] top-16 h-2 rounded-full" aria-label="Current price and analyst target range" />
             {markers.map((marker) => (
               <div
@@ -290,7 +335,7 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
                 title={`${marker.label}: ${fmtNum(marker.value)}${marker.change !== null ? ` (${fmtPct(marker.change)})` : ""}`}
               >
                 {marker.lane === "top" ? (
-                  <div className="absolute top-0 flex flex-col gap-0.5">
+                  <div className={`absolute ${labelTopClass(marker.row)} flex flex-col gap-0.5`}>
                     <span className={`whitespace-nowrap text-xs font-semibold ${marker.labelClass}`}>{marker.label}</span>
                     <span className="whitespace-nowrap font-mono text-[11px] text-[color:var(--text-secondary)]">{fmtNum(marker.value)}</span>
                     {marker.change !== null ? (
@@ -301,7 +346,7 @@ function StreetRange({ targets, currency }: { targets: NonNullable<WallStPayload
                 <span className={`absolute left-1/2 h-7 w-px -translate-x-1/2 ${marker.lane === "top" ? "top-9" : "top-16"} ${marker.dotClass}`} />
                 <span className={`absolute left-1/2 top-[3.625rem] h-3 w-3 -translate-x-1/2 rounded-full ring-2 ring-[color:var(--surface)] ${marker.dotClass}`} />
                 {marker.lane === "bottom" ? (
-                  <div className="absolute top-24 flex flex-col gap-0.5">
+                  <div className={`absolute ${labelBottomClass(marker.row)} flex flex-col gap-0.5`}>
                     <span className={`whitespace-nowrap text-xs font-semibold ${marker.labelClass}`}>{marker.label}</span>
                     <span className="whitespace-nowrap font-mono text-[11px] text-[color:var(--text-secondary)]">{fmtNum(marker.value)}</span>
                     {marker.change !== null ? (

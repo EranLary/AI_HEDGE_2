@@ -152,13 +152,64 @@ type StreetMarker = {
   labelClass: string;
 };
 
+const STREET_MARKER_LABEL_ORDER = ["Current", "Low", "Median", "Mean", "High"] as const;
+
 type PlacedStreetMarker = StreetMarker & {
   lane: "top" | "bottom";
   row: number;
 };
 
+function streetMarkerLabelRank(label: string): number {
+  const idx = STREET_MARKER_LABEL_ORDER.indexOf(label as (typeof STREET_MARKER_LABEL_ORDER)[number]);
+  return idx >= 0 ? idx : STREET_MARKER_LABEL_ORDER.length;
+}
+
+function mergeOverlappingStreetMarkers(markers: StreetMarker[]): StreetMarker[] {
+  const sorted = markers
+    .filter((marker) => marker.value !== null)
+    .slice()
+    .sort((a, b) => a.pct - b.pct || streetMarkerLabelRank(a.label) - streetMarkerLabelRank(b.label));
+  const groups: StreetMarker[][] = [];
+  const mergeGapPct = 1.5;
+
+  for (const marker of sorted) {
+    const group = groups[groups.length - 1];
+    const groupPct = group ? group.reduce((sum, item) => sum + item.pct, 0) / group.length : null;
+    if (group && groupPct !== null && Math.abs(marker.pct - groupPct) <= mergeGapPct) {
+      group.push(marker);
+    } else {
+      groups.push([marker]);
+    }
+  }
+
+  return groups.map((group) => {
+    if (group.length === 1) return group[0];
+    const orderedLabels = group
+      .map((marker) => marker.label)
+      .sort((a, b) => streetMarkerLabelRank(a) - streetMarkerLabelRank(b));
+    const primary = group.find((marker) => marker.label === "Current") || group[0];
+    const valueMarker = group.find((marker) => marker.value !== null) || primary;
+    const changeMarker = group.find((marker) => marker.change !== null && marker.change !== undefined) || primary;
+    const pct = group.reduce((sum, marker) => sum + marker.pct, 0) / group.length;
+    const preferredLane = group.some((marker) => marker.preferredLane === "top") ? "top" : primary.preferredLane;
+    const hasCurrent = group.some((marker) => marker.label === "Current");
+
+    return {
+      ...primary,
+      label: orderedLabels.join(", "),
+      value: valueMarker.value,
+      change: changeMarker.change,
+      pct,
+      preferredLane,
+      translateClass: pct > 90 ? "-translate-x-full" : pct < 10 ? "translate-x-0" : "-translate-x-1/2",
+      dotClass: hasCurrent ? "bg-[color:var(--warning)]" : primary.dotClass,
+      labelClass: hasCurrent ? "text-[color:var(--warning)]" : primary.labelClass,
+    };
+  });
+}
+
 function placeStreetMarkers(markers: StreetMarker[]): PlacedStreetMarker[] {
-  const sorted = markers.slice().sort((a, b) => a.pct - b.pct || a.label.localeCompare(b.label));
+  const sorted = mergeOverlappingStreetMarkers(markers).sort((a, b) => a.pct - b.pct || a.label.localeCompare(b.label));
   const lastByLane: Record<"top" | "bottom", number[]> = { top: [], bottom: [] };
   const minGapPct = 13;
 

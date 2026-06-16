@@ -2,6 +2,8 @@
 
 import Fuse from "fuse.js";
 
+import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
+
 export type TickerEntry = {
   s: string; // symbol
   n: string; // name
@@ -20,6 +22,7 @@ export function loadTickerCatalog(): Promise<TickerEntry[]> {
       if (!res.ok) throw new Error(`tickers.json HTTP ${res.status}`);
       return res.json() as Promise<TickerEntry[]>;
     })
+    .then((rows) => filterExcludedTickers(rows, (row) => row.s))
     .catch((err) => {
       console.warn("[ticker-catalog] failed to load", err);
       catalogPromise = null;
@@ -57,6 +60,7 @@ export function searchCatalog(catalog: TickerEntry[], query: string, limit = 8):
   if (!q) return [];
   const qUp = q.toUpperCase();
   const qLow = q.toLowerCase();
+  if (isExcludedTicker(qUp)) return [];
 
   const out: TickerEntry[] = [];
   const seen = new Set<string>();
@@ -74,6 +78,7 @@ export function searchCatalog(catalog: TickerEntry[], query: string, limit = 8):
   for (const e of catalog) {
     if (out.length + exact.length + symbolPrefix.length + nameWordPrefix.length + symbolContains.length > limit * 6) break;
     const sym = e.s;
+    if (isExcludedTicker(sym)) continue;
     if (sym === qUp) {
       exact.push(e);
       continue;

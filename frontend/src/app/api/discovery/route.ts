@@ -6,6 +6,7 @@ import { DashboardPayload, DiscoveryRow } from "@/lib/dashboard-types";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
+import { isExcludedTicker } from "@/lib/excluded-tickers";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import {
@@ -153,6 +154,7 @@ async function loadDashboards(): Promise<
         updatedAt: new Date(r.generated_at).toISOString(),
         sourceLabel: r.ticker,
       };
+      if (isExcludedTicker(row.ticker)) continue;
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${row.ticker}:${runId}` : `db:${row.ticker}:${row.updatedAt}`;
       merged.set(key, row);
@@ -170,7 +172,7 @@ async function loadDashboards(): Promise<
     const payload = readJson<DashboardPayload>(entry.path);
     if (!payload) continue;
     const ticker = String(payload.ticker || entry.ticker || "").toUpperCase();
-    if (!ticker) continue;
+    if (!ticker || isExcludedTicker(ticker)) continue;
     const updatedAt =
       typeof payload.generated_at === "string" && payload.generated_at.trim()
         ? payload.generated_at
@@ -203,7 +205,7 @@ export async function GET(request: Request) {
   const byTicker = new Map<string, SummarySourceReport[]>();
   for (const item of items) {
     const ticker = String(item.ticker || "").toUpperCase();
-    if (!ticker) continue;
+    if (!ticker || isExcludedTicker(ticker)) continue;
     if (!byTicker.has(ticker)) {
       byTicker.set(ticker, []);
     }

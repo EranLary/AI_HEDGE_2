@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { isExcludedTicker } from "@/lib/excluded-tickers";
+
 const MAX_SCAN_DEPTH = 4;
 
 export type FoundFile = {
@@ -111,7 +113,7 @@ export function listTickersFromOutputs(): string[] {
       continue;
     }
     const ticker = String(match[1] || "").toUpperCase().trim();
-    if (ticker) {
+    if (ticker && !isExcludedTicker(ticker)) {
       tickers.add(ticker);
     }
   }
@@ -168,7 +170,7 @@ export function listDashboardReports(): DashboardReportEntry[] {
     .map((item) => {
       const base = path.basename(item.path);
       const ticker = String(base.split("_")[0] || "").toUpperCase();
-      if (!ticker) {
+      if (!ticker || isExcludedTicker(ticker)) {
         return null;
       }
       const rel = path.relative(outputsRoot(), item.path).replace(/\\/g, "/");

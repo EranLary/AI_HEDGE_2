@@ -28,6 +28,37 @@ type MainThesisDoc = {
   kpis?: WatchlistKpi[];
 };
 
+function fmtScenarioProbability(probability: number | null): string {
+  return typeof probability === "number"
+    ? `${(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%`
+    : "N/A";
+}
+
+function scenarioCopyText(title: string, probability: number | null, items: string[]): string {
+  return [
+    title,
+    `Probability: ${fmtScenarioProbability(probability)}`,
+    "",
+    ...items.map((reason, idx) => `${idx + 1}. ${String(reason || "").replace(/~~/g, "").trim()}`),
+  ].join("\n").trim();
+}
+
+function thesisCopyText(thesisLine: string, questionItems: string[], kpiItems: WatchlistKpi[]): string {
+  return [
+    thesisLine,
+    "",
+    "Questions",
+    ...questionItems.map((item, idx) => `${idx + 1}. ${item}`),
+    "",
+    "KPIs",
+    ...kpiItems.map((item, idx) => {
+      const name = item.name || "KPI";
+      const details = [item.why_it_matters, item.direction_to_watch].filter(Boolean).join(" ");
+      return `${idx + 1}. ${name}${details ? ` - ${details}` : ""}`;
+    }),
+  ].join("\n").trim();
+}
+
 function SwotAccordion({ swot }: { swot: SwotData }) {
   const [open, setOpen] = useState(false);
   const sections: Array<{ key: keyof SwotData; label: string; tone: string }> = [
@@ -95,13 +126,7 @@ function ScenarioColumn({
   const probClass = tone === "bull" ? "hib-bull-prob-label" : "hib-bear-prob-label";
   const probValueClass = tone === "bull" ? "hib-bull-prob-value" : "hib-bear-prob-value";
   const items = reasons.length ? reasons : doc?.reasons || [];
-  const copyText = [
-    typeof probability === "number"
-      ? `Probability: ${(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%`
-      : "Probability: N/A",
-    "",
-    ...items.map((reason, idx) => `${idx + 1}. ${String(reason || "").replace(/~~/g, "").trim()}`),
-  ].join("\n").trim();
+  const copyText = scenarioCopyText(title, probability, items);
 
   return (
     <section className={`rounded-2xl border p-4 ${borderCls}`}>
@@ -113,7 +138,7 @@ function ScenarioColumn({
             <div className="text-right">
               <p className={`text-[10px] uppercase tracking-[0.18em] ${probClass}`}>Probability</p>
               <p className={`text-xl font-bold ${probValueClass}`}>
-                {(Math.max(0, Math.min(100, Math.abs(probability) <= 1 ? probability * 100 : probability))).toFixed(1)}%
+                {fmtScenarioProbability(probability)}
               </p>
             </div>
           ) : null}
@@ -153,19 +178,7 @@ function MainThesisPanel({
   const kpiItems = kpis.length ? kpis : doc?.kpis || [];
   if (!thesisLine && !questionItems.length && !kpiItems.length) return null;
 
-  const copyText = [
-    thesisLine,
-    "",
-    "Main questions",
-    ...questionItems.map((item, idx) => `${idx + 1}. ${item}`),
-    "",
-    "KPIs to watch",
-    ...kpiItems.map((item, idx) => {
-      const name = item.name || "KPI";
-      const details = [item.why_it_matters, item.direction_to_watch].filter(Boolean).join(" ");
-      return `${idx + 1}. ${name}${details ? ` - ${details}` : ""}`;
-    }),
-  ].join("\n").trim();
+  const copyText = thesisCopyText(thesisLine, questionItems, kpiItems);
 
   return (
     <section className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -241,13 +254,30 @@ export function ScenariosClient({
   }
   const bullProb = probFor("Bull Probability") ?? probFor("Bull 0");
   const bearProb = probFor("Bear Probability") ?? probFor("Bear 0");
+  const bullItems = bullReasons.length ? bullReasons : matrix.documents?.bull_case?.reasons || [];
+  const bearItems = bearReasons.length ? bearReasons : matrix.documents?.bear_case?.reasons || [];
+  const thesisLine = mainThesisDoc?.valuation_revolves_around || "";
+  const questionItems = mainQuestions.length ? mainQuestions : mainThesisDoc?.main_questions || [];
+  const kpiItems = watchlistKpis.length ? watchlistKpis : mainThesisDoc?.kpis || [];
+  const copyAllText = [
+    `Bull vs Bear - ${upper}`,
+    "",
+    scenarioCopyText("Bull Case", bullProb, bullItems),
+    "",
+    scenarioCopyText("Bear Case", bearProb, bearItems),
+    "",
+    thesisCopyText(thesisLine, questionItems, kpiItems),
+  ].join("\n\n").trim();
 
   return (
     <div>
       <ReportChipRow ticker={upper} reports={reportsForTicker} currentReportId={resolvedReportId} />
-      <header className="mb-4">
-        <h1 className="font-display text-2xl text-zinc-100">Bull vs Bear</h1>
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl text-zinc-100">Bull vs Bear</h1>
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{upper} — scenario comparison</p>
+        </div>
+        <SmallCopyButton text={copyAllText} label="Copy Bull vs Bear tab" />
       </header>
       <SwotAccordion
         swot={

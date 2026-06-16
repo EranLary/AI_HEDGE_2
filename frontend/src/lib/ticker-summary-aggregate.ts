@@ -176,7 +176,7 @@ function compareMeanRows(a: SummaryMeanRow, b: SummaryMeanRow): number {
   return a.label.localeCompare(b.label);
 }
 
-function disagreementScoreForReport(payload: DashboardPayload): number | null {
+export function disagreementScoreForReport(payload: DashboardPayload): number | null {
   const scoreCard = payload.score_card || payload.decision_card;
   const scoreCv = toNumOrNull(scoreCard?.overall_cv);
   if (typeof scoreCv === "number" && Number.isFinite(scoreCv)) {

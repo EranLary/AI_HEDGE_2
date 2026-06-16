@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
 export type ReportVisibility = "public" | "private" | "unlisted";
@@ -46,6 +47,7 @@ export interface DeletedReportRef {
 }
 
 export async function fetchLatestReport(ticker: string): Promise<DbReportFull | null> {
+  if (isExcludedTicker(ticker)) return null;
   const sql = getSql();
   if (!sql) return null;
   const rows = (await sql`
@@ -123,7 +125,8 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
        AND r.deleted_at IS NULL
      LIMIT 1
   `) as unknown as DbReportFull[];
-  return rows[0] || null;
+  const row = rows[0] || null;
+  return row && !isExcludedTicker(row.ticker) ? row : null;
 }
 
 export async function listAllTickerSymbols(): Promise<string[]> {
@@ -132,7 +135,7 @@ export async function listAllTickerSymbols(): Promise<string[]> {
   const rows = (await sql`
     SELECT symbol FROM tickers ORDER BY symbol;
   `) as unknown as { symbol: string }[];
-  return rows.map((r) => r.symbol);
+  return filterExcludedTickers(rows.map((r) => r.symbol));
 }
 
 export async function listTickers(): Promise<DbTickerRow[]> {
@@ -144,7 +147,7 @@ export async function listTickers(): Promise<DbTickerRow[]> {
       FROM tickers
      ORDER BY report_count DESC, symbol;
   `) as unknown as DbTickerRow[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.symbol);
 }
 
 /**
@@ -180,7 +183,7 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
      WHERE r.deleted_at IS NULL
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 export async function attributeReportToUser(opts: {
@@ -291,7 +294,7 @@ function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedR
     });
   }
   rows.sort((a, b) => Date.parse(String(b.generated_at || "")) - Date.parse(String(a.generated_at || "")));
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 export async function findReportIdBySourceRunId(opts: {
@@ -303,6 +306,7 @@ export async function findReportIdBySourceRunId(opts: {
   if (!sql) return null;
   const source = String(opts.source || "site");
   const ticker = String(opts.ticker || "").trim().toUpperCase();
+  if (isExcludedTicker(ticker)) return null;
   const rows = ticker
     ? ((await sql`
         SELECT id::text AS id
@@ -355,7 +359,7 @@ export async function listAllReports(): Promise<DbReportSummary[]> {
      WHERE r.deleted_at IS NULL
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /** Reports owned by a specific user, regardless of visibility. */
@@ -388,7 +392,7 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
        AND r.deleted_at IS NULL
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /** Public reports authored by anyone. */
@@ -422,7 +426,7 @@ export async function listCommunityReports(): Promise<DbReportSummary[]> {
            AND r.deleted_at IS NULL
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
-    return rows;
+    return filterExcludedTickers(rows, (row) => row.ticker);
   } catch {
     return fallbackCommunityReportsFromOutputs(undefined, await deletedReportPredicate());
   }
@@ -488,8 +492,9 @@ export async function listCommunityReportsPaged(opts: {
         OFFSET ${offset};
       `) as unknown as DbReportSummary[]);
 
-    const hasMore = rows.length > limit;
-    return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
+    const filteredRows = filterExcludedTickers(rows, (row) => row.ticker);
+    const hasMore = filteredRows.length > limit;
+    return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
   } catch {
     const all = fallbackCommunityReportsFromOutputs(opts.query, await deletedReportPredicate());
     const pageRows = all.slice(offset, offset + limit + 1);
@@ -545,7 +550,7 @@ export async function listDeletedReportRefs(): Promise<DeletedReportRef[]> {
       FROM reports
      WHERE deleted_at IS NOT NULL;
   `) as unknown as DeletedReportRef[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 export async function listDeletedReportRefsForTicker(ticker: string): Promise<DeletedReportRef[]> {
@@ -559,7 +564,7 @@ export async function listDeletedReportRefsForTicker(ticker: string): Promise<De
      WHERE deleted_at IS NOT NULL
        AND ticker = ${String(ticker || "").toUpperCase()};
   `) as unknown as DeletedReportRef[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /**
@@ -580,7 +585,7 @@ export async function listDashboardsForDiscovery(): Promise<
      WHERE r.deleted_at IS NULL
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /**
@@ -599,7 +604,7 @@ export async function listAllDashboardsForHitRate(): Promise<
      WHERE r.deleted_at IS NULL
      ORDER BY r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 export async function listDashboardsForTicker(ticker: string): Promise<
@@ -615,5 +620,5 @@ export async function listDashboardsForTicker(ticker: string): Promise<
        AND r.ticker = ${String(ticker || "").toUpperCase()}
      ORDER BY r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
-  return rows;
+  return filterExcludedTickers(rows, (row) => row.ticker);
 }

@@ -6147,10 +6147,55 @@ def pdf_downloader(ticker):
 
   ul {{
       padding-left: 20px;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
   }}
 
   li {{
       margin-bottom: 4px;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+  }}
+
+  h1, h2, h3 {{
+      break-after: avoid-page;
+      page-break-after: avoid;
+  }}
+
+  table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 20px;
+      font-size: 9.5pt;
+      break-inside: auto;
+      page-break-inside: auto;
+  }}
+
+  th, td {{
+      border: 1px solid #d0d7de;
+      padding: 6px 8px;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+  }}
+
+  th {{
+      background: #f6f8fa;
+      font-weight: 700;
+      text-align: left;
+  }}
+
+  thead {{
+      display: table-header-group;
+  }}
+
+  tr {{
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+  }}
+
+  pre, blockquote {{
+      break-inside: avoid-page;
+      page-break-inside: avoid;
   }}
   </style>
   </head>

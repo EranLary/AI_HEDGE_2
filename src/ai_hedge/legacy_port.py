@@ -497,6 +497,20 @@ import pandas as pd
 import warnings
 warnings.filterwarnings('ignore')
 
+
+def _fetch_yahooquery_snapshot_safe(ticker: str) -> Dict[str, Any]:
+    try:
+        from .yahooquery_data import fetch_yahooquery_snapshot
+
+        return fetch_yahooquery_snapshot(ticker)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "ticker": str(ticker or "").upper(),
+            "error": f"{type(exc).__name__}: {str(exc)[:240]}",
+        }
+
+
 def get_info_data(ticker: str) -> dict:
     info_dict = {}
     ticker_obj = yf.Ticker(ticker)
@@ -617,6 +631,8 @@ def get_info_data(ticker: str) -> dict:
             "num_of_analysts": info_dict.get("num_of_analysts", 0),
             "currency": {},
         }
+
+    info_dict["yahooquery"] = _fetch_yahooquery_snapshot_safe(ticker)
 
     # --- News ---
     try:
@@ -1881,6 +1897,65 @@ def financials_all_insights_result(financial_dict, info_dict) -> Tuple[str, str]
 
 from typing import Tuple
 
+
+def multiple_insights_result(info_dict) -> Tuple[str, str]:
+    """
+    Generate a valuation-multiple context section from yahooquery valuation data.
+
+    This function is thread-safe and suitable for parallel execution.
+    """
+
+    header = "Multiple Analysis"
+    yq = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    if not isinstance(yq, dict) or yq.get("status") != "success":
+        error = yq.get("error") if isinstance(yq, dict) else "No yahooquery payload found."
+        return header, f"Yahooquery valuation measures are not available. {error or ''}".strip()
+
+    prompt = f"""
+You are a senior equity analyst writing the valuation-multiple context chapter for a company analysis.
+
+You are given:
+1) yahooquery valuation_measures, including historical rows of market cap, enterprise value, P/E, forward P/E, PEG, P/B, P/S, EV/Revenue, and EV/EBITDA.
+2) yahooquery financial_data with current financial, margin, analyst, liquidity, and leverage fields.
+3) The existing info_dict["info"] company context from the product pipeline.
+
+Objective:
+Extract the important valuation information from the multiple data and explain what it says about how the market currently prices the company.
+
+Rules:
+- Use only the supplied data.
+- This is company context, not a buy/sell recommendation.
+- Highlight current valuation level, historical movement in multiples, growth expectations embedded in PEG/forward P/E, balance-sheet effects in EV multiples, and margin/ROE context from financial_data.
+- When data is missing or mixed by period, say so plainly.
+- For non-USD or .TA tickers, do not assume USD; use the currency fields as context.
+- Keep it concise and user-friendly.
+- Output 6 to 12 bullets only.
+- No tables.
+
+{ANALYSIS_CALIBRATION_RULES}
+
+yahooquery payload:
+{json.dumps(yq, ensure_ascii=False)[:90000]}
+
+info_dict["info"]:
+{json.dumps(info_dict.get("info", {}), ensure_ascii=False)[:60000]}
+
+Now write the valuation-multiple context chapter.
+""".strip()
+
+    try:
+        answer = deepseek_simple_text(
+            api_key=DEEPSEEK_API_KEY,
+            prompt=prompt,
+            model="deepseek-chat",
+            temperature=0.25,
+            short_answer=False,
+        )
+        return header, answer
+    except Exception as e:
+        return header + " (Error)", f"Failed to generate section: {type(e).__name__}: {str(e)[:300]}"
+
+
 def analyst_expectations_insights_result(info_dict) -> Tuple[str, str]:
     """
     Synthesize the market-implied "analyst belief system" from consensus datasets.
@@ -2977,6 +3052,7 @@ def make_analysis_file(
         (financials_annual_insights_result, (financial_dict, info_dict), {}),
         (financials_quarterly_insights_result, (financial_dict, info_dict), {}),
         (financials_all_insights_result, (financial_dict, info_dict), {}),
+        (multiple_insights_result, (info_dict,), {}),
         (analyst_expectations_insights_result, (info_dict,), {}),
         (holders_insights_result, (info_dict, ticker), {}),
         # (options_analyst_insights_result, (info_dict,), {}),

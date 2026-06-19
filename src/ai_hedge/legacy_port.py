@@ -606,6 +606,8 @@ def get_info_data(ticker: str) -> dict:
     except:
         info_dict["num_of_analysts"] = 0
 
+    info_dict["yahooquery"] = _fetch_yahooquery_snapshot_safe(ticker)
+
     try:
         info_dict["wall_st_raw"] = {
             "targets": raw_price_targets,
@@ -613,6 +615,7 @@ def get_info_data(ticker: str) -> dict:
             "down_upgrades": deepcopy(info_dict.get("down_upgrades")),
             "earnings_estimate": deepcopy(info_dict.get("earnings_estimate")),
             "revenue_estimate": deepcopy(info_dict.get("revenue_estimate")),
+            "earnings_surprise": deepcopy((info_dict.get("yahooquery") or {}).get("earnings_surprise")),
             "num_of_analysts": info_dict.get("num_of_analysts", 0),
             "currency": {
                 "original_price_currency": price_curr_name,
@@ -628,11 +631,10 @@ def get_info_data(ticker: str) -> dict:
             "down_upgrades": info_dict.get("down_upgrades"),
             "earnings_estimate": info_dict.get("earnings_estimate"),
             "revenue_estimate": info_dict.get("revenue_estimate"),
+            "earnings_surprise": (info_dict.get("yahooquery") or {}).get("earnings_surprise"),
             "num_of_analysts": info_dict.get("num_of_analysts", 0),
             "currency": {},
         }
-
-    info_dict["yahooquery"] = _fetch_yahooquery_snapshot_safe(ticker)
 
     # --- News ---
     try:
@@ -1628,6 +1630,10 @@ def news_insights_result(info_dict) -> Tuple[str, str]:
     """
 
     header = "News Review"
+    yq = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    corporate_events = {}
+    if isinstance(yq, dict):
+        corporate_events = yq.get("corporate_events") if isinstance(yq.get("corporate_events"), dict) else {}
 
     prompt = f"""
 You are a senior investment analyst specializing in interpreting news flow for public companies.
@@ -1635,6 +1641,7 @@ You are a senior investment analyst specializing in interpreting news flow for p
 Inputs:
 - company_short_name: the company's short name
 - news: a collection of all recent news items related to the company
+- corporate_events: optional yahooquery corporate events, filtered to events from the 3 months before the report date plus any future events
 
 Objective:
 Produce a holistic, analyst-grade summary of everything the news collectively says about the company,
@@ -1642,9 +1649,12 @@ its trajectory, risks, and market perception.
 
 Guiding principles:
 - Treat the news as a dataset, not as individual headlines.
+- Treat corporate_events as higher-confidence event metadata when present, but do not over-weight generic or stale-looking records.
+- If corporate_events is empty, analyze the news normally and do not mention absent events.
 - Synthesize patterns, repetition, and emphasis across items.
 - Identify what the news collectively implies about strategy, fundamentals, and expectations.
 - Distinguish between structural developments and short-term noise.
+- Separate confirmed corporate events from softer news sentiment when both are present.
 - Read between the lines like a professional investor.
 
 What to extract:
@@ -1669,7 +1679,10 @@ Company: {info_dict["short_name"]}
 News dataset:
 {info_dict["news"]}
 
-Now summarize what the news says about this company as an investment.
+Filtered corporate events:
+{json.dumps(corporate_events, ensure_ascii=False)[:40000]}
+
+Now summarize what the news and any filtered corporate events say about this company as an investment.
 """.strip()
 
     try:
@@ -1971,6 +1984,11 @@ def analyst_expectations_insights_result(info_dict) -> Tuple[str, str]:
     """
 
     header = "Analyst Expectations Insights"
+    yq = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    earnings_surprise = {}
+    if isinstance(yq, dict):
+        earnings_surprise = yq.get("earnings_surprise") if isinstance(yq.get("earnings_surprise"), dict) else {}
+    has_earnings_surprise = bool((earnings_surprise or {}).get("rows"))
 
     financial_currency = info_dict["info"]["original_financial_currency"]
     if financial_currency != 'USD':
@@ -1978,7 +1996,7 @@ def analyst_expectations_insights_result(info_dict) -> Tuple[str, str]:
     else:
         curr_statement = ""
 
-    if info_dict.get("num_of_analysts", 0) <= 0:
+    if info_dict.get("num_of_analysts", 0) <= 0 and not has_earnings_surprise:
         return header, "No analysts found"
 
     prompt = f"""
@@ -1991,24 +2009,28 @@ You are given several short JSON datasets about analysts' views on a company:
 - down_upgrades
 - earnings_estimate
 - revenue_estimate
+- earnings_surprise: optional yahooquery actual-vs-estimate earnings history
 
 Your objective:
 Synthesize what these datasets collectively imply about analysts' beliefs, expectations, conviction,
-and the risks they are (and are not) underwriting.
+estimate reliability, and the risks they are (and are not) underwriting.
 
 How to think:
 - Analysts' price targets and ratings reflect narratives and incentives, not just math.
 - The important signal is dispersion, direction of change, and consistency across datasets.
 - Look for gaps between rating optimism and forecast realism.
 - Focus on what has changed recently and what that reveals about belief updates.
+- Use earnings_surprise to judge whether consensus has historically been too optimistic, too conservative, or noisy.
+- Do not treat an earnings beat/miss pattern as a mechanical valuation input; use it as evidence about expectation risk.
 
 What to extract (insights must be grounded in the provided JSONs):
 1) Consensus belief and narrative
 2) Conviction and disagreement
 3) Expectation drift
 4) Embedded financial assumptions
-5) Asymmetry and risk posture
-6) What the data suggests analysts may be missing
+5) Estimate reliability from actual-vs-estimate history
+6) Asymmetry and risk posture
+7) What the data suggests analysts may be missing
 
 Output rules:
 - 5 to 12 bullet points only
@@ -2035,9 +2057,12 @@ Earnings estimate:
 Revenue estimate:
 {info_dict["revenue_estimate"]}
 
+Earnings surprise history:
+{json.dumps(earnings_surprise, ensure_ascii=False)[:40000]}
+
 {curr_statement}
 
-Now extract the key insights about what analysts collectively believe about this company and its stock.
+Now extract the key insights about what analysts collectively believe, how reliable those expectations have been, and what this means for valuators using the estimates.
 """.strip()
 
     try:
@@ -2097,6 +2122,15 @@ def holders_insights_result(info_dict, ticker) -> Tuple[str, str]:
             holders_dict[k] = info_dict[k]
             list_of_legit_keys.append(k)
 
+    yq = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    share_purchase_activity = {}
+    if isinstance(yq, dict):
+        raw_activity = yq.get("share_purchase_activity")
+        if isinstance(raw_activity, dict) and raw_activity:
+            share_purchase_activity = raw_activity
+            holders_dict["share_purchase_activity"] = raw_activity
+            list_of_legit_keys.append("share_purchase_activity")
+
     if not holders_dict:
         return header, "No holders data available"
 
@@ -2132,6 +2166,7 @@ Your objectives:
 
 3) Insider Trading Analysis
 - Analyze patterns of insider buying and selling
+- Use share_purchase_activity, when present, to assess net buy/sell behavior and whether it confirms or contradicts raw insider tables
 - Separate routine transactions from signal-rich behavior
 - Focus on senior executives and repeated patterns
 

@@ -1704,6 +1704,17 @@ def _table_payload_rows(value: Any, *, max_rows: Optional[int] = None) -> List[D
     return rows
 
 
+def _record_payload_rows(value: Any, *, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
+    if isinstance(value, dict) and isinstance(value.get("rows"), list):
+        rows = [row for row in value.get("rows", []) if isinstance(row, dict)]
+    elif isinstance(value, list):
+        rows = [row for row in value if isinstance(row, dict)]
+    else:
+        rows = []
+    rows = rows if max_rows is None else rows[:max_rows]
+    return [_json_safe(row) for row in rows]
+
+
 def _latest_recommendation_mix(recommendations: Any) -> Dict[str, Any]:
     rows = _table_payload_rows(recommendations)
     if not rows:
@@ -1810,6 +1821,10 @@ def build_wall_st_payload(
     down_upgrades = raw.get("down_upgrades", info_dict.get("down_upgrades") if isinstance(info_dict, dict) else None)
     earnings_estimate = raw.get("earnings_estimate", info_dict.get("earnings_estimate") if isinstance(info_dict, dict) else None)
     revenue_estimate = raw.get("revenue_estimate", info_dict.get("revenue_estimate") if isinstance(info_dict, dict) else None)
+    earnings_surprise = raw.get("earnings_surprise")
+    if earnings_surprise is None and isinstance(info_dict, dict):
+        yq = info_dict.get("yahooquery") if isinstance(info_dict.get("yahooquery"), dict) else {}
+        earnings_surprise = yq.get("earnings_surprise")
     rec_metrics = _latest_recommendation_mix(recommendations)
     errors_out = [str(e) for e in (errors or []) if str(e or "").strip()]
     table_count = sum(
@@ -1827,6 +1842,7 @@ def build_wall_st_payload(
             "down_upgrades": _json_safe(down_upgrades),
             "earnings_estimate": _json_safe(earnings_estimate),
             "revenue_estimate": _json_safe(revenue_estimate),
+            "earnings_surprise": _json_safe(earnings_surprise),
             "num_of_analysts": int(_safe_float(raw.get("num_of_analysts", info_dict.get("num_of_analysts", 0) if isinstance(info_dict, dict) else 0)) or 0),
             "currency": currency_context,
         },
@@ -1836,6 +1852,7 @@ def build_wall_st_payload(
             "recent_actions": _table_payload_rows(down_upgrades, max_rows=80),
             "earnings_rows": _table_payload_rows(earnings_estimate),
             "revenue_rows": _table_payload_rows(revenue_estimate),
+            "earnings_surprise_rows": _record_payload_rows(earnings_surprise),
         },
         "synthesis": synthesis if isinstance(synthesis, dict) else {"status": "unavailable", "bullets": []},
         "errors": errors_out,
@@ -1858,6 +1875,7 @@ def generate_wall_st_synthesis(*, ticker: str, wall_st_payload: Dict[str, Any]) 
         "recent_actions": ((wall_st_payload.get("metrics") or {}).get("recent_actions") or [])[:20],
         "earnings_rows": ((wall_st_payload.get("metrics") or {}).get("earnings_rows") or []),
         "revenue_rows": ((wall_st_payload.get("metrics") or {}).get("revenue_rows") or []),
+        "earnings_surprise_rows": ((wall_st_payload.get("metrics") or {}).get("earnings_surprise_rows") or [])[:8],
     }
     prompt = f"""
 You are writing a dashboard-only Wall Street analyst read for {ticker}.
@@ -1878,6 +1896,7 @@ Focus on:
 - whether conviction is strong, split, or hold-heavy
 - whether analyst actions/revisions look improving or deteriorating
 - what revenue and EPS estimates imply
+- whether recent actual-vs-estimate earnings history makes the estimates look reliable, conservative, or risky
 - any contradiction, such as bullish ratings with weak growth or target cuts
 
 Return JSON only:

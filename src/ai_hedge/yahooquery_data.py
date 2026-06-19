@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -65,6 +65,91 @@ def _df_records(df: Any) -> List[Dict[str, Any]]:
     return [_json_safe(row) for row in records if isinstance(row, dict)]
 
 
+def _dict_for_symbol(payload: Any, symbol: str) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    candidate = payload.get(symbol) or payload
+    return _json_safe(candidate if isinstance(candidate, dict) else {})
+
+
+def _fetch_attr(obj: Any, name: str) -> Any:
+    try:
+        attr = getattr(obj, name)
+        return attr() if callable(attr) else attr
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
+
+def _parse_date(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        dt = value.to_pydatetime()
+    elif isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip()
+        if not text or text.lower() in {"nan", "nat", "none"}:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                dt = datetime.strptime(text[:19], fmt)
+                break
+            except ValueError:
+                dt = None
+        if dt is None:
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except Exception:
+                return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _first_event_date(row: Dict[str, Any]) -> Optional[datetime]:
+    date_keys = (
+        "eventDate",
+        "date",
+        "startDate",
+        "endDate",
+        "createdDate",
+        "updatedDate",
+        "pubDate",
+    )
+    for key in date_keys:
+        dt = _parse_date(row.get(key))
+        if dt is not None:
+            return dt
+    return None
+
+
+def _filter_corporate_events(
+    rows: List[Dict[str, Any]],
+    *,
+    report_date: datetime,
+    months_back: int = 3,
+) -> List[Dict[str, Any]]:
+    cutoff = report_date - timedelta(days=30 * months_back)
+    filtered: List[Dict[str, Any]] = []
+    for row in rows:
+        dt = _first_event_date(row)
+        if dt is None:
+            continue
+        if dt >= cutoff:
+            clean_row = dict(row)
+            clean_row.setdefault("event_date", dt.date().isoformat())
+            clean_row["timing"] = "future" if dt.date() > report_date.date() else "recent"
+            filtered.append(clean_row)
+    return sorted(
+        filtered,
+        key=lambda row: str(row.get("event_date") or row.get("date") or row.get("eventDate") or ""),
+        reverse=True,
+    )
+
+
 def _latest_records(records: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     latest: Dict[str, Dict[str, Any]] = {}
     for row in records:
@@ -110,30 +195,39 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
             "error": f"yahooquery import failed: {type(exc).__name__}: {str(exc)[:240]}",
         }
 
+    report_date = datetime.now(timezone.utc)
     try:
         ticker_obj = Ticker(symbol)
-        valuation_measures = ticker_obj.valuation_measures
-        financial_data = ticker_obj.financial_data
     except Exception as exc:
         return {
             "status": "error",
             "ticker": symbol,
-            "error": f"yahooquery fetch failed: {type(exc).__name__}: {str(exc)[:240]}",
+            "error": f"yahooquery init failed: {type(exc).__name__}: {str(exc)[:240]}",
         }
 
+    valuation_measures = _fetch_attr(ticker_obj, "valuation_measures")
+    financial_data = _fetch_attr(ticker_obj, "financial_data")
+    earning_history = _fetch_attr(ticker_obj, "earning_history")
+    corporate_events = _fetch_attr(ticker_obj, "corporate_events")
+    share_purchase_activity = _fetch_attr(ticker_obj, "share_purchase_activity")
+
     valuation_rows = _df_records(valuation_measures)
-    if isinstance(financial_data, dict):
-        raw_financial_data = financial_data.get(symbol) or financial_data
-    else:
-        raw_financial_data = {}
-    financial_data_clean = _json_safe(raw_financial_data if isinstance(raw_financial_data, dict) else {})
+    financial_data_clean = _dict_for_symbol(financial_data, symbol)
+    earning_history_rows = _df_records(earning_history)
+    corporate_event_rows = _df_records(corporate_events)
+    recent_corporate_events = _filter_corporate_events(
+        corporate_event_rows,
+        report_date=report_date.replace(tzinfo=None),
+    )
+    share_purchase_clean = _dict_for_symbol(share_purchase_activity, symbol)
     latest_by_period = _latest_records(valuation_rows)
     latest = _latest_preferred(valuation_rows)
 
     return {
         "status": "success",
         "ticker": symbol,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": report_date.isoformat(),
+        "report_date": report_date.date().isoformat(),
         "valuation_measures": {
             "rows": valuation_rows,
             "columns": list(valuation_measures.columns) if isinstance(valuation_measures, pd.DataFrame) else [],
@@ -142,5 +236,21 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
             "recent_average": _average_recent(valuation_rows),
         },
         "financial_data": financial_data_clean,
+        "earnings_surprise": {
+            "rows": earning_history_rows,
+            "columns": list(earning_history.columns) if isinstance(earning_history, pd.DataFrame) else [],
+            "error": earning_history.get("error") if isinstance(earning_history, dict) else None,
+        },
+        "corporate_events": {
+            "rows": recent_corporate_events,
+            "all_rows_count": len(corporate_event_rows),
+            "filtered_rows_count": len(recent_corporate_events),
+            "filter": {
+                "report_date": report_date.date().isoformat(),
+                "past_months_included": 3,
+                "future_events_included": True,
+            },
+            "error": corporate_events.get("error") if isinstance(corporate_events, dict) else None,
+        },
+        "share_purchase_activity": share_purchase_clean,
     }
-

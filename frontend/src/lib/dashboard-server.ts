@@ -51,6 +51,21 @@ export type LiveFundamentals = {
   assumption_current_values?: Record<string, number | null>;
 };
 
+export type YahooqueryInfo = {
+  status?: "success" | "error" | "unavailable" | string;
+  ticker: string;
+  generated_at?: string;
+  error?: string;
+  valuation_measures?: {
+    rows?: Array<Record<string, unknown>>;
+    columns?: string[];
+    latest?: Record<string, unknown>;
+    latest_by_period?: Record<string, Record<string, unknown>>;
+    recent_average?: Record<string, number | null>;
+  };
+  financial_data?: Record<string, unknown>;
+};
+
 async function loadReportsList(): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
   const deletedFilter = await getDeletedReportFilter();
@@ -378,6 +393,51 @@ function runLiveFundamentalsScript(ticker: string): Promise<LiveFundamentals> {
   });
 }
 
+function runLiveYahooqueryInfoScript(ticker: string): Promise<YahooqueryInfo> {
+  return new Promise((resolve, reject) => {
+    const root = repoRoot();
+    const scriptPath = path.resolve(root, "scripts", "live_yahooquery_info.py");
+    const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
+
+    const child = spawn(pythonExe, [scriptPath, "--ticker", ticker], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        PYTHONPATH: path.resolve(root, "src"),
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (err) => {
+      reject(err);
+    });
+    child.on("close", (code) => {
+      try {
+        const parsed = JSON.parse(stdout) as YahooqueryInfo;
+        if (code !== 0 && !parsed?.status) {
+          reject(new Error(stderr.trim() || `live_yahooquery_info.py exited with ${code}`));
+          return;
+        }
+        resolve(parsed);
+      } catch (err) {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `live_yahooquery_info.py exited with ${code}`));
+          return;
+        }
+        reject(err);
+      }
+    });
+  });
+}
+
 export const getLivePerformance = unstable_cache(
   async (ticker: string): Promise<LivePerformance> => {
     const tk = ticker.toUpperCase();
@@ -415,6 +475,27 @@ export const getLiveFundamentals = unstable_cache(
   },
   ["live-fundamentals-v1"],
   { revalidate: 300 },
+);
+
+export const getLiveYahooqueryInfo = unstable_cache(
+  async (ticker: string): Promise<YahooqueryInfo> => {
+    const tk = ticker.toUpperCase();
+    try {
+      const result = await runLiveYahooqueryInfoScript(tk);
+      return {
+        ...result,
+        ticker: String(result?.ticker || tk).toUpperCase(),
+      };
+    } catch (err) {
+      return {
+        status: "error",
+        ticker: tk,
+        error: (err as Error)?.message || "Failed to fetch yahooquery data.",
+      };
+    }
+  },
+  ["live-yahooquery-info-v1"],
+  { revalidate: 180 },
 );
 
 export async function getLiveCurrentPricesBatch(tickers: string[]): Promise<Record<string, number | null>> {

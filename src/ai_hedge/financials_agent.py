@@ -47,6 +47,11 @@ MARKET_SNAPSHOT_METRICS = [
     "Enterprise Value (EV)",
     "Price-to-Book Ratio (P/B)",
     "Price-to-Earnings Ratio (P/E)",
+    "Forward Price-to-Earnings Ratio (Forward P/E)",
+    "Price-to-Sales Ratio (P/S)",
+    "Enterprise Value-to-Revenue Ratio (EV/Revenue)",
+    "Enterprise Value-to-EBITDA Ratio (EV/EBITDA)",
+    "PEG Ratio",
 ]
 
 
@@ -150,11 +155,15 @@ def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict
         "total_debt": info.get("totalDebt"),
         "total_cash": info.get("totalCash"),
     }
+    yahooquery = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    if not isinstance(yahooquery, dict):
+        yahooquery = {}
     return {
         "ticker": str(ticker).upper(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "currency": str(financial_currency or "USD").upper(),
         "info": _json_safe(raw_info),
+        "yahooquery": _json_safe(yahooquery),
         "statements": [
             _table_payload(ticker_obj.financials, "Annual Income Statement", "income_statement", "annual"),
             _table_payload(ticker_obj.quarterly_financials, "Quarterly Income Statement", "income_statement", "quarterly"),
@@ -192,7 +201,7 @@ Use Deep Reasoning:
 Mandatory rows, in this exact order:
 {required}
 
-Current market snapshot fields, outside the period table:
+Current market snapshot fields, outside the period table. Use the yahooquery valuation_measures and financial_data payload as the preferred source for these current multiple boxes, especially P/S, EV/Revenue, EV/EBITDA, PEG, and Forward P/E. If multiple period rows exist, prefer the latest TTM row; if TTM is missing, use the latest available row and state that in the note. The recent_average object may be used as context in the note, not as a replacement for the current latest value unless the latest value is missing:
 {snapshot}
 
 Optional rows:
@@ -215,7 +224,7 @@ Balance sheet and market-value logic:
 - Capital Expenditures (Capex) should come from the cash flow statement when available. Use the absolute cash outflow amount as a positive currency value even if the statement reports capex as negative.
 - Capex / Revenue = Capital Expenditures (Capex) / Revenue when both are available. It is a ratio decimal, not a percent string.
 - SBC / Revenue = Stock-Based Compensation / Revenue when both are available. If SBC is not disclosed separately, use null.
-- Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), and Price-to-Earnings Ratio (P/E) are current quote snapshot fields, not period-table rows. Put them in current_metrics only when available from quote info or defensible from quote info plus latest statements. Do not invent historical values for them.
+- Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), Price-to-Earnings Ratio (P/E), Forward P/E, Price-to-Sales, EV/Revenue, EV/EBITDA, and PEG are current quote/multiple snapshot fields, not period-table rows. Put them in current_metrics only when available from quote info, yahooquery valuation_measures, yahooquery financial_data, or defensible from quote info plus latest statements. Do not invent historical values for them.
 
 Return ONLY valid JSON with this exact shape:
 {{

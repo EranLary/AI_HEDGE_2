@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Calculator, CandlestickChart, Database, Download, FileQuestion, FileText, Landmark, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -13,7 +13,7 @@ import type { ReportListItem } from "@/lib/dashboard-types";
 type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
 
 const SECTIONS: SectionItem[] = [
-  { slug: "info", label: "Info", icon: Database },
+  { slug: "info", label: "Info", icon: Info },
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "financials", label: "Financials", icon: Calculator },

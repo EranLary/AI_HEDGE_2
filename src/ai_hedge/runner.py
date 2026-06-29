@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import json
@@ -223,6 +224,15 @@ def _build_sec_currency_clarification(info_dict: Optional[Dict[str, Any]]) -> st
     )
 
 
+def _build_sec_source_of_truth_guidance() -> str:
+    return (
+        "### SEC/MAYA Source-of-Truth Guidance for Valuation\n\n"
+        "If the earlier analysis sections and the SEC/MAYA filing summary disagree on a factual financial point, "
+        "treat the SEC/MAYA filing summary as the source of truth for that contradiction. "
+        "Use the broader analysis as context, but anchor valuation assumptions to the filing-backed evidence."
+    )
+
+
 def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
     explicit = str(raw.get("source", "") or "").strip().upper()
     if explicit in {"SEC", "MAYA"}:
@@ -413,6 +423,40 @@ def _fmt_money(value: Any) -> str:
         return f"${float(value):,.2f}"
     except Exception:
         return "N/A"
+
+
+def _extract_analysis_current_price(analysis_text: str) -> Optional[float]:
+    for line in str(analysis_text or "").splitlines()[:40]:
+        if not line.strip().lower().startswith("current price"):
+            continue
+        _, _, raw_value = line.partition(":")
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", raw_value)
+        if not match:
+            continue
+        value = _first_float(match.group(0).replace(",", ""))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def _resolve_prices_explain_current_price(
+    explain_payload: Dict[str, Any],
+    *,
+    analysis_text: str = "",
+    variables_dict: Optional[Dict[str, Any]] = None,
+) -> Any:
+    analysis_price = _extract_analysis_current_price(analysis_text)
+    if analysis_price is not None:
+        return analysis_price
+
+    variables = variables_dict if isinstance(variables_dict, dict) else {}
+    variables_price = _first_float(variables.get("price"))
+    if variables_price is not None and variables_price > 0:
+        return variables_price
+
+    if isinstance(explain_payload, dict):
+        return explain_payload.get("current_price")
+    return None
 
 
 def _fmt_number(value: Any, decimals: int = 4) -> str:
@@ -1226,11 +1270,17 @@ def _build_prices_explain_text(
     ticker: str,
     explain_payload: Dict[str, Any],
     final_dict: Optional[Dict[str, Any]] = None,
+    analysis_text: str = "",
+    variables_dict: Optional[Dict[str, Any]] = None,
 ) -> str:
     methods = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
     aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
-    current_price = explain_payload.get("current_price") if isinstance(explain_payload, dict) else None
+    current_price = _resolve_prices_explain_current_price(
+        explain_payload if isinstance(explain_payload, dict) else {},
+        analysis_text=analysis_text,
+        variables_dict=variables_dict,
+    )
 
     lines: List[str] = [
         f"# {ticker} Prices Explain",
@@ -1543,11 +1593,12 @@ def _run_ticker_valuation_impl(
             sec_candidate = str(sec_out.get("text", "")).strip()
             if sec_out.get("status") == "success" and sec_candidate:
                 currency_clarification = _build_sec_currency_clarification(info_dict)
-                sec_short_text = (
-                    f"{sec_candidate}\n\n{currency_clarification}"
-                    if currency_clarification
-                    else sec_candidate
-                )
+                sec_guidance_blocks = [
+                    sec_candidate,
+                    currency_clarification,
+                    _build_sec_source_of_truth_guidance(),
+                ]
+                sec_short_text = "\n\n".join(block for block in sec_guidance_blocks if str(block or "").strip())
                 legacy.append_text_to_file(
                     text=sec_short_text,
                     header="SEC Summary",
@@ -1732,10 +1783,18 @@ def _run_ticker_valuation_impl(
     dashboard_signal_snapshot_text = ""
     explain_text = ""
     try:
+        analysis_text_for_prices = ""
+        if analysis_dst.exists():
+            try:
+                analysis_text_for_prices = analysis_dst.read_text(encoding="utf-8")
+            except Exception:
+                analysis_text_for_prices = ""
         explain_text = _build_prices_explain_text(
             ticker,
             explain_payload,
             final_dict if isinstance(final_dict, dict) else {},
+            analysis_text=analysis_text_for_prices,
+            variables_dict=variables_dict if isinstance(variables_dict, dict) else {},
         )
         prices_explain_txt.write_text(explain_text, encoding="utf-8")
     except Exception as explain_err:

@@ -80,9 +80,52 @@ function qualityClass(value?: string): string {
 }
 
 function periodChip(period: FinancialPeriod): string {
-  const raw = String(period.label || period.date || period.key || "").trim();
-  const prefix = String(period.period_type || "").toLowerCase() === "annual" ? "FY" : "Q";
-  return `${prefix} ${raw}`.replace(/^FY FY\s+/i, "FY ").replace(/^Q Q/i, "Q");
+  const raw = String(period.label || period.key || "").trim();
+  const dateYear = String(period.date || "").match(/^(\d{4})-\d{2}-\d{2}/)?.[1] || "";
+  const dateMonth = Number(String(period.date || "").match(/^\d{4}-(\d{2})-\d{2}/)?.[1] || "");
+  if (String(period.period_type || "").toLowerCase() === "annual") {
+    const yearFromDate = dateYear ? Number(dateYear) - (dateMonth === 1 ? 1 : 0) : null;
+    const year = yearFromDate || Number(raw.match(/\b(20\d{2}|19\d{2})\b/)?.[1] || "");
+    return year ? `FY ${year}` : raw || "FY";
+  }
+  const quarter = raw.match(/\bQ\s*([1-4])\b/i)?.[1] || "";
+  const rawYear = raw.match(/\b(20\d{2}|19\d{2})\b/)?.[1] || "";
+  if (quarter && rawYear) return `Q${quarter} ${rawYear}`;
+  if (quarter && dateYear && quarter === "4" && Number.isFinite(dateMonth) && dateMonth <= 3) {
+    return `Q4 ${Number(dateYear) - 1}`;
+  }
+  if (quarter && dateYear) return `Q${quarter} ${dateYear}`;
+  if (quarter) return `Q${quarter}`;
+  return raw || String(period.date || period.key || "");
+}
+
+function normalizePeriodLabels(periods: FinancialPeriod[]): FinancialPeriod[] {
+  let prevQuarter: number | null = null;
+  let prevYear: number | null = null;
+  return periods.map((period) => {
+    if (String(period.period_type || "").toLowerCase() !== "quarterly") return period;
+    const raw = String(period.label || period.key || "").trim();
+    const quarter = Number(raw.match(/\bQ\s*([1-4])\b/i)?.[1] || "");
+    const dateYearRaw = String(period.date || "").match(/^(\d{4})-\d{2}-\d{2}/)?.[1] || "";
+    const dateYear = dateYearRaw ? Number(dateYearRaw) : null;
+    if (!Number.isFinite(quarter) || quarter < 1 || quarter > 4) {
+      prevQuarter = null;
+      prevYear = null;
+      return period;
+    }
+    let displayYear = dateYear;
+    if (prevQuarter !== null && prevYear !== null && quarter === prevQuarter + 1) {
+      displayYear = prevYear;
+    } else if (prevQuarter === 4 && prevYear !== null && quarter === 1) {
+      displayYear = dateYear || prevYear + 1;
+    }
+    prevQuarter = quarter;
+    prevYear = displayYear;
+    return {
+      ...period,
+      label: displayYear ? `Q${quarter} ${displayYear}` : `Q${quarter}`,
+    };
+  });
 }
 
 function isAnnualPeriod(period: FinancialPeriod): boolean {
@@ -223,7 +266,8 @@ export function FinancialsClient({
   const payload = data.financials || {};
   const status = String(payload.status || "").toLowerCase();
   const analysis = payload.analysis || {};
-  const periods = Array.isArray(analysis.periods) ? (analysis.periods as FinancialPeriod[]) : EMPTY_PERIODS;
+  const rawPeriods = Array.isArray(analysis.periods) ? (analysis.periods as FinancialPeriod[]) : EMPTY_PERIODS;
+  const periods = normalizePeriodLabels(rawPeriods);
   const rows = Array.isArray(analysis.rows) ? (analysis.rows as FinancialRow[]) : EMPTY_ROWS;
   const currentMetrics = Array.isArray(analysis.current_metrics) ? (analysis.current_metrics as CurrentMetric[]) : EMPTY_CURRENT_METRICS;
   const takeaways = asList(analysis.key_takeaways);

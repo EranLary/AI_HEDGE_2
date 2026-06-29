@@ -138,3 +138,82 @@ def test_normalize_financials_analysis_sorts_q4_before_fy_and_moves_market_snaps
     assert market_cap["value"] == 1000
     amortization = next(row for row in normalized["rows"] if row["metric"] == "(+) Amortization of Intangible Assets")
     assert amortization["values"] == {"2025-09-30_Q": None, "2025-09-30_A": None}
+
+
+def test_normalize_financials_analysis_uses_report_date_year_for_labels():
+    normalized = normalize_financials_analysis(
+        {
+            "ticker": "TEST",
+            "periods": [
+                {"key": "2026-01-31_A", "label": "FY 2027", "date": "2026-01-31", "period_type": "annual"},
+                {"key": "2026-04-30_Q", "label": "Q1 2027", "date": "2026-04-30", "period_type": "quarterly"},
+            ],
+            "rows": [],
+        },
+        ticker="TEST",
+        currency="USD",
+    )
+
+    assert [p["label"] for p in normalized["periods"]] == ["FY 2025", "Q1 2026"]
+
+
+def test_normalize_financials_analysis_keeps_january_q4_in_sequence_year():
+    normalized = normalize_financials_analysis(
+        {
+            "ticker": "CGNT",
+            "periods": [
+                {"key": "2025-04-30_Q", "label": "Q1 2025", "date": "2025-04-30", "period_type": "quarterly"},
+                {"key": "2025-07-31_Q", "label": "Q2 2025", "date": "2025-07-31", "period_type": "quarterly"},
+                {"key": "2025-10-31_Q", "label": "Q3 2025", "date": "2025-10-31", "period_type": "quarterly"},
+                {"key": "2026-01-31_Q", "label": "Q4 2026", "date": "2026-01-31", "period_type": "quarterly"},
+                {"key": "2026-01-31_A", "label": "FY 2026", "date": "2026-01-31", "period_type": "annual"},
+                {"key": "2026-04-30_Q", "label": "Q1 2026", "date": "2026-04-30", "period_type": "quarterly"},
+            ],
+            "rows": [],
+        },
+        ticker="CGNT",
+        currency="USD",
+    )
+
+    assert [p["label"] for p in normalized["periods"]] == [
+        "Q1 2025",
+        "Q2 2025",
+        "Q3 2025",
+        "Q4 2025",
+        "FY 2025",
+        "Q1 2026",
+    ]
+
+
+def test_normalize_financials_analysis_handles_january_retail_fiscal_calendar():
+    normalized = normalize_financials_analysis(
+        {
+            "ticker": "WMT",
+            "periods": [
+                {"key": "2023-01-31_A", "label": "FY 2022", "date": "2023-01-31", "period_type": "annual"},
+                {"key": "2024-01-31_A", "label": "FY 2023", "date": "2024-01-31", "period_type": "annual"},
+                {"key": "2025-01-31_A", "label": "FY 2024", "date": "2025-01-31", "period_type": "annual"},
+                {"key": "2025-04-30_Q", "label": "Q1 2026", "date": "2025-04-30", "period_type": "quarterly"},
+                {"key": "2025-07-31_Q", "label": "Q2 2026", "date": "2025-07-31", "period_type": "quarterly"},
+                {"key": "2025-10-31_Q", "label": "Q3 2026", "date": "2025-10-31", "period_type": "quarterly"},
+                {"key": "2026-01-31_Q", "label": "Q4 2026", "date": "2026-01-31", "period_type": "quarterly"},
+                {"key": "2026-01-31_A", "label": "FY 2025", "date": "2026-01-31", "period_type": "annual"},
+                {"key": "2026-04-30_Q", "label": "Q1 2027", "date": "2026-04-30", "period_type": "quarterly"},
+            ],
+            "rows": [],
+        },
+        ticker="WMT",
+        currency="USD",
+    )
+
+    assert [p["label"] for p in normalized["periods"]] == [
+        "FY 2022",
+        "FY 2023",
+        "FY 2024",
+        "Q1 2025",
+        "Q2 2025",
+        "Q3 2025",
+        "Q4 2025",
+        "FY 2025",
+        "Q1 2026",
+    ]

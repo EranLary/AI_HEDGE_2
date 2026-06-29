@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BadgeDollarSign, BarChart3, CalendarDays, Database, Landmark, LineChart, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, BadgeDollarSign, CalendarDays, Gauge, History, Info, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { ReportListItem } from "@/lib/dashboard-types";
@@ -92,6 +92,16 @@ function toneClass(value: unknown): string {
   return n > 0 ? "text-[color:var(--success)]" : "text-[color:var(--danger)]";
 }
 
+function metricToneClass(card: MetricCard): string {
+  const n = num(card.value);
+  if (n === null || Math.abs(n) <= 1e-9) return "text-[color:var(--text-primary)]";
+  const label = card.label.toLowerCase();
+  const isGrowthOrReturn = label.includes("growth") || label === "roa" || label === "roe" || label.includes("return");
+  if (isGrowthOrReturn) return n > 0 ? "text-[color:var(--success)]" : "text-[color:var(--danger)]";
+  if (label.includes("margin")) return n < 0 ? "text-[color:var(--danger)]" : "text-[color:var(--text-primary)]";
+  return "text-[color:var(--text-primary)]";
+}
+
 function dateLabel(value: unknown): string {
   const raw = String(value || "").trim();
   if (!raw) return "N/A";
@@ -115,7 +125,7 @@ function MetricTile({ card, currency }: { card: MetricCard; currency: string }) 
   return (
     <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
       <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-muted)]">{card.label}</p>
-      <p className="mt-2 font-mono text-lg font-semibold text-[color:var(--text-primary)]">
+      <p className={`mt-2 font-mono text-lg font-semibold ${metricToneClass(card)}`}>
         {fmtValue(card.value, card.kind, currency)}
       </p>
       {card.note ? <p className="mt-2 text-xs leading-relaxed text-[color:var(--text-secondary)]">{card.note}</p> : null}
@@ -127,7 +137,7 @@ function PricePerformance({ rows }: { rows: ReturnsMap }) {
   return (
     <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
       <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
-        <LineChart size={15} />
+        <TrendingUp size={15} />
         Price Performance
       </h2>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4 xl:grid-cols-8">
@@ -192,8 +202,8 @@ export function InfoClient({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="inline-flex items-center gap-2 font-display text-2xl text-[color:var(--text-primary)]">
-              <Database size={19} className="text-[color:var(--accent)]" />
-              Info
+              <Info size={19} className="text-[color:var(--accent)]" />
+              Information
             </h1>
             <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
               {ticker} - live yahooquery profile, multiples, and market context
@@ -238,7 +248,7 @@ export function InfoClient({
 
         <div className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
           <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
-            <ShieldCheck size={15} />
+            <Gauge size={15} />
             Quality Snapshot
           </h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -251,7 +261,7 @@ export function InfoClient({
 
       <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
         <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
-          <Landmark size={15} />
+          <ShieldCheck size={15} />
           Financial Data
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -265,7 +275,7 @@ export function InfoClient({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
-              <BarChart3 size={15} />
+              <History size={15} />
               Multiple History
             </h2>
             <p className="mt-1 text-sm text-[color:var(--text-muted)]">Historical yahooquery valuation rows, newest first.</p>

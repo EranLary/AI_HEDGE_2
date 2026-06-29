@@ -326,6 +326,100 @@ def _snapshot_value_from_rows(rows: List[Any], metric: str) -> Optional[float]:
     return None
 
 
+def _date_year(date: str) -> str:
+    match = re.match(r"^\s*(\d{4})-\d{2}-\d{2}", str(date or ""))
+    return match.group(1) if match else ""
+
+
+def _date_month(date: str) -> Optional[int]:
+    match = re.match(r"^\s*\d{4}-(\d{2})-\d{2}", str(date or ""))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except Exception:
+        return None
+
+
+def _normalize_period_label(label: Any, *, date: str, period_type: str, key: str) -> str:
+    date_year = _date_year(date)
+    raw = str(label or "").strip()
+    source = raw or str(key or "").strip()
+    if str(period_type or "").lower() == "annual":
+        year_match = re.search(r"\b(20\d{2}|19\d{2})\b", source or "")
+        year = int(date_year) if date_year else None
+        if year is not None and _date_month(date) == 1:
+            year -= 1
+        if year is None and year_match:
+            year = int(year_match.group(1))
+        return f"FY {year}".strip() if year else (raw or key)
+
+    q_match = re.search(r"\bQ\s*([1-4])\b", source, flags=re.IGNORECASE)
+    quarter = q_match.group(1) if q_match else ""
+    if not quarter and date:
+        try:
+            month = int(str(date)[5:7])
+            quarter = str(((month - 1) // 3) + 1)
+        except Exception:
+            quarter = ""
+    if quarter and date_year:
+        return f"Q{quarter} {date_year}"
+    if quarter:
+        return f"Q{quarter}"
+    return raw or key
+
+
+def _quarter_from_label_or_date(label: Any, date: str) -> str:
+    match = re.search(r"\bQ\s*([1-4])\b", str(label or ""), flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    if date:
+        try:
+            month = int(str(date)[5:7])
+            return str(((month - 1) // 3) + 1)
+        except Exception:
+            return ""
+    return ""
+
+
+def _normalize_quarter_period_labels(periods: List[Dict[str, Any]]) -> None:
+    prev_quarter: Optional[int] = None
+    prev_year: Optional[int] = None
+    for period in periods:
+        if period.get("period_type") != "quarterly":
+            continue
+        quarter_txt = _quarter_from_label_or_date(period.get("label"), str(period.get("date") or ""))
+        try:
+            quarter = int(quarter_txt)
+        except Exception:
+            prev_quarter = None
+            prev_year = None
+            continue
+        date_year_txt = _date_year(str(period.get("date") or ""))
+        date_year = int(date_year_txt) if date_year_txt else None
+        if (
+            prev_quarter is not None
+            and prev_year is not None
+            and quarter == prev_quarter + 1
+        ):
+            display_year = prev_year
+        elif (
+            prev_quarter == 4
+            and prev_year is not None
+            and quarter == 1
+        ):
+            display_year = date_year or (prev_year + 1)
+        else:
+            display_year = date_year
+        if display_year is not None:
+            period["label"] = f"Q{quarter} {display_year}"
+            prev_year = display_year
+        else:
+            period["label"] = f"Q{quarter}"
+            prev_year = None
+        prev_quarter = quarter
+
+
 def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency: str) -> Dict[str, Any]:
     analysis = dict(raw) if isinstance(raw, dict) else {}
     periods = []
@@ -341,13 +435,20 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
         if not key or key in seen:
             continue
         seen.add(key)
+        normalized_type = "annual" if period_type == "annual" else "quarterly"
         periods.append({
             "key": key,
-            "label": str(period.get("label") or key).strip(),
+            "label": _normalize_period_label(
+                period.get("label"),
+                date=date,
+                period_type=normalized_type,
+                key=key,
+            ),
             "date": date,
-            "period_type": "annual" if period_type == "annual" else "quarterly",
+            "period_type": normalized_type,
         })
     periods.sort(key=lambda p: (p.get("date") or "", 0 if p.get("period_type") == "quarterly" else 1))
+    _normalize_quarter_period_labels(periods)
 
     period_keys = {p["key"] for p in periods}
     rows = []

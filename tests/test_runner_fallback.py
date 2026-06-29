@@ -79,6 +79,33 @@ def test_build_sec_currency_clarification_skips_usd_financials():
     assert text == ""
 
 
+def test_build_sec_source_of_truth_guidance_mentions_contradictions():
+    text = runner._build_sec_source_of_truth_guidance()
+
+    assert "source of truth" in text
+    assert "disagree" in text
+    assert "SEC/MAYA filing summary" in text
+    assert "valuation assumptions" in text
+
+
+def test_prices_explain_uses_analysis_current_price_for_usd_targets():
+    text = runner._build_prices_explain_text(
+        "PAYT.TA",
+        {
+            "current_price": 6800.0,
+            "methods": {},
+            "aggregate_targets": {"Scenario DCF": 21.8},
+            "aggregate_investments": {"Scenario DCF": -25000},
+        },
+        analysis_text="# PAYT.TA - Analysis file\n\nCurrent Price: 22.0\n\nMarket Cap: 123",
+        variables_dict={"price": 22.0},
+    )
+
+    assert "Current Price: $22.00" in text
+    assert "| Scenario DCF | $21.80 (-0.91%) | $-25,000.00 |" in text
+    assert "-99" not in text
+
+
 def test_attach_market_agent_markdown_persists_analysis_section(tmp_path):
     analysis_text = """
 # What It Does:

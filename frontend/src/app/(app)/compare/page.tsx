@@ -294,6 +294,7 @@ export default function ComparePage() {
     ].filter(Boolean);
     return palette[idx % palette.length] || tokens["--chart-axis"];
   };
+  const colorByTicker = new Map(comparison.series.map((item, idx) => [item.ticker, lineColor(idx)]));
 
   return (
     <div className="min-w-0 px-4 py-5 sm:px-8">
@@ -473,11 +474,17 @@ export default function ComparePage() {
             <tbody>
               {comparison.tableRows.map((row, idx) => {
                 const fundamentals = row.fundamentals || {};
+                const tickerColor = colorByTicker.get(row.ticker);
                 return (
                   <tr key={row.ticker}>
                     <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
                     <td className="hib-market-table-cell min-w-0">
-                      <span className="block truncate font-mono font-semibold">{row.ticker}</span>
+                      <span
+                        style={tickerColor ? { color: tickerColor } : undefined}
+                        className="block truncate font-mono font-semibold"
+                      >
+                        {row.ticker}
+                      </span>
                       <span className="block truncate text-[color:var(--text-muted)]">
                         {fundamentals.company_name || row.company_name || row.exchange || "Company"}
                       </span>

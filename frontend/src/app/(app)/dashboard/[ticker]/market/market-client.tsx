@@ -462,6 +462,9 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
     const peerIndex = Math.max(0, idx - 1);
     return palette[peerIndex % palette.length] || tokens["--chart-axis"];
   };
+  const colorByTicker = new Map(
+    comparison.activeSeries.map((item, idx) => [item.ticker, colorForSeries(item.ticker, idx)]),
+  );
 
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
@@ -559,6 +562,7 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
             <tbody>
               {(comparison.tableRows.length ? comparison.tableRows : universe).map((row, idx) => {
                 const isPrimary = row.ticker === primaryTicker;
+                const tickerColor = colorByTicker.get(row.ticker);
                 return (
                   <tr key={row.ticker} className={isPrimary ? "bg-black/25" : undefined}>
                     <td
@@ -570,9 +574,8 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                     </td>
                     <td className="hib-market-table-cell min-w-0">
                       <span
-                        className={`block truncate font-mono ${
-                          isPrimary ? "font-bold text-[color:var(--accent)]" : "font-semibold"
-                        }`}
+                        style={tickerColor ? { color: tickerColor } : undefined}
+                        className={`block truncate font-mono ${isPrimary ? "font-bold" : "font-semibold"}`}
                       >
                         {row.ticker}
                       </span>

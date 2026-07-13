@@ -307,15 +307,15 @@ export default function ComparePage() {
       </header>
 
       <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(18rem,28rem)_auto] lg:items-start">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto] sm:items-center">
           <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
           <button
             type="button"
             onClick={() => addTicker(selected)}
             disabled={!selected || tickers.length >= MAX_TICKERS}
-            className="hib-run-btn inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[color:var(--accent)] bg-[color:var(--accent)] px-4 text-sm font-semibold uppercase tracking-[0.14em] text-[color:var(--text-on-accent)] transition hover:bg-[color:var(--accent-hover)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-50"
+            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--accent)] bg-black/20 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] transition hover:bg-[color:var(--accent)] hover:text-[color:var(--text-on-accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] sm:w-auto"
           >
-            <Plus size={15} />
+            <Plus size={13} />
             Add Ticker
           </button>
         </div>

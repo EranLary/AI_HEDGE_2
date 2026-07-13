@@ -103,6 +103,51 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
+export type YahooPricePoint = {
+  date: string;
+  close: number;
+};
+
+export async function yahooPriceHistory(ticker: string, range = "5y", timeoutMs = 6000): Promise<YahooPricePoint[]> {
+  const sym = ticker.trim().toUpperCase();
+  if (!sym) return [];
+  const yahooSym = toYahooSymbol(sym);
+  const url = `${CHART_URL}/${encodeURIComponent(yahooSym)}?range=${encodeURIComponent(range)}&interval=1d`;
+  try {
+    const res = await fetchWithTimeout(url, timeoutMs);
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      chart?: {
+        result?: Array<{
+          timestamp?: number[];
+          indicators?: {
+            quote?: Array<{
+              close?: Array<number | null>;
+            }>;
+          };
+        }>;
+      };
+    };
+    const result = json.chart?.result?.[0];
+    const timestamps = Array.isArray(result?.timestamp) ? result.timestamp : [];
+    const closes = Array.isArray(result?.indicators?.quote?.[0]?.close) ? result.indicators.quote[0].close : [];
+    const rows: YahooPricePoint[] = [];
+    for (let idx = 0; idx < timestamps.length; idx += 1) {
+      const close = Number(closes[idx]);
+      const stamp = Number(timestamps[idx]);
+      if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(stamp)) continue;
+      rows.push({
+        date: new Date(stamp * 1000).toISOString().slice(0, 10),
+        close,
+      });
+    }
+    return rows;
+  } catch (err) {
+    console.warn(`[yahoo-lookup] price history failed for ${sym}`, err);
+    return [];
+  }
+}
+
 /** Search Yahoo for matching symbols (used as autocomplete fallback). */
 export async function yahooSearch(query: string, limit = 8): Promise<TickerEntry[]> {
   const q = query.trim();

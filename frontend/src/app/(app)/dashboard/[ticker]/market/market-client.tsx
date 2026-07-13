@@ -7,7 +7,7 @@ import {
   Store,
   TrendingUp,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import {
@@ -241,13 +241,29 @@ type ReturnTableRow = {
   latestClose: number | null;
 };
 
+type MarketReturnApiPayload = {
+  status?: string;
+  series?: Array<{
+    ticker?: string;
+    company_name?: string;
+    prices?: Array<{
+      date?: string;
+      close?: number;
+    }>;
+  }>;
+  error?: string;
+};
+
 function parseDate(value: string): Date | null {
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function normalizeReturnSeries(market: MarketReviewPayload): ReturnSeries[] {
-  const raw = market.return_comparison?.series;
+function normalizeReturnSeriesFromPayload(
+  payload: MarketReturnApiPayload | undefined,
+  namesByTicker: Map<string, string>,
+): ReturnSeries[] {
+  const raw = payload?.series;
   if (!Array.isArray(raw)) return [];
   return raw
     .map((series) => {
@@ -261,13 +277,26 @@ function normalizeReturnSeries(market: MarketReviewPayload): ReturnSeries[] {
             .filter((point): point is PricePoint => Boolean(point))
             .sort((a, b) => a.date.localeCompare(b.date))
         : [];
+      const ticker = markdownText(series.ticker).toUpperCase();
       return {
-        ticker: markdownText(series.ticker).toUpperCase(),
-        company_name: markdownText(series.company_name),
+        ticker,
+        company_name: markdownText(series.company_name) || namesByTicker.get(ticker) || "",
         prices,
       };
     })
     .filter((series) => series.ticker && series.prices.length >= 2);
+}
+
+function returnUniverse(market: MarketReviewPayload, ticker: string): ReturnTableRow[] {
+  return buildComparisonRows(market, ticker)
+    .map((row) => ({
+      ticker: markdownText(row.ticker).toUpperCase(),
+      company_name: markdownText(row.company_name),
+      returnPct: null,
+      latestClose: null,
+    }))
+    .filter((row, idx, rows) => row.ticker && rows.findIndex((candidate) => candidate.ticker === row.ticker) === idx)
+    .slice(0, 6);
 }
 
 function periodStartDate(periodKey: string, latestDate: Date): Date {
@@ -318,10 +347,60 @@ function ReturnTooltip({
   );
 }
 
-function MarketReturnComparison({ market }: { market: MarketReviewPayload }) {
+function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
   const [period, setPeriod] = useState<(typeof RETURN_PERIODS)[number]["key"]>("1Y");
+  const [remotePayload, setRemotePayload] = useState<MarketReturnApiPayload | null>(null);
+  const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [loadError, setLoadError] = useState("");
   const tokens = useThemeTokens(RETURN_CHART_TOKENS);
-  const series = useMemo(() => normalizeReturnSeries(market), [market]);
+  const universe = useMemo(() => returnUniverse(market, ticker), [market, ticker]);
+  const namesByTicker = useMemo(
+    () => new Map(universe.map((row) => [row.ticker, row.company_name])),
+    [universe],
+  );
+  const savedSeries = useMemo(
+    () => normalizeReturnSeriesFromPayload(market.return_comparison, namesByTicker),
+    [market.return_comparison, namesByTicker],
+  );
+  const remoteSeries = useMemo(
+    () => normalizeReturnSeriesFromPayload(remotePayload || undefined, namesByTicker),
+    [remotePayload, namesByTicker],
+  );
+  const series = savedSeries.length >= 2 ? savedSeries : remoteSeries;
+  const tickerList = useMemo(() => universe.map((row) => row.ticker), [universe]);
+
+  useEffect(() => {
+    if (savedSeries.length >= 2 || tickerList.length < 2) {
+      setLoadState(savedSeries.length >= 2 ? "ready" : "idle");
+      setLoadError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadState("loading");
+    setLoadError("");
+    const qs = new URLSearchParams({ tickers: tickerList.join(",") });
+    fetch(`/api/dashboard/${encodeURIComponent(ticker.toUpperCase())}/market-returns?${qs.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Market return lookup failed (${res.status})`);
+        return (await res.json()) as MarketReturnApiPayload;
+      })
+      .then((payload) => {
+        setRemotePayload(payload);
+        setLoadState("ready");
+        setLoadError(markdownText(payload.error));
+      })
+      .catch((err: Error) => {
+        if (err.name === "AbortError") return;
+        setRemotePayload(null);
+        setLoadState("error");
+        setLoadError(err.message || "Market return lookup failed.");
+      });
+    return () => controller.abort();
+  }, [savedSeries.length, ticker, tickerList]);
 
   const comparison = useMemo(() => {
     const latestDates = series
@@ -367,7 +446,7 @@ function MarketReturnComparison({ market }: { market: MarketReviewPayload }) {
     };
   }, [period, series]);
 
-  if (series.length < 2) return null;
+  if (universe.length < 2) return null;
 
   const colorForIndex = (idx: number) => {
     const key = `--chart-series-${(idx % 6) + 1}` as keyof typeof tokens;
@@ -413,36 +492,44 @@ function MarketReturnComparison({ market }: { market: MarketReviewPayload }) {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="hib-chart h-80 min-h-[18rem] min-w-0">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-            <RechartsLineChart data={comparison.chartData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
-              <XAxis
-                dataKey="date"
-                minTickGap={28}
-                tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
-                tickFormatter={(value) => String(value).slice(5)}
-              />
-              <YAxis
-                width={56}
-                tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
-                tickFormatter={(value) => formatReturn(Number(value))}
-              />
-              <Tooltip content={<ReturnTooltip />} wrapperStyle={{ outline: "none" }} />
-              {comparison.activeSeries.map((item, idx) => (
-                <Line
-                  key={item.ticker}
-                  type="monotone"
-                  dataKey={item.ticker}
-                  name={item.ticker}
-                  stroke={colorForIndex(idx)}
-                  strokeWidth={2.2}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
+          {series.length >= 2 ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
+              <RechartsLineChart data={comparison.chartData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
+                <XAxis
+                  dataKey="date"
+                  minTickGap={28}
+                  tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                  tickFormatter={(value) => String(value).slice(5)}
                 />
-              ))}
-            </RechartsLineChart>
-          </ResponsiveContainer>
+                <YAxis
+                  width={56}
+                  tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                  tickFormatter={(value) => formatReturn(Number(value))}
+                />
+                <Tooltip content={<ReturnTooltip />} wrapperStyle={{ outline: "none" }} />
+                {comparison.activeSeries.map((item, idx) => (
+                  <Line
+                    key={item.ticker}
+                    type="monotone"
+                    dataKey={item.ticker}
+                    name={item.ticker}
+                    stroke={colorForIndex(idx)}
+                    strokeWidth={2.2}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ))}
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full min-h-[18rem] items-center justify-center rounded-xl border border-white/10 bg-black/25 p-4 text-center text-sm text-[color:var(--text-muted)]">
+              {loadState === "loading"
+                ? "Loading market return history..."
+                : loadError || "Return history is unavailable for this peer set."}
+            </div>
+          )}
         </div>
 
         <div className="hib-market-table-wrap">
@@ -455,7 +542,7 @@ function MarketReturnComparison({ market }: { market: MarketReviewPayload }) {
               </tr>
             </thead>
             <tbody>
-              {comparison.tableRows.map((row, idx) => (
+              {(comparison.tableRows.length ? comparison.tableRows : universe).map((row, idx) => (
                 <tr key={row.ticker}>
                   <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
                   <td className="hib-market-table-cell">
@@ -743,7 +830,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
       ) : null}
 
       <div className="grid gap-4">
-        <MarketReturnComparison market={market} />
+        <MarketReturnComparison market={market} ticker={ticker} />
         <PeerStrategyTable market={market} ticker={ticker} />
         <ProductOverlapTable market={market} />
         <FinancialScaleTable market={market} ticker={ticker} />

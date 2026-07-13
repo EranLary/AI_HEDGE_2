@@ -47,6 +47,7 @@ const RETURN_PERIODS = [
 const RETURN_CHART_TOKENS = [
   "--chart-grid",
   "--chart-axis",
+  "--chart-current",
   "--chart-series-1",
   "--chart-series-2",
   "--chart-series-3",
@@ -368,6 +369,7 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
   );
   const series = savedSeries.length >= 2 ? savedSeries : remoteSeries;
   const tickerList = useMemo(() => universe.map((row) => row.ticker), [universe]);
+  const primaryTicker = universe[0]?.ticker || ticker.toUpperCase();
 
   useEffect(() => {
     if (savedSeries.length >= 2 || tickerList.length < 2) {
@@ -448,7 +450,8 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
 
   if (universe.length < 2) return null;
 
-  const colorForIndex = (idx: number) => {
+  const colorForSeries = (seriesTicker: string, idx: number) => {
+    if (seriesTicker === primaryTicker) return tokens["--chart-current"] || tokens["--chart-series-3"];
     const key = `--chart-series-${(idx % 6) + 1}` as keyof typeof tokens;
     return tokens[key] || tokens["--chart-axis"];
   };
@@ -490,7 +493,7 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_14rem]">
         <div className="hib-chart h-80 min-h-[18rem] min-w-0">
           {series.length >= 2 ? (
             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
@@ -514,8 +517,8 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                     type="monotone"
                     dataKey={item.ticker}
                     name={item.ticker}
-                    stroke={colorForIndex(idx)}
-                    strokeWidth={2.2}
+                    stroke={colorForSeries(item.ticker, idx)}
+                    strokeWidth={item.ticker === primaryTicker ? 3.2 : 2}
                     dot={false}
                     connectNulls
                     isAnimationActive={false}
@@ -533,7 +536,12 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
         </div>
 
         <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[18rem]">
+          <table className="hib-market-table min-w-[14rem] table-fixed">
+            <colgroup>
+              <col className="w-[3rem]" />
+              <col className="w-[7rem]" />
+              <col className="w-[4rem]" />
+            </colgroup>
             <thead>
               <tr>
                 <th className="hib-market-table-head">Rank</th>
@@ -542,18 +550,43 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
               </tr>
             </thead>
             <tbody>
-              {(comparison.tableRows.length ? comparison.tableRows : universe).map((row, idx) => (
-                <tr key={row.ticker}>
-                  <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
-                  <td className="hib-market-table-cell">
-                    <span className="font-mono font-semibold">{row.ticker}</span>
-                    <span className="block text-[color:var(--text-muted)]">{row.company_name || "Company"}</span>
-                  </td>
-                  <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
-                    {formatReturn(row.returnPct)}
-                  </td>
-                </tr>
-              ))}
+              {(comparison.tableRows.length ? comparison.tableRows : universe).map((row, idx) => {
+                const isPrimary = row.ticker === primaryTicker;
+                return (
+                  <tr key={row.ticker} className={isPrimary ? "bg-black/25" : undefined}>
+                    <td
+                      className={`hib-market-table-cell font-mono text-xs ${
+                        isPrimary ? "font-bold text-[color:var(--accent)]" : ""
+                      }`}
+                    >
+                      #{idx + 1}
+                    </td>
+                    <td className="hib-market-table-cell min-w-0">
+                      <span
+                        className={`block truncate font-mono ${
+                          isPrimary ? "font-bold text-[color:var(--accent)]" : "font-semibold"
+                        }`}
+                      >
+                        {row.ticker}
+                      </span>
+                      <span
+                        className={`block truncate text-[color:var(--text-muted)] ${
+                          isPrimary ? "font-semibold text-[color:var(--text-secondary)]" : ""
+                        }`}
+                      >
+                        {row.company_name || "Company"}
+                      </span>
+                    </td>
+                    <td
+                      className={`hib-market-table-cell whitespace-nowrap font-mono ${
+                        isPrimary ? "font-bold" : "font-semibold"
+                      } ${returnTone(row.returnPct)}`}
+                    >
+                      {formatReturn(row.returnPct)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

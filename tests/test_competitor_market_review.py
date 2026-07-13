@@ -180,6 +180,35 @@ def test_build_original_company_context_uses_info_and_annual_income_statement():
     assert "Revenue,Net Income" in context["annual_financials"]
 
 
+def test_build_market_return_comparison_includes_original_and_competitors(monkeypatch):
+    downloads = []
+
+    def fake_download(ticker, **kwargs):
+        downloads.append((ticker, kwargs["period"], kwargs["interval"]))
+        if ticker == "BAD":
+            return pd.DataFrame()
+        return pd.DataFrame(
+            {"Close": [10.0, 11.0, 12.0]},
+            index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+        )
+
+    monkeypatch.setattr(cmr.yf, "download", fake_download)
+
+    payload = cmr.build_market_return_comparison(
+        original_company={"ticker": "MAIN", "company_name": "Main Co"},
+        competitors=[
+            {"ticker": "PEER", "company_name": "Peer Co"},
+            {"ticker": "BAD", "company_name": "Bad Co"},
+            {"ticker": "PEER", "company_name": "Duplicate"},
+        ],
+    )
+
+    assert payload["status"] == "success"
+    assert [row["ticker"] for row in payload["series"]] == ["MAIN", "PEER"]
+    assert payload["series"][0]["prices"][0] == {"date": "2024-01-02", "close": 10.0}
+    assert downloads == [("MAIN", "5y", "1d"), ("PEER", "5y", "1d"), ("BAD", "5y", "1d")]
+
+
 def test_review_prompt_requires_original_company_financial_comparison():
     prompt = cmr.build_review_prompt(
         {
@@ -219,6 +248,11 @@ def test_run_competitor_market_review_includes_original_company_payload(monkeypa
             "annual_financials": "### Annual Income Statement\n```csv\nRevenue\n```",
         },
     )
+    monkeypatch.setattr(
+        cmr,
+        "build_market_return_comparison",
+        lambda **_kwargs: {"status": "success", "series": [{"ticker": "CHKP", "prices": []}]},
+    )
 
     def fake_generate_market_review(*, payload, api_key):
         captured["payload"] = payload
@@ -237,6 +271,7 @@ def test_run_competitor_market_review_includes_original_company_payload(monkeypa
     assert "Revenue" in captured["payload"]["original_company"]["annual_financials"]
     assert captured["payload"]["competitors"] == [{"ticker": "PANW"}]
     assert out["original_company"]["ticker"] == "CHKP"
+    assert out["return_comparison"]["series"][0]["ticker"] == "CHKP"
 
 
 def test_result_degrades_to_unavailable_and_writes_sidecar(monkeypatch, tmp_path):

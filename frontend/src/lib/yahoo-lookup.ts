@@ -103,6 +103,75 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
+export type YahooPricePoint = {
+  date: string;
+  close: number;
+};
+
+export type YahooChartMeta = {
+  symbol?: string;
+  shortName?: string;
+  longName?: string;
+  currency?: string;
+  exchangeName?: string;
+  fullExchangeName?: string;
+  instrumentType?: string;
+  regularMarketPrice?: number;
+  regularMarketVolume?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+};
+
+export type YahooChartResult = {
+  meta: YahooChartMeta;
+  prices: YahooPricePoint[];
+};
+
+export async function yahooChartHistory(ticker: string, range = "5y", timeoutMs = 6000): Promise<YahooChartResult> {
+  const sym = ticker.trim().toUpperCase();
+  if (!sym) return { meta: {}, prices: [] };
+  const yahooSym = toYahooSymbol(sym);
+  const url = `${CHART_URL}/${encodeURIComponent(yahooSym)}?range=${encodeURIComponent(range)}&interval=1d`;
+  try {
+    const res = await fetchWithTimeout(url, timeoutMs);
+    if (!res.ok) return { meta: {}, prices: [] };
+    const json = (await res.json()) as {
+      chart?: {
+        result?: Array<{
+          meta?: YahooChartMeta;
+          timestamp?: number[];
+          indicators?: {
+            quote?: Array<{
+              close?: Array<number | null>;
+            }>;
+          };
+        }>;
+      };
+    };
+    const result = json.chart?.result?.[0];
+    const timestamps = Array.isArray(result?.timestamp) ? result.timestamp : [];
+    const closes = Array.isArray(result?.indicators?.quote?.[0]?.close) ? result.indicators.quote[0].close : [];
+    const rows: YahooPricePoint[] = [];
+    for (let idx = 0; idx < timestamps.length; idx += 1) {
+      const close = Number(closes[idx]);
+      const stamp = Number(timestamps[idx]);
+      if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(stamp)) continue;
+      rows.push({
+        date: new Date(stamp * 1000).toISOString().slice(0, 10),
+        close,
+      });
+    }
+    return { meta: result?.meta || {}, prices: rows };
+  } catch (err) {
+    console.warn(`[yahoo-lookup] price history failed for ${sym}`, err);
+    return { meta: {}, prices: [] };
+  }
+}
+
+export async function yahooPriceHistory(ticker: string, range = "5y", timeoutMs = 6000): Promise<YahooPricePoint[]> {
+  return (await yahooChartHistory(ticker, range, timeoutMs)).prices;
+}
+
 /** Search Yahoo for matching symbols (used as autocomplete fallback). */
 export async function yahooSearch(query: string, limit = 8): Promise<TickerEntry[]> {
   const q = query.trim();

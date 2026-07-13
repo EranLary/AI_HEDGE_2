@@ -50,6 +50,7 @@ const RETURN_CHART_TOKENS = [
   "--chart-current",
   "--chart-series-1",
   "--chart-series-2",
+  "--chart-series-3",
   "--chart-series-4",
   "--chart-series-6",
   "--chart-bear",
@@ -450,12 +451,12 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
   if (universe.length < 2) return null;
 
   const colorForSeries = (seriesTicker: string, idx: number) => {
-    if (seriesTicker === primaryTicker) return tokens["--chart-current"] || tokens["--chart-axis"];
+    if (seriesTicker === primaryTicker) return tokens["--chart-series-4"] || tokens["--chart-axis"];
     const palette = [
       tokens["--chart-series-2"],
-      tokens["--chart-series-4"],
-      tokens["--chart-series-6"],
+      tokens["--chart-series-3"],
       tokens["--chart-bear"],
+      tokens["--chart-series-6"],
       tokens["--chart-series-1"],
     ].filter(Boolean);
     return palette[idx % palette.length] || tokens["--chart-axis"];
@@ -498,7 +499,7 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_14rem]">
+      <div className="grid gap-4">
         <div className="hib-chart h-80 min-h-[18rem] min-w-0">
           {series.length >= 2 ? (
             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
@@ -541,11 +542,11 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
         </div>
 
         <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[14rem] table-fixed">
+          <table className="hib-market-table min-w-[34rem] table-fixed">
             <colgroup>
-              <col className="w-[3rem]" />
-              <col className="w-[7rem]" />
-              <col className="w-[4rem]" />
+              <col className="w-[5rem]" />
+              <col className="w-[20rem]" />
+              <col className="w-[9rem]" />
             </colgroup>
             <thead>
               <tr>

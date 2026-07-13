@@ -36,12 +36,37 @@ const CHART_TOKENS = [
   "--chart-current",
   "--chart-series-1",
   "--chart-series-2",
+  "--chart-series-3",
   "--chart-series-4",
   "--chart-series-6",
   "--chart-bear",
 ] as const;
 
 type PricePoint = { date: string; close: number };
+
+type CompareFundamentals = {
+  ticker?: string;
+  symbol?: string;
+  company_name?: string;
+  market_cap?: number | null;
+  enterprise_value?: number | null;
+  net_cash_debt?: number | null;
+  trailing_pe?: number | null;
+  forward_pe?: number | null;
+  ev_sales?: number | null;
+  ev_ebitda?: number | null;
+  p_fcf?: number | null;
+  revenue_growth?: number | null;
+  earnings_growth?: number | null;
+  gross_margin?: number | null;
+  operating_margin?: number | null;
+  profit_margin?: number | null;
+  roe?: number | null;
+  current_ratio?: number | null;
+  debt_to_equity?: number | null;
+  dividend_yield?: number | null;
+  target_upside?: number | null;
+};
 
 type CompareSeries = {
   ticker: string;
@@ -52,6 +77,7 @@ type CompareSeries = {
   volume?: number | null;
   fifty_two_week_high?: number | null;
   fifty_two_week_low?: number | null;
+  fundamentals?: CompareFundamentals | null;
   prices: PricePoint[];
 };
 
@@ -105,6 +131,18 @@ function formatPrice(value: unknown, currency?: string): string {
   return `${currency ? `${currency} ` : ""}${n.toLocaleString(undefined, {
     maximumFractionDigits: n >= 100 ? 1 : 2,
   })}`;
+}
+
+function formatRatio(value: unknown): string {
+  const n = numeric(value);
+  if (n === null || n <= 0) return "-";
+  return `${n.toFixed(1)}x`;
+}
+
+function formatPercentValue(value: unknown): string {
+  const n = numeric(value);
+  if (n === null) return "-";
+  return `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
 function formatLarge(value: unknown): string {
@@ -247,11 +285,11 @@ export default function ComparePage() {
 
   const lineColor = (idx: number) => {
     const palette = [
-      tokens["--chart-current"],
-      tokens["--chart-series-2"],
       tokens["--chart-series-4"],
-      tokens["--chart-series-6"],
+      tokens["--chart-series-2"],
+      tokens["--chart-series-3"],
       tokens["--chart-bear"],
+      tokens["--chart-series-6"],
       tokens["--chart-series-1"],
     ].filter(Boolean);
     return palette[idx % palette.length] || tokens["--chart-axis"];
@@ -383,15 +421,27 @@ export default function ComparePage() {
           <p className="text-xs text-[color:var(--text-muted)]">Sorted by {period} return</p>
         </div>
         <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[62rem] table-fixed">
+          <table className="hib-market-table min-w-[112rem] table-fixed">
             <colgroup>
-              <col className="w-[5rem]" />
+              <col className="w-[4rem]" />
               <col className="w-[14rem]" />
-              <col className="w-[8rem]" />
-              <col className="w-[8rem]" />
+              <col className="w-[7rem]" />
               <col className="w-[8rem]" />
               <col className="w-[8rem]" />
               <col className="w-[9rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[5rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[7rem]" />
+              <col className="w-[7rem]" />
+              <col className="w-[7rem]" />
+              <col className="w-[7rem]" />
+              <col className="w-[5rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[6rem]" />
+              <col className="w-[7rem]" />
               <col className="w-[7rem]" />
             </colgroup>
             <thead>
@@ -399,31 +449,68 @@ export default function ComparePage() {
                 <th className="hib-market-table-head">Rank</th>
                 <th className="hib-market-table-head">Company</th>
                 <th className="hib-market-table-head">Return</th>
-                <th className="hib-market-table-head">Start</th>
-                <th className="hib-market-table-head">Latest</th>
-                <th className="hib-market-table-head">52W Low</th>
-                <th className="hib-market-table-head">52W High</th>
-                <th className="hib-market-table-head">Volume</th>
+                <th className="hib-market-table-head">Market Cap</th>
+                <th className="hib-market-table-head">EV</th>
+                <th className="hib-market-table-head">Net Cash / Debt</th>
+                <th className="hib-market-table-head">P/E</th>
+                <th className="hib-market-table-head">Forward P/E</th>
+                <th className="hib-market-table-head">EV/Sales</th>
+                <th className="hib-market-table-head">EV/EBITDA</th>
+                <th className="hib-market-table-head">P/FCF</th>
+                <th className="hib-market-table-head">Rev Growth</th>
+                <th className="hib-market-table-head">EPS Growth</th>
+                <th className="hib-market-table-head">Gross Margin</th>
+                <th className="hib-market-table-head">Op Margin</th>
+                <th className="hib-market-table-head">Net Margin</th>
+                <th className="hib-market-table-head">ROE</th>
+                <th className="hib-market-table-head">Current Ratio</th>
+                <th className="hib-market-table-head">Debt / Equity</th>
+                <th className="hib-market-table-head">Dividend</th>
+                <th className="hib-market-table-head">Target Upside</th>
               </tr>
             </thead>
             <tbody>
-              {comparison.tableRows.map((row, idx) => (
-                <tr key={row.ticker}>
-                  <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
-                  <td className="hib-market-table-cell min-w-0">
-                    <span className="block truncate font-mono font-semibold">{row.ticker}</span>
-                    <span className="block truncate text-[color:var(--text-muted)]">{row.company_name || row.exchange || "Company"}</span>
-                  </td>
-                  <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
-                    {formatReturn(row.returnPct)}
-                  </td>
-                  <td className="hib-market-table-cell font-mono">{formatPrice(row.startPrice, row.currency)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPrice(row.endPrice ?? row.current_price, row.currency)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPrice(row.fifty_two_week_low, row.currency)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPrice(row.fifty_two_week_high, row.currency)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatLarge(row.volume)}</td>
-                </tr>
-              ))}
+              {comparison.tableRows.map((row, idx) => {
+                const fundamentals = row.fundamentals || {};
+                return (
+                  <tr key={row.ticker}>
+                    <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
+                    <td className="hib-market-table-cell min-w-0">
+                      <span className="block truncate font-mono font-semibold">{row.ticker}</span>
+                      <span className="block truncate text-[color:var(--text-muted)]">
+                        {fundamentals.company_name || row.company_name || row.exchange || "Company"}
+                      </span>
+                    </td>
+                    <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
+                      {formatReturn(row.returnPct)}
+                    </td>
+                    <td className="hib-market-table-cell font-mono">{formatLarge(fundamentals.market_cap)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatLarge(fundamentals.enterprise_value)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatLarge(fundamentals.net_cash_debt)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.trailing_pe)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.forward_pe)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.ev_sales)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.ev_ebitda)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.p_fcf)}</td>
+                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.revenue_growth))}`}>
+                      {formatPercentValue(fundamentals.revenue_growth)}
+                    </td>
+                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.earnings_growth))}`}>
+                      {formatPercentValue(fundamentals.earnings_growth)}
+                    </td>
+                    <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.gross_margin)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.operating_margin)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.profit_margin)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.roe)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.current_ratio)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.debt_to_equity)}</td>
+                    <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.dividend_yield)}</td>
+                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.target_upside))}`}>
+                      {formatPercentValue(fundamentals.target_upside)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -85,6 +85,20 @@ export type MarketReviewPayload = {
     status?: string;
     error?: string;
   }>;
+  return_comparison?: {
+    status?: string;
+    generated_at?: string;
+    period?: string;
+    series?: Array<{
+      ticker?: string;
+      company_name?: string;
+      prices?: Array<{
+        date?: string;
+        close?: number;
+      }>;
+    }>;
+    error?: string;
+  };
   review_markdown?: string;
   market_agent_markdown?: string;
   error?: string;

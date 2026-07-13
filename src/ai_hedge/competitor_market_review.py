@@ -167,6 +167,80 @@ def _compact_info_for_llm(info: Dict[str, Any]) -> Dict[str, Any]:
     return {key: info.get(key) for key in keys if key in info}
 
 
+def _clean_price_history_frame(df: Any) -> List[Dict[str, Any]]:
+    if df is None or getattr(df, "empty", True):
+        return []
+    close = None
+    for column in ("Close", "Adj Close"):
+        try:
+            candidate = df[column]
+            if getattr(candidate, "empty", True):
+                continue
+            close = candidate
+            break
+        except Exception:
+            continue
+    if close is None:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for idx, value in close.dropna().items():
+        try:
+            price = float(value)
+        except Exception:
+            continue
+        if price <= 0:
+            continue
+        date_value = getattr(idx, "date", lambda: idx)()
+        rows.append({"date": str(date_value), "close": price})
+    return rows
+
+
+def fetch_price_history(ticker: str, *, period: str = "5y") -> List[Dict[str, Any]]:
+    df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=False)
+    return _clean_price_history_frame(df)
+
+
+def build_market_return_comparison(
+    *,
+    original_company: Dict[str, Any],
+    competitors: List[Dict[str, Any]],
+    period: str = "5y",
+) -> Dict[str, Any]:
+    instruments = [original_company, *competitors]
+    seen: set[str] = set()
+    series: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for item in instruments:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        if not ticker or ticker in seen:
+            continue
+        seen.add(ticker)
+        try:
+            prices = fetch_price_history(ticker, period=period)
+        except Exception as exc:
+            prices = []
+            errors.append(f"{ticker}: {type(exc).__name__}: {str(exc)[:160]}")
+        if not prices:
+            continue
+        series.append(
+            {
+                "ticker": ticker,
+                "company_name": str(item.get("company_name") or "").strip(),
+                "prices": prices,
+            }
+        )
+
+    return {
+        "status": "success" if series else "unavailable",
+        "generated_at": _utc_now(),
+        "period": period,
+        "series": series,
+        "error": "; ".join(errors[:3]),
+    }
+
+
 def _default_info_fetcher(ticker: str) -> Dict[str, Any]:
     from . import legacy_port as legacy
 
@@ -505,6 +579,10 @@ def run_competitor_market_review(
         "original_company": original_company,
         "competitors": competitors,
     }
+    return_comparison = build_market_return_comparison(
+        original_company=original_company,
+        competitors=competitors,
+    )
     review_markdown = generate_market_review(payload=review_payload, api_key=key)
     return {
         "status": "success",
@@ -513,6 +591,7 @@ def run_competitor_market_review(
         "name_of_market": discovery.get("name_of_market") or "",
         "original_company": original_company,
         "competitors": competitors,
+        "return_comparison": return_comparison,
         "review_markdown": review_markdown,
         "error": "",
     }

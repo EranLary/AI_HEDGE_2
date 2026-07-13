@@ -7,12 +7,23 @@ import {
   Store,
   TrendingUp,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import {
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import remarkGfm from "remark-gfm";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { DashboardPayload, MarketReviewPayload, ReportListItem } from "@/lib/dashboard-types";
+import { useThemeTokens } from "@/lib/theme-tokens";
 
 type MarketClientProps = {
   ticker: string;
@@ -20,6 +31,29 @@ type MarketClientProps = {
   reportsForTicker: ReportListItem[];
   resolvedReportId: string;
 };
+
+const RETURN_PERIODS = [
+  { key: "1D", label: "1D", days: 1 },
+  { key: "1W", label: "1W", days: 7 },
+  { key: "1M", label: "1M", days: 30 },
+  { key: "3M", label: "3M", days: 90 },
+  { key: "6M", label: "6M", days: 182 },
+  { key: "YTD", label: "YTD", days: null },
+  { key: "1Y", label: "1Y", days: 365 },
+  { key: "3Y", label: "3Y", days: 365 * 3 },
+  { key: "5Y", label: "5Y", days: 365 * 5 },
+] as const;
+
+const RETURN_CHART_TOKENS = [
+  "--chart-grid",
+  "--chart-axis",
+  "--chart-series-1",
+  "--chart-series-2",
+  "--chart-series-3",
+  "--chart-series-4",
+  "--chart-series-5",
+  "--chart-series-6",
+] as const;
 
 function markdownText(value: unknown): string {
   return String(value || "").trim();
@@ -51,6 +85,19 @@ function formatMultiple(value: unknown): string {
   const n = numeric(value);
   if (n === null || n <= 0) return "-";
   return `${n.toFixed(1)}x`;
+}
+
+function formatReturn(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function returnTone(value: number | null): string {
+  if (value === null) return "text-[color:var(--text-muted)]";
+  if (value > 0) return "text-[color:var(--success)]";
+  if (value < 0) return "text-[color:var(--danger)]";
+  return "text-[color:var(--text-secondary)]";
 }
 
 function formatResemblance(value: unknown): string {
@@ -173,6 +220,258 @@ function CompanyCell({ row }: { row: ComparisonRow }) {
       <span className="font-mono font-semibold">{row.ticker || "-"}</span>
       <span className="block text-[color:var(--text-muted)]">{row.company_name || "Unnamed company"}</span>
     </td>
+  );
+}
+
+type PricePoint = {
+  date: string;
+  close: number;
+};
+
+type ReturnSeries = {
+  ticker: string;
+  company_name: string;
+  prices: PricePoint[];
+};
+
+type ReturnTableRow = {
+  ticker: string;
+  company_name: string;
+  returnPct: number | null;
+  latestClose: number | null;
+};
+
+function parseDate(value: string): Date | null {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeReturnSeries(market: MarketReviewPayload): ReturnSeries[] {
+  const raw = market.return_comparison?.series;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((series) => {
+      const prices = Array.isArray(series.prices)
+        ? series.prices
+            .map((point) => {
+              const close = numeric(point.close);
+              const date = markdownText(point.date);
+              return close !== null && close > 0 && date ? { date, close } : null;
+            })
+            .filter((point): point is PricePoint => Boolean(point))
+            .sort((a, b) => a.date.localeCompare(b.date))
+        : [];
+      return {
+        ticker: markdownText(series.ticker).toUpperCase(),
+        company_name: markdownText(series.company_name),
+        prices,
+      };
+    })
+    .filter((series) => series.ticker && series.prices.length >= 2);
+}
+
+function periodStartDate(periodKey: string, latestDate: Date): Date {
+  if (periodKey === "YTD") return new Date(latestDate.getFullYear(), 0, 1);
+  const option = RETURN_PERIODS.find((item) => item.key === periodKey);
+  const days = option?.days ?? 365;
+  const start = new Date(latestDate);
+  start.setDate(start.getDate() - days);
+  return start;
+}
+
+function slicePricesForPeriod(prices: PricePoint[], start: Date): PricePoint[] {
+  const filtered = prices.filter((point) => {
+    const date = parseDate(point.date);
+    return date ? date >= start : false;
+  });
+  if (filtered.length >= 2) return filtered;
+  return prices.slice(-2);
+}
+
+function ReturnTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="hib-chart-tooltip rounded-lg border border-white/15 bg-zinc-950/95 px-3 py-2 shadow-xl">
+      <p className="mb-1 text-xs font-semibold tracking-[0.08em] text-[color:var(--text-primary)]">{label}</p>
+      <div className="grid gap-1">
+        {payload
+          .filter((item) => typeof item.value === "number" && Number.isFinite(item.value))
+          .sort((a, b) => Number(b.value) - Number(a.value))
+          .map((item) => (
+            <p key={item.name} className="flex min-w-36 items-center justify-between gap-3 text-xs">
+              <span className="font-mono" style={{ color: item.color }}>
+                {item.name}
+              </span>
+              <span className="font-semibold text-[color:var(--text-secondary)]">{formatReturn(Number(item.value))}</span>
+            </p>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function MarketReturnComparison({ market }: { market: MarketReviewPayload }) {
+  const [period, setPeriod] = useState<(typeof RETURN_PERIODS)[number]["key"]>("1Y");
+  const tokens = useThemeTokens(RETURN_CHART_TOKENS);
+  const series = useMemo(() => normalizeReturnSeries(market), [market]);
+
+  const comparison = useMemo(() => {
+    const latestDates = series
+      .flatMap((item) => item.prices.map((point) => parseDate(point.date)))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => b.getTime() - a.getTime());
+    const latestDate = latestDates[0];
+    if (!latestDate) return { chartData: [], tableRows: [], activeSeries: [] };
+    const start = periodStartDate(period, latestDate);
+    const dateMap = new Map<string, Record<string, string | number>>();
+    const tableRows: ReturnTableRow[] = [];
+    const activeSeries: ReturnSeries[] = [];
+
+    for (const item of series) {
+      const prices = slicePricesForPeriod(item.prices, start);
+      const base = prices[0]?.close;
+      const latest = prices[prices.length - 1]?.close;
+      const returnPct = base && latest ? (latest / base - 1) * 100 : null;
+      tableRows.push({
+        ticker: item.ticker,
+        company_name: item.company_name,
+        returnPct,
+        latestClose: latest ?? null,
+      });
+      if (!base || prices.length < 2) continue;
+      activeSeries.push(item);
+      for (const point of prices) {
+        const row = dateMap.get(point.date) || { date: point.date };
+        row[item.ticker] = (point.close / base - 1) * 100;
+        dateMap.set(point.date, row);
+      }
+    }
+
+    return {
+      chartData: Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date))),
+      tableRows: tableRows.sort((a, b) => {
+        if (a.returnPct === null && b.returnPct === null) return a.ticker.localeCompare(b.ticker);
+        if (a.returnPct === null) return 1;
+        if (b.returnPct === null) return -1;
+        return b.returnPct - a.returnPct;
+      }),
+      activeSeries,
+    };
+  }, [period, series]);
+
+  if (series.length < 2) return null;
+
+  const colorForIndex = (idx: number) => {
+    const key = `--chart-series-${(idx % 6) + 1}` as keyof typeof tokens;
+    return tokens[key] || tokens["--chart-axis"];
+  };
+
+  return (
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+      <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="shrink-0 rounded-xl border border-white/10 bg-black/25 p-2 text-[color:var(--accent)]">
+            <TrendingUp size={18} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+              Return Comparison
+            </p>
+            <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
+              Market Peer Performance
+            </h2>
+          </div>
+        </div>
+        <div className="flex max-w-full flex-wrap gap-1">
+          {RETURN_PERIODS.map((option) => {
+            const active = option.key === period;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setPeriod(option.key)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                  active
+                    ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "border-white/10 bg-black/25 text-[color:var(--text-secondary)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="hib-chart h-80 min-h-[18rem] min-w-0">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
+            <RechartsLineChart data={comparison.chartData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
+              <XAxis
+                dataKey="date"
+                minTickGap={28}
+                tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                tickFormatter={(value) => String(value).slice(5)}
+              />
+              <YAxis
+                width={56}
+                tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                tickFormatter={(value) => formatReturn(Number(value))}
+              />
+              <Tooltip content={<ReturnTooltip />} wrapperStyle={{ outline: "none" }} />
+              {comparison.activeSeries.map((item, idx) => (
+                <Line
+                  key={item.ticker}
+                  type="monotone"
+                  dataKey={item.ticker}
+                  name={item.ticker}
+                  stroke={colorForIndex(idx)}
+                  strokeWidth={2.2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ))}
+            </RechartsLineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="hib-market-table-wrap">
+          <table className="hib-market-table min-w-[18rem]">
+            <thead>
+              <tr>
+                <th className="hib-market-table-head">Rank</th>
+                <th className="hib-market-table-head">Ticker</th>
+                <th className="hib-market-table-head">Return</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.tableRows.map((row, idx) => (
+                <tr key={row.ticker}>
+                  <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
+                  <td className="hib-market-table-cell">
+                    <span className="font-mono font-semibold">{row.ticker}</span>
+                    <span className="block text-[color:var(--text-muted)]">{row.company_name || "Company"}</span>
+                  </td>
+                  <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
+                    {formatReturn(row.returnPct)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -444,6 +743,7 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
       ) : null}
 
       <div className="grid gap-4">
+        <MarketReturnComparison market={market} />
         <PeerStrategyTable market={market} ticker={ticker} />
         <ProductOverlapTable market={market} />
         <FinancialScaleTable market={market} ticker={ticker} />

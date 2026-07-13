@@ -50,10 +50,9 @@ const RETURN_CHART_TOKENS = [
   "--chart-current",
   "--chart-series-1",
   "--chart-series-2",
-  "--chart-series-3",
   "--chart-series-4",
-  "--chart-series-5",
   "--chart-series-6",
+  "--chart-bear",
 ] as const;
 
 function markdownText(value: unknown): string {
@@ -451,9 +450,15 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
   if (universe.length < 2) return null;
 
   const colorForSeries = (seriesTicker: string, idx: number) => {
-    if (seriesTicker === primaryTicker) return tokens["--chart-current"] || tokens["--chart-series-3"];
-    const key = `--chart-series-${(idx % 6) + 1}` as keyof typeof tokens;
-    return tokens[key] || tokens["--chart-axis"];
+    if (seriesTicker === primaryTicker) return tokens["--chart-current"] || tokens["--chart-axis"];
+    const palette = [
+      tokens["--chart-series-2"],
+      tokens["--chart-series-4"],
+      tokens["--chart-series-6"],
+      tokens["--chart-bear"],
+      tokens["--chart-series-1"],
+    ].filter(Boolean);
+    return palette[idx % palette.length] || tokens["--chart-axis"];
   };
 
   return (

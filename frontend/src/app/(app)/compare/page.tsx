@@ -1,0 +1,433 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { GitCompareArrows, Loader2, Plus, X } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { TickerSearch } from "@/components/shell/ticker-search";
+import type { TickerEntry } from "@/lib/ticker-catalog";
+import { useThemeTokens } from "@/lib/theme-tokens";
+
+const MAX_TICKERS = 10;
+
+const PERIODS = [
+  { key: "1D", label: "1D", days: 1 },
+  { key: "1W", label: "1W", days: 7 },
+  { key: "1M", label: "1M", days: 30 },
+  { key: "3M", label: "3M", days: 90 },
+  { key: "6M", label: "6M", days: 182 },
+  { key: "YTD", label: "YTD", days: null },
+  { key: "1Y", label: "1Y", days: 365 },
+  { key: "3Y", label: "3Y", days: 365 * 3 },
+  { key: "5Y", label: "5Y", days: 365 * 5 },
+] as const;
+
+const CHART_TOKENS = [
+  "--chart-grid",
+  "--chart-axis",
+  "--chart-current",
+  "--chart-series-1",
+  "--chart-series-2",
+  "--chart-series-4",
+  "--chart-series-6",
+  "--chart-bear",
+] as const;
+
+type PricePoint = { date: string; close: number };
+
+type CompareSeries = {
+  ticker: string;
+  company_name: string;
+  exchange?: string;
+  currency?: string;
+  current_price?: number | null;
+  volume?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+  prices: PricePoint[];
+};
+
+type ComparePayload = {
+  status?: string;
+  series?: CompareSeries[];
+  not_found?: string[];
+  error?: string;
+};
+
+type TableRow = CompareSeries & {
+  returnPct: number | null;
+  startPrice: number | null;
+  endPrice: number | null;
+};
+
+function numeric(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseDate(value: string): Date | null {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function periodStartDate(periodKey: string, latestDate: Date): Date {
+  if (periodKey === "YTD") return new Date(latestDate.getFullYear(), 0, 1);
+  const option = PERIODS.find((item) => item.key === periodKey);
+  const start = new Date(latestDate);
+  start.setDate(start.getDate() - (option?.days ?? 365));
+  return start;
+}
+
+function slicePricesForPeriod(prices: PricePoint[], start: Date): PricePoint[] {
+  const filtered = prices.filter((point) => {
+    const date = parseDate(point.date);
+    return date ? date >= start : false;
+  });
+  return filtered.length >= 2 ? filtered : prices.slice(-2);
+}
+
+function formatReturn(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function formatPrice(value: unknown, currency?: string): string {
+  const n = numeric(value);
+  if (n === null) return "-";
+  return `${currency ? `${currency} ` : ""}${n.toLocaleString(undefined, {
+    maximumFractionDigits: n >= 100 ? 1 : 2,
+  })}`;
+}
+
+function formatLarge(value: unknown): string {
+  const n = numeric(value);
+  if (n === null) return "-";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function returnTone(value: number | null): string {
+  if (value === null) return "text-[color:var(--text-muted)]";
+  if (value > 0) return "text-[color:var(--success)]";
+  if (value < 0) return "text-[color:var(--danger)]";
+  return "text-[color:var(--text-secondary)]";
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="hib-chart-tooltip rounded-lg border border-white/15 bg-zinc-950/95 px-3 py-2 shadow-xl">
+      <p className="mb-1 text-xs font-semibold tracking-[0.08em] text-[color:var(--text-primary)]">{label}</p>
+      <div className="grid gap-1">
+        {payload
+          .filter((item) => typeof item.value === "number" && Number.isFinite(item.value))
+          .sort((a, b) => Number(b.value) - Number(a.value))
+          .map((item) => (
+            <p key={item.name} className="flex min-w-36 items-center justify-between gap-3 text-xs">
+              <span className="font-mono" style={{ color: item.color }}>
+                {item.name}
+              </span>
+              <span className="font-semibold text-[color:var(--text-secondary)]">{formatReturn(Number(item.value))}</span>
+            </p>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+export default function ComparePage() {
+  const tokens = useThemeTokens(CHART_TOKENS);
+  const [selected, setSelected] = useState<TickerEntry | null>(null);
+  const [tickers, setTickers] = useState<string[]>(["AAPL", "MSFT", "GOOGL"]);
+  const [period, setPeriod] = useState<(typeof PERIODS)[number]["key"]>("1Y");
+  const [data, setData] = useState<ComparePayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function addTicker(entry: TickerEntry | null) {
+    if (!entry) return;
+    const ticker = entry.s.trim().toUpperCase();
+    setSelected(null);
+    setError("");
+    if (!ticker || tickers.includes(ticker) || tickers.length >= MAX_TICKERS) return;
+    setTickers((prev) => [...prev, ticker]);
+  }
+
+  function removeTicker(ticker: string) {
+    setTickers((prev) => prev.filter((item) => item !== ticker));
+  }
+
+  useEffect(() => {
+    if (!tickers.length) {
+      setData(null);
+      setError("");
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    const qs = new URLSearchParams({ tickers: tickers.join(",") });
+    fetch(`/api/compare?${qs.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Compare lookup failed (${res.status})`);
+        return (await res.json()) as ComparePayload;
+      })
+      .then((payload) => {
+        setData(payload);
+        setError(String(payload.error || ""));
+      })
+      .catch((err: Error) => {
+        if (err.name === "AbortError") return;
+        setData(null);
+        setError(err.message || "Compare lookup failed.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [tickers]);
+
+  const comparison = useMemo(() => {
+    const series = (data?.series || [])
+      .map((item) => ({
+        ...item,
+        ticker: item.ticker.toUpperCase(),
+        prices: [...(item.prices || [])].sort((a, b) => a.date.localeCompare(b.date)),
+      }))
+      .filter((item) => item.ticker && item.prices.length >= 2);
+    const latestDate = series
+      .flatMap((item) => item.prices.map((point) => parseDate(point.date)))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    if (!latestDate) return { chartData: [], tableRows: [] as TableRow[], series };
+    const start = periodStartDate(period, latestDate);
+    const dateMap = new Map<string, Record<string, string | number>>();
+    const tableRows: TableRow[] = [];
+    for (const item of series) {
+      const prices = slicePricesForPeriod(item.prices, start);
+      const startPrice = prices[0]?.close ?? null;
+      const endPrice = prices[prices.length - 1]?.close ?? null;
+      const returnPct = startPrice && endPrice ? (endPrice / startPrice - 1) * 100 : null;
+      tableRows.push({ ...item, startPrice, endPrice, returnPct });
+      if (!startPrice) continue;
+      for (const point of prices) {
+        const row = dateMap.get(point.date) || { date: point.date };
+        row[item.ticker] = (point.close / startPrice - 1) * 100;
+        dateMap.set(point.date, row);
+      }
+    }
+    return {
+      chartData: Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date))),
+      tableRows: tableRows.sort((a, b) => {
+        if (a.returnPct === null && b.returnPct === null) return a.ticker.localeCompare(b.ticker);
+        if (a.returnPct === null) return 1;
+        if (b.returnPct === null) return -1;
+        return b.returnPct - a.returnPct;
+      }),
+      series,
+    };
+  }, [data, period]);
+
+  const lineColor = (idx: number) => {
+    const palette = [
+      tokens["--chart-current"],
+      tokens["--chart-series-2"],
+      tokens["--chart-series-4"],
+      tokens["--chart-series-6"],
+      tokens["--chart-bear"],
+      tokens["--chart-series-1"],
+    ].filter(Boolean);
+    return palette[idx % palette.length] || tokens["--chart-axis"];
+  };
+
+  return (
+    <div className="min-w-0 px-4 py-5 sm:px-8">
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-muted)]">Compare</p>
+          <h1 className="font-display text-2xl text-[color:var(--text-primary)]">Stock Comparison</h1>
+        </div>
+        <div className="text-xs text-[color:var(--text-muted)]">{tickers.length}/{MAX_TICKERS} tickers</div>
+      </header>
+
+      <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(18rem,28rem)_auto] lg:items-start">
+          <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
+          <button
+            type="button"
+            onClick={() => addTicker(selected)}
+            disabled={!selected || tickers.length >= MAX_TICKERS}
+            className="hib-run-btn inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[color:var(--accent)] bg-[color:var(--accent)] px-4 text-sm font-semibold uppercase tracking-[0.14em] text-[color:var(--text-on-accent)] transition hover:bg-[color:var(--accent-hover)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-50"
+          >
+            <Plus size={15} />
+            Add Ticker
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {tickers.map((ticker) => (
+            <span
+              key={ticker}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 font-mono text-xs font-semibold text-[color:var(--text-secondary)]"
+            >
+              {ticker}
+              <button
+                type="button"
+                onClick={() => removeTicker(ticker)}
+                aria-label={`Remove ${ticker}`}
+                className="rounded-md p-0.5 text-[color:var(--text-muted)] hover:bg-white/5 hover:text-[color:var(--text-primary)]"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+        {data?.not_found?.length ? (
+          <p className="mt-3 rounded-lg border border-[color:var(--danger)] bg-black/25 px-3 py-2 text-xs text-[color:var(--danger)]">
+            Couldn&apos;t find {data.not_found.join(", ")} after checking Yahoo. That ticker may be delisted, mistyped, or using a different exchange suffix.
+          </p>
+        ) : error ? (
+          <p className="mt-3 rounded-lg border border-[color:var(--danger)] bg-black/25 px-3 py-2 text-xs text-[color:var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[color:var(--text-primary)]">
+            <GitCompareArrows size={17} className="text-[color:var(--accent)]" />
+            <h2 className="font-display text-lg">Return Chart</h2>
+            {loading ? <Loader2 size={14} className="animate-spin text-[color:var(--text-muted)]" /> : null}
+          </div>
+          <div className="flex max-w-full flex-wrap gap-1">
+            {PERIODS.map((option) => {
+              const active = option.key === period;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setPeriod(option.key)}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                    active
+                      ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                      : "border-white/10 bg-black/25 text-[color:var(--text-secondary)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="hib-chart h-[28rem] min-h-[20rem] min-w-0">
+          {comparison.series.length >= 1 ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
+              <RechartsLineChart data={comparison.chartData} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={tokens["--chart-grid"]} />
+                <XAxis
+                  dataKey="date"
+                  minTickGap={30}
+                  tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                  tickFormatter={(value) => String(value).slice(5)}
+                />
+                <YAxis
+                  width={58}
+                  tick={{ fill: tokens["--chart-axis"], fontSize: 11 }}
+                  tickFormatter={(value) => formatReturn(Number(value))}
+                />
+                <Tooltip content={<ChartTooltip />} wrapperStyle={{ outline: "none" }} />
+                {comparison.series.map((item, idx) => (
+                  <Line
+                    key={item.ticker}
+                    type="monotone"
+                    dataKey={item.ticker}
+                    name={item.ticker}
+                    stroke={lineColor(idx)}
+                    strokeWidth={idx === 0 ? 3 : 2}
+                    strokeDasharray={idx >= 6 ? "6 4" : undefined}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ))}
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-xl border border-white/10 bg-black/25 p-4 text-center text-sm text-[color:var(--text-muted)]">
+              {loading ? "Loading comparison..." : "Add tickers to start comparing."}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="font-display text-lg text-[color:var(--text-primary)]">Comparison Table</h2>
+          <p className="text-xs text-[color:var(--text-muted)]">Sorted by {period} return</p>
+        </div>
+        <div className="hib-market-table-wrap">
+          <table className="hib-market-table min-w-[62rem] table-fixed">
+            <colgroup>
+              <col className="w-[5rem]" />
+              <col className="w-[14rem]" />
+              <col className="w-[8rem]" />
+              <col className="w-[8rem]" />
+              <col className="w-[8rem]" />
+              <col className="w-[8rem]" />
+              <col className="w-[9rem]" />
+              <col className="w-[7rem]" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="hib-market-table-head">Rank</th>
+                <th className="hib-market-table-head">Company</th>
+                <th className="hib-market-table-head">Return</th>
+                <th className="hib-market-table-head">Start</th>
+                <th className="hib-market-table-head">Latest</th>
+                <th className="hib-market-table-head">52W Low</th>
+                <th className="hib-market-table-head">52W High</th>
+                <th className="hib-market-table-head">Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.tableRows.map((row, idx) => (
+                <tr key={row.ticker}>
+                  <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
+                  <td className="hib-market-table-cell min-w-0">
+                    <span className="block truncate font-mono font-semibold">{row.ticker}</span>
+                    <span className="block truncate text-[color:var(--text-muted)]">{row.company_name || row.exchange || "Company"}</span>
+                  </td>
+                  <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
+                    {formatReturn(row.returnPct)}
+                  </td>
+                  <td className="hib-market-table-cell font-mono">{formatPrice(row.startPrice, row.currency)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatPrice(row.endPrice ?? row.current_price, row.currency)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatPrice(row.fifty_two_week_low, row.currency)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatPrice(row.fifty_two_week_high, row.currency)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatLarge(row.volume)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}

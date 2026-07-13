@@ -1,7 +1,8 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { GitCompareArrows, Loader2, Plus, X } from "lucide-react";
+import { Check, ClipboardCopy, GitCompareArrows, Loader2, Plus, X } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -86,6 +87,12 @@ type ComparePayload = {
   series?: CompareSeries[];
   not_found?: string[];
   error?: string;
+  financials?: {
+    generated_at?: string;
+    tickers?: string[];
+    data?: Record<string, unknown>;
+    not_found?: string[];
+  };
 };
 
 type TableRow = CompareSeries & {
@@ -162,6 +169,22 @@ function returnTone(value: number | null): string {
   return "text-[color:var(--text-secondary)]";
 }
 
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
 function ChartTooltip({
   active,
   payload,
@@ -200,6 +223,8 @@ export default function ComparePage() {
   const [data, setData] = useState<ComparePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [copyingFinancials, setCopyingFinancials] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   function addTicker(entry: TickerEntry | null) {
     if (!entry) return;
@@ -214,6 +239,38 @@ export default function ComparePage() {
     setTickers((prev) => prev.filter((item) => item !== ticker));
   }
 
+  async function copyFinancials() {
+    if (!tickers.length || copyingFinancials) return;
+    setCopyingFinancials(true);
+    setCopyStatus(null);
+    try {
+      const qs = new URLSearchParams({ tickers: tickers.join(","), financials: "1" });
+      const res = await fetch(`/api/compare?${qs.toString()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Financials export failed (${res.status})`);
+      const payload = (await res.json()) as ComparePayload;
+      const financials = payload.financials || {
+        generated_at: new Date().toISOString(),
+        tickers,
+        data: {},
+        not_found: payload.not_found || [],
+      };
+      const copiedCount = Object.keys(financials.data || {}).length;
+      if (!copiedCount) throw new Error("No financial statements were available for the selected tickers.");
+      await writeClipboard(JSON.stringify(financials, null, 2));
+      setCopyStatus({
+        tone: "success",
+        message: `Copied financial JSON for ${copiedCount} ticker${copiedCount === 1 ? "" : "s"}.`,
+      });
+    } catch (err) {
+      setCopyStatus({
+        tone: "error",
+        message: err instanceof Error ? err.message : "Could not copy financials.",
+      });
+    } finally {
+      setCopyingFinancials(false);
+    }
+  }
+
   useEffect(() => {
     if (!tickers.length) {
       setData(null);
@@ -223,6 +280,7 @@ export default function ComparePage() {
     const controller = new AbortController();
     setLoading(true);
     setError("");
+    setCopyStatus(null);
     const qs = new URLSearchParams({ tickers: tickers.join(",") });
     fetch(`/api/compare?${qs.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (res) => {
@@ -307,7 +365,7 @@ export default function ComparePage() {
       </header>
 
       <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto] sm:items-center">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto_auto] sm:items-center">
           <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
           <button
             type="button"
@@ -317,6 +375,21 @@ export default function ComparePage() {
           >
             <Plus size={13} />
             Add Ticker
+          </button>
+          <button
+            type="button"
+            onClick={copyFinancials}
+            disabled={!tickers.length || copyingFinancials}
+            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--border-strong)] bg-black/20 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] sm:w-auto"
+          >
+            {copyingFinancials ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : copyStatus?.tone === "success" ? (
+              <Check size={13} />
+            ) : (
+              <ClipboardCopy size={13} />
+            )}
+            Copy Financials
           </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -337,6 +410,17 @@ export default function ComparePage() {
             </span>
           ))}
         </div>
+        {copyStatus ? (
+          <p
+            className={`mt-3 rounded-lg border bg-black/25 px-3 py-2 text-xs ${
+              copyStatus.tone === "success"
+                ? "border-[color:var(--success)] text-[color:var(--success)]"
+                : "border-[color:var(--danger)] text-[color:var(--danger)]"
+            }`}
+          >
+            {copyStatus.message}
+          </p>
+        ) : null}
         {data?.not_found?.length ? (
           <p className="mt-3 rounded-lg border border-[color:var(--danger)] bg-black/25 px-3 py-2 text-xs text-[color:var(--danger)]">
             Couldn&apos;t find {data.not_found.join(", ")} after checking Yahoo. That ticker may be delisted, mistyped, or using a different exchange suffix.
@@ -480,8 +564,8 @@ export default function ComparePage() {
                     <td className="hib-market-table-cell font-mono text-xs">#{idx + 1}</td>
                     <td className="hib-market-table-cell min-w-0">
                       <span
-                        style={tickerColor ? { color: tickerColor } : undefined}
-                        className="block truncate font-mono font-semibold"
+                        style={tickerColor ? ({ "--series-color": tickerColor } as CSSProperties) : undefined}
+                        className="hib-series-label block truncate font-mono font-semibold"
                       >
                         {row.ticker}
                       </span>

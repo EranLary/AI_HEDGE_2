@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime
 from typing import Any, Dict, List
 
+import pandas as pd
 import yfinance as yf
 
 
@@ -31,9 +33,66 @@ def _dividend_yield_pct(value: Any) -> float | None:
     return n * 100.0 if abs(n) <= 0.2 else n
 
 
-def _row(symbol: str) -> Dict[str, Any]:
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, bool, int, float)):
+        if isinstance(value, float) and value != value:
+            return None
+        return value
+    if isinstance(value, (datetime, date, pd.Timestamp)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    return str(value)
+
+
+def _named_annual_table(df: pd.DataFrame, title: str) -> str:
+    try:
+        if df is None or getattr(df, "empty", True):
+            return f"### {title}\nNot available\n\n"
+        table = df.copy().T
+        table.index.name = "Reporting_Period"
+        table = table.fillna("N/A")
+        csv_table = table.to_csv()
+        if not csv_table.strip():
+            return f"### {title}\nNot available\n\n"
+        return f"### {title}\n```csv\n{csv_table}```\n\n"
+    except Exception:
+        return f"### {title}\nNot available\n\n"
+
+
+def _financials_copy_payload(ticker: str, ticker_obj: yf.Ticker, info: Dict[str, Any]) -> Dict[str, Any]:
+    currency = (
+        info.get("financialCurrency")
+        or info.get("original_financial_currency")
+        or info.get("currency")
+        or ""
+    )
+    return {
+        "ticker": ticker,
+        "company_name": info.get("longName") or info.get("shortName") or ticker,
+        "currency": str(currency or "").upper() or None,
+        "source": "yfinance.Ticker",
+        "statement_format": "markdown-wrapped csv, annual periods only, original reported currency",
+        "info": _json_safe(info),
+        "annual_financials": _named_annual_table(ticker_obj.financials, "Annual Income Statement"),
+        "annual_balance_sheet": _named_annual_table(ticker_obj.balance_sheet, "Annual Balance Sheet"),
+        "annual_cash_flow": _named_annual_table(ticker_obj.cashflow, "Annual Cash Flow Statement"),
+    }
+
+
+def _row(symbol: str, include_financials: bool = False) -> Dict[str, Any]:
     ticker = _ticker_key(symbol)
-    info = yf.Ticker(ticker).info or {}
+    ticker_obj = yf.Ticker(ticker)
+    info = ticker_obj.info or {}
     if not isinstance(info, dict):
         info = {}
 
@@ -52,7 +111,7 @@ def _row(symbol: str) -> Dict[str, Any]:
     if current_price and target_price:
         upside = (target_price / current_price - 1.0) * 100.0
 
-    return {
+    row = {
         "ticker": ticker,
         "ok": True,
         "symbol": resolved or ticker,
@@ -76,12 +135,16 @@ def _row(symbol: str) -> Dict[str, Any]:
         "dividend_yield": _dividend_yield_pct(info.get("dividendYield")),
         "target_upside": upside,
     }
+    if include_financials:
+        row["financials_copy"] = _financials_copy_payload(ticker, ticker_obj, info)
+    return row
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tickers", required=True)
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--include-financials", action="store_true")
     args = parser.parse_args()
 
     tickers: List[str] = []
@@ -96,7 +159,7 @@ def main() -> int:
     rows: List[Dict[str, Any]] = []
     not_found: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, min(int(args.workers or 1), 10))) as pool:
-        futures = {pool.submit(_row, ticker): ticker for ticker in tickers}
+        futures = {pool.submit(_row, ticker, bool(args.include_financials)): ticker for ticker in tickers}
         for fut in as_completed(futures):
             ticker = futures[fut]
             try:

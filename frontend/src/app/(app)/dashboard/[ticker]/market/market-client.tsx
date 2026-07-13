@@ -7,6 +7,7 @@ import {
   Store,
   TrendingUp,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -574,8 +575,10 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                     </td>
                     <td className="hib-market-table-cell min-w-0">
                       <span
-                        style={tickerColor ? { color: tickerColor } : undefined}
-                        className={`block truncate font-mono ${isPrimary ? "font-bold" : "font-semibold"}`}
+                        style={tickerColor ? ({ "--series-color": tickerColor } as CSSProperties) : undefined}
+                        className={`hib-series-label block truncate font-mono ${
+                          isPrimary ? "font-bold" : "font-semibold"
+                        }`}
                       >
                         {row.ticker}
                       </span>

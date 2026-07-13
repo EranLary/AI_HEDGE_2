@@ -780,6 +780,9 @@ html[data-theme="light"] .hib-bear-prob-value {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
 }
+.hib-series-label {
+  color: var(--series-color, var(--text-primary)) !important;
+}
 .hib-market-table tbody tr:last-child .hib-market-table-cell {
   border-bottom: 0;
 }

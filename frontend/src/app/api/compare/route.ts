@@ -32,6 +32,7 @@ type FundamentalRow = {
   debt_to_equity?: number | null;
   dividend_yield?: number | null;
   target_upside?: number | null;
+  financials_copy?: unknown;
 };
 
 function repoRoot(): string {
@@ -51,7 +52,10 @@ function normalizeTickers(raw: string | null): string[] {
   return out;
 }
 
-function runFundamentalsScript(tickers: string[]): Promise<{ rows: FundamentalRow[]; not_found: string[] }> {
+function runFundamentalsScript(
+  tickers: string[],
+  includeFinancials: boolean,
+): Promise<{ rows: FundamentalRow[]; not_found: string[] }> {
   return new Promise((resolve) => {
     if (!tickers.length) {
       resolve({ rows: [], not_found: [] });
@@ -61,7 +65,9 @@ function runFundamentalsScript(tickers: string[]): Promise<{ rows: FundamentalRo
     const root = repoRoot();
     const scriptPath = path.resolve(root, "scripts", "compare_stock_info.py");
     const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
-    const child = spawn(pythonExe, [scriptPath, "--tickers", tickers.join(","), "--workers", "6"], {
+    const args = [scriptPath, "--tickers", tickers.join(","), "--workers", "6"];
+    if (includeFinancials) args.push("--include-financials");
+    const child = spawn(pythonExe, args, {
       cwd: root,
       env: {
         ...process.env,
@@ -96,12 +102,15 @@ function runFundamentalsScript(tickers: string[]): Promise<{ rows: FundamentalRo
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tickers = normalizeTickers(url.searchParams.get("tickers"));
+  const includeFinancials = ["1", "true", "yes"].includes(
+    String(url.searchParams.get("financials") || "").toLowerCase(),
+  );
   if (!tickers.length) {
     return NextResponse.json({ status: "unavailable", series: [], not_found: [], error: "Add at least one ticker." });
   }
 
   const [fundamentals, settled] = await Promise.all([
-    runFundamentalsScript(tickers),
+    runFundamentalsScript(tickers, includeFinancials),
     Promise.all(tickers.map(async (ticker) => {
       const result = await yahooChartHistory(ticker, "5y");
       if (result.prices.length < 2) return { ticker, ok: false as const };
@@ -134,12 +143,25 @@ export async function GET(req: Request) {
   const notFound = Array.from(new Set([...chartNotFound, ...fundamentals.not_found])).filter(
     (ticker) => !series.some((row) => row.ticker === ticker),
   );
+  const financialsCopy = includeFinancials
+    ? {
+        generated_at: new Date().toISOString(),
+        tickers,
+        data: Object.fromEntries(
+          fundamentals.rows
+            .map((row) => [String(row.ticker || row.symbol || "").toUpperCase(), row.financials_copy] as const)
+            .filter(([ticker, payload]) => ticker && payload),
+        ),
+        not_found: notFound,
+      }
+    : undefined;
 
   return NextResponse.json({
     status: series.length ? "success" : "unavailable",
     generated_at: new Date().toISOString(),
     series,
     not_found: notFound,
+    ...(financialsCopy ? { financials: financialsCopy } : {}),
     error: series.length ? "" : "We tried Yahoo, shook the data tree, and nothing tradable fell out.",
   });
 }

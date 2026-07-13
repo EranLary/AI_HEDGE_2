@@ -459,7 +459,8 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
       tokens["--chart-series-6"],
       tokens["--chart-series-1"],
     ].filter(Boolean);
-    return palette[idx % palette.length] || tokens["--chart-axis"];
+    const peerIndex = Math.max(0, idx - 1);
+    return palette[peerIndex % palette.length] || tokens["--chart-axis"];
   };
 
   return (
@@ -586,9 +587,9 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                     <td
                       className={`hib-market-table-cell whitespace-nowrap font-mono ${
                         isPrimary ? "font-bold" : "font-semibold"
-                      } ${returnTone(row.returnPct)}`}
+                      }`}
                     >
-                      {formatReturn(row.returnPct)}
+                      <span className={returnTone(row.returnPct)}>{formatReturn(row.returnPct)}</span>
                     </td>
                   </tr>
                 );

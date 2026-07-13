@@ -44,9 +44,17 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     tax_rate = next(row for row in normalized["rows"] if row["metric"] == "Tax Rate")
     capex = next(row for row in normalized["rows"] if row["metric"] == "Capital Expenditures (Capex)")
     capex_ratio = next(row for row in normalized["rows"] if row["metric"] == "Capex / Revenue")
+    ebitda = next(row for row in normalized["rows"] if row["metric"] == "EBITDA")
+    ebitda_margin = next(row for row in normalized["rows"] if row["metric"] == "EBITDA Margin")
     sbc_ratio = next(row for row in normalized["rows"] if row["metric"] == "SBC / Revenue")
+    assert REQUIRED_METRICS[REQUIRED_METRICS.index("Operating Margin") + 1 : REQUIRED_METRICS.index("Operating Margin") + 3] == [
+        "EBITDA",
+        "EBITDA Margin",
+    ]
     assert equity_to_assets["kind"] == "percent"
     assert tax_rate["kind"] == "percent"
+    assert ebitda["kind"] == "currency"
+    assert ebitda_margin["kind"] == "percent"
     assert capex["kind"] == "currency"
     assert capex_ratio["kind"] == "percent"
     assert sbc_ratio["kind"] == "percent"

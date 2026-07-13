@@ -17,6 +17,8 @@ REQUIRED_METRICS = [
     "Gross Margin",
     "Operating Income",
     "Operating Margin",
+    "EBITDA",
+    "EBITDA Margin",
     "Net Income (GAAP)",
     "Net Margin",
     "Tax Rate",
@@ -221,6 +223,8 @@ Balance sheet and market-value logic:
 - Net Liquidity = Liquid Assets - Total Debt.
 - Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
 - Tax Rate = tax provision / pretax income when both are available. If either line is missing, use null.
+- EBITDA should come from a reported EBITDA line when available. If EBITDA is not reported but can be transparently derived from operating income plus depreciation and amortization from the provided statements, mark it "derived"; otherwise use null.
+- EBITDA Margin = EBITDA / Revenue when both are available. It is a ratio decimal, not a percent string.
 - Capital Expenditures (Capex) should come from the cash flow statement when available. Use the absolute cash outflow amount as a positive currency value even if the statement reports capex as negative.
 - Capex / Revenue = Capital Expenditures (Capex) / Revenue when both are available. It is a ratio decimal, not a percent string.
 - SBC / Revenue = Stock-Based Compensation / Revenue when both are available. If SBC is not disclosed separately, use null.

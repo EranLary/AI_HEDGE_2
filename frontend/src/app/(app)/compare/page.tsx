@@ -421,7 +421,7 @@ export default function ComparePage() {
           <p className="text-xs text-[color:var(--text-muted)]">Sorted by {period} return</p>
         </div>
         <div className="hib-market-table-wrap">
-          <table className="hib-market-table min-w-[112rem] table-fixed">
+          <table className="hib-market-table min-w-[145rem] table-fixed">
             <colgroup>
               <col className="w-[4rem]" />
               <col className="w-[14rem]" />
@@ -443,6 +443,7 @@ export default function ComparePage() {
               <col className="w-[6rem]" />
               <col className="w-[7rem]" />
               <col className="w-[7rem]" />
+              <col className="w-[10rem]" />
             </colgroup>
             <thead>
               <tr>
@@ -481,8 +482,8 @@ export default function ComparePage() {
                         {fundamentals.company_name || row.company_name || row.exchange || "Company"}
                       </span>
                     </td>
-                    <td className={`hib-market-table-cell font-mono font-semibold ${returnTone(row.returnPct)}`}>
-                      {formatReturn(row.returnPct)}
+                    <td className="hib-market-table-cell font-mono font-semibold">
+                      <span className={returnTone(row.returnPct)}>{formatReturn(row.returnPct)}</span>
                     </td>
                     <td className="hib-market-table-cell font-mono">{formatLarge(fundamentals.market_cap)}</td>
                     <td className="hib-market-table-cell font-mono">{formatLarge(fundamentals.enterprise_value)}</td>
@@ -492,11 +493,15 @@ export default function ComparePage() {
                     <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.ev_sales)}</td>
                     <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.ev_ebitda)}</td>
                     <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.p_fcf)}</td>
-                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.revenue_growth))}`}>
-                      {formatPercentValue(fundamentals.revenue_growth)}
+                    <td className="hib-market-table-cell font-mono">
+                      <span className={returnTone(numeric(fundamentals.revenue_growth))}>
+                        {formatPercentValue(fundamentals.revenue_growth)}
+                      </span>
                     </td>
-                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.earnings_growth))}`}>
-                      {formatPercentValue(fundamentals.earnings_growth)}
+                    <td className="hib-market-table-cell font-mono">
+                      <span className={returnTone(numeric(fundamentals.earnings_growth))}>
+                        {formatPercentValue(fundamentals.earnings_growth)}
+                      </span>
                     </td>
                     <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.gross_margin)}</td>
                     <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.operating_margin)}</td>
@@ -505,8 +510,10 @@ export default function ComparePage() {
                     <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.current_ratio)}</td>
                     <td className="hib-market-table-cell font-mono">{formatRatio(fundamentals.debt_to_equity)}</td>
                     <td className="hib-market-table-cell font-mono">{formatPercentValue(fundamentals.dividend_yield)}</td>
-                    <td className={`hib-market-table-cell font-mono ${returnTone(numeric(fundamentals.target_upside))}`}>
-                      {formatPercentValue(fundamentals.target_upside)}
+                    <td className="hib-market-table-cell whitespace-nowrap pr-4 font-mono">
+                      <span className={returnTone(numeric(fundamentals.target_upside))}>
+                        {formatPercentValue(fundamentals.target_upside)}
+                      </span>
                     </td>
                   </tr>
                 );

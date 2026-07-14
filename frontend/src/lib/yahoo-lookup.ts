@@ -127,6 +127,70 @@ export type YahooChartResult = {
   prices: YahooPricePoint[];
 };
 
+function isTelAvivTicker(ticker: string): boolean {
+  return ticker.trim().toUpperCase().endsWith(".TA");
+}
+
+function confirmsScaleBreak(
+  rows: YahooPricePoint[],
+  startIdx: number,
+  reference: number,
+  factor: number,
+  direction: "up" | "down",
+): boolean {
+  const available = Math.min(3, rows.length - startIdx);
+  if (available < 2) return false;
+
+  for (let offset = 0; offset < available; offset += 1) {
+    const adjusted = rows[startIdx + offset].close * factor;
+    const ratio = adjusted / reference;
+    if (direction === "up" && ratio < 10) return false;
+    if (direction === "down" && ratio > 0.1) return false;
+  }
+  return true;
+}
+
+function isNearPriorScale(current: number, normalizedRows: YahooPricePoint[]): boolean {
+  if (normalizedRows.length < 2) return false;
+  const prior = normalizedRows[normalizedRows.length - 2].close;
+  if (!prior) return false;
+  const ratio = current / prior;
+  return ratio >= 0.5 && ratio <= 2;
+}
+
+export function normalizeYahooPriceHistory(ticker: string, rows: YahooPricePoint[]): YahooPricePoint[] {
+  if (!isTelAvivTicker(ticker) || rows.length < 3) return rows;
+
+  const normalized: YahooPricePoint[] = [];
+  let factor = 1;
+
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx];
+    if (!normalized.length) {
+      normalized.push({ ...row });
+      continue;
+    }
+
+    const previous = normalized[normalized.length - 1].close;
+    const current = row.close * factor;
+    const ratio = current / previous;
+
+    if (ratio >= 10 && !isNearPriorScale(current, normalized) && confirmsScaleBreak(rows, idx, previous, factor, "up")) {
+      factor /= 100;
+    } else if (
+      ratio <= 0.1 &&
+      !isNearPriorScale(current, normalized) &&
+      confirmsScaleBreak(rows, idx, previous, factor, "down")
+    ) {
+      factor *= 100;
+    }
+
+    normalized.push({ ...row, close: row.close * factor });
+  }
+
+  return normalized;
+}
+
 export async function yahooChartHistory(ticker: string, range = "5y", timeoutMs = 6000): Promise<YahooChartResult> {
   const sym = ticker.trim().toUpperCase();
   if (!sym) return { meta: {}, prices: [] };
@@ -161,7 +225,7 @@ export async function yahooChartHistory(ticker: string, range = "5y", timeoutMs 
         close,
       });
     }
-    return { meta: result?.meta || {}, prices: rows };
+    return { meta: result?.meta || {}, prices: normalizeYahooPriceHistory(sym, rows) };
   } catch (err) {
     console.warn(`[yahoo-lookup] price history failed for ${sym}`, err);
     return { meta: {}, prices: [] };

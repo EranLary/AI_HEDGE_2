@@ -15,6 +15,7 @@ import {
   CartesianGrid,
   Line,
   LineChart as RechartsLineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -116,17 +117,20 @@ function infoRecord(value: unknown): Record<string, unknown> {
 }
 
 const marketMarkdownComponents: Components = {
-  table({ node: _node, ...props }) {
+  table({ node, ...props }) {
+    void node;
     return (
       <div className="hib-market-table-wrap">
         <table className="hib-market-table" {...props} />
       </div>
     );
   },
-  th({ node: _node, ...props }) {
+  th({ node, ...props }) {
+    void node;
     return <th className="hib-market-table-head" {...props} />;
   },
-  td({ node: _node, ...props }) {
+  td({ node, ...props }) {
+    void node;
     return <td className="hib-market-table-cell" {...props} />;
   },
 };
@@ -374,14 +378,18 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
 
   useEffect(() => {
     if (savedSeries.length >= 2 || tickerList.length < 2) {
-      setLoadState(savedSeries.length >= 2 ? "ready" : "idle");
-      setLoadError("");
+      queueMicrotask(() => {
+        setLoadState(savedSeries.length >= 2 ? "ready" : "idle");
+        setLoadError("");
+      });
       return;
     }
 
     const controller = new AbortController();
-    setLoadState("loading");
-    setLoadError("");
+    queueMicrotask(() => {
+      setLoadState("loading");
+      setLoadError("");
+    });
     const qs = new URLSearchParams({ tickers: tickerList.join(",") });
     fetch(`/api/dashboard/${encodeURIComponent(ticker.toUpperCase())}/market-returns?${qs.toString()}`, {
       cache: "no-store",
@@ -522,6 +530,7 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                   tickFormatter={(value) => formatReturn(Number(value))}
                 />
                 <Tooltip content={<ReturnTooltip />} wrapperStyle={{ outline: "none" }} />
+                <ReferenceLine y={0} stroke={tokens["--chart-current"]} strokeWidth={2.4} ifOverflow="extendDomain" />
                 {comparison.activeSeries.map((item, idx) => (
                   <Line
                     key={item.ticker}

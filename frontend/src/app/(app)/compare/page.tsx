@@ -2,11 +2,12 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { Check, ClipboardCopy, GitCompareArrows, Loader2, Plus, X } from "lucide-react";
+import { Check, Download, GitCompareArrows, Loader2, Plus, X } from "lucide-react";
 import {
   CartesianGrid,
   Line,
   LineChart as RechartsLineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -132,14 +133,6 @@ function formatReturn(value: number | null): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-function formatPrice(value: unknown, currency?: string): string {
-  const n = numeric(value);
-  if (n === null) return "-";
-  return `${currency ? `${currency} ` : ""}${n.toLocaleString(undefined, {
-    maximumFractionDigits: n >= 100 ? 1 : 2,
-  })}`;
-}
-
 function formatRatio(value: unknown): string {
   const n = numeric(value);
   if (n === null || n <= 0) return "-";
@@ -169,20 +162,16 @@ function returnTone(value: number | null): string {
   return "text-[color:var(--text-secondary)]";
 }
 
-async function writeClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
+function downloadTextFile(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function ChartTooltip({
@@ -223,8 +212,8 @@ export default function ComparePage() {
   const [data, setData] = useState<ComparePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [copyingFinancials, setCopyingFinancials] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [downloadingFinancials, setDownloadingFinancials] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   function addTicker(entry: TickerEntry | null) {
     if (!entry) return;
@@ -239,10 +228,10 @@ export default function ComparePage() {
     setTickers((prev) => prev.filter((item) => item !== ticker));
   }
 
-  async function copyFinancials() {
-    if (!tickers.length || copyingFinancials) return;
-    setCopyingFinancials(true);
-    setCopyStatus(null);
+  async function downloadFinancials() {
+    if (!tickers.length || downloadingFinancials) return;
+    setDownloadingFinancials(true);
+    setDownloadStatus(null);
     try {
       const qs = new URLSearchParams({ tickers: tickers.join(","), financials: "1" });
       const res = await fetch(`/api/compare?${qs.toString()}`, { cache: "no-store" });
@@ -254,33 +243,38 @@ export default function ComparePage() {
         data: {},
         not_found: payload.not_found || [],
       };
-      const copiedCount = Object.keys(financials.data || {}).length;
-      if (!copiedCount) throw new Error("No financial statements were available for the selected tickers.");
-      await writeClipboard(JSON.stringify(financials, null, 2));
-      setCopyStatus({
+      const downloadedCount = Object.keys(financials.data || {}).length;
+      if (!downloadedCount) throw new Error("No financial statements were available for the selected tickers.");
+      const timestamp = new Date().toISOString().slice(0, 10);
+      downloadTextFile(`comparison-financials-${timestamp}.txt`, JSON.stringify(financials, null, 2));
+      setDownloadStatus({
         tone: "success",
-        message: `Copied financial JSON for ${copiedCount} ticker${copiedCount === 1 ? "" : "s"}.`,
+        message: `Downloaded financial JSON for ${downloadedCount} ticker${downloadedCount === 1 ? "" : "s"}.`,
       });
     } catch (err) {
-      setCopyStatus({
+      setDownloadStatus({
         tone: "error",
-        message: err instanceof Error ? err.message : "Could not copy financials.",
+        message: err instanceof Error ? err.message : "Could not download financials.",
       });
     } finally {
-      setCopyingFinancials(false);
+      setDownloadingFinancials(false);
     }
   }
 
   useEffect(() => {
     if (!tickers.length) {
-      setData(null);
-      setError("");
+      queueMicrotask(() => {
+        setData(null);
+        setError("");
+      });
       return;
     }
     const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    setCopyStatus(null);
+    queueMicrotask(() => {
+      setLoading(true);
+      setError("");
+      setDownloadStatus(null);
+    });
     const qs = new URLSearchParams({ tickers: tickers.join(",") });
     fetch(`/api/compare?${qs.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (res) => {
@@ -378,18 +372,18 @@ export default function ComparePage() {
           </button>
           <button
             type="button"
-            onClick={copyFinancials}
-            disabled={!tickers.length || copyingFinancials}
+            onClick={downloadFinancials}
+            disabled={!tickers.length || downloadingFinancials}
             className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--border-strong)] bg-black/20 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] sm:w-auto"
           >
-            {copyingFinancials ? (
+            {downloadingFinancials ? (
               <Loader2 size={13} className="animate-spin" />
-            ) : copyStatus?.tone === "success" ? (
+            ) : downloadStatus?.tone === "success" ? (
               <Check size={13} />
             ) : (
-              <ClipboardCopy size={13} />
+              <Download size={13} />
             )}
-            Copy Financials
+            Download Financials
           </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -410,15 +404,15 @@ export default function ComparePage() {
             </span>
           ))}
         </div>
-        {copyStatus ? (
+        {downloadStatus ? (
           <p
             className={`mt-3 rounded-lg border bg-black/25 px-3 py-2 text-xs ${
-              copyStatus.tone === "success"
+              downloadStatus.tone === "success"
                 ? "border-[color:var(--success)] text-[color:var(--success)]"
                 : "border-[color:var(--danger)] text-[color:var(--danger)]"
             }`}
           >
-            {copyStatus.message}
+            {downloadStatus.message}
           </p>
         ) : null}
         {data?.not_found?.length ? (
@@ -476,6 +470,7 @@ export default function ComparePage() {
                   tickFormatter={(value) => formatReturn(Number(value))}
                 />
                 <Tooltip content={<ChartTooltip />} wrapperStyle={{ outline: "none" }} />
+                <ReferenceLine y={0} stroke={tokens["--chart-current"]} strokeWidth={2.4} ifOverflow="extendDomain" />
                 {comparison.series.map((item, idx) => (
                   <Line
                     key={item.ticker}

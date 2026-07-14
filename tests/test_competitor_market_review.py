@@ -209,6 +209,56 @@ def test_build_market_return_comparison_includes_original_and_competitors(monkey
     assert downloads == [("MAIN", "5y", "1d"), ("PEER", "5y", "1d"), ("BAD", "5y", "1d")]
 
 
+def test_normalize_price_history_for_ta_rescales_persistent_upward_unit_switch():
+    rows = [
+        {"date": "2024-01-01", "close": 14.8},
+        {"date": "2024-01-02", "close": 1452.0},
+        {"date": "2024-01-03", "close": 1460.0},
+        {"date": "2024-01-04", "close": 1471.0},
+    ]
+
+    normalized = cmr.normalize_price_history_for_ticker("TEST.TA", rows)
+
+    assert [round(row["close"], 2) for row in normalized] == [14.8, 14.52, 14.6, 14.71]
+
+
+def test_normalize_price_history_for_ta_rescales_persistent_downward_unit_switch():
+    rows = [
+        {"date": "2024-01-01", "close": 1480.0},
+        {"date": "2024-01-02", "close": 14.52},
+        {"date": "2024-01-03", "close": 14.6},
+    ]
+
+    normalized = cmr.normalize_price_history_for_ticker("TEST.TA", rows)
+
+    assert [round(row["close"], 2) for row in normalized] == [1480.0, 1452.0, 1460.0]
+
+
+def test_normalize_price_history_for_ta_ignores_unconfirmed_single_point_spike():
+    rows = [
+        {"date": "2024-01-01", "close": 14.8},
+        {"date": "2024-01-02", "close": 1452.0},
+        {"date": "2024-01-03", "close": 14.9},
+        {"date": "2024-01-04", "close": 15.0},
+    ]
+
+    normalized = cmr.normalize_price_history_for_ticker("TEST.TA", rows)
+
+    assert [row["close"] for row in normalized] == [14.8, 1452.0, 14.9, 15.0]
+
+
+def test_normalize_price_history_does_not_rescale_non_ta_ticker():
+    rows = [
+        {"date": "2024-01-01", "close": 14.8},
+        {"date": "2024-01-02", "close": 1452.0},
+        {"date": "2024-01-03", "close": 1460.0},
+    ]
+
+    normalized = cmr.normalize_price_history_for_ticker("TEST", rows)
+
+    assert normalized is rows
+
+
 def test_review_prompt_requires_original_company_financial_comparison():
     prompt = cmr.build_review_prompt(
         {

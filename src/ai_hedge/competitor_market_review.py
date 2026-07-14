@@ -196,9 +196,83 @@ def _clean_price_history_frame(df: Any) -> List[Dict[str, Any]]:
     return rows
 
 
+def _is_tel_aviv_ticker(ticker: str) -> bool:
+    return str(ticker or "").strip().upper().endswith(".TA")
+
+
+def _confirms_scale_break(
+    rows: List[Dict[str, Any]],
+    start_idx: int,
+    reference: float,
+    factor: float,
+    direction: str,
+) -> bool:
+    available = min(3, len(rows) - start_idx)
+    if available < 2:
+        return False
+    for offset in range(available):
+        try:
+            adjusted = float(rows[start_idx + offset]["close"]) * factor
+        except Exception:
+            return False
+        ratio = adjusted / reference if reference else 0
+        if direction == "up" and ratio < 10:
+            return False
+        if direction == "down" and ratio > 0.1:
+            return False
+    return True
+
+
+def _is_near_prior_scale(current: float, normalized: List[Dict[str, Any]]) -> bool:
+    if len(normalized) < 2:
+        return False
+    try:
+        prior = float(normalized[-2]["close"])
+    except Exception:
+        return False
+    if not prior:
+        return False
+    ratio = current / prior
+    return 0.5 <= ratio <= 2
+
+
+def normalize_price_history_for_ticker(ticker: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not _is_tel_aviv_ticker(ticker) or len(rows) < 3:
+        return rows
+
+    normalized: List[Dict[str, Any]] = []
+    factor = 1.0
+    for idx, row in enumerate(rows):
+        if not normalized:
+            normalized.append(dict(row))
+            continue
+        try:
+            raw_close = float(row["close"])
+            previous = float(normalized[-1]["close"])
+        except Exception:
+            normalized.append(dict(row))
+            continue
+        current = raw_close * factor
+        ratio = current / previous if previous else 0
+        if (
+            ratio >= 10
+            and not _is_near_prior_scale(current, normalized)
+            and _confirms_scale_break(rows, idx, previous, factor, "up")
+        ):
+            factor /= 100
+        elif (
+            ratio <= 0.1
+            and not _is_near_prior_scale(current, normalized)
+            and _confirms_scale_break(rows, idx, previous, factor, "down")
+        ):
+            factor *= 100
+        normalized.append({**row, "close": raw_close * factor})
+    return normalized
+
+
 def fetch_price_history(ticker: str, *, period: str = "5y") -> List[Dict[str, Any]]:
     df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=False)
-    return _clean_price_history_frame(df)
+    return normalize_price_history_for_ticker(ticker, _clean_price_history_frame(df))
 
 
 def build_market_return_comparison(

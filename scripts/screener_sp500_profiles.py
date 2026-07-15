@@ -18,7 +18,7 @@ import pandas as pd
 
 SLICKCHARTS_SP500_URL = "https://www.slickcharts.com/sp500"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 VALUATION_METRIC_KEYS = ("peRatio", "pbRatio", "evToEbitda", "evToRevenue", "evToFcf")
 MARGIN_METRIC_KEYS = ("grossMargin", "ebitdaMargin", "operatingMargin", "netProfitMargin", "fcfMargin")
 QUALITY_METRIC_KEYS = (
@@ -420,6 +420,10 @@ def _compact_analysis(
     key_stats = key_stats if isinstance(key_stats, dict) else {}
     summary_detail = summary_detail if isinstance(summary_detail, dict) else {}
     return {
+        "currentPrice": _positive_number(
+            financial_data.get("currentPrice"),
+            summary_detail.get("regularMarketPrice"),
+        ),
         "peRatio": _positive_number(
             latest_valuation.get("PeRatio"),
             summary_detail.get("trailingPE"),
@@ -697,6 +701,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
                 "company_name": row["company_name"],
                 "sector": sector or "Unknown",
                 "industry": industry or "Unknown",
+                "current_price": analysis.get("currentPrice"),
                 "analysis": analysis,
             }
         )

@@ -27,6 +27,10 @@ type ScreenerRow = {
   score_confidence?: number | null;
   valuation_coverage?: number | null;
   quality_coverage?: number | null;
+  current_price?: number | null;
+  target_price?: number | null;
+  target_samples?: number | null;
+  target_change_pct?: number | null;
 };
 
 type ScreenerPayload = {
@@ -39,12 +43,24 @@ type ScreenerPayload = {
   count?: number;
   missing_profiles?: number;
   missing_scores?: number;
+  target_matches?: number;
   cache_hit?: boolean;
   rows?: ScreenerRow[];
   error?: string;
 };
 
-type SortKey = "rank" | "ticker" | "company_name" | "overall_score" | "valuation_score" | "quality_score" | "sector" | "industry";
+type SortKey =
+  | "rank"
+  | "ticker"
+  | "company_name"
+  | "current_price"
+  | "target_price"
+  | "target_change_pct"
+  | "overall_score"
+  | "valuation_score"
+  | "quality_score"
+  | "sector"
+  | "industry";
 type SortDirection = "asc" | "desc";
 
 const SCREENERS = [{ key: "sp500", label: "S&P 500", api: "/api/screeners/sp500" }] as const;
@@ -53,11 +69,10 @@ function fmtDate(value: string | undefined): string {
   if (!value) return "N/A";
   const dt = new Date(value);
   if (!Number.isFinite(dt.getTime())) return "N/A";
-  return dt.toLocaleString(undefined, {
-    month: "short",
+  return dt.toLocaleDateString("en-GB", {
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 }
 
@@ -71,11 +86,26 @@ function csvEscape(value: unknown): string {
 }
 
 function downloadCsv(rows: ScreenerRow[]) {
-  const header = ["Rank", "Ticker", "Company", "Overall Score", "Valuation Score", "Quality Score", "Sector", "Industry"];
+  const header = [
+    "Rank",
+    "Ticker",
+    "Company",
+    "Price",
+    "Target",
+    "Change %",
+    "Overall Score",
+    "Valuation Score",
+    "Quality Score",
+    "Sector",
+    "Industry",
+  ];
   const body = rows.map((row) => [
     row.rank,
     row.ticker,
     row.company_name,
+    fmtNumber(row.current_price),
+    fmtNumber(row.target_price),
+    fmtPct(row.target_change_pct),
     fmtScore(row.overall_score),
     fmtScore(row.valuation_score),
     fmtScore(row.quality_score),
@@ -106,6 +136,17 @@ function fmtScore(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? value.toFixed(1) : "-";
 }
 
+function fmtNumber(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value >= 100 ? value.toFixed(2) : value.toFixed(2);
+}
+
+function fmtPct(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
 function numericScore(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -118,12 +159,20 @@ function scoreClass(value: number | null | undefined): string {
   return "text-[color:var(--danger)]";
 }
 
+function targetTone(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) < 1e-9) return "text-[color:var(--text-secondary)]";
+  return value > 0 ? "hib-target-up" : "hib-target-down";
+}
+
 function sortValue(row: ScreenerRow, key: SortKey): string | number | null {
   if (key === "rank") return row.rank;
   if (key === "ticker") return row.ticker;
   if (key === "company_name") return row.company_name;
   if (key === "sector") return clean(row.sector);
   if (key === "industry") return clean(row.industry);
+  if (key === "current_price") return numericScore(row.current_price);
+  if (key === "target_price") return numericScore(row.target_price);
+  if (key === "target_change_pct") return numericScore(row.target_change_pct);
   return numericScore(row[key]);
 }
 
@@ -295,7 +344,7 @@ export default function ScreenersPage() {
               Market screeners
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-[color:var(--text-secondary)]">
-              {active.label} constituents with yahooquery sector, industry, valuation, and quality scores.
+              {active.label} constituents with yahooquery price, sector, industry, valuation, quality, and platform target context.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -421,6 +470,7 @@ export default function ScreenersPage() {
             {sourceLabel(payload)}
             {payload?.cache_hit ? " / cached" : ""}
             {payload?.missing_scores ? ` / ${payload.missing_scores} unscored` : ""}
+            {payload?.target_matches ? ` / ${payload.target_matches} targets` : ""}
           </span>
         </div>
       </section>
@@ -442,7 +492,7 @@ export default function ScreenersPage() {
           </div>
         ) : (
           <div className="hib-market-table-wrap m-0 max-h-[72vh]">
-            <table className="hib-market-table min-w-[82rem] table-fixed">
+            <table className="hib-market-table min-w-[104rem] table-fixed">
               <thead>
                 <tr>
                   <SortHeader id="rank" label="Rank" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-20" />
@@ -454,6 +504,30 @@ export default function ScreenersPage() {
                     sortDirection={sortDirection}
                     onSort={toggleSort}
                     className="w-[24rem]"
+                  />
+                  <SortHeader
+                    id="current_price"
+                    label="Price"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-28"
+                  />
+                  <SortHeader
+                    id="target_price"
+                    label="Target"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-28"
+                  />
+                  <SortHeader
+                    id="target_change_pct"
+                    label="Change"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-28"
                   />
                   <SortHeader
                     id="overall_score"
@@ -499,6 +573,15 @@ export default function ScreenersPage() {
                           <p className="mt-1 font-mono text-[11px] text-[color:var(--text-muted)]">Yahoo: {row.query_ticker}</p>
                         ) : null}
                       </td>
+                      <td className="hib-market-table-cell font-mono text-sm text-[color:var(--text-primary)]">
+                        {fmtNumber(row.current_price)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${targetTone(row.target_change_pct)}`}>
+                        {fmtNumber(row.target_price)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${targetTone(row.target_change_pct)}`}>
+                        {fmtPct(row.target_change_pct)}
+                      </td>
                       <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.overall_score)}`}>
                         {fmtScore(row.overall_score)}
                       </td>
@@ -514,7 +597,7 @@ export default function ScreenersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
+                    <td colSpan={11} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
                       No companies match this filter.
                     </td>
                   </tr>

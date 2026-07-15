@@ -96,6 +96,10 @@ def _cache_path() -> Path:
     return Path(__file__).resolve().parents[1] / "outputs" / "_screeners" / "sp500_profiles.json"
 
 
+def _seed_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "src" / "ai_hedge" / "static_data" / "sp500_slickcharts_seed.json"
+
+
 def _load_cache(max_age_minutes: int) -> Dict[str, Any] | None:
     path = _cache_path()
     if max_age_minutes <= 0 or not path.exists():
@@ -187,6 +191,30 @@ def _parse_wikipedia_rows(html: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _load_slickcharts_seed() -> List[Dict[str, Any]]:
+    try:
+        payload = json.loads(_seed_path().read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows: List[Dict[str, Any]] = []
+    for idx, raw in enumerate(payload.get("rows") or [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        ticker = _display_ticker(str(raw.get("ticker") or ""))
+        company = _clean_text(raw.get("company_name"))
+        if not ticker or not company:
+            continue
+        rows.append(
+            {
+                "rank": int(raw.get("rank") or idx),
+                "ticker": ticker,
+                "query_ticker": _yahoo_ticker(str(raw.get("query_ticker") or ticker)),
+                "company_name": company,
+            }
+        )
+    return rows
+
+
 def _fetch_universe() -> Tuple[List[Dict[str, Any]], str, str]:
     try:
         rows = _parse_slickcharts_rows(_get_html(SLICKCHARTS_SP500_URL))
@@ -194,6 +222,10 @@ def _fetch_universe() -> Tuple[List[Dict[str, Any]], str, str]:
             return rows, "slickcharts", SLICKCHARTS_SP500_URL
     except Exception:
         pass
+
+    seed_rows = _load_slickcharts_seed()
+    if seed_rows:
+        return seed_rows, "slickcharts-seed", SLICKCHARTS_SP500_URL
 
     rows = _parse_wikipedia_rows(_get_html(WIKIPEDIA_SP500_URL))
     if not rows:

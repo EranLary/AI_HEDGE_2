@@ -4,5 +4,5 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export function GET(req: Request) {
-  return handleScreenerRequest(req, "sp500");
+  return handleScreenerRequest(req, "ta125");
 }

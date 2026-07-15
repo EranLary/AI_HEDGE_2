@@ -17,8 +17,34 @@ import pandas as pd
 
 
 SLICKCHARTS_SP500_URL = "https://www.slickcharts.com/sp500"
+SLICKCHARTS_NASDAQ100_URL = "https://www.slickcharts.com/nasdaq100"
+TRADINGVIEW_TA125_URL = "https://il.tradingview.com/symbols/TASE-TA125/components/"
+TRADINGVIEW_ISRAEL_SCAN_URL = "https://scanner.tradingview.com/israel/scan"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 CACHE_VERSION = 4
+UNIVERSE_CONFIGS = {
+    "sp500": {
+        "label": "S&P 500",
+        "source_url": SLICKCHARTS_SP500_URL,
+        "seed_file": "sp500_slickcharts_seed.json",
+        "cache_file": "sp500_profiles.json",
+        "scored_seed_file": "sp500_screener_scores_seed.json",
+    },
+    "nasdaq100": {
+        "label": "NASDAQ 100",
+        "source_url": SLICKCHARTS_NASDAQ100_URL,
+        "seed_file": "nasdaq100_slickcharts_seed.json",
+        "cache_file": "nasdaq100_profiles.json",
+        "scored_seed_file": "nasdaq100_screener_scores_seed.json",
+    },
+    "ta125": {
+        "label": "TA-125",
+        "source_url": TRADINGVIEW_TA125_URL,
+        "seed_file": "ta125_tradingview_seed.json",
+        "cache_file": "ta125_profiles.json",
+        "scored_seed_file": "ta125_screener_scores_seed.json",
+    },
+}
 VALUATION_METRIC_KEYS = ("peRatio", "pbRatio", "evToEbitda", "evToRevenue", "evToFcf")
 MARGIN_METRIC_KEYS = ("grossMargin", "ebitdaMargin", "operatingMargin", "netProfitMargin", "fcfMargin")
 QUALITY_METRIC_KEYS = (
@@ -172,16 +198,27 @@ def _yahoo_ticker(value: str) -> str:
     return _display_ticker(value).replace(".", "-")
 
 
-def _cache_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "outputs" / "_screeners" / "sp500_profiles.json"
+def _config(universe: str) -> Dict[str, str]:
+    key = _clean_text(universe).lower()
+    if key not in UNIVERSE_CONFIGS:
+        raise ValueError(f"Unsupported screener universe: {universe}")
+    return UNIVERSE_CONFIGS[key]
 
 
-def _seed_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "src" / "ai_hedge" / "static_data" / "sp500_slickcharts_seed.json"
+def _cache_path(universe: str) -> Path:
+    return Path(__file__).resolve().parents[1] / "outputs" / "_screeners" / _config(universe)["cache_file"]
 
 
-def _load_cache(max_age_minutes: int) -> Dict[str, Any] | None:
-    path = _cache_path()
+def _seed_path(universe: str) -> Path:
+    return Path(__file__).resolve().parents[1] / "src" / "ai_hedge" / "static_data" / _config(universe)["seed_file"]
+
+
+def _scored_seed_path(universe: str) -> Path:
+    return Path(__file__).resolve().parents[1] / "src" / "ai_hedge" / "static_data" / _config(universe)["scored_seed_file"]
+
+
+def _load_cache(max_age_minutes: int, universe: str) -> Dict[str, Any] | None:
+    path = _cache_path(universe)
     if max_age_minutes <= 0 or not path.exists():
         return None
     try:
@@ -199,8 +236,8 @@ def _load_cache(max_age_minutes: int) -> Dict[str, Any] | None:
     return payload if isinstance(rows, list) and rows else None
 
 
-def _load_cached_profile_map() -> Dict[str, Dict[str, str]]:
-    path = _cache_path()
+def _load_cached_profile_map(universe: str) -> Dict[str, Dict[str, str]]:
+    path = _cache_path(universe)
     if not path.exists():
         return {}
     try:
@@ -225,8 +262,8 @@ def _load_cached_profile_map() -> Dict[str, Dict[str, str]]:
     return profiles
 
 
-def _write_cache(payload: Dict[str, Any]) -> None:
-    path = _cache_path()
+def _write_cache(payload: Dict[str, Any], universe: str) -> None:
+    path = _cache_path(universe)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False, indent=2), encoding="utf-8")
 
@@ -240,9 +277,19 @@ def _get_html(url: str) -> str:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
-    response = requests.get(url, headers=headers, timeout=10)
-    response.raise_for_status()
-    return response.text
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.text
+    except Exception:
+        try:
+            from curl_cffi import requests as curl_requests
+
+            response = curl_requests.get(url, headers=headers, impersonate="chrome120", timeout=20)
+            response.raise_for_status()
+            return response.text
+        except Exception:
+            raise
 
 
 def _parse_slickcharts_rows(html: str) -> List[Dict[str, Any]]:
@@ -297,9 +344,61 @@ def _parse_wikipedia_rows(html: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def _load_slickcharts_seed() -> List[Dict[str, Any]]:
+def _ta_query_candidates(ticker: str) -> List[str]:
+    base = _display_ticker(ticker).replace(".TA", "")
+    return [base, f"{base}.TA"] if base else []
+
+
+def _row_query_candidates(row: Dict[str, Any]) -> List[str]:
+    raw_candidates = row.get("query_candidates")
+    candidates: List[str] = []
+    if isinstance(raw_candidates, list):
+        candidates.extend(str(item) for item in raw_candidates)
+    if row.get("query_ticker"):
+        candidates.append(str(row["query_ticker"]))
+    if row.get("ticker"):
+        candidates.append(_yahoo_ticker(str(row["ticker"])))
+    clean_candidates: List[str] = []
+    for candidate in candidates:
+        symbol = _clean_text(candidate).upper()
+        if symbol and symbol not in clean_candidates:
+            clean_candidates.append(symbol)
+    return clean_candidates
+
+
+def _has_usable_data(profile: Dict[str, Any], analysis: Dict[str, Any]) -> bool:
+    if _clean_text(profile.get("sector")) or _clean_text(profile.get("industry")):
+        return True
+    if _positive_number(analysis.get("currentPrice")) is not None:
+        return True
+    return any(
+        _normalized_metric_value(metric, analysis.get(metric)) is not None
+        for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)
+    )
+
+
+def _select_query_ticker(
+    candidates: List[str],
+    profiles: Dict[str, Dict[str, Any]],
+    analyses: Dict[str, Dict[str, Any]],
+) -> str:
+    for candidate in candidates:
+        if _has_usable_data(profiles.get(candidate) or {}, analyses.get(candidate) or {}):
+            return candidate
+    return candidates[0] if candidates else ""
+
+
+def _first_candidate_price(candidates: List[str], analyses: Dict[str, Dict[str, Any]]) -> float | None:
+    for candidate in candidates:
+        price = _positive_number((analyses.get(candidate) or {}).get("currentPrice"))
+        if price is not None:
+            return price
+    return None
+
+
+def _load_universe_seed(universe: str) -> List[Dict[str, Any]]:
     try:
-        payload = json.loads(_seed_path().read_text(encoding="utf-8"))
+        payload = json.loads(_seed_path(universe).read_text(encoding="utf-8"))
     except Exception:
         return []
     rows: List[Dict[str, Any]] = []
@@ -314,24 +413,90 @@ def _load_slickcharts_seed() -> List[Dict[str, Any]]:
             {
                 "rank": int(raw.get("rank") or idx),
                 "ticker": ticker,
-                "query_ticker": _yahoo_ticker(str(raw.get("query_ticker") or ticker)),
+                "query_ticker": _clean_text(raw.get("query_ticker")) or _yahoo_ticker(ticker),
+                "query_candidates": raw.get("query_candidates") if isinstance(raw.get("query_candidates"), list) else None,
                 "company_name": company,
             }
         )
     return rows
 
 
-def _fetch_universe() -> Tuple[List[Dict[str, Any]], str, str]:
+def _fetch_ta125_tradingview_rows() -> List[Dict[str, Any]]:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": TRADINGVIEW_TA125_URL,
+    }
+    columns = ["name", "description", "market_cap_basic", "indexes", "sector", "exchange", "typespecs"]
+    body = {
+        "columns": columns,
+        "range": [0, 1200],
+        "options": {"lang": "he_IL"},
+        "markets": ["israel"],
+        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+    }
+    response = requests.post(TRADINGVIEW_ISRAEL_SCAN_URL, headers=headers, json=body, timeout=20)
+    response.raise_for_status()
+    payload = json.loads(response.content.decode("utf-8"))
+    rows: List[Dict[str, Any]] = []
+    for item in payload.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        values = item.get("d") or []
+        indexes = values[3] if len(values) > 3 else []
+        if not any(
+            isinstance(index, dict)
+            and (index.get("proname") == "TASE:TA125" or index.get("name") == "TA-125")
+            for index in indexes or []
+        ):
+            continue
+        ticker = _display_ticker(values[0] if values else item.get("s", "").replace("TASE:", ""))
+        company = _clean_text(values[1] if len(values) > 1 else ticker) or ticker
+        if not ticker:
+            continue
+        rows.append(
+            {
+                "rank": len(rows) + 1,
+                "ticker": ticker,
+                "query_ticker": ticker,
+                "query_candidates": _ta_query_candidates(ticker),
+                "company_name": company,
+            }
+        )
+    return rows
+
+
+def _fetch_universe(universe: str) -> Tuple[List[Dict[str, Any]], str, str]:
+    config = _config(universe)
+    if universe == "ta125":
+        try:
+            rows = _fetch_ta125_tradingview_rows()
+            if rows:
+                return rows, "tradingview", config["source_url"]
+        except Exception:
+            pass
+        seed_rows = _load_universe_seed(universe)
+        if seed_rows:
+            return seed_rows, "tradingview-seed", config["source_url"]
+        raise RuntimeError("No TA-125 holdings were found.")
+
     try:
-        rows = _parse_slickcharts_rows(_get_html(SLICKCHARTS_SP500_URL))
+        rows = _parse_slickcharts_rows(_get_html(config["source_url"]))
         if rows:
-            return rows, "slickcharts", SLICKCHARTS_SP500_URL
+            return rows, "slickcharts", config["source_url"]
     except Exception:
         pass
 
-    seed_rows = _load_slickcharts_seed()
+    seed_rows = _load_universe_seed(universe)
     if seed_rows:
-        return seed_rows, "slickcharts-seed", SLICKCHARTS_SP500_URL
+        return seed_rows, "slickcharts-seed", config["source_url"]
+
+    if universe != "sp500":
+        raise RuntimeError(f"No {config['label']} holdings were found.")
 
     rows = _parse_wikipedia_rows(_get_html(WIKIPEDIA_SP500_URL))
     if not rows:
@@ -657,17 +822,23 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
         row["quality_coverage"] = _round_score(quality_coverage * 100)
 
 
-def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str, Any]:
+def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_key: str = "sp500") -> Dict[str, Any]:
+    universe_key = _clean_text(universe_key).lower() or "sp500"
+    config = _config(universe_key)
     if not refresh:
-        cached = _load_cache(max_age_minutes)
+        cached = _load_cache(max_age_minutes, universe_key)
         if cached:
             cached = dict(cached)
             cached["cache_hit"] = True
             return cached
 
-    universe, source, source_url = _fetch_universe()
-    cached_profile_map = _load_cached_profile_map()
-    symbols = [str(row["query_ticker"]) for row in universe]
+    universe, source, source_url = _fetch_universe(universe_key)
+    cached_profile_map = _load_cached_profile_map(universe_key)
+    symbols: List[str] = []
+    for row in universe:
+        for candidate in _row_query_candidates(row):
+            if candidate not in symbols:
+                symbols.append(candidate)
     with ThreadPoolExecutor(max_workers=2) as pool:
         profiles_future = pool.submit(_fetch_asset_profiles, symbols, workers)
         analyses_future = pool.submit(_fetch_analysis_data, symbols, workers)
@@ -679,12 +850,17 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
     missing_scores = 0
 
     for row in universe:
-        query_ticker = str(row["query_ticker"])
+        candidates = _row_query_candidates(row)
+        query_ticker = _select_query_ticker(candidates, profiles, analyses)
         profile = profiles.get(query_ticker) or {}
         analysis = analyses.get(query_ticker) or {}
         sector = _clean_text(profile.get("sector"))
         industry = _clean_text(profile.get("industry"))
-        cached_profile = cached_profile_map.get(query_ticker.upper()) or {}
+        cached_profile = {}
+        for candidate in [query_ticker, *candidates, str(row.get("ticker") or "")]:
+            cached_profile = cached_profile_map.get(_clean_text(candidate).upper()) or {}
+            if cached_profile:
+                break
         if not sector:
             sector = _clean_text(cached_profile.get("sector"))
         if not industry:
@@ -693,6 +869,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
             missing_profiles += 1
         if not any(_normalized_metric_value(metric, analysis.get(metric)) is not None for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)):
             missing_scores += 1
+        current_price = _positive_number(analysis.get("currentPrice")) or _first_candidate_price(candidates, analyses)
         rows.append(
             {
                 "rank": row["rank"],
@@ -701,7 +878,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
                 "company_name": row["company_name"],
                 "sector": sector or "Unknown",
                 "industry": industry or "Unknown",
-                "current_price": analysis.get("currentPrice"),
+                "current_price": current_price,
                 "analysis": analysis,
             }
         )
@@ -714,8 +891,8 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
         "cache_version": CACHE_VERSION,
         "cache_hit": False,
         "generated_at": generated_at,
-        "universe": "sp500",
-        "universe_label": "S&P 500",
+        "universe": universe_key,
+        "universe_label": config["label"],
         "source": source,
         "source_url": source_url,
         "count": len(rows),
@@ -732,12 +909,13 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
         "rows": rows,
     }
     if missing_profiles <= max(5, int(len(rows) * 0.2)):
-        _write_cache(payload)
+        _write_cache(payload, universe_key)
     return payload
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build the S&P 500 screener profile table.")
+    parser = argparse.ArgumentParser(description="Build a market screener profile table.")
+    parser.add_argument("--universe", choices=sorted(UNIVERSE_CONFIGS), default="sp500")
     parser.add_argument("--cache-minutes", type=int, default=720)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--workers", type=int, default=6)
@@ -748,13 +926,16 @@ def main() -> int:
             max_age_minutes=int(args.cache_minutes or 0),
             refresh=bool(args.refresh),
             workers=int(args.workers or 1),
+            universe_key=str(args.universe),
         )
     except Exception as exc:
+        universe_key = _clean_text(getattr(args, "universe", "sp500")).lower() or "sp500"
+        label = UNIVERSE_CONFIGS.get(universe_key, UNIVERSE_CONFIGS["sp500"])["label"]
         payload = {
             "status": "error",
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "universe": "sp500",
-            "universe_label": "S&P 500",
+            "universe": universe_key,
+            "universe_label": label,
             "rows": [],
             "error": f"{type(exc).__name__}: {str(exc)[:320]}",
         }

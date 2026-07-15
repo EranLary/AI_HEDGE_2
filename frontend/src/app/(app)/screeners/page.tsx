@@ -65,7 +65,16 @@ type SortKey =
   | "industry";
 type SortDirection = "asc" | "desc";
 
-const SCREENERS = [{ key: "sp500", label: "S&P 500", api: "/api/screeners/sp500" }] as const;
+const SCREENERS = [
+  { key: "sp500", label: "S&P 500", api: "/api/screeners/sp500" },
+  { key: "nasdaq100", label: "NASDAQ 100", api: "/api/screeners/nasdaq100" },
+  { key: "ta125", label: "TA-125", api: "/api/screeners/ta125" },
+] as const;
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
 
 function fmtDate(value: string | undefined): string {
   if (!value) return "N/A";
@@ -98,17 +107,17 @@ function csvEscape(value: unknown): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function downloadCsv(rows: ScreenerRow[]) {
+function downloadCsv(rows: ScreenerRow[], filename: string) {
   const header = [
     "Rank",
     "Ticker",
     "Company",
+    "Valuation Score",
+    "Quality Score",
+    "Overall Score",
     "Price",
     "Target",
     "Change %",
-    "Overall Score",
-    "Valuation Score",
-    "Quality Score",
     "Sector",
     "Industry",
   ];
@@ -116,12 +125,12 @@ function downloadCsv(rows: ScreenerRow[]) {
     row.rank,
     row.ticker,
     row.company_name,
+    fmtScore(row.valuation_score),
+    fmtScore(row.quality_score),
+    fmtScore(row.overall_score),
     fmtNumber(row.current_price),
     fmtNumber(row.target_price),
     fmtPct(row.target_change_pct),
-    fmtScore(row.overall_score),
-    fmtScore(row.valuation_score),
-    fmtScore(row.quality_score),
     clean(row.sector),
     clean(row.industry),
   ]);
@@ -130,7 +139,7 @@ function downloadCsv(rows: ScreenerRow[]) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "sp500-screener.csv";
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -141,6 +150,8 @@ function sourceLabel(payload: ScreenerPayload | null): string {
   if (!payload?.source) return "Universe source";
   if (payload.source === "slickcharts") return "Slickcharts";
   if (payload.source === "slickcharts-seed") return "Slickcharts seed";
+  if (payload.source === "tradingview") return "TradingView";
+  if (payload.source === "tradingview-seed") return "TradingView seed";
   if (payload.source === "wikipedia-fallback") return "Fallback universe";
   return payload.source;
 }
@@ -308,12 +319,28 @@ export default function ScreenersPage() {
   }, []);
 
   const rows = useMemo(() => payload?.rows || [], [payload?.rows]);
-  const sectors = useMemo(() => {
-    return ["All", ...Array.from(new Set(rows.map((row) => clean(row.sector)))).sort((a, b) => a.localeCompare(b))];
+  const sectors = useMemo<FilterOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const key = clean(row.sector);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const options = Array.from(counts.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([value, count]) => ({ value, label: `${value} (${count})` }));
+    return [{ value: "All", label: `All sectors (${rows.length})` }, ...options];
   }, [rows]);
-  const industries = useMemo(() => {
+  const industries = useMemo<FilterOption[]>(() => {
     const pool = sector === "All" ? rows : rows.filter((row) => clean(row.sector) === sector);
-    return ["All", ...Array.from(new Set(pool.map((row) => clean(row.industry)))).sort((a, b) => a.localeCompare(b))];
+    const counts = new Map<string, number>();
+    for (const row of pool) {
+      const key = clean(row.industry);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const options = Array.from(counts.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([value, count]) => ({ value, label: `${value} (${count})` }));
+    return [{ value: "All", label: `All industries (${pool.length})` }, ...options];
   }, [rows, sector]);
   const filteredRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -475,8 +502,8 @@ export default function ScreenersPage() {
                 className="hib-select w-full appearance-none rounded-lg border border-white/15 bg-black/25 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-emerald-400/60"
               >
                 {sectors.map((item) => (
-                  <option className="hib-select-option" key={item} value={item}>
-                    {item === "All" ? "All sectors" : item}
+                  <option className="hib-select-option" key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </select>
@@ -489,8 +516,8 @@ export default function ScreenersPage() {
                 className="hib-select w-full appearance-none rounded-lg border border-white/15 bg-black/25 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-emerald-400/60"
               >
                 {industries.map((item) => (
-                  <option className="hib-select-option" key={item} value={item}>
-                    {item === "All" ? "All industries" : item}
+                  <option className="hib-select-option" key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </select>
@@ -508,7 +535,7 @@ export default function ScreenersPage() {
             </button>
             <button
               type="button"
-              onClick={() => downloadCsv(sortedRows)}
+              onClick={() => downloadCsv(sortedRows, `${activeScreener}-screener.csv`)}
               disabled={!sortedRows.length}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
@@ -567,6 +594,30 @@ export default function ScreenersPage() {
                     className="w-[24rem]"
                   />
                   <SortHeader
+                    id="valuation_score"
+                    label="Valuation Score"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-40"
+                  />
+                  <SortHeader
+                    id="quality_score"
+                    label="Quality Score"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-36"
+                  />
+                  <SortHeader
+                    id="overall_score"
+                    label="Overall Score"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-36"
+                  />
+                  <SortHeader
                     id="current_price"
                     label="Price"
                     sortKey={sortKey}
@@ -589,30 +640,6 @@ export default function ScreenersPage() {
                     sortDirection={sortDirection}
                     onSort={toggleSort}
                     className="w-28"
-                  />
-                  <SortHeader
-                    id="overall_score"
-                    label="Overall"
-                    sortKey={sortKey}
-                    sortDirection={sortDirection}
-                    onSort={toggleSort}
-                    className="w-32"
-                  />
-                  <SortHeader
-                    id="valuation_score"
-                    label="Valuation"
-                    sortKey={sortKey}
-                    sortDirection={sortDirection}
-                    onSort={toggleSort}
-                    className="w-36"
-                  />
-                  <SortHeader
-                    id="quality_score"
-                    label="Quality"
-                    sortKey={sortKey}
-                    sortDirection={sortDirection}
-                    onSort={toggleSort}
-                    className="w-32"
                   />
                   <SortHeader id="sector" label="Sector" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-52" />
                   <SortHeader id="industry" label="Industry" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-72" />
@@ -642,6 +669,15 @@ export default function ScreenersPage() {
                           <p className="mt-1 font-mono text-[11px] text-[color:var(--text-muted)]">Yahoo: {row.query_ticker}</p>
                         ) : null}
                       </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.valuation_score)}`}>
+                        {fmtScore(row.valuation_score)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.quality_score)}`}>
+                        {fmtScore(row.quality_score)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.overall_score)}`}>
+                        {fmtScore(row.overall_score)}
+                      </td>
                       <td className="hib-market-table-cell font-mono text-sm text-[color:var(--text-primary)]">
                         {fmtNumber(row.current_price)}
                       </td>
@@ -650,15 +686,6 @@ export default function ScreenersPage() {
                       </td>
                       <td className={`hib-market-table-cell font-mono text-sm font-semibold ${targetTone(row.target_change_pct)}`}>
                         {fmtPct(row.target_change_pct)}
-                      </td>
-                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.overall_score)}`}>
-                        {fmtScore(row.overall_score)}
-                      </td>
-                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.valuation_score)}`}>
-                        {fmtScore(row.valuation_score)}
-                      </td>
-                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.quality_score)}`}>
-                        {fmtScore(row.quality_score)}
                       </td>
                       <td className="hib-market-table-cell font-medium text-[color:var(--text-primary)]">{clean(row.sector)}</td>
                       <td className="hib-market-table-cell whitespace-normal font-medium leading-snug text-[color:var(--text-primary)]">
@@ -684,7 +711,7 @@ export default function ScreenersPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Start analysis</p>
             <h2 className="mt-2 text-xl font-semibold text-[color:var(--text-primary)]">{analysisRow.ticker}</h2>
             <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
-              Start a new full analysis for {analysisRow.company_name}? When the report is saved, this screener target and change can update from the new mean target.
+              Start a new full analysis for {analysisRow.company_name}?
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button

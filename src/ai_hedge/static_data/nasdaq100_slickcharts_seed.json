@@ -1,0 +1,624 @@
+{
+  "source": "slickcharts",
+  "source_url": "https://www.slickcharts.com/nasdaq100",
+  "rows": [
+    {
+      "rank": 1,
+      "ticker": "NVDA",
+      "query_ticker": "NVDA",
+      "company_name": "Nvidia Corp"
+    },
+    {
+      "rank": 2,
+      "ticker": "AAPL",
+      "query_ticker": "AAPL",
+      "company_name": "Apple Inc."
+    },
+    {
+      "rank": 3,
+      "ticker": "MSFT",
+      "query_ticker": "MSFT",
+      "company_name": "Microsoft Corp"
+    },
+    {
+      "rank": 4,
+      "ticker": "AMZN",
+      "query_ticker": "AMZN",
+      "company_name": "Amazon.Com Inc"
+    },
+    {
+      "rank": 5,
+      "ticker": "GOOGL",
+      "query_ticker": "GOOGL",
+      "company_name": "Alphabet Inc. Class A Common Stock"
+    },
+    {
+      "rank": 6,
+      "ticker": "GOOG",
+      "query_ticker": "GOOG",
+      "company_name": "Alphabet Inc. Class C Capital Stock"
+    },
+    {
+      "rank": 7,
+      "ticker": "AVGO",
+      "query_ticker": "AVGO",
+      "company_name": "Broadcom Inc. Common Stock"
+    },
+    {
+      "rank": 8,
+      "ticker": "SPCX",
+      "query_ticker": "SPCX",
+      "company_name": "Space Exploration Technologies Corp. Class A Common Stock"
+    },
+    {
+      "rank": 9,
+      "ticker": "META",
+      "query_ticker": "META",
+      "company_name": "Meta Platforms, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 10,
+      "ticker": "TSLA",
+      "query_ticker": "TSLA",
+      "company_name": "Tesla, Inc. Common Stock"
+    },
+    {
+      "rank": 11,
+      "ticker": "MU",
+      "query_ticker": "MU",
+      "company_name": "Micron Technology, Inc."
+    },
+    {
+      "rank": 12,
+      "ticker": "WMT",
+      "query_ticker": "WMT",
+      "company_name": "Walmart Inc. Common Stock"
+    },
+    {
+      "rank": 13,
+      "ticker": "AMD",
+      "query_ticker": "AMD",
+      "company_name": "Advanced Micro Devices"
+    },
+    {
+      "rank": 14,
+      "ticker": "ASML",
+      "query_ticker": "ASML",
+      "company_name": "ASML Holding NV"
+    },
+    {
+      "rank": 15,
+      "ticker": "INTC",
+      "query_ticker": "INTC",
+      "company_name": "Intel Corp"
+    },
+    {
+      "rank": 16,
+      "ticker": "AMAT",
+      "query_ticker": "AMAT",
+      "company_name": "Applied Materials Inc"
+    },
+    {
+      "rank": 17,
+      "ticker": "CSCO",
+      "query_ticker": "CSCO",
+      "company_name": "Cisco Systems, Inc. Common Stock (DE)"
+    },
+    {
+      "rank": 18,
+      "ticker": "LRCX",
+      "query_ticker": "LRCX",
+      "company_name": "Lam Research Corp"
+    },
+    {
+      "rank": 19,
+      "ticker": "COST",
+      "query_ticker": "COST",
+      "company_name": "Costco Wholesale Corp"
+    },
+    {
+      "rank": 20,
+      "ticker": "PLTR",
+      "query_ticker": "PLTR",
+      "company_name": "Palantir Technologies Inc. Class A Common Stock"
+    },
+    {
+      "rank": 21,
+      "ticker": "NFLX",
+      "query_ticker": "NFLX",
+      "company_name": "NetFlix Inc"
+    },
+    {
+      "rank": 22,
+      "ticker": "ARM",
+      "query_ticker": "ARM",
+      "company_name": "Arm Holdings plc American Depositary Shares"
+    },
+    {
+      "rank": 23,
+      "ticker": "KLAC",
+      "query_ticker": "KLAC",
+      "company_name": "KLA Corporation Common Stock"
+    },
+    {
+      "rank": 24,
+      "ticker": "PANW",
+      "query_ticker": "PANW",
+      "company_name": "Palo Alto Networks, Inc. Common Stock"
+    },
+    {
+      "rank": 25,
+      "ticker": "TXN",
+      "query_ticker": "TXN",
+      "company_name": "Texas Instruments Incorporated"
+    },
+    {
+      "rank": 26,
+      "ticker": "LIN",
+      "query_ticker": "LIN",
+      "company_name": "Linde plc Ordinary Share"
+    },
+    {
+      "rank": 27,
+      "ticker": "SNDK",
+      "query_ticker": "SNDK",
+      "company_name": "Sandisk Corporation Common Stock"
+    },
+    {
+      "rank": 28,
+      "ticker": "CRWD",
+      "query_ticker": "CRWD",
+      "company_name": "CrowdStrike Holdings, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 29,
+      "ticker": "TMUS",
+      "query_ticker": "TMUS",
+      "company_name": "T-Mobile US, Inc."
+    },
+    {
+      "rank": 30,
+      "ticker": "AMGN",
+      "query_ticker": "AMGN",
+      "company_name": "Amgen Inc"
+    },
+    {
+      "rank": 31,
+      "ticker": "ADI",
+      "query_ticker": "ADI",
+      "company_name": "Analog Devices, Inc."
+    },
+    {
+      "rank": 32,
+      "ticker": "QCOM",
+      "query_ticker": "QCOM",
+      "company_name": "Qualcomm Inc"
+    },
+    {
+      "rank": 33,
+      "ticker": "STX",
+      "query_ticker": "STX",
+      "company_name": "Seagate Technology Holdings PLC Ordinary Shares (Ireland)"
+    },
+    {
+      "rank": 34,
+      "ticker": "PEP",
+      "query_ticker": "PEP",
+      "company_name": "PepsiCo, Inc."
+    },
+    {
+      "rank": 35,
+      "ticker": "MRVL",
+      "query_ticker": "MRVL",
+      "company_name": "Marvell Technology, Inc. Common Stock"
+    },
+    {
+      "rank": 36,
+      "ticker": "WDC",
+      "query_ticker": "WDC",
+      "company_name": "Western Digital Corp."
+    },
+    {
+      "rank": 37,
+      "ticker": "GILD",
+      "query_ticker": "GILD",
+      "company_name": "Gilead Sciences Inc"
+    },
+    {
+      "rank": 38,
+      "ticker": "SHOP",
+      "query_ticker": "SHOP",
+      "company_name": "Shopify Inc. Class A subordinate voting shares"
+    },
+    {
+      "rank": 39,
+      "ticker": "APP",
+      "query_ticker": "APP",
+      "company_name": "Applovin Corporation Class A Common Stock"
+    },
+    {
+      "rank": 40,
+      "ticker": "BKNG",
+      "query_ticker": "BKNG",
+      "company_name": "Booking Holdings Inc. Common Stock"
+    },
+    {
+      "rank": 41,
+      "ticker": "ISRG",
+      "query_ticker": "ISRG",
+      "company_name": "Intuitive Surgical Inc."
+    },
+    {
+      "rank": 42,
+      "ticker": "PDD",
+      "query_ticker": "PDD",
+      "company_name": "PDD Holdings Inc. American Depositary Shares"
+    },
+    {
+      "rank": 43,
+      "ticker": "FTNT",
+      "query_ticker": "FTNT",
+      "company_name": "Fortinet, Inc."
+    },
+    {
+      "rank": 44,
+      "ticker": "VRTX",
+      "query_ticker": "VRTX",
+      "company_name": "Vertex Pharmaceuticals Inc"
+    },
+    {
+      "rank": 45,
+      "ticker": "SBUX",
+      "query_ticker": "SBUX",
+      "company_name": "Starbucks Corp"
+    },
+    {
+      "rank": 46,
+      "ticker": "CDNS",
+      "query_ticker": "CDNS",
+      "company_name": "Cadence Design Systems"
+    },
+    {
+      "rank": 47,
+      "ticker": "ADP",
+      "query_ticker": "ADP",
+      "company_name": "Automatic Data Processing"
+    },
+    {
+      "rank": 48,
+      "ticker": "MAR",
+      "query_ticker": "MAR",
+      "company_name": "Marriott International Class A Common Stock"
+    },
+    {
+      "rank": 49,
+      "ticker": "MNST",
+      "query_ticker": "MNST",
+      "company_name": "Monster Beverage Corporation"
+    },
+    {
+      "rank": 50,
+      "ticker": "DDOG",
+      "query_ticker": "DDOG",
+      "company_name": "Datadog, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 51,
+      "ticker": "MELI",
+      "query_ticker": "MELI",
+      "company_name": "Mercado Libre, Inc"
+    },
+    {
+      "rank": 52,
+      "ticker": "CEG",
+      "query_ticker": "CEG",
+      "company_name": "Constellation Energy Corporation Common Stock"
+    },
+    {
+      "rank": 53,
+      "ticker": "CSX",
+      "query_ticker": "CSX",
+      "company_name": "CSX Corporation"
+    },
+    {
+      "rank": 54,
+      "ticker": "ADBE",
+      "query_ticker": "ADBE",
+      "company_name": "Adobe Inc."
+    },
+    {
+      "rank": 55,
+      "ticker": "ABNB",
+      "query_ticker": "ABNB",
+      "company_name": "Airbnb, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 56,
+      "ticker": "CMCSA",
+      "query_ticker": "CMCSA",
+      "company_name": "Comcast Corp"
+    },
+    {
+      "rank": 57,
+      "ticker": "DASH",
+      "query_ticker": "DASH",
+      "company_name": "DoorDash, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 58,
+      "ticker": "SNPS",
+      "query_ticker": "SNPS",
+      "company_name": "Synopsys Inc"
+    },
+    {
+      "rank": 59,
+      "ticker": "CTAS",
+      "query_ticker": "CTAS",
+      "company_name": "Cintas Corp"
+    },
+    {
+      "rank": 60,
+      "ticker": "INTU",
+      "query_ticker": "INTU",
+      "company_name": "Intuit Inc"
+    },
+    {
+      "rank": 61,
+      "ticker": "MDLZ",
+      "query_ticker": "MDLZ",
+      "company_name": "Mondelez International, Inc. Class A"
+    },
+    {
+      "rank": 62,
+      "ticker": "ROST",
+      "query_ticker": "ROST",
+      "company_name": "Ross Stores Inc"
+    },
+    {
+      "rank": 63,
+      "ticker": "AEP",
+      "query_ticker": "AEP",
+      "company_name": "American Electric Power Company, Inc."
+    },
+    {
+      "rank": 64,
+      "ticker": "NXPI",
+      "query_ticker": "NXPI",
+      "company_name": "NXP Semiconductors N.V."
+    },
+    {
+      "rank": 65,
+      "ticker": "HON",
+      "query_ticker": "HON",
+      "company_name": "Honeywell International, Inc."
+    },
+    {
+      "rank": 66,
+      "ticker": "REGN",
+      "query_ticker": "REGN",
+      "company_name": "Regeneron Pharmaceuticals Inc"
+    },
+    {
+      "rank": 67,
+      "ticker": "ORLY",
+      "query_ticker": "ORLY",
+      "company_name": "O'Reilly Automotive, Inc."
+    },
+    {
+      "rank": 68,
+      "ticker": "WBD",
+      "query_ticker": "WBD",
+      "company_name": "Warner Bros. Discovery, Inc. Series A Common Stock"
+    },
+    {
+      "rank": 69,
+      "ticker": "HONA",
+      "query_ticker": "HONA",
+      "company_name": "Honeywell Aerospace Inc. Common Stock"
+    },
+    {
+      "rank": 70,
+      "ticker": "MPWR",
+      "query_ticker": "MPWR",
+      "company_name": "Monolithic Power Systems, Inc."
+    },
+    {
+      "rank": 71,
+      "ticker": "PCAR",
+      "query_ticker": "PCAR",
+      "company_name": "Paccar Inc"
+    },
+    {
+      "rank": 72,
+      "ticker": "ALAB",
+      "query_ticker": "ALAB",
+      "company_name": "Astera Labs, Inc. Common Stock"
+    },
+    {
+      "rank": 73,
+      "ticker": "LITE",
+      "query_ticker": "LITE",
+      "company_name": "Lumentum Holdings Inc. Common Stock"
+    },
+    {
+      "rank": 74,
+      "ticker": "BKR",
+      "query_ticker": "BKR",
+      "company_name": "Baker Hughes Company"
+    },
+    {
+      "rank": 75,
+      "ticker": "FANG",
+      "query_ticker": "FANG",
+      "company_name": "Diamondback Energy, Inc."
+    },
+    {
+      "rank": 76,
+      "ticker": "TER",
+      "query_ticker": "TER",
+      "company_name": "Teradyne, Inc. Common Stock"
+    },
+    {
+      "rank": 77,
+      "ticker": "EA",
+      "query_ticker": "EA",
+      "company_name": "Electronic Arts Inc"
+    },
+    {
+      "rank": 78,
+      "ticker": "FAST",
+      "query_ticker": "FAST",
+      "company_name": "Fastenal Co"
+    },
+    {
+      "rank": 79,
+      "ticker": "NBIS",
+      "query_ticker": "NBIS",
+      "company_name": "Nebius Group N.V. Class A Ordinary Shares"
+    },
+    {
+      "rank": 80,
+      "ticker": "XEL",
+      "query_ticker": "XEL",
+      "company_name": "Xcel Energy, Inc."
+    },
+    {
+      "rank": 81,
+      "ticker": "PYPL",
+      "query_ticker": "PYPL",
+      "company_name": "PayPal Holdings, Inc. Common Stock"
+    },
+    {
+      "rank": 82,
+      "ticker": "ODFL",
+      "query_ticker": "ODFL",
+      "company_name": "Old Dominion Freight Line"
+    },
+    {
+      "rank": 83,
+      "ticker": "RKLB",
+      "query_ticker": "RKLB",
+      "company_name": "Rocket Lab Corporation Common Stock"
+    },
+    {
+      "rank": 84,
+      "ticker": "EXC",
+      "query_ticker": "EXC",
+      "company_name": "Exelon Corporation"
+    },
+    {
+      "rank": 85,
+      "ticker": "MCHP",
+      "query_ticker": "MCHP",
+      "company_name": "Microchip Technology Inc"
+    },
+    {
+      "rank": 86,
+      "ticker": "CCEP",
+      "query_ticker": "CCEP",
+      "company_name": "Coca-Cola Europacific Partners plc Ordinary Shares"
+    },
+    {
+      "rank": 87,
+      "ticker": "FER",
+      "query_ticker": "FER",
+      "company_name": "Ferrovial N.V. Ordinary Shares"
+    },
+    {
+      "rank": 88,
+      "ticker": "TTWO",
+      "query_ticker": "TTWO",
+      "company_name": "Take-Two Interactive Software Inc"
+    },
+    {
+      "rank": 89,
+      "ticker": "ADSK",
+      "query_ticker": "ADSK",
+      "company_name": "Autodesk Inc"
+    },
+    {
+      "rank": 90,
+      "ticker": "IDXX",
+      "query_ticker": "IDXX",
+      "company_name": "Idexx Laboratories Inc"
+    },
+    {
+      "rank": 91,
+      "ticker": "AXON",
+      "query_ticker": "AXON",
+      "company_name": "Axon Enterprise, Inc. Common Stock"
+    },
+    {
+      "rank": 92,
+      "ticker": "CRWV",
+      "query_ticker": "CRWV",
+      "company_name": "CoreWeave, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 93,
+      "ticker": "TRI",
+      "query_ticker": "TRI",
+      "company_name": "Thomson Reuters Corporation Common Shares"
+    },
+    {
+      "rank": 94,
+      "ticker": "KDP",
+      "query_ticker": "KDP",
+      "company_name": "Keurig Dr Pepper Inc."
+    },
+    {
+      "rank": 95,
+      "ticker": "PAYX",
+      "query_ticker": "PAYX",
+      "company_name": "Paychex Inc"
+    },
+    {
+      "rank": 96,
+      "ticker": "ALNY",
+      "query_ticker": "ALNY",
+      "company_name": "Alnylam Pharmaceuticals, Inc."
+    },
+    {
+      "rank": 97,
+      "ticker": "MSTR",
+      "query_ticker": "MSTR",
+      "company_name": "Strategy Inc Common Stock Class A"
+    },
+    {
+      "rank": 98,
+      "ticker": "WDAY",
+      "query_ticker": "WDAY",
+      "company_name": "Workday, Inc. Class A Common Stock"
+    },
+    {
+      "rank": 99,
+      "ticker": "ROP",
+      "query_ticker": "ROP",
+      "company_name": "Roper Technologies, Inc. Common Stock"
+    },
+    {
+      "rank": 100,
+      "ticker": "KHC",
+      "query_ticker": "KHC",
+      "company_name": "The Kraft Heinz Company Common Stock"
+    },
+    {
+      "rank": 101,
+      "ticker": "GEHC",
+      "query_ticker": "GEHC",
+      "company_name": "GE HealthCare Technologies Inc. Common Stock"
+    },
+    {
+      "rank": 102,
+      "ticker": "DXCM",
+      "query_ticker": "DXCM",
+      "company_name": "DexCom, Inc."
+    },
+    {
+      "rank": 103,
+      "ticker": "CPRT",
+      "query_ticker": "CPRT",
+      "company_name": "Copart Inc"
+    }
+  ]
+}

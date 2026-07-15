@@ -1,0 +1,1256 @@
+{
+  "source": "tradingview",
+  "source_url": "https://il.tradingview.com/symbols/TASE-TA125/components/",
+  "rows": [
+    {
+      "rank": 1,
+      "ticker": "TEVA",
+      "query_ticker": "TEVA",
+      "query_candidates": [
+        "TEVA",
+        "TEVA.TA"
+      ],
+      "company_name": "טבע"
+    },
+    {
+      "rank": 2,
+      "ticker": "ESLT",
+      "query_ticker": "ESLT",
+      "query_candidates": [
+        "ESLT",
+        "ESLT.TA"
+      ],
+      "company_name": "אלביט מערכות"
+    },
+    {
+      "rank": 3,
+      "ticker": "LUMI",
+      "query_ticker": "LUMI",
+      "query_candidates": [
+        "LUMI",
+        "LUMI.TA"
+      ],
+      "company_name": "לאומי"
+    },
+    {
+      "rank": 4,
+      "ticker": "POLI",
+      "query_ticker": "POLI",
+      "query_candidates": [
+        "POLI",
+        "POLI.TA"
+      ],
+      "company_name": "פועלים"
+    },
+    {
+      "rank": 5,
+      "ticker": "TSEM",
+      "query_ticker": "TSEM",
+      "query_candidates": [
+        "TSEM",
+        "TSEM.TA"
+      ],
+      "company_name": "טאואר"
+    },
+    {
+      "rank": 6,
+      "ticker": "MZTF",
+      "query_ticker": "MZTF",
+      "query_candidates": [
+        "MZTF",
+        "MZTF.TA"
+      ],
+      "company_name": "מזרחי טפחות"
+    },
+    {
+      "rank": 7,
+      "ticker": "AZRG",
+      "query_ticker": "AZRG",
+      "query_candidates": [
+        "AZRG",
+        "AZRG.TA"
+      ],
+      "company_name": "עזריאלי קבוצה"
+    },
+    {
+      "rank": 8,
+      "ticker": "NVMI",
+      "query_ticker": "NVMI",
+      "query_candidates": [
+        "NVMI",
+        "NVMI.TA"
+      ],
+      "company_name": "נובה"
+    },
+    {
+      "rank": 9,
+      "ticker": "PHOE",
+      "query_ticker": "PHOE",
+      "query_candidates": [
+        "PHOE",
+        "PHOE.TA"
+      ],
+      "company_name": "הפניקס"
+    },
+    {
+      "rank": 10,
+      "ticker": "ENLT",
+      "query_ticker": "ENLT",
+      "query_candidates": [
+        "ENLT",
+        "ENLT.TA"
+      ],
+      "company_name": "אנלייט אנרגיה"
+    },
+    {
+      "rank": 11,
+      "ticker": "DSCT",
+      "query_ticker": "DSCT",
+      "query_candidates": [
+        "DSCT",
+        "DSCT.TA"
+      ],
+      "company_name": "דיסקונט א"
+    },
+    {
+      "rank": 12,
+      "ticker": "HARL",
+      "query_ticker": "HARL",
+      "query_candidates": [
+        "HARL",
+        "HARL.TA"
+      ],
+      "company_name": "הראל השקעות"
+    },
+    {
+      "rank": 13,
+      "ticker": "OPCE",
+      "query_ticker": "OPCE",
+      "query_candidates": [
+        "OPCE",
+        "OPCE.TA"
+      ],
+      "company_name": "או פי סי אנרגיה"
+    },
+    {
+      "rank": 14,
+      "ticker": "MMHD",
+      "query_ticker": "MMHD",
+      "query_candidates": [
+        "MMHD",
+        "MMHD.TA"
+      ],
+      "company_name": "מנורה מב החז"
+    },
+    {
+      "rank": 15,
+      "ticker": "FIBI",
+      "query_ticker": "FIBI",
+      "query_candidates": [
+        "FIBI",
+        "FIBI.TA"
+      ],
+      "company_name": "בינלאומי"
+    },
+    {
+      "rank": 16,
+      "ticker": "CAMT",
+      "query_ticker": "CAMT",
+      "query_candidates": [
+        "CAMT",
+        "CAMT.TA"
+      ],
+      "company_name": "קמטק"
+    },
+    {
+      "rank": 17,
+      "ticker": "NXSN",
+      "query_ticker": "NXSN",
+      "query_candidates": [
+        "NXSN",
+        "NXSN.TA"
+      ],
+      "company_name": "NextVison Stabilized Systems, Ltd."
+    },
+    {
+      "rank": 18,
+      "ticker": "MGOR",
+      "query_ticker": "MGOR",
+      "query_candidates": [
+        "MGOR",
+        "MGOR.TA"
+      ],
+      "company_name": "מגה אור"
+    },
+    {
+      "rank": 19,
+      "ticker": "ORA",
+      "query_ticker": "ORA",
+      "query_candidates": [
+        "ORA",
+        "ORA.TA"
+      ],
+      "company_name": "אורמת טכנו"
+    },
+    {
+      "rank": 20,
+      "ticker": "MLSR",
+      "query_ticker": "MLSR",
+      "query_candidates": [
+        "MLSR",
+        "MLSR.TA"
+      ],
+      "company_name": "מליסרון"
+    },
+    {
+      "rank": 21,
+      "ticker": "ICL",
+      "query_ticker": "ICL",
+      "query_candidates": [
+        "ICL",
+        "ICL.TA"
+      ],
+      "company_name": "כיל"
+    },
+    {
+      "rank": 22,
+      "ticker": "BEZQ",
+      "query_ticker": "BEZQ",
+      "query_candidates": [
+        "BEZQ",
+        "BEZQ.TA"
+      ],
+      "company_name": "בזק"
+    },
+    {
+      "rank": 23,
+      "ticker": "CLIS",
+      "query_ticker": "CLIS",
+      "query_candidates": [
+        "CLIS",
+        "CLIS.TA"
+      ],
+      "company_name": "כלל עסקי ביטוח"
+    },
+    {
+      "rank": 24,
+      "ticker": "MGDL",
+      "query_ticker": "MGDL",
+      "query_candidates": [
+        "MGDL",
+        "MGDL.TA"
+      ],
+      "company_name": "מגדל ביטוח"
+    },
+    {
+      "rank": 25,
+      "ticker": "NWMD",
+      "query_ticker": "NWMD",
+      "query_candidates": [
+        "NWMD",
+        "NWMD.TA"
+      ],
+      "company_name": "דלק קידוחים יהש"
+    },
+    {
+      "rank": 26,
+      "ticker": "NICE",
+      "query_ticker": "NICE",
+      "query_candidates": [
+        "NICE",
+        "NICE.TA"
+      ],
+      "company_name": "נייס"
+    },
+    {
+      "rank": 27,
+      "ticker": "BIG",
+      "query_ticker": "BIG",
+      "query_candidates": [
+        "BIG",
+        "BIG.TA"
+      ],
+      "company_name": "ביג"
+    },
+    {
+      "rank": 28,
+      "ticker": "DORL",
+      "query_ticker": "DORL",
+      "query_candidates": [
+        "DORL",
+        "DORL.TA"
+      ],
+      "company_name": "דוראל אנרגיה"
+    },
+    {
+      "rank": 29,
+      "ticker": "SPEN",
+      "query_ticker": "SPEN",
+      "query_candidates": [
+        "SPEN",
+        "SPEN.TA"
+      ],
+      "company_name": "שפיר הנדסה"
+    },
+    {
+      "rank": 30,
+      "ticker": "NVPT",
+      "query_ticker": "NVPT",
+      "query_candidates": [
+        "NVPT",
+        "NVPT.TA"
+      ],
+      "company_name": "נאוויטס פטר יהש"
+    },
+    {
+      "rank": 31,
+      "ticker": "DLEKG",
+      "query_ticker": "DLEKG",
+      "query_candidates": [
+        "DLEKG",
+        "DLEKG.TA"
+      ],
+      "company_name": "דלק קבוצה"
+    },
+    {
+      "rank": 32,
+      "ticker": "ENRG",
+      "query_ticker": "ENRG",
+      "query_candidates": [
+        "ENRG",
+        "ENRG.TA"
+      ],
+      "company_name": "אנרג'יקס"
+    },
+    {
+      "rank": 33,
+      "ticker": "STRS",
+      "query_ticker": "STRS",
+      "query_candidates": [
+        "STRS",
+        "STRS.TA"
+      ],
+      "company_name": "שטראוס"
+    },
+    {
+      "rank": 34,
+      "ticker": "TASE",
+      "query_ticker": "TASE",
+      "query_candidates": [
+        "TASE",
+        "TASE.TA"
+      ],
+      "company_name": "הבורסה לניע בתא"
+    },
+    {
+      "rank": 35,
+      "ticker": "SAE",
+      "query_ticker": "SAE",
+      "query_candidates": [
+        "SAE",
+        "SAE.TA"
+      ],
+      "company_name": "שופרסל"
+    },
+    {
+      "rank": 36,
+      "ticker": "FTAL",
+      "query_ticker": "FTAL",
+      "query_candidates": [
+        "FTAL",
+        "FTAL.TA"
+      ],
+      "company_name": "פתאל החזקות"
+    },
+    {
+      "rank": 37,
+      "ticker": "MTAV",
+      "query_ticker": "MTAV",
+      "query_candidates": [
+        "MTAV",
+        "MTAV.TA"
+      ],
+      "company_name": "מיטב בית השקעות"
+    },
+    {
+      "rank": 38,
+      "ticker": "SKBN",
+      "query_ticker": "SKBN",
+      "query_candidates": [
+        "SKBN",
+        "SKBN.TA"
+      ],
+      "company_name": "שיכון ובינוי"
+    },
+    {
+      "rank": 39,
+      "ticker": "KEN",
+      "query_ticker": "KEN",
+      "query_candidates": [
+        "KEN",
+        "KEN.TA"
+      ],
+      "company_name": "קנון"
+    },
+    {
+      "rank": 40,
+      "ticker": "FIBIH",
+      "query_ticker": "FIBIH",
+      "query_candidates": [
+        "FIBIH",
+        "FIBIH.TA"
+      ],
+      "company_name": "פיבי"
+    },
+    {
+      "rank": 41,
+      "ticker": "MVNE",
+      "query_ticker": "MVNE",
+      "query_candidates": [
+        "MVNE",
+        "MVNE.TA"
+      ],
+      "company_name": "מבנה"
+    },
+    {
+      "rank": 42,
+      "ticker": "AMOT",
+      "query_ticker": "AMOT",
+      "query_candidates": [
+        "AMOT",
+        "AMOT.TA"
+      ],
+      "company_name": "אמות"
+    },
+    {
+      "rank": 43,
+      "ticker": "ELTR",
+      "query_ticker": "ELTR",
+      "query_candidates": [
+        "ELTR",
+        "ELTR.TA"
+      ],
+      "company_name": "אלקטרה"
+    },
+    {
+      "rank": 44,
+      "ticker": "PAZ",
+      "query_ticker": "PAZ",
+      "query_candidates": [
+        "PAZ",
+        "PAZ.TA"
+      ],
+      "company_name": "Paz Retail and Energy Ltd"
+    },
+    {
+      "rank": 45,
+      "ticker": "DIMRI",
+      "query_ticker": "DIMRI",
+      "query_candidates": [
+        "DIMRI",
+        "DIMRI.TA"
+      ],
+      "company_name": "דמרי"
+    },
+    {
+      "rank": 46,
+      "ticker": "ELAL",
+      "query_ticker": "ELAL",
+      "query_candidates": [
+        "ELAL",
+        "ELAL.TA"
+      ],
+      "company_name": "אל על"
+    },
+    {
+      "rank": 47,
+      "ticker": "GVYM",
+      "query_ticker": "GVYM",
+      "query_candidates": [
+        "GVYM",
+        "GVYM.TA"
+      ],
+      "company_name": "גב ים"
+    },
+    {
+      "rank": 48,
+      "ticker": "NOFR",
+      "query_ticker": "NOFR",
+      "query_candidates": [
+        "NOFR",
+        "NOFR.TA"
+      ],
+      "company_name": "נופר אנרג'י"
+    },
+    {
+      "rank": 49,
+      "ticker": "ISRO",
+      "query_ticker": "ISRO",
+      "query_candidates": [
+        "ISRO",
+        "ISRO.TA"
+      ],
+      "company_name": "ישרוטל"
+    },
+    {
+      "rank": 50,
+      "ticker": "MSKE",
+      "query_ticker": "MSKE",
+      "query_candidates": [
+        "MSKE",
+        "MSKE.TA"
+      ],
+      "company_name": "משק אנרגיה"
+    },
+    {
+      "rank": 51,
+      "ticker": "MTRX",
+      "query_ticker": "MTRX",
+      "query_candidates": [
+        "MTRX",
+        "MTRX.TA"
+      ],
+      "company_name": "מטריקס"
+    },
+    {
+      "rank": 52,
+      "ticker": "AFPR",
+      "query_ticker": "AFPR",
+      "query_candidates": [
+        "AFPR",
+        "AFPR.TA"
+      ],
+      "company_name": "אפי נכסים"
+    },
+    {
+      "rank": 53,
+      "ticker": "VRDS",
+      "query_ticker": "VRDS",
+      "query_candidates": [
+        "VRDS",
+        "VRDS.TA"
+      ],
+      "company_name": "Veridis Environment Ltd."
+    },
+    {
+      "rank": 54,
+      "ticker": "BSEN",
+      "query_ticker": "BSEN",
+      "query_candidates": [
+        "BSEN",
+        "BSEN.TA"
+      ],
+      "company_name": "בית שמש"
+    },
+    {
+      "rank": 55,
+      "ticker": "ALHE",
+      "query_ticker": "ALHE",
+      "query_candidates": [
+        "ALHE",
+        "ALHE.TA"
+      ],
+      "company_name": "אלוני חץ"
+    },
+    {
+      "rank": 56,
+      "ticker": "ASHG",
+      "query_ticker": "ASHG",
+      "query_candidates": [
+        "ASHG",
+        "ASHG.TA"
+      ],
+      "company_name": "אשטרום קבוצה"
+    },
+    {
+      "rank": 57,
+      "ticker": "NYAX",
+      "query_ticker": "NYAX",
+      "query_candidates": [
+        "NYAX",
+        "NYAX.TA"
+      ],
+      "company_name": "Nayax Ltd."
+    },
+    {
+      "rank": 58,
+      "ticker": "TRPZ",
+      "query_ticker": "TRPZ",
+      "query_candidates": [
+        "TRPZ",
+        "TRPZ.TA"
+      ],
+      "company_name": "TURPAZ INDUSTRIES LTD"
+    },
+    {
+      "rank": 59,
+      "ticker": "PTNR",
+      "query_ticker": "PTNR",
+      "query_candidates": [
+        "PTNR",
+        "PTNR.TA"
+      ],
+      "company_name": "פרטנר"
+    },
+    {
+      "rank": 60,
+      "ticker": "IBI",
+      "query_ticker": "IBI",
+      "query_candidates": [
+        "IBI",
+        "IBI.TA"
+      ],
+      "company_name": "איביאי בית השק"
+    },
+    {
+      "rank": 61,
+      "ticker": "GNRS",
+      "query_ticker": "GNRS",
+      "query_candidates": [
+        "GNRS",
+        "GNRS.TA"
+      ],
+      "company_name": "ג'נריישן קפיטל"
+    },
+    {
+      "rank": 62,
+      "ticker": "ORL",
+      "query_ticker": "ORL",
+      "query_candidates": [
+        "ORL",
+        "ORL.TA"
+      ],
+      "company_name": "בזן"
+    },
+    {
+      "rank": 63,
+      "ticker": "ARPT",
+      "query_ticker": "ARPT",
+      "query_candidates": [
+        "ARPT",
+        "ARPT.TA"
+      ],
+      "company_name": "ארפורט סיטי"
+    },
+    {
+      "rank": 64,
+      "ticker": "ISCN",
+      "query_ticker": "ISCN",
+      "query_candidates": [
+        "ISCN",
+        "ISCN.TA"
+      ],
+      "company_name": "ישראל קנדה"
+    },
+    {
+      "rank": 65,
+      "ticker": "ILCO",
+      "query_ticker": "ILCO",
+      "query_candidates": [
+        "ILCO",
+        "ILCO.TA"
+      ],
+      "company_name": "חברה לישראל"
+    },
+    {
+      "rank": 66,
+      "ticker": "ECNR",
+      "query_ticker": "ECNR",
+      "query_candidates": [
+        "ECNR",
+        "ECNR.TA"
+      ],
+      "company_name": "Econergy Ltd"
+    },
+    {
+      "rank": 67,
+      "ticker": "ENOG",
+      "query_ticker": "ENOG",
+      "query_candidates": [
+        "ENOG",
+        "ENOG.TA"
+      ],
+      "company_name": "אנרג'יאן"
+    },
+    {
+      "rank": 68,
+      "ticker": "RMON",
+      "query_ticker": "RMON",
+      "query_candidates": [
+        "RMON",
+        "RMON.TA"
+      ],
+      "company_name": "Rimon Consulting & Management Services Ltd."
+    },
+    {
+      "rank": 69,
+      "ticker": "CEL",
+      "query_ticker": "CEL",
+      "query_candidates": [
+        "CEL",
+        "CEL.TA"
+      ],
+      "company_name": "סלקום"
+    },
+    {
+      "rank": 70,
+      "ticker": "YHNF",
+      "query_ticker": "YHNF",
+      "query_candidates": [
+        "YHNF",
+        "YHNF.TA"
+      ],
+      "company_name": "יוחננוף"
+    },
+    {
+      "rank": 71,
+      "ticker": "FORTY",
+      "query_ticker": "FORTY",
+      "query_candidates": [
+        "FORTY",
+        "FORTY.TA"
+      ],
+      "company_name": "פורמולה מערכות"
+    },
+    {
+      "rank": 72,
+      "ticker": "AURA",
+      "query_ticker": "AURA",
+      "query_candidates": [
+        "AURA",
+        "AURA.TA"
+      ],
+      "company_name": "אאורה"
+    },
+    {
+      "rank": 73,
+      "ticker": "ISRA",
+      "query_ticker": "ISRA",
+      "query_candidates": [
+        "ISRA",
+        "ISRA.TA"
+      ],
+      "company_name": "ישראמקו יהש"
+    },
+    {
+      "rank": 74,
+      "ticker": "RMLI",
+      "query_ticker": "RMLI",
+      "query_candidates": [
+        "RMLI",
+        "RMLI.TA"
+      ],
+      "company_name": "רמי לוי"
+    },
+    {
+      "rank": 75,
+      "ticker": "MAXO",
+      "query_ticker": "MAXO",
+      "query_candidates": [
+        "MAXO",
+        "MAXO.TA"
+      ],
+      "company_name": "מקס סטוק"
+    },
+    {
+      "rank": 76,
+      "ticker": "HLAN",
+      "query_ticker": "HLAN",
+      "query_candidates": [
+        "HLAN",
+        "HLAN.TA"
+      ],
+      "company_name": "חילן"
+    },
+    {
+      "rank": 77,
+      "ticker": "RATI",
+      "query_ticker": "RATI",
+      "query_candidates": [
+        "RATI",
+        "RATI.TA"
+      ],
+      "company_name": "רציו יהש"
+    },
+    {
+      "rank": 78,
+      "ticker": "LAPD",
+      "query_ticker": "LAPD",
+      "query_candidates": [
+        "LAPD",
+        "LAPD.TA"
+      ],
+      "company_name": "לפידות קפיטל"
+    },
+    {
+      "rank": 79,
+      "ticker": "IES",
+      "query_ticker": "IES",
+      "query_candidates": [
+        "IES",
+        "IES.TA"
+      ],
+      "company_name": "אייאיאס"
+    },
+    {
+      "rank": 80,
+      "ticker": "ONE",
+      "query_ticker": "ONE",
+      "query_candidates": [
+        "ONE",
+        "ONE.TA"
+      ],
+      "company_name": "וואן טכנולוגיות"
+    },
+    {
+      "rank": 81,
+      "ticker": "DELG",
+      "query_ticker": "DELG",
+      "query_candidates": [
+        "DELG",
+        "DELG.TA"
+      ],
+      "company_name": "דלתא"
+    },
+    {
+      "rank": 82,
+      "ticker": "RIT1",
+      "query_ticker": "RIT1",
+      "query_candidates": [
+        "RIT1",
+        "RIT1.TA"
+      ],
+      "company_name": "ריט 1"
+    },
+    {
+      "rank": 83,
+      "ticker": "MISH",
+      "query_ticker": "MISH",
+      "query_candidates": [
+        "MISH",
+        "MISH.TA"
+      ],
+      "company_name": "מבטח שמיר"
+    },
+    {
+      "rank": 84,
+      "ticker": "KSTN",
+      "query_ticker": "KSTN",
+      "query_candidates": [
+        "KSTN",
+        "KSTN.TA"
+      ],
+      "company_name": "KEYSTONE INFRA LTD"
+    },
+    {
+      "rank": 85,
+      "ticker": "ISRS",
+      "query_ticker": "ISRS",
+      "query_candidates": [
+        "ISRS",
+        "ISRS.TA"
+      ],
+      "company_name": "ישרס"
+    },
+    {
+      "rank": 86,
+      "ticker": "FOX",
+      "query_ticker": "FOX",
+      "query_candidates": [
+        "FOX",
+        "FOX.TA"
+      ],
+      "company_name": "פוקס"
+    },
+    {
+      "rank": 87,
+      "ticker": "DNYA",
+      "query_ticker": "DNYA",
+      "query_candidates": [
+        "DNYA",
+        "DNYA.TA"
+      ],
+      "company_name": "Danya Cebus Ltd"
+    },
+    {
+      "rank": 88,
+      "ticker": "BLSR",
+      "query_ticker": "BLSR",
+      "query_candidates": [
+        "BLSR",
+        "BLSR.TA"
+      ],
+      "company_name": "רבוע נדלן"
+    },
+    {
+      "rank": 89,
+      "ticker": "SBEN",
+      "query_ticker": "SBEN",
+      "query_candidates": [
+        "SBEN",
+        "SBEN.TA"
+      ],
+      "company_name": "SHIKUN & BINUI ENERGY LTD"
+    },
+    {
+      "rank": 90,
+      "ticker": "ELCO",
+      "query_ticker": "ELCO",
+      "query_candidates": [
+        "ELCO",
+        "ELCO.TA"
+      ],
+      "company_name": "אלקו"
+    },
+    {
+      "rank": 91,
+      "ticker": "SCOP",
+      "query_ticker": "SCOP",
+      "query_candidates": [
+        "SCOP",
+        "SCOP.TA"
+      ],
+      "company_name": "סקופ"
+    },
+    {
+      "rank": 92,
+      "ticker": "UNMI",
+      "query_ticker": "UNMI",
+      "query_candidates": [
+        "UNMI",
+        "UNMI.TA"
+      ],
+      "company_name": "Universal Motors Israel Ltd."
+    },
+    {
+      "rank": 93,
+      "ticker": "AZRM",
+      "query_ticker": "AZRM",
+      "query_candidates": [
+        "AZRM",
+        "AZRM.TA"
+      ],
+      "company_name": "אזורים"
+    },
+    {
+      "rank": 94,
+      "ticker": "PRTC",
+      "query_ticker": "PRTC",
+      "query_candidates": [
+        "PRTC",
+        "PRTC.TA"
+      ],
+      "company_name": "פריורטק"
+    },
+    {
+      "rank": 95,
+      "ticker": "AYAL",
+      "query_ticker": "AYAL",
+      "query_candidates": [
+        "AYAL",
+        "AYAL.TA"
+      ],
+      "company_name": "איילון"
+    },
+    {
+      "rank": 96,
+      "ticker": "ISCD",
+      "query_ticker": "ISCD",
+      "query_candidates": [
+        "ISCD",
+        "ISCD.TA"
+      ],
+      "company_name": "ישראכרט"
+    },
+    {
+      "rank": 97,
+      "ticker": "IDIN",
+      "query_ticker": "IDIN",
+      "query_candidates": [
+        "IDIN",
+        "IDIN.TA"
+      ],
+      "company_name": "איידיאיי ביטוח"
+    },
+    {
+      "rank": 98,
+      "ticker": "LAHAV",
+      "query_ticker": "LAHAV",
+      "query_candidates": [
+        "LAHAV",
+        "LAHAV.TA"
+      ],
+      "company_name": "להב"
+    },
+    {
+      "rank": 99,
+      "ticker": "EQTL",
+      "query_ticker": "EQTL",
+      "query_candidates": [
+        "EQTL",
+        "EQTL.TA"
+      ],
+      "company_name": "אקויטל"
+    },
+    {
+      "rank": 100,
+      "ticker": "SMT",
+      "query_ticker": "SMT",
+      "query_candidates": [
+        "SMT",
+        "SMT.TA"
+      ],
+      "company_name": "סאמיט"
+    },
+    {
+      "rank": 101,
+      "ticker": "INRM",
+      "query_ticker": "INRM",
+      "query_candidates": [
+        "INRM",
+        "INRM.TA"
+      ],
+      "company_name": "אינרום"
+    },
+    {
+      "rank": 102,
+      "ticker": "AMPA",
+      "query_ticker": "AMPA",
+      "query_candidates": [
+        "AMPA",
+        "AMPA.TA"
+      ],
+      "company_name": "Ampa Ltd."
+    },
+    {
+      "rank": 103,
+      "ticker": "MRIN",
+      "query_ticker": "MRIN",
+      "query_candidates": [
+        "MRIN",
+        "MRIN.TA"
+      ],
+      "company_name": "מור השקעות"
+    },
+    {
+      "rank": 104,
+      "ticker": "ISHI",
+      "query_ticker": "ISHI",
+      "query_candidates": [
+        "ISHI",
+        "ISHI.TA"
+      ],
+      "company_name": "מספנות ישראל"
+    },
+    {
+      "rank": 105,
+      "ticker": "PRSK",
+      "query_ticker": "PRSK",
+      "query_candidates": [
+        "PRSK",
+        "PRSK.TA"
+      ],
+      "company_name": "פרשקובסקי"
+    },
+    {
+      "rank": 106,
+      "ticker": "AMRM",
+      "query_ticker": "AMRM",
+      "query_candidates": [
+        "AMRM",
+        "AMRM.TA"
+      ],
+      "company_name": "AMRAM AVRAHAM CONSTRUCTION COMPANY LTD"
+    },
+    {
+      "rank": 107,
+      "ticker": "VILR",
+      "query_ticker": "VILR",
+      "query_candidates": [
+        "VILR",
+        "VILR.TA"
+      ],
+      "company_name": "וילאר"
+    },
+    {
+      "rank": 108,
+      "ticker": "ARGO",
+      "query_ticker": "ARGO",
+      "query_candidates": [
+        "ARGO",
+        "ARGO.TA"
+      ],
+      "company_name": "Argo Properties N.V."
+    },
+    {
+      "rank": 109,
+      "ticker": "CRSM",
+      "query_ticker": "CRSM",
+      "query_candidates": [
+        "CRSM",
+        "CRSM.TA"
+      ],
+      "company_name": "קרסו"
+    },
+    {
+      "rank": 110,
+      "ticker": "RPOL",
+      "query_ticker": "RPOL",
+      "query_candidates": [
+        "RPOL",
+        "RPOL.TA"
+      ],
+      "company_name": "RP Optical Lab Ltd."
+    },
+    {
+      "rank": 111,
+      "ticker": "OPK",
+      "query_ticker": "OPK",
+      "query_candidates": [
+        "OPK",
+        "OPK.TA"
+      ],
+      "company_name": "אופקו הלת'"
+    },
+    {
+      "rank": 112,
+      "ticker": "DLTI",
+      "query_ticker": "DLTI",
+      "query_candidates": [
+        "DLTI",
+        "DLTI.TA"
+      ],
+      "company_name": "Delta Israel Brands Ltd"
+    },
+    {
+      "rank": 113,
+      "ticker": "NTML",
+      "query_ticker": "NTML",
+      "query_candidates": [
+        "NTML",
+        "NTML.TA"
+      ],
+      "company_name": "נטו מלינדה"
+    },
+    {
+      "rank": 114,
+      "ticker": "ARYT",
+      "query_ticker": "ARYT",
+      "query_candidates": [
+        "ARYT",
+        "ARYT.TA"
+      ],
+      "company_name": "ארית תעשיות"
+    },
+    {
+      "rank": 115,
+      "ticker": "AFRE",
+      "query_ticker": "AFRE",
+      "query_candidates": [
+        "AFRE",
+        "AFRE.TA"
+      ],
+      "company_name": "אפריקה מגורים"
+    },
+    {
+      "rank": 116,
+      "ticker": "ELCRE",
+      "query_ticker": "ELCRE",
+      "query_candidates": [
+        "ELCRE",
+        "ELCRE.TA"
+      ],
+      "company_name": "אלקטרה נדלן"
+    },
+    {
+      "rank": 117,
+      "ticker": "ACRO",
+      "query_ticker": "ACRO",
+      "query_candidates": [
+        "ACRO",
+        "ACRO.TA"
+      ],
+      "company_name": "KVUTZAT ACRO LTD"
+    },
+    {
+      "rank": 118,
+      "ticker": "GILT",
+      "query_ticker": "GILT",
+      "query_candidates": [
+        "GILT",
+        "GILT.TA"
+      ],
+      "company_name": "גילת"
+    },
+    {
+      "rank": 119,
+      "ticker": "DANE",
+      "query_ticker": "DANE",
+      "query_candidates": [
+        "DANE",
+        "DANE.TA"
+      ],
+      "company_name": "דנאל"
+    },
+    {
+      "rank": 120,
+      "ticker": "ACKR",
+      "query_ticker": "ACKR",
+      "query_candidates": [
+        "ACKR",
+        "ACKR.TA"
+      ],
+      "company_name": "Ackerstein Group Ltd"
+    },
+    {
+      "rank": 121,
+      "ticker": "QLTU",
+      "query_ticker": "QLTU",
+      "query_candidates": [
+        "QLTU",
+        "QLTU.TA"
+      ],
+      "company_name": "קווליטאו"
+    },
+    {
+      "rank": 122,
+      "ticker": "PTBL",
+      "query_ticker": "PTBL",
+      "query_candidates": [
+        "PTBL",
+        "PTBL.TA"
+      ],
+      "company_name": "נכסים ובנין"
+    },
+    {
+      "rank": 123,
+      "ticker": "SLARL",
+      "query_ticker": "SLARL",
+      "query_candidates": [
+        "SLARL",
+        "SLARL.TA"
+      ],
+      "company_name": "סלע נדלן"
+    },
+    {
+      "rank": 124,
+      "ticker": "TMRP",
+      "query_ticker": "TMRP",
+      "query_candidates": [
+        "TMRP",
+        "TMRP.TA"
+      ],
+      "company_name": "תמר פטרוליום"
+    },
+    {
+      "rank": 125,
+      "ticker": "WESR",
+      "query_ticker": "WESR",
+      "query_candidates": [
+        "WESR",
+        "WESR.TA"
+      ],
+      "company_name": "WeSure Global Tech Ltd."
+    }
+  ]
+}

@@ -178,10 +178,20 @@ async function buildTargetMap(): Promise<Map<string, TargetSummary>> {
   return targetMap;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then((value) => resolve(value))
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 async function enrichWithTargets(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   if (!rows.length) return payload;
-  const targetMap = await buildTargetMap();
+  const targetMap = await withTimeout(buildTargetMap(), 10_000, new Map<string, TargetSummary>());
   let targetsMatched = 0;
   const enrichedRows = rows.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
@@ -209,6 +219,12 @@ async function enrichWithTargets(payload: Record<string, unknown>): Promise<Reco
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const refresh = ["1", "true", "yes"].includes(String(url.searchParams.get("refresh") || "").toLowerCase());
+  if (!refresh) {
+    const cached = (await readLastGoodCache()) || (await readBootstrapSeed());
+    if (cached) {
+      return NextResponse.json(await enrichWithTargets(cached), { status: 200 });
+    }
+  }
   const payload = await runSp500Screener(refresh);
   if (payload.status !== "success") {
     const fallback = (await readLastGoodCache()) || (await readBootstrapSeed());

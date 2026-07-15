@@ -13,6 +13,8 @@ import {
   SlidersHorizontal,
   Table2,
 } from "lucide-react";
+import { submitNewRun } from "@/lib/run-submission";
+import { subscribeRunCompletion } from "@/components/shell/active-runs-store";
 
 type ScreenerRow = {
   rank: number;
@@ -73,6 +75,17 @@ function fmtDate(value: string | undefined): string {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  });
+}
+
+function fmtTime(value: string | undefined): string {
+  if (!value) return "";
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "";
+  return dt.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -221,6 +234,9 @@ export default function ScreenersPage() {
   const [industry, setIndustry] = useState("All");
   const [sortKey, setSortKey] = useState<SortKey>("overall_score");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [analysisRow, setAnalysisRow] = useState<ScreenerRow | null>(null);
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
+  const [runNotice, setRunNotice] = useState("");
 
   const active = SCREENERS.find((item) => item.key === activeScreener) || SCREENERS[0];
 
@@ -274,6 +290,23 @@ export default function ScreenersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeScreener]);
 
+  useEffect(() => {
+    return subscribeRunCompletion((event) => {
+      if (event.status !== "completed") return;
+      setRunNotice(`${event.ticker} analysis completed. Refreshing screener targets...`);
+      fetchScreener(false)
+        .then((json) => {
+          setPayload(json);
+          setError("");
+          setRunNotice(`${event.ticker} analysis completed. Screener targets refreshed.`);
+        })
+        .catch((err) => {
+          setRunNotice((err as Error)?.message || "Analysis completed, but screener refresh failed.");
+        });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const rows = useMemo(() => payload?.rows || [], [payload?.rows]);
   const sectors = useMemo(() => {
     return ["All", ...Array.from(new Set(rows.map((row) => clean(row.sector)))).sort((a, b) => a.localeCompare(b))];
@@ -321,6 +354,8 @@ export default function ScreenersPage() {
   );
   const companyCount = payload?.count ?? rows.length;
   const scoredCount = rows.filter((row) => numericScore(row.overall_score) != null).length;
+  const updatedDate = fmtDate(payload?.generated_at);
+  const updatedTime = fmtTime(payload?.generated_at);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -329,6 +364,20 @@ export default function ScreenersPage() {
     }
     setSortKey(key);
     setSortDirection(["rank", "ticker", "company_name", "sector", "industry"].includes(key) ? "asc" : "desc");
+  }
+
+  async function startAnalysis(row: ScreenerRow) {
+    setStartingAnalysis(true);
+    setRunNotice("");
+    try {
+      const result = await submitNewRun(row.ticker);
+      setRunNotice(`Started ${result.ticker} analysis. Targets will update after the new report is saved.`);
+      setAnalysisRow(null);
+    } catch (err) {
+      setRunNotice((err as Error)?.message || "Could not start analysis.");
+    } finally {
+      setStartingAnalysis(false);
+    }
   }
 
   return (
@@ -392,7 +441,14 @@ export default function ScreenersPage() {
         </div>
         <div className="rounded-xl border border-white/10 bg-zinc-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">Updated</p>
-          <p className="mt-2 font-mono text-lg font-semibold">{fmtDate(payload?.generated_at)}</p>
+          <p className="mt-2 flex flex-wrap items-baseline gap-2 font-mono">
+            <span className="text-lg font-semibold">{updatedDate}</span>
+            {updatedTime ? (
+              <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[11px] font-semibold text-[color:var(--text-muted)]">
+                {updatedTime}
+              </span>
+            ) : null}
+          </p>
         </div>
       </section>
 
@@ -473,6 +529,11 @@ export default function ScreenersPage() {
             {payload?.target_matches ? ` / ${payload.target_matches} targets` : ""}
           </span>
         </div>
+        {runNotice ? (
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+            {runNotice}
+          </div>
+        ) : null}
       </section>
 
       <section className="min-h-[34rem] rounded-2xl border border-white/10 bg-zinc-950/70 p-2 sm:p-3">
@@ -554,7 +615,7 @@ export default function ScreenersPage() {
                     className="w-32"
                   />
                   <SortHeader id="sector" label="Sector" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-52" />
-                  <SortHeader id="industry" label="Industry" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} />
+                  <SortHeader id="industry" label="Industry" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-72" />
                 </tr>
               </thead>
               <tbody>
@@ -563,9 +624,17 @@ export default function ScreenersPage() {
                     <tr key={`${row.rank}-${row.ticker}`}>
                       <td className="hib-market-table-cell font-mono text-xs text-[color:var(--text-muted)]">#{row.rank}</td>
                       <td className="hib-market-table-cell">
-                        <span className="inline-flex rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-[color:var(--accent)]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRunNotice("");
+                            setAnalysisRow(row);
+                          }}
+                          className="inline-flex rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-[color:var(--accent)] transition hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:text-emerald-100"
+                          title={`Start analysis for ${row.ticker}`}
+                        >
                           {row.ticker}
-                        </span>
+                        </button>
                       </td>
                       <td className="hib-market-table-cell">
                         <p className="font-semibold text-[color:var(--text-primary)]">{row.company_name}</p>
@@ -591,8 +660,10 @@ export default function ScreenersPage() {
                       <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.quality_score)}`}>
                         {fmtScore(row.quality_score)}
                       </td>
-                      <td className="hib-market-table-cell text-[color:var(--text-secondary)]">{clean(row.sector)}</td>
-                      <td className="hib-market-table-cell text-[color:var(--text-secondary)]">{clean(row.industry)}</td>
+                      <td className="hib-market-table-cell font-medium text-[color:var(--text-primary)]">{clean(row.sector)}</td>
+                      <td className="hib-market-table-cell whitespace-normal font-medium leading-snug text-[color:var(--text-primary)]">
+                        {clean(row.industry)}
+                      </td>
                     </tr>
                   ))
                 ) : (
@@ -607,6 +678,36 @@ export default function ScreenersPage() {
           </div>
         )}
       </section>
+      {analysisRow ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+          <div className="hib-modal-surface w-full max-w-md rounded-2xl border border-white/15 bg-zinc-950 p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Start analysis</p>
+            <h2 className="mt-2 text-xl font-semibold text-[color:var(--text-primary)]">{analysisRow.ticker}</h2>
+            <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
+              Start a new full analysis for {analysisRow.company_name}? When the report is saved, this screener target and change can update from the new mean target.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAnalysisRow(null)}
+                disabled={startingAnalysis}
+                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-[color:var(--text-secondary)] transition hover:text-[color:var(--text-primary)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => startAnalysis(analysisRow)}
+                disabled={startingAnalysis}
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)]"
+              >
+                {startingAnalysis ? <Loader2 size={15} className="animate-spin" /> : null}
+                Yes, start
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

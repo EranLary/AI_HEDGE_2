@@ -743,7 +743,7 @@ html[data-theme="light"] .hib-bear-prob-value {
 .hib-market-table-wrap {
   margin: 0.85rem 0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
   background: color-mix(in srgb, var(--surface-elevated) 78%, transparent);
@@ -759,6 +759,7 @@ html[data-theme="light"] .hib-bear-prob-value {
 .hib-market-table-head {
   position: sticky;
   top: 0;
+  z-index: 5;
   border-bottom: 1px solid var(--border-strong);
   background: var(--surface-overlay);
   color: var(--text-secondary);

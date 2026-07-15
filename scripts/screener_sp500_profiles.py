@@ -17,7 +17,7 @@ import requests
 
 SLICKCHARTS_SP500_URL = "https://www.slickcharts.com/sp500"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 class _TableParser(HTMLParser):

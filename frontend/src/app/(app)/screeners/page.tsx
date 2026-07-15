@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Download, Loader2, RefreshCw, Search, SlidersHorizontal, Table2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Building2,
+  Download,
+  Loader2,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Table2,
+} from "lucide-react";
 
 type ScreenerRow = {
   rank: number;
@@ -10,6 +21,12 @@ type ScreenerRow = {
   company_name: string;
   sector: string;
   industry: string;
+  valuation_score?: number | null;
+  quality_score?: number | null;
+  overall_score?: number | null;
+  score_confidence?: number | null;
+  valuation_coverage?: number | null;
+  quality_coverage?: number | null;
 };
 
 type ScreenerPayload = {
@@ -21,10 +38,14 @@ type ScreenerPayload = {
   source_url?: string;
   count?: number;
   missing_profiles?: number;
+  missing_scores?: number;
   cache_hit?: boolean;
   rows?: ScreenerRow[];
   error?: string;
 };
+
+type SortKey = "rank" | "ticker" | "company_name" | "overall_score" | "valuation_score" | "quality_score" | "sector" | "industry";
+type SortDirection = "asc" | "desc";
 
 const SCREENERS = [{ key: "sp500", label: "S&P 500", api: "/api/screeners/sp500" }] as const;
 
@@ -50,11 +71,14 @@ function csvEscape(value: unknown): string {
 }
 
 function downloadCsv(rows: ScreenerRow[]) {
-  const header = ["Rank", "Ticker", "Company", "Sector", "Industry"];
+  const header = ["Rank", "Ticker", "Company", "Overall Score", "Valuation Score", "Quality Score", "Sector", "Industry"];
   const body = rows.map((row) => [
     row.rank,
     row.ticker,
     row.company_name,
+    fmtScore(row.overall_score),
+    fmtScore(row.valuation_score),
+    fmtScore(row.quality_score),
     clean(row.sector),
     clean(row.industry),
   ]);
@@ -73,8 +97,68 @@ function downloadCsv(rows: ScreenerRow[]) {
 function sourceLabel(payload: ScreenerPayload | null): string {
   if (!payload?.source) return "Universe source";
   if (payload.source === "slickcharts") return "Slickcharts";
+  if (payload.source === "slickcharts-seed") return "Slickcharts seed";
   if (payload.source === "wikipedia-fallback") return "Fallback universe";
   return payload.source;
+}
+
+function fmtScore(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(1) : "-";
+}
+
+function numericScore(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function scoreClass(value: number | null | undefined): string {
+  const score = numericScore(value);
+  if (score == null) return "text-[color:var(--text-muted)]";
+  if (score >= 70) return "text-emerald-200";
+  if (score >= 45) return "text-[color:var(--text-primary)]";
+  return "text-[color:var(--danger)]";
+}
+
+function sortValue(row: ScreenerRow, key: SortKey): string | number | null {
+  if (key === "rank") return row.rank;
+  if (key === "ticker") return row.ticker;
+  if (key === "company_name") return row.company_name;
+  if (key === "sector") return clean(row.sector);
+  if (key === "industry") return clean(row.industry);
+  return numericScore(row[key]);
+}
+
+function SortHeader({
+  id,
+  label,
+  sortKey,
+  sortDirection,
+  onSort,
+  className = "",
+}: {
+  id: SortKey;
+  label: string;
+  sortKey: SortKey;
+  sortDirection: SortDirection;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const activeSort = sortKey === id;
+  const Icon = !activeSort ? ArrowUpDown : sortDirection === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th
+      className={`hib-market-table-head ${className}`}
+      aria-sort={activeSort ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(id)}
+        className="inline-flex w-full items-center gap-1.5 text-left text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)] transition hover:text-[color:var(--text-primary)]"
+      >
+        <span>{label}</span>
+        <Icon size={13} className={activeSort ? "text-[color:var(--accent)]" : "text-[color:var(--text-muted)]"} />
+      </button>
+    </th>
+  );
 }
 
 export default function ScreenersPage() {
@@ -86,6 +170,8 @@ export default function ScreenersPage() {
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("All");
   const [industry, setIndustry] = useState("All");
+  const [sortKey, setSortKey] = useState<SortKey>("overall_score");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const active = SCREENERS.find((item) => item.key === activeScreener) || SCREENERS[0];
 
@@ -160,6 +246,24 @@ export default function ScreenersPage() {
       return sectorMatch && industryMatch && queryMatch;
     });
   }, [industry, query, rows, sector]);
+  const sortedRows = useMemo(() => {
+    const direction = sortDirection === "asc" ? 1 : -1;
+    return [...filteredRows].sort((left, right) => {
+      const leftValue = sortValue(left, sortKey);
+      const rightValue = sortValue(right, sortKey);
+      const leftMissing = leftValue === null || leftValue === "";
+      const rightMissing = rightValue === null || rightValue === "";
+      if (leftMissing && rightMissing) return left.rank - right.rank;
+      if (leftMissing) return 1;
+      if (rightMissing) return -1;
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        const diff = leftValue - rightValue;
+        return diff === 0 ? left.rank - right.rank : diff * direction;
+      }
+      const diff = String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: "base", numeric: true });
+      return diff === 0 ? left.rank - right.rank : diff * direction;
+    });
+  }, [filteredRows, sortDirection, sortKey]);
 
   const sectorCount = sectors.length > 0 ? sectors.length - 1 : 0;
   const industryCount = useMemo(
@@ -167,6 +271,16 @@ export default function ScreenersPage() {
     [rows],
   );
   const companyCount = payload?.count ?? rows.length;
+  const scoredCount = rows.filter((row) => numericScore(row.overall_score) != null).length;
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDirection((value) => (value === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(["rank", "ticker", "company_name", "sector", "industry"].includes(key) ? "asc" : "desc");
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-6 text-[color:var(--text-primary)] sm:px-8">
@@ -181,7 +295,7 @@ export default function ScreenersPage() {
               Market screeners
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-[color:var(--text-secondary)]">
-              {active.label} constituents with live yahooquery sector and industry profile fields.
+              {active.label} constituents with yahooquery sector, industry, valuation, and quality scores.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -210,7 +324,7 @@ export default function ScreenersPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">Companies</p>
           <p className="mt-2 font-mono text-2xl font-semibold">{companyCount || "-"}</p>
@@ -222,6 +336,10 @@ export default function ScreenersPage() {
         <div className="rounded-xl border border-white/10 bg-zinc-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">Industries</p>
           <p className="mt-2 font-mono text-2xl font-semibold">{industryCount || "-"}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-zinc-950/70 p-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">Scored</p>
+          <p className="mt-2 font-mono text-2xl font-semibold">{scoredCount || "-"}</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-zinc-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)]">Updated</p>
@@ -285,8 +403,8 @@ export default function ScreenersPage() {
             </button>
             <button
               type="button"
-              onClick={() => downloadCsv(filteredRows)}
-              disabled={!filteredRows.length}
+              onClick={() => downloadCsv(sortedRows)}
+              disabled={!sortedRows.length}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
               <Download size={15} />
@@ -302,6 +420,7 @@ export default function ScreenersPage() {
           <span>
             {sourceLabel(payload)}
             {payload?.cache_hit ? " / cached" : ""}
+            {payload?.missing_scores ? ` / ${payload.missing_scores} unscored` : ""}
           </span>
         </div>
       </section>
@@ -323,19 +442,50 @@ export default function ScreenersPage() {
           </div>
         ) : (
           <div className="hib-market-table-wrap m-0 max-h-[72vh]">
-            <table className="hib-market-table min-w-[58rem] table-fixed">
+            <table className="hib-market-table min-w-[82rem] table-fixed">
               <thead>
                 <tr>
-                  <th className="hib-market-table-head w-20">Rank</th>
-                  <th className="hib-market-table-head w-28">Ticker</th>
-                  <th className="hib-market-table-head w-[24rem]">Company</th>
-                  <th className="hib-market-table-head w-52">Sector</th>
-                  <th className="hib-market-table-head">Industry</th>
+                  <SortHeader id="rank" label="Rank" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-20" />
+                  <SortHeader id="ticker" label="Ticker" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-28" />
+                  <SortHeader
+                    id="company_name"
+                    label="Company"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-[24rem]"
+                  />
+                  <SortHeader
+                    id="overall_score"
+                    label="Overall"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-32"
+                  />
+                  <SortHeader
+                    id="valuation_score"
+                    label="Valuation"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-36"
+                  />
+                  <SortHeader
+                    id="quality_score"
+                    label="Quality"
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={toggleSort}
+                    className="w-32"
+                  />
+                  <SortHeader id="sector" label="Sector" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-52" />
+                  <SortHeader id="industry" label="Industry" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} />
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.length ? (
-                  filteredRows.map((row) => (
+                {sortedRows.length ? (
+                  sortedRows.map((row) => (
                     <tr key={`${row.rank}-${row.ticker}`}>
                       <td className="hib-market-table-cell font-mono text-xs text-[color:var(--text-muted)]">#{row.rank}</td>
                       <td className="hib-market-table-cell">
@@ -349,13 +499,22 @@ export default function ScreenersPage() {
                           <p className="mt-1 font-mono text-[11px] text-[color:var(--text-muted)]">Yahoo: {row.query_ticker}</p>
                         ) : null}
                       </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.overall_score)}`}>
+                        {fmtScore(row.overall_score)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.valuation_score)}`}>
+                        {fmtScore(row.valuation_score)}
+                      </td>
+                      <td className={`hib-market-table-cell font-mono text-sm font-semibold ${scoreClass(row.quality_score)}`}>
+                        {fmtScore(row.quality_score)}
+                      </td>
                       <td className="hib-market-table-cell text-[color:var(--text-secondary)]">{clean(row.sector)}</td>
                       <td className="hib-market-table-cell text-[color:var(--text-secondary)]">{clean(row.industry)}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
+                    <td colSpan={8} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
                       No companies match this filter.
                     </td>
                   </tr>

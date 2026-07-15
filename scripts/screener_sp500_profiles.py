@@ -13,11 +13,37 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 import requests
+import pandas as pd
 
 
 SLICKCHARTS_SP500_URL = "https://www.slickcharts.com/sp500"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
+VALUATION_METRIC_KEYS = ("peRatio", "pbRatio", "evToEbitda", "evToRevenue", "evToFcf")
+MARGIN_METRIC_KEYS = ("grossMargin", "ebitdaMargin", "operatingMargin", "netProfitMargin", "fcfMargin")
+QUALITY_METRIC_KEYS = (
+    *MARGIN_METRIC_KEYS,
+    "revenueGrowth",
+    "earningsGrowth",
+    "roa",
+    "roe",
+    "debtToEquity",
+)
+VALUATION_CONFIGS = {metric: {"direction": "lower", "weight": 0.20} for metric in VALUATION_METRIC_KEYS}
+QUALITY_CONFIGS = {
+    "fcfMargin": {"direction": "higher", "weight": 0.10},
+    "operatingMargin": {"direction": "higher", "weight": 0.10},
+    "netProfitMargin": {"direction": "higher", "weight": 0.10},
+    "grossMargin": {"direction": "higher", "weight": 0.10},
+    "ebitdaMargin": {"direction": "higher", "weight": 0.10},
+    "revenueGrowth": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.5, "max": 1}},
+    "earningsGrowth": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.5, "max": 1}},
+    "roa": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.3, "max": 0.5}},
+    "roe": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.3, "max": 0.5}},
+    "debtToEquity": {"direction": "lower", "weight": 0.10},
+}
+INDUSTRY_SCORE_WEIGHT = 0.6
+SECTOR_SCORE_WEIGHT = 0.4
 
 
 class _TableParser(HTMLParser):
@@ -75,6 +101,8 @@ def _json_safe(value: Any) -> Any:
         return value
     if isinstance(value, float):
         return value if math.isfinite(value) else None
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
@@ -82,6 +110,58 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(v) for v in value]
     return str(value)
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            num = float(value)
+        except Exception:
+            continue
+        if math.isfinite(num):
+            return num
+    return None
+
+
+def _positive_number(*values: Any) -> float | None:
+    value = _first_number(*values)
+    return value if value is not None and value > 0 else None
+
+
+def _non_negative_number(*values: Any) -> float | None:
+    value = _first_number(*values)
+    return value if value is not None and value >= 0 else None
+
+
+def _valid_growth(*values: Any) -> float | None:
+    value = _first_number(*values)
+    return value if value is not None and value <= 9 else None
+
+
+def _positive_ratio(numerator: Any, denominator: Any) -> float | None:
+    numerator_value = _positive_number(numerator)
+    denominator_value = _positive_number(denominator)
+    if numerator_value is None or denominator_value is None:
+        return None
+    return numerator_value / denominator_value
+
+
+def _margin_from_values(numerator: Any, denominator: Any) -> float | None:
+    numerator_value = _first_number(numerator)
+    denominator_value = _first_number(denominator)
+    if numerator_value is None or denominator_value is None or denominator_value == 0:
+        return None
+    return numerator_value / denominator_value
+
+
+def _clamp(value: float, min_value: float, max_value: float) -> float:
+    return min(max(value, min_value), max_value)
+
+
+def _round_score(value: float) -> float:
+    return round(value + 1e-12, 2)
 
 
 def _display_ticker(value: str) -> str:
@@ -119,6 +199,32 @@ def _load_cache(max_age_minutes: int) -> Dict[str, Any] | None:
     return payload if isinstance(rows, list) and rows else None
 
 
+def _load_cached_profile_map() -> Dict[str, Dict[str, str]]:
+    path = _cache_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        return {}
+    profiles: Dict[str, Dict[str, str]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ticker = _clean_text(row.get("query_ticker") or row.get("ticker")).upper()
+        sector = _group_key(str(row.get("sector") or ""))
+        industry = _group_key(str(row.get("industry") or ""))
+        if ticker and (sector or industry):
+            profiles[ticker] = {
+                "sector": sector or "",
+                "industry": industry or "",
+            }
+    return profiles
+
+
 def _write_cache(payload: Dict[str, Any]) -> None:
     path = _cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +240,7 @@ def _get_html(url: str) -> str:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
-    response = requests.get(url, headers=headers, timeout=30)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
     return response.text
 
@@ -247,7 +353,7 @@ def _fetch_asset_profiles(symbols: List[str], workers: int) -> Dict[str, Dict[st
     profiles: Dict[str, Dict[str, Any]] = {}
 
     def fetch_chunk(chunk: List[str]) -> Dict[str, Dict[str, Any]]:
-        payload = Ticker(chunk).asset_profile
+        payload = Ticker(chunk, timeout=12).asset_profile
         if not isinstance(payload, dict):
             return {}
         clean: Dict[str, Dict[str, Any]] = {}
@@ -263,9 +369,288 @@ def _fetch_asset_profiles(symbols: List[str], workers: int) -> Dict[str, Dict[st
             try:
                 profiles.update(future.result())
             except Exception:
-                for symbol in futures[future]:
-                    profiles.setdefault(symbol, {})
+                for retry_chunk in _chunks(futures[future], 10):
+                    try:
+                        profiles.update(fetch_chunk(retry_chunk))
+                    except Exception:
+                        for symbol in retry_chunk:
+                            profiles.setdefault(symbol, {})
     return profiles
+
+
+def _module_for_symbol(payload: Any, symbol: str) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get(symbol) or payload.get(symbol.upper()) or payload.get(symbol.lower())
+    return _json_safe(value) if isinstance(value, dict) else {}
+
+
+def _normalize_valuations(value: Any, symbol: str) -> List[Dict[str, Any]]:
+    if not isinstance(value, pd.DataFrame) or value.empty:
+        return []
+    frame = value.reset_index()
+    if "symbol" in frame.columns:
+        frame = frame[frame["symbol"].astype(str).str.lower() == symbol.lower()]
+    records = frame.astype(object).where(pd.notna(frame), None).to_dict(orient="records")
+    return [_json_safe(record) for record in records if isinstance(record, dict)]
+
+
+def _latest_valuation_snapshot(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {}
+    latest_date = max(str(row.get("asOfDate") or "") for row in rows)
+    same_date = [row for row in rows if str(row.get("asOfDate") or "") == latest_date]
+    merged: Dict[str, Any] = {}
+    for row in sorted(same_date, key=lambda item: item.get("periodType") != "TTM"):
+        for key, value in row.items():
+            if value is not None:
+                merged[key] = value
+    return merged
+
+
+def _compact_analysis(
+    financial_data: Dict[str, Any],
+    latest_valuation: Dict[str, Any],
+    modules: Dict[str, Any],
+) -> Dict[str, Any]:
+    financial_data = financial_data if isinstance(financial_data, dict) else {}
+    latest_valuation = latest_valuation if isinstance(latest_valuation, dict) else {}
+    key_stats = modules.get("defaultKeyStatistics")
+    summary_detail = modules.get("summaryDetail")
+    key_stats = key_stats if isinstance(key_stats, dict) else {}
+    summary_detail = summary_detail if isinstance(summary_detail, dict) else {}
+    return {
+        "peRatio": _positive_number(
+            latest_valuation.get("PeRatio"),
+            summary_detail.get("trailingPE"),
+            key_stats.get("trailingPE"),
+        ),
+        "pbRatio": _positive_number(latest_valuation.get("PbRatio")),
+        "evToEbitda": _positive_number(
+            latest_valuation.get("EnterprisesValueEBITDARatio"),
+            key_stats.get("enterpriseToEbitda"),
+        ),
+        "evToRevenue": _positive_number(
+            latest_valuation.get("EnterprisesValueRevenueRatio"),
+            key_stats.get("enterpriseToRevenue"),
+        ),
+        "evToFcf": _positive_ratio(latest_valuation.get("EnterpriseValue"), financial_data.get("freeCashflow"))
+        or _positive_ratio(key_stats.get("enterpriseValue"), financial_data.get("freeCashflow")),
+        "currentRatio": _first_number(financial_data.get("currentRatio")),
+        "quickRatio": _first_number(financial_data.get("quickRatio")),
+        "debtToEquity": _non_negative_number(financial_data.get("debtToEquity")),
+        "revenueGrowth": _valid_growth(financial_data.get("revenueGrowth")),
+        "earningsGrowth": _valid_growth(financial_data.get("earningsGrowth")),
+        "roa": _first_number(financial_data.get("returnOnAssets")),
+        "roe": _first_number(financial_data.get("returnOnEquity")),
+        "grossMargin": _first_number(financial_data.get("grossMargins")),
+        "ebitdaMargin": _first_number(financial_data.get("ebitdaMargins")),
+        "operatingMargin": _first_number(financial_data.get("operatingMargins")),
+        "netProfitMargin": _first_number(financial_data.get("profitMargins")),
+        "fcfMargin": _margin_from_values(financial_data.get("freeCashflow"), financial_data.get("totalRevenue")),
+    }
+
+
+def _fetch_analysis_data(symbols: List[str], workers: int) -> Dict[str, Dict[str, Any]]:
+    try:
+        from yahooquery import Ticker
+    except Exception as exc:
+        raise RuntimeError(f"yahooquery import failed: {type(exc).__name__}: {str(exc)[:240]}") from exc
+
+    analyses: Dict[str, Dict[str, Any]] = {}
+
+    def fetch_chunk(chunk: List[str]) -> Dict[str, Dict[str, Any]]:
+        tickers = Ticker(chunk, asynchronous=True, max_workers=max(1, min(int(workers or 1), 6, len(chunk))), timeout=12)
+        financial_response = tickers.financial_data
+        valuations_frame = tickers.valuation_measures
+        modules = tickers.get_modules(["defaultKeyStatistics", "summaryDetail"])
+        chunk_rows: Dict[str, Dict[str, Any]] = {}
+        for symbol in chunk:
+            financial_data = _module_for_symbol(financial_response, symbol)
+            valuations = _normalize_valuations(valuations_frame, symbol)
+            latest_valuation = _latest_valuation_snapshot(valuations)
+            module_data = _module_for_symbol(modules, symbol)
+            chunk_rows[symbol] = _compact_analysis(financial_data, latest_valuation, module_data)
+        return chunk_rows
+
+    chunked = list(_chunks(symbols, 50))
+    with ThreadPoolExecutor(max_workers=max(1, min(int(workers or 1), 3))) as pool:
+        futures = {pool.submit(fetch_chunk, chunk): chunk for chunk in chunked}
+        for future in as_completed(futures):
+            try:
+                analyses.update(future.result())
+            except Exception:
+                for retry_chunk in _chunks(futures[future], 10):
+                    try:
+                        analyses.update(fetch_chunk(retry_chunk))
+                    except Exception:
+                        for symbol in retry_chunk:
+                            analyses.setdefault(symbol, {})
+    return analyses
+
+
+def _metric_config(metric: str) -> Dict[str, Any]:
+    return VALUATION_CONFIGS.get(metric) or QUALITY_CONFIGS[metric]
+
+
+def _normalized_metric_value(metric: str, value: Any) -> float | None:
+    config = _metric_config(metric)
+    if metric in VALUATION_CONFIGS:
+        normalized = _positive_number(value)
+    elif metric == "debtToEquity":
+        normalized = _non_negative_number(value)
+    else:
+        normalized = _first_number(value)
+    if normalized is None:
+        return None
+    clamp = config.get("clamp")
+    if clamp:
+        return _clamp(normalized, float(clamp["min"]), float(clamp["max"]))
+    return normalized
+
+
+def _empty_group_store() -> Dict[str, List[float]]:
+    return {metric: [] for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)}
+
+
+def _average(values: List[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _group_key(value: str) -> str | None:
+    text = _clean_text(value)
+    return text if text and text.lower() != "unknown" else None
+
+
+def _percentile_score(value: float, peers: List[float], direction: str) -> float:
+    if not peers:
+        return 0.0
+    better = sum(1 for peer in peers if value < peer) if direction == "lower" else sum(1 for peer in peers if value > peer)
+    equal = sum(1 for peer in peers if peer == value)
+    return ((better + (equal * 0.5)) / len(peers)) * 100
+
+
+def _blended_percentile(
+    metric: str,
+    value: float,
+    direction: str,
+    sector: str | None,
+    industry: str | None,
+    sector_values: Dict[str, Dict[str, List[float]]],
+    industry_values: Dict[str, Dict[str, List[float]]],
+) -> float | None:
+    contributions: List[Dict[str, float]] = []
+    industry_peers = industry_values.get(industry or "", {}).get(metric, []) if industry else []
+    sector_peers = sector_values.get(sector or "", {}).get(metric, []) if sector else []
+    if industry_peers:
+        contributions.append({
+            "weight": INDUSTRY_SCORE_WEIGHT,
+            "percentile": _percentile_score(value, industry_peers, direction),
+        })
+    if sector_peers:
+        contributions.append({
+            "weight": SECTOR_SCORE_WEIGHT,
+            "percentile": _percentile_score(value, sector_peers, direction),
+        })
+    if not contributions:
+        return None
+    total_weight = sum(item["weight"] for item in contributions)
+    return sum(item["percentile"] * item["weight"] for item in contributions) / total_weight
+
+
+def _weighted_category_score(
+    analysis: Dict[str, Any],
+    metrics: Tuple[str, ...],
+    configs: Dict[str, Dict[str, Any]],
+    sector: str | None,
+    industry: str | None,
+    sector_values: Dict[str, Dict[str, List[float]]],
+    industry_values: Dict[str, Dict[str, List[float]]],
+) -> float:
+    weighted_sum = 0.0
+    used_weight = 0.0
+    for metric in metrics:
+        value = _normalized_metric_value(metric, analysis.get(metric))
+        if value is None:
+            continue
+        percentile = _blended_percentile(
+            metric,
+            value,
+            str(configs[metric]["direction"]),
+            sector,
+            industry,
+            sector_values,
+            industry_values,
+        )
+        if percentile is None:
+            continue
+        weight = float(configs[metric]["weight"])
+        weighted_sum += percentile * weight
+        used_weight += weight
+    return _round_score(weighted_sum / used_weight) if used_weight else 0.0
+
+
+def _category_coverage(analysis: Dict[str, Any], metrics: Tuple[str, ...], configs: Dict[str, Dict[str, Any]]) -> float:
+    available_weight = 0.0
+    for metric in metrics:
+        if _normalized_metric_value(metric, analysis.get(metric)) is not None:
+            available_weight += float(configs[metric]["weight"])
+    total = sum(float(config["weight"]) for config in configs.values())
+    return available_weight / total if total else 0.0
+
+
+def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
+    sector_values: Dict[str, Dict[str, List[float]]] = {}
+    industry_values: Dict[str, Dict[str, List[float]]] = {}
+    for row in rows:
+        analysis = row.get("analysis")
+        if not isinstance(analysis, dict):
+            continue
+        sector = _group_key(str(row.get("sector") or ""))
+        industry = _group_key(str(row.get("industry") or ""))
+        for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS):
+            value = _normalized_metric_value(metric, analysis.get(metric))
+            if value is None:
+                continue
+            if sector:
+                sector_values.setdefault(sector, _empty_group_store())[metric].append(value)
+            if industry:
+                industry_values.setdefault(industry, _empty_group_store())[metric].append(value)
+
+    for row in rows:
+        analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
+        sector = _group_key(str(row.get("sector") or ""))
+        industry = _group_key(str(row.get("industry") or ""))
+        valuation_score = _weighted_category_score(
+            analysis,
+            VALUATION_METRIC_KEYS,
+            VALUATION_CONFIGS,
+            sector,
+            industry,
+            sector_values,
+            industry_values,
+        )
+        quality_score = _weighted_category_score(
+            analysis,
+            QUALITY_METRIC_KEYS,
+            QUALITY_CONFIGS,
+            sector,
+            industry,
+            sector_values,
+            industry_values,
+        )
+        valuation_coverage = _category_coverage(analysis, VALUATION_METRIC_KEYS, VALUATION_CONFIGS)
+        quality_coverage = _category_coverage(analysis, QUALITY_METRIC_KEYS, QUALITY_CONFIGS)
+        confidence = ((valuation_coverage * sum(config["weight"] for config in VALUATION_CONFIGS.values()))
+            + (quality_coverage * sum(config["weight"] for config in QUALITY_CONFIGS.values()))) / (
+            sum(config["weight"] for config in VALUATION_CONFIGS.values()) + sum(config["weight"] for config in QUALITY_CONFIGS.values())
+        )
+        row["valuation_score"] = valuation_score
+        row["quality_score"] = quality_score
+        row["overall_score"] = _round_score((valuation_score * 0.45) + (quality_score * 0.55))
+        row["score_confidence"] = _round_score(confidence * 100)
+        row["valuation_coverage"] = _round_score(valuation_coverage * 100)
+        row["quality_coverage"] = _round_score(quality_coverage * 100)
 
 
 def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str, Any]:
@@ -277,19 +662,33 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
             return cached
 
     universe, source, source_url = _fetch_universe()
+    cached_profile_map = _load_cached_profile_map()
     symbols = [str(row["query_ticker"]) for row in universe]
-    profiles = _fetch_asset_profiles(symbols, workers)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        profiles_future = pool.submit(_fetch_asset_profiles, symbols, workers)
+        analyses_future = pool.submit(_fetch_analysis_data, symbols, workers)
+        profiles = profiles_future.result()
+        analyses = analyses_future.result()
     generated_at = datetime.now(timezone.utc).isoformat()
     rows: List[Dict[str, Any]] = []
     missing_profiles = 0
+    missing_scores = 0
 
     for row in universe:
         query_ticker = str(row["query_ticker"])
         profile = profiles.get(query_ticker) or {}
+        analysis = analyses.get(query_ticker) or {}
         sector = _clean_text(profile.get("sector"))
         industry = _clean_text(profile.get("industry"))
+        cached_profile = cached_profile_map.get(query_ticker.upper()) or {}
+        if not sector:
+            sector = _clean_text(cached_profile.get("sector"))
+        if not industry:
+            industry = _clean_text(cached_profile.get("industry"))
         if not sector and not industry:
             missing_profiles += 1
+        if not any(_normalized_metric_value(metric, analysis.get(metric)) is not None for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)):
+            missing_scores += 1
         rows.append(
             {
                 "rank": row["rank"],
@@ -298,8 +697,12 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
                 "company_name": row["company_name"],
                 "sector": sector or "Unknown",
                 "industry": industry or "Unknown",
+                "analysis": analysis,
             }
         )
+    _calculate_scores(rows)
+    for row in rows:
+        row.pop("analysis", None)
 
     payload = {
         "status": "success",
@@ -312,9 +715,19 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int) -> Dict[str
         "source_url": source_url,
         "count": len(rows),
         "missing_profiles": missing_profiles,
+        "missing_scores": missing_scores,
+        "scoring": {
+            "method": "samancal_percentile_v1",
+            "sector_source": "yahooquery.asset_profile.sector",
+            "industry_source": "yahooquery.asset_profile.industry",
+            "final_score_formula": "0.45 * valuation_score + 0.55 * quality_score",
+            "valuation_metrics": list(VALUATION_METRIC_KEYS),
+            "quality_metrics": list(QUALITY_METRIC_KEYS),
+        },
         "rows": rows,
     }
-    _write_cache(payload)
+    if missing_profiles <= max(5, int(len(rows) * 0.2)):
+        _write_cache(payload)
     return payload
 
 

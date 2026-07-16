@@ -200,6 +200,10 @@ function sortValue(row: ScreenerRow, key: SortKey): string | number | null {
   return numericScore(row[key]);
 }
 
+function analysisTicker(row: ScreenerRow): string {
+  return String(row.query_ticker || row.ticker || "").trim().toUpperCase();
+}
+
 function SortHeader({
   id,
   label,
@@ -397,7 +401,7 @@ export default function ScreenersPage() {
     setStartingAnalysis(true);
     setRunNotice("");
     try {
-      const result = await submitNewRun(row.ticker);
+      const result = await submitNewRun(analysisTicker(row));
       setRunNotice(`Started ${result.ticker} analysis. Targets will update after the new report is saved.`);
       setAnalysisRow(null);
     } catch (err) {
@@ -658,7 +662,7 @@ export default function ScreenersPage() {
                             setAnalysisRow(row);
                           }}
                           className="inline-flex rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-[color:var(--accent)] transition hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:text-emerald-100"
-                          title={`Start analysis for ${row.ticker}`}
+                          title={`Start analysis for ${analysisTicker(row)}`}
                         >
                           {row.ticker}
                         </button>
@@ -709,7 +713,7 @@ export default function ScreenersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
           <div className="hib-modal-surface w-full max-w-md rounded-2xl border border-white/15 bg-zinc-950 p-5 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Start analysis</p>
-            <h2 className="mt-2 text-xl font-semibold text-[color:var(--text-primary)]">{analysisRow.ticker}</h2>
+            <h2 className="mt-2 text-xl font-semibold text-[color:var(--text-primary)]">{analysisTicker(analysisRow)}</h2>
             <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
               Start a new full analysis for {analysisRow.company_name}?
             </p>

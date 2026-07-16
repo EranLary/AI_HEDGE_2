@@ -35,11 +35,17 @@ type TargetSummary = {
   samples: number;
 };
 
+type TargetData = {
+  aliasMap: Map<string, TargetSummary>;
+  exactMap: Map<string, TargetSummary>;
+  exactReportTickers: Set<string>;
+};
+
 function repoRoot(): string {
   return path.resolve(process.cwd(), "..");
 }
 
-function runScreener(universe: ScreenerUniverse, refresh: boolean): Promise<Record<string, unknown>> {
+function runScreener(universe: ScreenerUniverse, refresh: boolean, targetData: TargetData): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     const root = repoRoot();
     const scriptPath = path.resolve(root, "scripts", "screener_sp500_profiles.py");
@@ -53,6 +59,8 @@ function runScreener(universe: ScreenerUniverse, refresh: boolean): Promise<Reco
         ...process.env,
         PYTHONUNBUFFERED: "1",
         PYTHONPATH: path.resolve(root, "src"),
+        SCREENER_PLATFORM_TICKERS:
+          universe === "ta125" ? JSON.stringify(Array.from(targetData.exactReportTickers)) : undefined,
       },
     });
 
@@ -145,7 +153,25 @@ function tickerKeys(value: unknown): string[] {
   return Array.from(new Set(variants.filter(Boolean)));
 }
 
-function targetKeys(row: Record<string, unknown>): string[] {
+function sameTickerKeys(value: unknown): string[] {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw) return [];
+  return Array.from(new Set([raw, raw.replace(/-/g, "."), raw.replace(/\./g, "-")].filter(Boolean)));
+}
+
+function taPreferredTicker(value: unknown, exactReportTickers: Set<string>): string | null {
+  const base = String(value || "").trim().toUpperCase().replace(/\.TA$/, "");
+  if (!base) return null;
+  if (exactReportTickers.has(base)) return base;
+  const taTicker = `${base}.TA`;
+  if (exactReportTickers.has(taTicker)) return taTicker;
+  return null;
+}
+
+function targetKeys(row: Record<string, unknown>, universe: ScreenerUniverse): string[] {
+  if (universe === "ta125") {
+    return sameTickerKeys(row.query_ticker || row.ticker);
+  }
   const values = [row.ticker, row.query_ticker];
   const keys: string[] = [];
   for (const value of values) {
@@ -156,13 +182,19 @@ function targetKeys(row: Record<string, unknown>): string[] {
   return keys;
 }
 
-function putTarget(map: Map<string, TargetSummary>, ticker: unknown, summary: TargetSummary) {
+function putAliasTarget(map: Map<string, TargetSummary>, ticker: unknown, summary: TargetSummary) {
   for (const key of tickerKeys(ticker)) {
     map.set(key, summary);
   }
 }
 
-async function buildTargetMap(): Promise<Map<string, TargetSummary>> {
+function putExactTarget(map: Map<string, TargetSummary>, ticker: unknown, summary: TargetSummary) {
+  for (const key of sameTickerKeys(ticker)) {
+    map.set(key, summary);
+  }
+}
+
+async function buildTargetData(): Promise<TargetData> {
   const byTicker = new Map<string, SummarySourceReport[]>();
   const merged = new Map<string, SummarySourceReport>();
 
@@ -207,14 +239,19 @@ async function buildTargetMap(): Promise<Map<string, TargetSummary>> {
     }
   }
 
-  const targetMap = new Map<string, TargetSummary>();
+  const aliasMap = new Map<string, TargetSummary>();
+  const exactMap = new Map<string, TargetSummary>();
+  const exactReportTickers = new Set<string>();
   for (const [ticker, reports] of byTicker.entries()) {
+    exactReportTickers.add(ticker);
     const aggregation = computeTickerSummaryAggregation(reports, "all");
     const target = numberOrNull(aggregation.overview.mean_target_price);
     const samples = Number(aggregation.overview.target_samples || 0);
-    putTarget(targetMap, ticker, { target, samples });
+    const summary = { target, samples };
+    putAliasTarget(aliasMap, ticker, summary);
+    putExactTarget(exactMap, ticker, summary);
   }
-  return targetMap;
+  return { aliasMap, exactMap, exactReportTickers };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -227,15 +264,31 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   });
 }
 
-async function enrichWithTargets(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+function emptyTargetData(): TargetData {
+  return { aliasMap: new Map<string, TargetSummary>(), exactMap: new Map<string, TargetSummary>(), exactReportTickers: new Set<string>() };
+}
+
+function needsTa125PreferenceRefresh(payload: Record<string, unknown>, targetData: TargetData): boolean {
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  if (!rows.length || targetData.exactReportTickers.size === 0) return false;
+  return rows.some((raw) => {
+    if (!raw || typeof raw !== "object") return false;
+    const row = raw as Record<string, unknown>;
+    const preferred = taPreferredTicker(row.ticker, targetData.exactReportTickers);
+    if (!preferred) return false;
+    return String(row.query_ticker || "").trim().toUpperCase() !== preferred;
+  });
+}
+
+async function enrichWithTargets(payload: Record<string, unknown>, universe: ScreenerUniverse, targetData: TargetData): Promise<Record<string, unknown>> {
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   if (!rows.length) return payload;
-  const targetMap = await withTimeout(buildTargetMap(), 10_000, new Map<string, TargetSummary>());
+  const targetMap = universe === "ta125" ? targetData.exactMap : targetData.aliasMap;
   let targetsMatched = 0;
   const enrichedRows = rows.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const row = raw as Record<string, unknown>;
-    const targetSummary = targetKeys(row)
+    const targetSummary = targetKeys(row, universe)
       .map((key) => targetMap.get(key))
       .find(Boolean);
     const price = numberOrNull(row.current_price);
@@ -260,20 +313,25 @@ async function enrichWithTargets(payload: Record<string, unknown>): Promise<Reco
 export async function handleScreenerRequest(req: Request, universe: ScreenerUniverse) {
   const url = new URL(req.url);
   const refresh = ["1", "true", "yes"].includes(String(url.searchParams.get("refresh") || "").toLowerCase());
+  const targetData = await withTimeout(buildTargetData(), 10_000, emptyTargetData());
+  let forceRefresh = false;
   if (!refresh) {
     const cached = (await readLastGoodCache(universe)) || (await readBootstrapSeed(universe));
     if (cached) {
-      return NextResponse.json(await enrichWithTargets(cached), { status: 200 });
+      forceRefresh = universe === "ta125" && needsTa125PreferenceRefresh(cached, targetData);
+      if (!forceRefresh) {
+        return NextResponse.json(await enrichWithTargets(cached, universe, targetData), { status: 200 });
+      }
     }
   }
-  const payload = await runScreener(universe, refresh);
+  const payload = await runScreener(universe, refresh || forceRefresh, targetData);
   if (payload.status !== "success") {
     const fallback = (await readLastGoodCache(universe)) || (await readBootstrapSeed(universe));
     if (fallback) {
-      return NextResponse.json(await enrichWithTargets(fallback), { status: 200 });
+      return NextResponse.json(await enrichWithTargets(fallback, universe, targetData), { status: 200 });
     }
   }
   const status = payload.status === "success" ? 200 : 502;
-  const responsePayload = payload.status === "success" ? await enrichWithTargets(payload) : payload;
+  const responsePayload = payload.status === "success" ? await enrichWithTargets(payload, universe, targetData) : payload;
   return NextResponse.json(responsePayload, { status });
 }

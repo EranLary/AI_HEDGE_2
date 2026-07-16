@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -347,6 +348,51 @@ def _parse_wikipedia_rows(html: str) -> List[Dict[str, Any]]:
 def _ta_query_candidates(ticker: str) -> List[str]:
     base = _display_ticker(ticker).replace(".TA", "")
     return [base, f"{base}.TA"] if base else []
+
+
+def _load_platform_tickers() -> set[str]:
+    raw = os.environ.get("SCREENER_PLATFORM_TICKERS") or ""
+    if not raw.strip():
+        return set()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return set()
+    if not isinstance(payload, list):
+        return set()
+    return {_clean_text(item).upper() for item in payload if _clean_text(item)}
+
+
+def _ta_platform_preferred_ticker(ticker: str, platform_tickers: set[str]) -> str | None:
+    base = _display_ticker(ticker).replace(".TA", "")
+    if not base:
+        return None
+    if base in platform_tickers:
+        return base
+    ta_ticker = f"{base}.TA"
+    if ta_ticker in platform_tickers:
+        return ta_ticker
+    return None
+
+
+def _apply_platform_ticker_preferences(rows: List[Dict[str, Any]], universe: str) -> List[Dict[str, Any]]:
+    if universe != "ta125":
+        return rows
+    platform_tickers = _load_platform_tickers()
+    if not platform_tickers:
+        return rows
+    preferred_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        preferred = _ta_platform_preferred_ticker(str(row.get("ticker") or ""), platform_tickers)
+        if not preferred:
+            preferred_rows.append(row)
+            continue
+        next_row = dict(row)
+        next_row["query_ticker"] = preferred
+        next_row["query_candidates"] = [preferred]
+        next_row["platform_preferred_ticker"] = preferred
+        preferred_rows.append(next_row)
+    return preferred_rows
 
 
 def _row_query_candidates(row: Dict[str, Any]) -> List[str]:
@@ -833,6 +879,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
             return cached
 
     universe, source, source_url = _fetch_universe(universe_key)
+    universe = _apply_platform_ticker_preferences(universe, universe_key)
     cached_profile_map = _load_cached_profile_map(universe_key)
     symbols: List[str] = []
     for row in universe:
@@ -851,7 +898,8 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
 
     for row in universe:
         candidates = _row_query_candidates(row)
-        query_ticker = _select_query_ticker(candidates, profiles, analyses)
+        platform_preferred_ticker = _clean_text(row.get("platform_preferred_ticker"))
+        query_ticker = platform_preferred_ticker or _select_query_ticker(candidates, profiles, analyses)
         profile = profiles.get(query_ticker) or {}
         analysis = analyses.get(query_ticker) or {}
         sector = _clean_text(profile.get("sector"))
@@ -869,7 +917,9 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
             missing_profiles += 1
         if not any(_normalized_metric_value(metric, analysis.get(metric)) is not None for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)):
             missing_scores += 1
-        current_price = _positive_number(analysis.get("currentPrice")) or _first_candidate_price(candidates, analyses)
+        current_price = _positive_number(analysis.get("currentPrice"))
+        if not platform_preferred_ticker:
+            current_price = current_price or _first_candidate_price(candidates, analyses)
         rows.append(
             {
                 "rank": row["rank"],
@@ -879,6 +929,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
                 "sector": sector or "Unknown",
                 "industry": industry or "Unknown",
                 "current_price": current_price,
+                "ticker_preference": "platform_reports" if platform_preferred_ticker else "yahooquery_first_available",
                 "analysis": analysis,
             }
         )
@@ -895,6 +946,7 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
         "universe_label": config["label"],
         "source": source,
         "source_url": source_url,
+        "ticker_preference_source": "platform_reports" if universe_key == "ta125" and _load_platform_tickers() else "default",
         "count": len(rows),
         "missing_profiles": missing_profiles,
         "missing_scores": missing_scores,

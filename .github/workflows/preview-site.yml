@@ -61,7 +61,9 @@ jobs:
             -e 's/^app = "hedge-in-a-box-site"/app = "${{ env.PREVIEW_APP }}"/' \
             -e 's/auto_stop_machines = false/auto_stop_machines = "stop"/' \
             -e 's/min_machines_running = 1/min_machines_running = 0/' \
-            fly.site.toml > fly.preview.toml
+            fly.site.toml \
+            | sed '/^\[deploy\]/,/^\[env\]/{/^\[env\]/!d;}' \
+            > fly.preview.toml
           echo '--- fly.preview.toml ---'
           cat fly.preview.toml
 
@@ -156,6 +158,14 @@ jobs:
           echo "::add-mask::$UNPOOLED"
           echo "PR_DATABASE_URL=$POOLED" >> "$GITHUB_ENV"
           echo "PR_DATABASE_URL_UNPOOLED=$UNPOOLED" >> "$GITHUB_ENV"
+
+      - name: Apply preview migrations
+        env:
+          DATABASE_URL_UNPOOLED: ${{ env.PR_DATABASE_URL_UNPOOLED }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "psycopg[binary]>=3.2" "python-dotenv>=1.0.1"
+          python scripts/migrate.py --db-url "$DATABASE_URL_UNPOOLED"
 
       - name: Stage preview secrets
         env:

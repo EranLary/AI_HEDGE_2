@@ -38,6 +38,10 @@ const FINANCIAL_DOWNLOAD_PERIODS = [
   { key: "both", label: "Both" },
 ] as const;
 
+function financialPeriodFilenamePart(period: (typeof FINANCIAL_DOWNLOAD_PERIODS)[number]["key"]): string {
+  return period === "both" ? "annual-quarterly" : period;
+}
+
 const CHART_TOKENS = [
   "--chart-grid",
   "--chart-axis",
@@ -260,7 +264,8 @@ export default function ComparePage() {
       const downloadedCount = Object.keys(financials.data || {}).length;
       if (!downloadedCount) throw new Error("No financial statements were available for the selected tickers.");
       const timestamp = new Date().toISOString().slice(0, 10);
-      downloadTextFile(`comparison-financials-${timestamp}.txt`, JSON.stringify(financials, null, 2));
+      const periodPart = financialPeriodFilenamePart(financialDownloadPeriod);
+      downloadTextFile(`comparison-financials-${periodPart}-${timestamp}.txt`, JSON.stringify(financials, null, 2));
       setDownloadStatus({
         tone: "success",
         message: `Downloaded ${financialDownloadPeriod} financial JSON for ${downloadedCount} ticker${downloadedCount === 1 ? "" : "s"}.`,
@@ -373,54 +378,70 @@ export default function ComparePage() {
       </header>
 
       <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto_auto_auto] sm:items-center">
-          <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
-          <button
-            type="button"
-            onClick={() => addTicker(selected)}
-            disabled={!selected || tickers.length >= MAX_TICKERS}
-            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--accent)] bg-black/20 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] transition hover:bg-[color:var(--accent)] hover:text-[color:var(--text-on-accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] sm:w-auto"
-          >
-            <Plus size={13} />
-            Add Ticker
-          </button>
-          <div
-            className="grid h-10 grid-cols-3 rounded-lg border border-[color:var(--border-subtle)] bg-black/20 p-1"
-            aria-label="Financial statement period"
-          >
-            {FINANCIAL_DOWNLOAD_PERIODS.map((option) => {
-              const active = financialDownloadPeriod === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setFinancialDownloadPeriod(option.key)}
-                  className={`rounded-md px-2 text-xs font-semibold transition ${
-                    active
-                      ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
-                      : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-stretch">
+          <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+              Add stocks
+            </p>
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start">
+              <div className="min-w-0 flex-1">
+                <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
+              </div>
+              <button
+                type="button"
+                onClick={() => addTicker(selected)}
+                disabled={!selected || tickers.length >= MAX_TICKERS}
+                className="inline-flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-[color:var(--accent)] bg-black/20 px-4 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--accent)] transition hover:bg-[color:var(--accent)] hover:text-[color:var(--text-on-accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] lg:w-40"
+              >
+                <Plus size={16} strokeWidth={2.4} />
+                Add Ticker
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={downloadFinancials}
-            disabled={!tickers.length || downloadingFinancials}
-            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--border-strong)] bg-black/20 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:text-[color:var(--text-disabled)] sm:w-auto"
-          >
-            {downloadingFinancials ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : downloadStatus?.tone === "success" ? (
-              <Check size={13} />
-            ) : (
-              <Download size={13} />
-            )}
-            Download Financials
-          </button>
+          <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+              Financial download
+            </p>
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+              <div
+                className="grid h-12 min-w-0 flex-1 grid-cols-3 rounded-lg border border-[color:var(--border-subtle)] bg-black/20 p-1"
+                aria-label="Financial statement period"
+              >
+                {FINANCIAL_DOWNLOAD_PERIODS.map((option) => {
+                  const active = financialDownloadPeriod === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setFinancialDownloadPeriod(option.key)}
+                      className={`rounded-md px-2 text-xs font-semibold transition ${
+                        active
+                          ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                          : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={downloadFinancials}
+                disabled={!tickers.length || downloadingFinancials}
+                className="inline-flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-[color:var(--accent)] bg-[color:var(--accent)] px-4 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--text-on-accent)] transition hover:bg-[color:var(--accent-hover)] disabled:cursor-not-allowed disabled:border-[color:var(--border-subtle)] disabled:bg-black/20 disabled:text-[color:var(--text-disabled)] lg:w-56"
+              >
+                {downloadingFinancials ? (
+                  <Loader2 size={18} strokeWidth={2.4} className="animate-spin" />
+                ) : downloadStatus?.tone === "success" ? (
+                  <Check size={18} strokeWidth={2.4} />
+                ) : (
+                  <Download size={18} strokeWidth={2.4} />
+                )}
+                Download Financials
+              </button>
+            </div>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {tickers.map((ticker) => (

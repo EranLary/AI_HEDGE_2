@@ -54,7 +54,7 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _named_annual_table(df: pd.DataFrame, title: str) -> str:
+def _named_table(df: pd.DataFrame, title: str) -> str:
     try:
         if df is None or getattr(df, "empty", True):
             return f"### {title}\nNot available\n\n"
@@ -69,27 +69,50 @@ def _named_annual_table(df: pd.DataFrame, title: str) -> str:
         return f"### {title}\nNot available\n\n"
 
 
-def _financials_copy_payload(ticker: str, ticker_obj: yf.Ticker, info: Dict[str, Any]) -> Dict[str, Any]:
+def _financials_copy_payload(
+    ticker: str,
+    ticker_obj: yf.Ticker,
+    info: Dict[str, Any],
+    financial_period: str = "annual",
+) -> Dict[str, Any]:
     currency = (
         info.get("financialCurrency")
         or info.get("original_financial_currency")
         or info.get("currency")
         or ""
     )
-    return {
+    period = str(financial_period or "annual").strip().lower()
+    if period not in {"annual", "quarterly", "both"}:
+        period = "annual"
+    payload = {
         "ticker": ticker,
         "company_name": info.get("longName") or info.get("shortName") or ticker,
         "currency": str(currency or "").upper() or None,
         "source": "yfinance.Ticker",
-        "statement_format": "markdown-wrapped csv, annual periods only, original reported currency",
+        "requested_period": period,
+        "statement_format": "markdown-wrapped csv, original reported currency",
         "info": _json_safe(info),
-        "annual_financials": _named_annual_table(ticker_obj.financials, "Annual Income Statement"),
-        "annual_balance_sheet": _named_annual_table(ticker_obj.balance_sheet, "Annual Balance Sheet"),
-        "annual_cash_flow": _named_annual_table(ticker_obj.cashflow, "Annual Cash Flow Statement"),
     }
+    if period in {"annual", "both"}:
+        payload.update(
+            {
+                "annual_financials": _named_table(ticker_obj.financials, "Annual Income Statement"),
+                "annual_balance_sheet": _named_table(ticker_obj.balance_sheet, "Annual Balance Sheet"),
+                "annual_cash_flow": _named_table(ticker_obj.cashflow, "Annual Cash Flow Statement"),
+            }
+        )
+    if period in {"quarterly", "both"}:
+        payload.update(
+            {
+                "quarterly_financials": _named_table(ticker_obj.quarterly_financials, "Quarterly Income Statement"),
+                "quarterly_balance_sheet": _named_table(ticker_obj.quarterly_balance_sheet, "Quarterly Balance Sheet"),
+                "quarterly_cash_flow": _named_table(ticker_obj.quarterly_cashflow, "Quarterly Cash Flow Statement"),
+            }
+        )
+    return payload
 
 
-def _row(symbol: str, include_financials: bool = False) -> Dict[str, Any]:
+def _row(symbol: str, include_financials: bool = False, financial_period: str = "annual") -> Dict[str, Any]:
     ticker = _ticker_key(symbol)
     ticker_obj = yf.Ticker(ticker)
     info = ticker_obj.info or {}
@@ -136,7 +159,7 @@ def _row(symbol: str, include_financials: bool = False) -> Dict[str, Any]:
         "target_upside": upside,
     }
     if include_financials:
-        row["financials_copy"] = _financials_copy_payload(ticker, ticker_obj, info)
+        row["financials_copy"] = _financials_copy_payload(ticker, ticker_obj, info, financial_period)
     return row
 
 
@@ -145,6 +168,7 @@ def main() -> int:
     parser.add_argument("--tickers", required=True)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--include-financials", action="store_true")
+    parser.add_argument("--financial-period", choices=["annual", "quarterly", "both"], default="annual")
     args = parser.parse_args()
 
     tickers: List[str] = []
@@ -159,7 +183,10 @@ def main() -> int:
     rows: List[Dict[str, Any]] = []
     not_found: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, min(int(args.workers or 1), 10))) as pool:
-        futures = {pool.submit(_row, ticker, bool(args.include_financials)): ticker for ticker in tickers}
+        futures = {
+            pool.submit(_row, ticker, bool(args.include_financials), str(args.financial_period)): ticker
+            for ticker in tickers
+        }
         for fut in as_completed(futures):
             ticker = futures[fut]
             try:

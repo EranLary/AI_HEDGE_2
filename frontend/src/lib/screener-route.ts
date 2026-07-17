@@ -168,6 +168,12 @@ function taPreferredTicker(value: unknown, exactReportTickers: Set<string>): str
   return null;
 }
 
+function taExpectedQueryTicker(value: unknown, exactReportTickers: Set<string>): string | null {
+  const base = String(value || "").trim().toUpperCase().replace(/\.TA$/, "");
+  if (!base) return null;
+  return taPreferredTicker(base, exactReportTickers) || `${base}.TA`;
+}
+
 function targetKeys(row: Record<string, unknown>, universe: ScreenerUniverse): string[] {
   if (universe === "ta125") {
     return sameTickerKeys(row.query_ticker || row.ticker);
@@ -175,7 +181,7 @@ function targetKeys(row: Record<string, unknown>, universe: ScreenerUniverse): s
   const values = [row.ticker, row.query_ticker];
   const keys: string[] = [];
   for (const value of values) {
-    for (const key of tickerKeys(value)) {
+    for (const key of sameTickerKeys(value)) {
       if (key && !keys.includes(key)) keys.push(key);
     }
   }
@@ -270,11 +276,11 @@ function emptyTargetData(): TargetData {
 
 function needsTa125PreferenceRefresh(payload: Record<string, unknown>, targetData: TargetData): boolean {
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
-  if (!rows.length || targetData.exactReportTickers.size === 0) return false;
+  if (!rows.length) return false;
   return rows.some((raw) => {
     if (!raw || typeof raw !== "object") return false;
     const row = raw as Record<string, unknown>;
-    const preferred = taPreferredTicker(row.ticker, targetData.exactReportTickers);
+    const preferred = taExpectedQueryTicker(row.ticker, targetData.exactReportTickers);
     if (!preferred) return false;
     return String(row.query_ticker || "").trim().toUpperCase() !== preferred;
   });
@@ -283,7 +289,7 @@ function needsTa125PreferenceRefresh(payload: Record<string, unknown>, targetDat
 async function enrichWithTargets(payload: Record<string, unknown>, universe: ScreenerUniverse, targetData: TargetData): Promise<Record<string, unknown>> {
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   if (!rows.length) return payload;
-  const targetMap = universe === "ta125" ? targetData.exactMap : targetData.aliasMap;
+  const targetMap = targetData.exactMap;
   let targetsMatched = 0;
   const enrichedRows = rows.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;

@@ -32,6 +32,12 @@ const PERIODS = [
   { key: "5Y", label: "5Y", days: 365 * 5 },
 ] as const;
 
+const FINANCIAL_DOWNLOAD_PERIODS = [
+  { key: "annual", label: "Annual" },
+  { key: "quarterly", label: "Quarterly" },
+  { key: "both", label: "Both" },
+] as const;
+
 const CHART_TOKENS = [
   "--chart-grid",
   "--chart-axis",
@@ -91,6 +97,7 @@ type ComparePayload = {
   financials?: {
     generated_at?: string;
     tickers?: string[];
+    requested_period?: string;
     data?: Record<string, unknown>;
     not_found?: string[];
   };
@@ -209,6 +216,8 @@ export default function ComparePage() {
   const [selected, setSelected] = useState<TickerEntry | null>(null);
   const [tickers, setTickers] = useState<string[]>(["AAPL", "MSFT", "GOOGL"]);
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["key"]>("1Y");
+  const [financialDownloadPeriod, setFinancialDownloadPeriod] =
+    useState<(typeof FINANCIAL_DOWNLOAD_PERIODS)[number]["key"]>("annual");
   const [data, setData] = useState<ComparePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -233,13 +242,18 @@ export default function ComparePage() {
     setDownloadingFinancials(true);
     setDownloadStatus(null);
     try {
-      const qs = new URLSearchParams({ tickers: tickers.join(","), financials: "1" });
+      const qs = new URLSearchParams({
+        tickers: tickers.join(","),
+        financials: "1",
+        financial_period: financialDownloadPeriod,
+      });
       const res = await fetch(`/api/compare?${qs.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Financials export failed (${res.status})`);
       const payload = (await res.json()) as ComparePayload;
       const financials = payload.financials || {
         generated_at: new Date().toISOString(),
         tickers,
+        requested_period: financialDownloadPeriod,
         data: {},
         not_found: payload.not_found || [],
       };
@@ -249,7 +263,7 @@ export default function ComparePage() {
       downloadTextFile(`comparison-financials-${timestamp}.txt`, JSON.stringify(financials, null, 2));
       setDownloadStatus({
         tone: "success",
-        message: `Downloaded financial JSON for ${downloadedCount} ticker${downloadedCount === 1 ? "" : "s"}.`,
+        message: `Downloaded ${financialDownloadPeriod} financial JSON for ${downloadedCount} ticker${downloadedCount === 1 ? "" : "s"}.`,
       });
     } catch (err) {
       setDownloadStatus({
@@ -359,7 +373,7 @@ export default function ComparePage() {
       </header>
 
       <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto_auto] sm:items-center">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,32rem)_auto_auto_auto] sm:items-center">
           <TickerSearch value={selected} onChange={(entry) => setSelected(entry)} />
           <button
             type="button"
@@ -370,6 +384,28 @@ export default function ComparePage() {
             <Plus size={13} />
             Add Ticker
           </button>
+          <div
+            className="grid h-10 grid-cols-3 rounded-lg border border-[color:var(--border-subtle)] bg-black/20 p-1"
+            aria-label="Financial statement period"
+          >
+            {FINANCIAL_DOWNLOAD_PERIODS.map((option) => {
+              const active = financialDownloadPeriod === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setFinancialDownloadPeriod(option.key)}
+                  className={`rounded-md px-2 text-xs font-semibold transition ${
+                    active
+                      ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                      : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
           <button
             type="button"
             onClick={downloadFinancials}

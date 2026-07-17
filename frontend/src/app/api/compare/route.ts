@@ -6,6 +6,7 @@ import { yahooChartHistory } from "@/lib/yahoo-lookup";
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,16}$/;
 const MAX_TICKERS = 10;
+const FINANCIAL_PERIODS = new Set(["annual", "quarterly", "both"]);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,7 @@ function normalizeTickers(raw: string | null): string[] {
 function runFundamentalsScript(
   tickers: string[],
   includeFinancials: boolean,
+  financialPeriod: string,
 ): Promise<{ rows: FundamentalRow[]; not_found: string[] }> {
   return new Promise((resolve) => {
     if (!tickers.length) {
@@ -66,7 +68,7 @@ function runFundamentalsScript(
     const scriptPath = path.resolve(root, "scripts", "compare_stock_info.py");
     const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
     const args = [scriptPath, "--tickers", tickers.join(","), "--workers", "6"];
-    if (includeFinancials) args.push("--include-financials");
+    if (includeFinancials) args.push("--include-financials", "--financial-period", financialPeriod);
     const child = spawn(pythonExe, args, {
       cwd: root,
       env: {
@@ -105,12 +107,14 @@ export async function GET(req: Request) {
   const includeFinancials = ["1", "true", "yes"].includes(
     String(url.searchParams.get("financials") || "").toLowerCase(),
   );
+  const requestedFinancialPeriod = String(url.searchParams.get("financial_period") || "annual").toLowerCase();
+  const financialPeriod = FINANCIAL_PERIODS.has(requestedFinancialPeriod) ? requestedFinancialPeriod : "annual";
   if (!tickers.length) {
     return NextResponse.json({ status: "unavailable", series: [], not_found: [], error: "Add at least one ticker." });
   }
 
   const [fundamentals, settled] = await Promise.all([
-    runFundamentalsScript(tickers, includeFinancials),
+    runFundamentalsScript(tickers, includeFinancials, financialPeriod),
     Promise.all(tickers.map(async (ticker) => {
       const result = await yahooChartHistory(ticker, "5y");
       if (result.prices.length < 2) return { ticker, ok: false as const };
@@ -147,6 +151,7 @@ export async function GET(req: Request) {
     ? {
         generated_at: new Date().toISOString(),
         tickers,
+        requested_period: financialPeriod,
         data: Object.fromEntries(
           fundamentals.rows
             .map((row) => [String(row.ticker || row.symbol || "").toUpperCase(), row.financials_copy] as const)

@@ -9,9 +9,9 @@ import {
   Download,
   Loader2,
   RefreshCw,
+  ScanSearch,
   Search,
   SlidersHorizontal,
-  Table2,
 } from "lucide-react";
 import { submitNewRun } from "@/lib/run-submission";
 import { subscribeRunCompletion } from "@/components/shell/active-runs-store";
@@ -417,7 +417,7 @@ export default function ScreenersPage() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-              <Table2 size={14} className="text-[color:var(--accent)]" />
+              <ScanSearch size={14} className="text-[color:var(--accent)]" />
               Screeners
             </div>
             <h1 className="font-display text-3xl font-semibold leading-tight text-[color:var(--text-primary)] sm:text-4xl">

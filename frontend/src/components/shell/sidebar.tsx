@@ -9,7 +9,7 @@ import {
   Compass,
   FileText,
   GitCompareArrows,
-  ListFilter,
+  ScanSearch,
   Target,
   Plus,
 } from "lucide-react";
@@ -31,7 +31,7 @@ type NavItem = {
 const GLOBAL_NAV: NavItem[] = [
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/compare", label: "Compare", icon: GitCompareArrows },
-  { href: "/screeners", label: "Screeners", icon: ListFilter },
+  { href: "/screeners", label: "Screeners", icon: ScanSearch },
   { href: "/discovery", label: "Discovery", icon: Compass },
   { href: "/hit-rate", label: "Hit Rate", icon: Target },
 ];

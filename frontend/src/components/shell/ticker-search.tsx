@@ -204,7 +204,7 @@ export function TickerSearch({ value, onChange, disabled, autoFocus }: Props) {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={value ? value.s : "Search ticker or company (e.g. NVDA, Apple)"}
+          placeholder={value ? value.s : "Search ticker or company"}
           maxLength={64}
           disabled={disabled}
           autoComplete="off"

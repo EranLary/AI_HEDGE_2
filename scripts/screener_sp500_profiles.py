@@ -69,8 +69,8 @@ QUALITY_CONFIGS = {
     "roe": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.3, "max": 0.5}},
     "debtToEquity": {"direction": "lower", "weight": 0.10},
 }
-INDUSTRY_SCORE_WEIGHT = 0.6
-SECTOR_SCORE_WEIGHT = 0.4
+INDUSTRY_SCORE_WEIGHT = 0.5
+SECTOR_SCORE_WEIGHT = 0.5
 
 
 class _TableParser(HTMLParser):

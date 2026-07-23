@@ -11,7 +11,7 @@ import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import { computeTickerSummaryAggregation, type SummarySourceReport } from "@/lib/ticker-summary-aggregate";
 
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 const SCREENER_FILES = {
   sp500: {

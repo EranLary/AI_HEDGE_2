@@ -63,6 +63,7 @@ export type YahooqueryInfo = {
     latest_by_period?: Record<string, Record<string, unknown>>;
     recent_average?: Record<string, number | null>;
   };
+  live_quote?: Record<string, unknown>;
   financial_data?: Record<string, unknown>;
 };
 

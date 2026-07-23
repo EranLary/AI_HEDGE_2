@@ -38,6 +38,11 @@ const MULTIPLE_MAP: Array<{ key: string; label: string; kind: "currency" | "rati
   { key: "EnterprisesValueEBITDARatio", label: "EV/EBITDA", kind: "ratio" },
 ];
 
+const LIVE_QUOTE_MULTIPLE_KEYS: Record<string, string> = {
+  MarketCap: "marketCap",
+  EnterpriseValue: "enterpriseValue",
+};
+
 const FINANCIAL_CARD_MAP: MetricCard[] = [
   { label: "Current Price", value: "currentPrice", kind: "currency" },
   { label: "Target Mean", value: "targetMeanPrice", kind: "currency" },
@@ -121,6 +126,10 @@ function financialData(info: YahooqueryInfo): Record<string, unknown> {
   return info.financial_data || {};
 }
 
+function liveQuote(info: YahooqueryInfo): Record<string, unknown> {
+  return info.live_quote || {};
+}
+
 function MetricTile({ card, currency }: { card: MetricCard; currency: string }) {
   return (
     <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
@@ -177,17 +186,26 @@ export function InfoClient({
   const rows = rowsFromInfo(info);
   const latest = latestMultiple(info);
   const finance = financialData(info);
-  const currency = String(finance.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD")).toUpperCase();
+  const quote = liveQuote(info);
+  const currency = String(
+    quote.financialCurrency || finance.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD"),
+  ).toUpperCase();
   const recommendation = String(finance.recommendationKey || "none").replace(/_/g, " ");
   const status = String(info.status || "").toLowerCase();
-  const multipleCards = MULTIPLE_MAP.map((item) => ({
-    label: item.label,
-    value: latest[item.key],
-    kind: item.kind,
-    note: item.key in (info.valuation_measures?.recent_average || {})
-      ? `Recent avg ${fmtValue(info.valuation_measures?.recent_average?.[item.key], item.kind, currency)}`
-      : undefined,
-  }));
+  const multipleCards = MULTIPLE_MAP.map((item) => {
+    const liveKey = LIVE_QUOTE_MULTIPLE_KEYS[item.key];
+    const liveValue = liveKey ? quote[liveKey] : undefined;
+    return {
+      label: item.label,
+      value: liveValue ?? latest[item.key],
+      kind: item.kind,
+      note: liveKey && liveValue !== undefined
+        ? "Live quote"
+        : item.key in (info.valuation_measures?.recent_average || {})
+          ? `Recent avg ${fmtValue(info.valuation_measures?.recent_average?.[item.key], item.kind, currency)}`
+          : undefined,
+    };
+  });
   const financeCards = FINANCIAL_CARD_MAP.map((item) => ({
     label: item.label,
     value: finance[String(item.value)],

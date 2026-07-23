@@ -1,4 +1,71 @@
-from ai_hedge.financials_agent import REQUIRED_METRICS, financials_analysis_to_markdown, normalize_financials_analysis
+from unittest.mock import patch
+
+import pandas as pd
+
+from ai_hedge.financials_agent import (
+    REQUIRED_METRICS,
+    build_raw_financials_payload,
+    financials_analysis_to_markdown,
+    normalize_financials_analysis,
+)
+
+
+class EmptyTicker:
+    def __init__(self, info):
+        self.info = info
+        self.financials = pd.DataFrame()
+        self.quarterly_financials = pd.DataFrame()
+        self.balance_sheet = pd.DataFrame()
+        self.quarterly_balance_sheet = pd.DataFrame()
+        self.cashflow = pd.DataFrame()
+        self.quarterly_cashflow = pd.DataFrame()
+
+
+def test_build_raw_financials_payload_uses_original_provider_currency_quote_fields():
+    provider_info = {
+        "symbol": "AXN.TA",
+        "shortName": "Axsion Ltd",
+        "currency": "ILA",
+        "financialCurrency": "ILS",
+        "currentPrice": 724.6,
+        "sharesOutstanding": 18277780,
+        "marketCap": 132440792,
+        "enterpriseValue": 110804120,
+        "priceToBook": 5.031944,
+        "enterpriseToRevenue": 6.37,
+        "totalDebt": 2710000,
+        "totalCash": 24949000,
+        "totalRevenue": 17395000,
+    }
+    legacy_converted_info = {
+        "info": {
+            "symbol": "AXN.TA",
+            "currency": "USD",
+            "financialCurrency": "USD",
+            "original_price_currency": "ILA",
+            "original_financial_currency": "ILS",
+            "currentPrice": 2.356,
+            "marketCap": 43064880,
+            "enterpriseValue": 36029560,
+            "totalDebt": 881177,
+            "totalCash": 8112518,
+            "totalRevenue": 5656071,
+        }
+    }
+
+    with patch("ai_hedge.financials_agent.yf.Ticker", return_value=EmptyTicker(provider_info)):
+        payload = build_raw_financials_payload("AXN.TA", legacy_converted_info)
+
+    assert payload["currency"] == "ILS"
+    assert payload["price_currency"] == "ILA"
+    assert payload["currency_policy"] == "original_provider_currency_only"
+    assert payload["info"]["current_price"] == 724.6
+    assert payload["info"]["market_cap"] == 132440792
+    assert payload["info"]["enterprise_value"] == 110804120
+    assert payload["info"]["total_debt"] == 2710000
+    assert payload["info"]["total_cash"] == 24949000
+    assert payload["info"]["total_revenue"] == 17395000
+    assert "financial_currency_to_USD" not in payload["info"]
 
 
 def test_normalize_financials_analysis_preserves_required_order_and_caps_added_rows():

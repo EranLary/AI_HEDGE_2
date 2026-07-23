@@ -123,47 +123,109 @@ def _table_payload(df: pd.DataFrame, label: str, statement_type: str, period_typ
     }
 
 
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, float) and not np.isfinite(value):
+            continue
+        if isinstance(value, np.floating) and not np.isfinite(float(value)):
+            continue
+        return value
+    return None
+
+
+def _provider_info(ticker_obj: yf.Ticker) -> Dict[str, Any]:
+    try:
+        raw = ticker_obj.info
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _yahooquery_section(yahooquery: Dict[str, Any], section: str) -> Dict[str, Any]:
+    value = yahooquery.get(section)
+    return value if isinstance(value, dict) else {}
+
+
+def _latest_valuation_measures(yahooquery: Dict[str, Any]) -> Dict[str, Any]:
+    valuation = _yahooquery_section(yahooquery, "valuation_measures")
+    latest = valuation.get("latest")
+    if isinstance(latest, dict):
+        return latest
+    rows = valuation.get("rows")
+    if isinstance(rows, list):
+        for row in reversed(rows):
+            if isinstance(row, dict):
+                return row
+    return {}
+
+
 def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict[str, Any]:
     info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
     info = info if isinstance(info, dict) else {}
     ticker_obj = yf.Ticker(ticker)
+    provider_info = _provider_info(ticker_obj)
+    yahooquery = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    if not isinstance(yahooquery, dict):
+        yahooquery = {}
+    financial_data = _yahooquery_section(yahooquery, "financial_data")
+    key_stats = _yahooquery_section(yahooquery, "key_stats")
+    summary_detail = _yahooquery_section(yahooquery, "summary_detail")
+    valuation_latest = _latest_valuation_measures(yahooquery)
     financial_currency = (
-        info.get("original_financial_currency")
-        or info.get("financialCurrency")
+        provider_info.get("financialCurrency")
+        or financial_data.get("financialCurrency")
+        or info.get("original_financial_currency")
         or info.get("financial_currency")
         or "USD"
     )
+    price_currency = (
+        provider_info.get("currency")
+        or summary_detail.get("currency")
+        or info.get("original_price_currency")
+        or None
+    )
     original_ticker = (
         info.get("symbol")
+        or provider_info.get("symbol")
         or info.get("underlyingSymbol")
-        or info.get("quoteType")
+        or provider_info.get("underlyingSymbol")
         or ticker
     )
     raw_info = {
         "ticker": ticker,
         "original_ticker": str(original_ticker),
-        "company_name": info.get("shortName") or info.get("longName") or ticker,
-        "sector": info.get("sector"),
-        "industry": info.get("industry"),
-        "business_summary": info.get("longBusinessSummary"),
+        "company_name": _first_present(provider_info.get("shortName"), provider_info.get("longName"), info.get("shortName"), info.get("longName"), ticker),
+        "sector": _first_present(provider_info.get("sector"), info.get("sector")),
+        "industry": _first_present(provider_info.get("industry"), info.get("industry")),
+        "business_summary": _first_present(provider_info.get("longBusinessSummary"), info.get("longBusinessSummary")),
         "financial_currency": financial_currency,
-        "original_price_currency": info.get("original_price_currency") or info.get("currency"),
-        "financial_currency_to_USD": info.get("financial_currency_to_USD") or info.get("financial_currency_to_usd"),
-        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-        "shares_outstanding": info.get("sharesOutstanding") or info.get("impliedSharesOutstanding"),
-        "market_cap": info.get("marketCap"),
-        "enterprise_value": info.get("enterpriseValue"),
-        "price_to_book": info.get("priceToBook"),
-        "total_debt": info.get("totalDebt"),
-        "total_cash": info.get("totalCash"),
+        "original_price_currency": price_currency,
+        "currency_policy": "original_provider_currency_only",
+        "current_price": _first_present(provider_info.get("currentPrice"), provider_info.get("regularMarketPrice"), financial_data.get("currentPrice")),
+        "shares_outstanding": _first_present(provider_info.get("sharesOutstanding"), provider_info.get("impliedSharesOutstanding"), key_stats.get("sharesOutstanding")),
+        "market_cap": _first_present(provider_info.get("marketCap"), valuation_latest.get("MarketCap"), summary_detail.get("marketCap")),
+        "enterprise_value": _first_present(provider_info.get("enterpriseValue"), valuation_latest.get("EnterpriseValue"), key_stats.get("enterpriseValue")),
+        "price_to_book": _first_present(provider_info.get("priceToBook"), key_stats.get("priceToBook")),
+        "price_to_earnings": _first_present(provider_info.get("trailingPE"), summary_detail.get("trailingPE")),
+        "forward_price_to_earnings": _first_present(provider_info.get("forwardPE"), summary_detail.get("forwardPE")),
+        "price_to_sales": _first_present(provider_info.get("priceToSalesTrailing12Months"), key_stats.get("priceToSalesTrailing12Months")),
+        "enterprise_to_revenue": _first_present(provider_info.get("enterpriseToRevenue"), key_stats.get("enterpriseToRevenue")),
+        "enterprise_to_ebitda": _first_present(provider_info.get("enterpriseToEbitda"), key_stats.get("enterpriseToEbitda")),
+        "peg_ratio": _first_present(provider_info.get("pegRatio"), key_stats.get("pegRatio")),
+        "total_debt": _first_present(provider_info.get("totalDebt"), financial_data.get("totalDebt")),
+        "total_cash": _first_present(provider_info.get("totalCash"), financial_data.get("totalCash")),
+        "total_revenue": _first_present(provider_info.get("totalRevenue"), financial_data.get("totalRevenue")),
     }
-    yahooquery = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
-    if not isinstance(yahooquery, dict):
-        yahooquery = {}
     return {
         "ticker": str(ticker).upper(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "currency": str(financial_currency or "USD").upper(),
+        "price_currency": str(price_currency).upper() if price_currency else None,
+        "currency_policy": "original_provider_currency_only",
         "info": _json_safe(raw_info),
         "yahooquery": _json_safe(yahooquery),
         "statements": [
@@ -198,6 +260,9 @@ Use Deep Reasoning:
 - Sort columns chronologically from oldest to newest, mixing annual and quarterly periods intelligently by period end date. Preserve whether each period is annual or quarterly in column metadata. If a fiscal year and its Q4 share the same period-end date, put Q4 before FY.
 - Keep values in the original financial currency. Ratios and margins should be decimals, not strings.
 - Keep currency/count numeric values as raw statement values. Do not rescale to thousands, millions, or billions; the dashboard will handle display formatting.
+- Treat this payload as original-provider-currency-only. Do not convert any value to USD, do not infer USD values, and do not mix USD-normalized legacy values with original financial statements.
+- Current quote snapshot fields in payload.info, including market_cap, enterprise_value, debt, cash, revenue, and valuation multiples, are selected from original provider data for this Financials tab. Use them as-is and preserve the payload currency.
+- If the price currency differs from the financial currency, use provider market_cap and enterprise_value for currency metrics rather than multiplying price by shares. Some exchanges quote price units differently from financial statement currency.
 - Make the table simple enough for a dashboard but deep enough to explain the economics.
 
 Mandatory rows, in this exact order:

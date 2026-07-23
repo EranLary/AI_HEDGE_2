@@ -101,14 +101,14 @@ jobs:
           [ -z "$prod_size" ] || [ "$prod_size" = "null" ] && prod_size=1
 
           # Use most recent existing snapshot if any, else create one and wait.
-          snap=$(flyctl volumes snapshots list "$prod_vol" --json \
+          snap=$(flyctl volumes snapshots list "$prod_vol" --app "${{ env.PROD_APP }}" --json \
             | jq -r 'sort_by(.created_at) | reverse | .[0] | select(.status=="created") | .id // empty')
           if [ -z "$snap" ]; then
             echo "No ready snapshot — creating one."
-            flyctl volumes snapshots create "$prod_vol"
+            flyctl volumes snapshots create "$prod_vol" --app "${{ env.PROD_APP }}"
             for i in $(seq 1 20); do
               sleep 15
-              snap=$(flyctl volumes snapshots list "$prod_vol" --json \
+              snap=$(flyctl volumes snapshots list "$prod_vol" --app "${{ env.PROD_APP }}" --json \
                 | jq -r 'sort_by(.created_at) | reverse | .[0] | select(.status=="created") | .id // empty')
               if [ -n "$snap" ]; then break; fi
               echo "Waiting for snapshot... ($i/20)"

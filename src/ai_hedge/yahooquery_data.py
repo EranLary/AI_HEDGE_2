@@ -80,6 +80,32 @@ def _fetch_attr(obj: Any, name: str) -> Any:
         return {"error": f"{type(exc).__name__}: {str(exc)[:240]}"}
 
 
+def _live_quote_payload(info: Any) -> Dict[str, Any]:
+    if not isinstance(info, dict):
+        return {}
+    keys = (
+        "symbol",
+        "currency",
+        "financialCurrency",
+        "currentPrice",
+        "regularMarketPrice",
+        "sharesOutstanding",
+        "impliedSharesOutstanding",
+        "marketCap",
+        "enterpriseValue",
+    )
+    return _json_safe({key: info.get(key) for key in keys if info.get(key) is not None})
+
+
+def _fetch_live_quote(symbol: str) -> Dict[str, Any]:
+    try:
+        import yfinance as yf
+
+        return _live_quote_payload(yf.Ticker(symbol).info)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
+
 def _parse_date(value: Any) -> Optional[datetime]:
     if value is None:
         return None
@@ -210,6 +236,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
     earning_history = _fetch_attr(ticker_obj, "earning_history")
     corporate_events = _fetch_attr(ticker_obj, "corporate_events")
     share_purchase_activity = _fetch_attr(ticker_obj, "share_purchase_activity")
+    live_quote = _fetch_live_quote(symbol)
 
     valuation_rows = _df_records(valuation_measures)
     financial_data_clean = _dict_for_symbol(financial_data, symbol)
@@ -235,6 +262,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
             "latest_by_period": latest_by_period,
             "recent_average": _average_recent(valuation_rows),
         },
+        "live_quote": live_quote,
         "financial_data": financial_data_clean,
         "earnings_surprise": {
             "rows": earning_history_rows,

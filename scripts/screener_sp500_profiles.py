@@ -22,7 +22,7 @@ SLICKCHARTS_NASDAQ100_URL = "https://www.slickcharts.com/nasdaq100"
 TRADINGVIEW_TA125_URL = "https://il.tradingview.com/symbols/TASE-TA125/components/"
 TRADINGVIEW_ISRAEL_SCAN_URL = "https://scanner.tradingview.com/israel/scan"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 UNIVERSE_CONFIGS = {
     "sp500": {
         "label": "S&P 500",
@@ -69,8 +69,8 @@ QUALITY_CONFIGS = {
     "roe": {"direction": "higher", "weight": 0.10, "clamp": {"min": -0.3, "max": 0.5}},
     "debtToEquity": {"direction": "lower", "weight": 0.10},
 }
-INDUSTRY_SCORE_WEIGHT = 0.5
-SECTOR_SCORE_WEIGHT = 0.5
+SMALL_INDUSTRY_MAX_COUNT = 4
+MEDIUM_INDUSTRY_MAX_COUNT = 15
 
 
 class _TableParser(HTMLParser):
@@ -748,6 +748,14 @@ def _percentile_score(value: float, peers: List[float], direction: str) -> float
     return ((better + (equal * 0.5)) / len(peers)) * 100
 
 
+def _peer_blend_weights(industry_company_count: int) -> Dict[str, float]:
+    if industry_company_count <= SMALL_INDUSTRY_MAX_COUNT:
+        return {"sector": 0.70, "industry": 0.30}
+    if industry_company_count <= MEDIUM_INDUSTRY_MAX_COUNT:
+        return {"sector": 0.50, "industry": 0.50}
+    return {"sector": 0.30, "industry": 0.70}
+
+
 def _blended_percentile(
     metric: str,
     value: float,
@@ -756,18 +764,20 @@ def _blended_percentile(
     industry: str | None,
     sector_values: Dict[str, Dict[str, List[float]]],
     industry_values: Dict[str, Dict[str, List[float]]],
+    industry_counts: Dict[str, int],
 ) -> float | None:
     contributions: List[Dict[str, float]] = []
     industry_peers = industry_values.get(industry or "", {}).get(metric, []) if industry else []
     sector_peers = sector_values.get(sector or "", {}).get(metric, []) if sector else []
+    weights = _peer_blend_weights(industry_counts.get(industry or "", 0))
     if industry_peers:
         contributions.append({
-            "weight": INDUSTRY_SCORE_WEIGHT,
+            "weight": weights["industry"],
             "percentile": _percentile_score(value, industry_peers, direction),
         })
     if sector_peers:
         contributions.append({
-            "weight": SECTOR_SCORE_WEIGHT,
+            "weight": weights["sector"],
             "percentile": _percentile_score(value, sector_peers, direction),
         })
     if not contributions:
@@ -784,6 +794,7 @@ def _weighted_category_score(
     industry: str | None,
     sector_values: Dict[str, Dict[str, List[float]]],
     industry_values: Dict[str, Dict[str, List[float]]],
+    industry_counts: Dict[str, int],
 ) -> float:
     weighted_sum = 0.0
     used_weight = 0.0
@@ -799,6 +810,7 @@ def _weighted_category_score(
             industry,
             sector_values,
             industry_values,
+            industry_counts,
         )
         if percentile is None:
             continue
@@ -820,6 +832,12 @@ def _category_coverage(analysis: Dict[str, Any], metrics: Tuple[str, ...], confi
 def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
     sector_values: Dict[str, Dict[str, List[float]]] = {}
     industry_values: Dict[str, Dict[str, List[float]]] = {}
+    industry_counts: Dict[str, int] = {}
+    for row in rows:
+        industry = _group_key(str(row.get("industry") or ""))
+        if industry:
+            industry_counts[industry] = industry_counts.get(industry, 0) + 1
+
     for row in rows:
         analysis = row.get("analysis")
         if not isinstance(analysis, dict):
@@ -847,6 +865,7 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
             industry,
             sector_values,
             industry_values,
+            industry_counts,
         )
         quality_score = _weighted_category_score(
             analysis,
@@ -856,6 +875,7 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
             industry,
             sector_values,
             industry_values,
+            industry_counts,
         )
         valuation_coverage = _category_coverage(analysis, VALUATION_METRIC_KEYS, VALUATION_CONFIGS)
         quality_coverage = _category_coverage(analysis, QUALITY_METRIC_KEYS, QUALITY_CONFIGS)
@@ -957,10 +977,15 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
         "missing_profiles": missing_profiles,
         "missing_scores": missing_scores,
         "scoring": {
-            "method": "samancal_percentile_v1",
+            "method": "samancal_percentile_v2_dynamic_peer_blend",
             "sector_source": "yahooquery.asset_profile.sector",
             "industry_source": "yahooquery.asset_profile.industry",
             "final_score_formula": "0.45 * valuation_score + 0.55 * quality_score",
+            "peer_blend_policy": {
+                "small_industry": "fewer than 5 companies: 70% sector / 30% industry",
+                "medium_industry": "5 to 15 companies: 50% sector / 50% industry",
+                "large_industry": "16 or more companies: 30% sector / 70% industry",
+            },
             "valuation_metrics": list(VALUATION_METRIC_KEYS),
             "quality_metrics": list(QUALITY_METRIC_KEYS),
         },

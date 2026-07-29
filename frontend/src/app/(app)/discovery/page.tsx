@@ -117,6 +117,9 @@ function SectionCard({
                   <div>
                     <p className="text-zinc-500">Return</p>
                     <p className={accent}>{fmtPct(row.return_pct)}</p>
+                    {typeof row.simple_mean_return_pct === "number" && Number.isFinite(row.simple_mean_return_pct) ? (
+                      <p className="mt-0.5 text-[11px] text-zinc-500">Simple mean {fmtPct(row.simple_mean_return_pct)}</p>
+                    ) : null}
                   </div>
                 ) : metricLabel === "allocation" ? (
                   <div>

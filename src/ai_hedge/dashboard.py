@@ -1334,20 +1334,31 @@ def _build_method_tab(
     method_target: Optional[float],
     method_investment: Optional[float],
     price_scale_multiplier: float = 1.0,
+    weight_pct: Optional[float] = None,
+    allocation_rationale: str = "",
+    persona_weight_pct_by_name: Optional[Dict[str, float]] = None,
+    persona_rationale_by_name: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     outputs: List[Dict[str, Any]] = []
+    persona_weights = persona_weight_pct_by_name if isinstance(persona_weight_pct_by_name, dict) else {}
+    persona_rationales = persona_rationale_by_name if isinstance(persona_rationale_by_name, dict) else {}
     for idx, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
         raw_json = _parse_raw_json_from_item(item)
         numeric_values = _extract_numeric_values(raw_json) if raw_json else []
         reason_sections = _extract_reason_sections(raw_json) if raw_json else []
+        persona = str(item.get("persona", "") or "").strip()
         outputs.append(
             {
                 "output_id": idx,
-                "persona": str(item.get("persona", "") or "").strip(),
+                "persona": persona,
                 "target_price": _scale_price_value(item.get("target_price"), price_scale_multiplier),
                 "investment_amount": _safe_float(item.get("investment_amount")),
+                "weight_pct": _safe_float(item.get("weight_pct"))
+                if _safe_float(item.get("weight_pct")) is not None
+                else _safe_float(persona_weights.get(persona)),
+                "selection_rationale": persona_rationales.get(persona, ""),
                 "key_numeric_values": [
                     {
                         "path": path,
@@ -1371,6 +1382,8 @@ def _build_method_tab(
         "name": method_name,
         "target_price": method_target,
         "investment_amount": method_investment,
+        "weight_pct": weight_pct,
+        "allocation_rationale": allocation_rationale,
         "key_metric_means": _method_metric_snapshot(method_name, items),
         "outputs": outputs,
     }
@@ -1956,6 +1969,10 @@ def build_dashboard_payload(
     current_price = _safe_float(prices.get("Current")) or _safe_float(variables_dict.get("price")) or 0.0
     overall = prices.get("Overall") if isinstance(prices.get("Overall"), (list, tuple)) else []
     consensus_price = _safe_float(overall[0]) if len(overall) >= 1 else None
+    weighted_overall = prices.get("Weighted Overall") if isinstance(prices.get("Weighted Overall"), (list, tuple)) else []
+    simple_overall = prices.get("Simple Mean") if isinstance(prices.get("Simple Mean"), (list, tuple)) else []
+    weighted_consensus_price = _safe_float(weighted_overall[0]) if len(weighted_overall) >= 1 else consensus_price
+    simple_mean_price = _safe_float(simple_overall[0]) if len(simple_overall) >= 1 else None
     confidence_std = _safe_float(prices.get("STD"))
     confidence_cv = _safe_float(prices.get("CV"))
     lmil = prices.get("LMIL") if isinstance(prices.get("LMIL"), (list, tuple)) else []
@@ -1984,6 +2001,26 @@ def build_dashboard_payload(
     method_details = explain_payload.get("methods", {}) if isinstance(explain_payload, dict) else {}
     aggregate_targets = explain_payload.get("aggregate_targets", {}) if isinstance(explain_payload, dict) else {}
     aggregate_investments = explain_payload.get("aggregate_investments", {}) if isinstance(explain_payload, dict) else {}
+    valuation_router = explain_payload.get("valuation_router", {}) if isinstance(explain_payload, dict) else {}
+    valuation_router = valuation_router if isinstance(valuation_router, dict) else {}
+    method_weight_pct = explain_payload.get("method_weight_pct", {}) if isinstance(explain_payload, dict) else {}
+    if not isinstance(method_weight_pct, dict):
+        method_weight_pct = valuation_router.get("final_method_weights", {}) if isinstance(valuation_router, dict) else {}
+    method_weight_pct = method_weight_pct if isinstance(method_weight_pct, dict) else {}
+    persona_weight_pct = explain_payload.get("persona_weight_pct", {}) if isinstance(explain_payload, dict) else {}
+    if not isinstance(persona_weight_pct, dict):
+        persona_weight_pct = valuation_router.get("final_persona_weights", {}) if isinstance(valuation_router, dict) else {}
+    persona_weight_pct = persona_weight_pct if isinstance(persona_weight_pct, dict) else {}
+    method_rationale_by_name = {
+        str(row.get("name", "") or "").strip(): str(row.get("rationale", "") or "").strip()
+        for row in (valuation_router.get("selected_methods", []) if isinstance(valuation_router, dict) else [])
+        if isinstance(row, dict)
+    }
+    persona_rationale_by_name = {
+        str(row.get("name", "") or "").strip(): str(row.get("rationale", "") or "").strip()
+        for row in (valuation_router.get("selected_personas", []) if isinstance(valuation_router, dict) else [])
+        if isinstance(row, dict)
+    }
     target_multiplier = _resolve_model_price_multiplier(
         aggregate_targets=aggregate_targets if isinstance(aggregate_targets, dict) else {},
         consensus_price=consensus_price,
@@ -2011,6 +2048,8 @@ def build_dashboard_payload(
             if isinstance(aggregate_investments, dict)
             else None
         )
+        method_weight = _safe_float(method_weight_pct.get(method_name)) if isinstance(method_weight_pct, dict) else None
+        allocation_rationale = method_rationale_by_name.get(method_name, "")
         investment_pct = (investment_amount / 100000.0) * 100.0 if investment_amount is not None else None
         upside_pct = ((target_price - current_price) / current_price) * 100.0 if (target_price is not None and current_price) else None
 
@@ -2034,6 +2073,8 @@ def build_dashboard_payload(
                 "upside_pct": upside_pct,
                 "investment_amount": investment_amount,
                 "investment_pct": investment_pct,
+                "weight_pct": method_weight,
+                "allocation_rationale": allocation_rationale,
                 "key_metric_means": _method_metric_snapshot(method_name, items),
                 "sample_rationale": sample_rationale,
             }
@@ -2045,6 +2086,10 @@ def build_dashboard_payload(
                 method_target=target_price,
                 method_investment=investment_amount,
                 price_scale_multiplier=target_multiplier,
+                weight_pct=method_weight,
+                allocation_rationale=allocation_rationale,
+                persona_weight_pct_by_name=persona_weight_pct if method_name == "Dream Team" else {},
+                persona_rationale_by_name=persona_rationale_by_name if method_name == "Dream Team" else {},
             )
         )
 
@@ -2070,6 +2115,10 @@ def build_dashboard_payload(
                 "target_price": _scale_price_value(item.get("target_price"), target_multiplier),
                 "target_market_cap": _safe_float(raw_json.get("target_market_cap")),
                 "investment_amount": _safe_float(item.get("investment_amount")),
+                "weight_pct": _safe_float(item.get("weight_pct"))
+                if _safe_float(item.get("weight_pct")) is not None
+                else _safe_float(persona_weight_pct.get(str(item.get("persona", "") or "").strip())),
+                "selection_rationale": persona_rationale_by_name.get(str(item.get("persona", "") or "").strip(), ""),
                 "step_by_step_analysis": _extract_reason_by_alias(
                     raw_json,
                     ["step_by_step_analysis", "step_by_step", "step_analysis", "analysis_step_by_step"],
@@ -2172,9 +2221,12 @@ def build_dashboard_payload(
             "method_blocks": method_blocks,
             "method_tabs": method_tabs,
             "all_values": all_values_payload,
+            "valuation_router": valuation_router,
             "consensus": {
                 "current_price": current_price,
                 "mean_target_price": consensus_price,
+                "weighted_mean_target_price": weighted_consensus_price,
+                "simple_mean_target_price": simple_mean_price,
                 "std": confidence_std,
                 "cv": confidence_cv,
                 "lmil": lmil,
@@ -2184,6 +2236,7 @@ def build_dashboard_payload(
             "net_income": final_dict.get("Net Income", {}),
             "pe": final_dict.get("P/E", {}),
         },
+        "valuation_router": valuation_router,
         "dream_team": dream_cards,
         "forecast_forensic_matrix": {
             "current_revenue": _safe_float(final_dict.get("Revenue", {}).get("Current")),

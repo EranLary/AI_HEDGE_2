@@ -4,6 +4,8 @@ export type DashboardMethodBlock = {
   upside_pct: number | null;
   investment_amount: number | null;
   investment_pct: number | null;
+  weight_pct?: number | null;
+  allocation_rationale?: string;
   key_metric_means: Record<string, number>;
   sample_rationale: string;
 };
@@ -13,6 +15,8 @@ export type DashboardMethodOutput = {
   persona: string;
   target_price: number | null;
   investment_amount: number | null;
+  weight_pct?: number | null;
+  selection_rationale?: string;
   key_numeric_values: Array<{
     path: string;
     metric_key: string;
@@ -30,8 +34,38 @@ export type DashboardMethodTab = {
   name: string;
   target_price: number | null;
   investment_amount: number | null;
+  weight_pct?: number | null;
+  allocation_rationale?: string;
   key_metric_means: Record<string, number>;
   outputs: DashboardMethodOutput[];
+};
+
+export type ValuationRouterPayload = {
+  status?: string;
+  mode?: string;
+  active?: boolean;
+  rationale?: string;
+  reason?: string;
+  selected_method_names?: string[];
+  selected_dream_personas?: string[];
+  selected_methods?: Array<{
+    name?: string;
+    weight_pct?: number | null;
+    rationale?: string;
+  }>;
+  selected_personas?: Array<{
+    name?: string;
+    weight_pct?: number | null;
+    rationale?: string;
+  }>;
+  method_weights?: Record<string, number>;
+  persona_weights?: Record<string, number>;
+  requested_method_weights?: Record<string, number>;
+  final_method_weights?: Record<string, number>;
+  requested_persona_weights?: Record<string, number>;
+  final_persona_weights?: Record<string, number>;
+  failed_methods_after_retry?: string[];
+  failed_personas_after_retry?: string[];
 };
 
 export type TradingAgentsPayload = {
@@ -337,20 +371,26 @@ export type DashboardPayload = {
     consensus: {
       current_price?: number | null;
       mean_target_price?: number | null;
+      weighted_mean_target_price?: number | null;
+      simple_mean_target_price?: number | null;
       std?: number | null;
       cv?: number | null;
       lmil?: number[] | null;
     };
+    valuation_router?: ValuationRouterPayload;
     prices?: Record<string, unknown>;
     revenue?: Record<string, unknown>;
     net_income?: Record<string, unknown>;
     pe?: Record<string, unknown>;
   };
+  valuation_router?: ValuationRouterPayload;
   dream_team: Array<{
     persona: string;
     target_price: number | null;
     target_market_cap: number | null;
     investment_amount: number | null;
+    weight_pct?: number | null;
+    selection_rationale?: string;
     step_by_step_analysis?: string;
     target_market_cap_rationale?: string;
     investment_rationale?: string;
@@ -491,6 +531,8 @@ export type DiscoveryRow = {
   overvaluation_pct: number;
   dispersion: number;
   return_pct: number;
+  simple_mean_target_price?: number | null;
+  simple_mean_return_pct?: number | null;
   investment_allocation_pct: number | null;
   confidence_cv: number;
   points_score?: number | null;

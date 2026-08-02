@@ -2475,6 +2475,7 @@ def swot_analysis(ticker):
   Focus on factors such as:
 
   * Structural moat or lack thereof
+  * Whether the product or service is a must-have or merely a nice-to-have for customers
   * Pricing power, differentiation, or cost advantages
   * Quality of revenue and customer base
   * Technology, IP, scale, or ecosystem advantages

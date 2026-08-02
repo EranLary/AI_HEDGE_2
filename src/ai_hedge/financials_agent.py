@@ -37,6 +37,7 @@ REQUIRED_METRICS = [
     "Customers / Accounts Receivable",
     "Inventory",
     "Liquid Assets: Cash, Cash Equivalents, and Short-Term Investments",
+    "Working Capital",
     "Total Liabilities",
     "Total Shareholders' Equity",
     "Total Debt: Short-Term and Long-Term",
@@ -284,6 +285,7 @@ Non-GAAP logic:
 Balance sheet and market-value logic:
 - Total Assets, receivables, inventory, liquid assets, liabilities, equity, debt, and net liquidity should come from the balance sheet whenever available.
 - Liquid Assets means cash + cash equivalents + short-term investments / marketable securities. If yfinance reports only cash and equivalents, use that and say so in the note.
+- Working Capital = Total Current Assets - Total Current Liabilities. Use reported current asset/current liability lines from the balance sheet. If either side is unavailable, use null and explain which side is missing.
 - Total Debt means short-term debt plus long-term debt. If only total debt is available from quote info, use it only where period-specific statement debt is missing and mark the row "derived" or "mixed".
 - Net Liquidity = Liquid Assets - Total Debt.
 - Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
@@ -368,6 +370,14 @@ def _default_kind_for_metric(metric: str) -> str:
 
 def _metric_key(metric: str) -> str:
     return re.sub(r"\s+", " ", str(metric or "").replace("’", "'").replace("`", "'").strip().lower())
+
+
+FINANCIAL_METRIC_ALIASES = {
+    _metric_key("Net Working Capital"): "Working Capital",
+    _metric_key("Current Assets Less Current Liabilities"): "Working Capital",
+    _metric_key("Working Capital: Current Assets Less Current Liabilities"): "Working Capital",
+    _metric_key("Working Capital (Current Assets Less Current Liabilities)"): "Working Capital",
+}
 
 
 def _normalize_quality(value: Any) -> str:
@@ -547,6 +557,7 @@ def normalize_financials_analysis(raw: Dict[str, Any], *, ticker: str, currency:
 
     ordered_rows: List[Dict[str, Any]] = []
     required_by_key = {_metric_key(metric): metric for metric in REQUIRED_METRICS}
+    required_by_key.update(FINANCIAL_METRIC_ALIASES)
     by_metric = {}
     for row in rows:
         raw_metric = str(row.get("metric") or "")

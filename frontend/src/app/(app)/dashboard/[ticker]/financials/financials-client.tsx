@@ -39,6 +39,7 @@ const BALANCE_METRICS = new Set([
   "Customers / Accounts Receivable",
   "Inventory",
   "Liquid Assets: Cash, Cash Equivalents, and Short-Term Investments",
+  "Working Capital",
   "Total Liabilities",
   "Total Shareholders' Equity",
   "Total Debt: Short-Term and Long-Term",

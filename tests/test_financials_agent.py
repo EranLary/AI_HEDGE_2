@@ -111,6 +111,7 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     tax_rate = next(row for row in normalized["rows"] if row["metric"] == "Tax Rate")
     capex = next(row for row in normalized["rows"] if row["metric"] == "Capital Expenditures (Capex)")
     capex_ratio = next(row for row in normalized["rows"] if row["metric"] == "Capex / Revenue")
+    working_capital = next(row for row in normalized["rows"] if row["metric"] == "Working Capital")
     ebitda = next(row for row in normalized["rows"] if row["metric"] == "EBITDA")
     ebitda_margin = next(row for row in normalized["rows"] if row["metric"] == "EBITDA Margin")
     sbc_ratio = next(row for row in normalized["rows"] if row["metric"] == "SBC / Revenue")
@@ -124,6 +125,7 @@ def test_normalize_financials_analysis_preserves_required_order_and_caps_added_r
     assert ebitda_margin["kind"] == "percent"
     assert capex["kind"] == "currency"
     assert capex_ratio["kind"] == "percent"
+    assert working_capital["kind"] == "currency"
     assert sbc_ratio["kind"] == "percent"
 
 
@@ -147,6 +149,29 @@ def test_normalize_financials_analysis_canonicalizes_curly_shareholders_equity()
 
     row = next(row for row in normalized["rows"] if row["metric"] == "Total Shareholders' Equity")
     assert row["values"]["2024-12-31_A"] == 500
+
+
+def test_normalize_financials_analysis_canonicalizes_working_capital_alias():
+    normalized = normalize_financials_analysis(
+        {
+            "periods": [{"key": "2024-12-31_A", "label": "FY 2024", "date": "2024-12-31", "period_type": "annual"}],
+            "rows": [
+                {
+                    "metric": "Net Working Capital",
+                    "kind": "currency",
+                    "values": {"2024-12-31_A": 250},
+                    "quality": "derived",
+                    "note": "Current assets less current liabilities.",
+                }
+            ],
+        },
+        ticker="TEST",
+        currency="USD",
+    )
+
+    row = next(row for row in normalized["rows"] if row["metric"] == "Working Capital")
+    assert row["values"]["2024-12-31_A"] == 250
+    assert row["quality"] == "derived"
 
 
 def test_financials_markdown_includes_currency_and_table():

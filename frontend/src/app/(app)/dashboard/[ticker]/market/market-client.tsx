@@ -530,7 +530,14 @@ function MarketReturnComparison({ market, ticker }: { market: MarketReviewPayloa
                   tickFormatter={(value) => formatReturn(Number(value))}
                 />
                 <Tooltip content={<ReturnTooltip />} wrapperStyle={{ outline: "none" }} />
-                <ReferenceLine y={0} stroke={tokens["--chart-current"]} strokeWidth={2.4} ifOverflow="extendDomain" />
+                <ReferenceLine
+                  y={0}
+                  stroke={tokens["--chart-axis"]}
+                  strokeWidth={2.8}
+                  strokeDasharray="1 6"
+                  strokeLinecap="round"
+                  ifOverflow="extendDomain"
+                />
                 {comparison.activeSeries.map((item, idx) => (
                   <Line
                     key={item.ticker}

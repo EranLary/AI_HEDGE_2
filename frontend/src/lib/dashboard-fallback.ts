@@ -74,8 +74,6 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       consensus: {
         current_price: null,
         mean_target_price: null,
-        weighted_mean_target_price: null,
-        simple_mean_target_price: null,
         std: null,
         cv: null,
         lmil: [],

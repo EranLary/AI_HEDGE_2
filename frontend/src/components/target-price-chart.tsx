@@ -85,7 +85,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       }));
     if (rows.length) return rows;
     return [
-      { name: "Weighted", target: Number(consensus?.mean_target_price || 0), aboveCurrent: true, performer: "Consensus", investment: null },
+      { name: "Mean", target: Number(consensus?.mean_target_price || 0), aboveCurrent: true, performer: "Consensus", investment: null },
       { name: "Current", target: Number(consensus?.current_price || 0), aboveCurrent: true, performer: "Market", investment: null },
     ];
   }, [consensus, consensusCurrent, data?.valuation_hub?.method_blocks, methodPerformerByName]);

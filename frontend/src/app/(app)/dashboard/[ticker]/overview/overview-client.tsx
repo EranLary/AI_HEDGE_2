@@ -181,7 +181,7 @@ export function OverviewClient({
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-              Weighted Target
+              Mean Target
             </p>
             <p className={`mt-1 text-2xl font-bold ${typeof mean === "number" && typeof current === "number" ? (mean > current ? "hib-target-up" : "hib-target-down") : "text-zinc-200"}`}>
               {fmtMoney(mean, ctx, "price")}

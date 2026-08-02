@@ -270,12 +270,6 @@ export async function GET(request: Request) {
     if (!meanTarget) continue;
 
     const returnPct = ((meanTarget - prepared.current) / prepared.current) * 100;
-    const simpleMeanTarget =
-      lens.type === "overall" ? safeNumOrNull(prepared.summary.overview.simple_mean_target_price) : null;
-    const simpleMeanReturnPct =
-      typeof simpleMeanTarget === "number" && prepared.current
-        ? ((simpleMeanTarget - prepared.current) / prepared.current) * 100
-        : null;
     const overvaluation = ((prepared.current - meanTarget) / prepared.current) * 100;
     const confidenceCv =
       typeof prepared.summary.overview.mean_disagreement_score === "number" &&
@@ -301,8 +295,6 @@ export async function GET(request: Request) {
       overvaluation_pct: overvaluation,
       dispersion: confidenceCv,
       return_pct: returnPct,
-      simple_mean_target_price: simpleMeanTarget,
-      simple_mean_return_pct: simpleMeanReturnPct,
       investment_allocation_pct: positionPct,
       confidence_cv: confidenceCv,
       points_score: typeof adjustedScore === "number" && Number.isFinite(adjustedScore) ? adjustedScore : null,

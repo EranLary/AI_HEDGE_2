@@ -272,7 +272,6 @@ export function fmtMarketCap(v: number | null | undefined, ctx: CurrencyContext)
 const fmtNum = (v?: number | null) =>
   typeof v === "number" && Number.isFinite(v) ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(v) : "N/A";
 const fmtPct = (v?: number | null) => (typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A");
-const fmtWeightPct = (v?: number | null) => (typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(1)}%` : "N/A");
 const fmtLargeAware = (v?: number | null) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return "N/A";
   const abs = Math.abs(v);
@@ -1284,17 +1283,9 @@ export function HedgeDashboard({
     typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
       ? Number(consensus.mean_target_price)
       : null;
-  const consensusSimpleMean =
-    typeof consensus?.simple_mean_target_price === "number" && Number.isFinite(consensus.simple_mean_target_price)
-      ? Number(consensus.simple_mean_target_price)
-      : null;
   const consensusChangePct =
     typeof consensusCurrent === "number" && typeof consensusMean === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusMean - consensusCurrent) / consensusCurrent) * 100
-      : null;
-  const consensusSimpleChangePct =
-    typeof consensusCurrent === "number" && typeof consensusSimpleMean === "number" && Math.abs(consensusCurrent) > 1e-9
-      ? ((consensusSimpleMean - consensusCurrent) / consensusCurrent) * 100
       : null;
   const consensusCvRaw =
     typeof consensus?.cv === "number" && Number.isFinite(consensus.cv) ? Math.abs(Number(consensus.cv)) : null;
@@ -1325,11 +1316,8 @@ export function HedgeDashboard({
   const activeMethodTargetChangeClass = toneClassFromSign(activeMethodTargetChangePct);
   const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
-  const consensusSimpleMeanClass = toneClassFromTarget(consensusSimpleMean, consensusCurrent);
   const consensusChangeClass = toneClassFromSign(consensusChangePct);
-  const consensusSimpleChangeClass = toneClassFromSign(consensusSimpleChangePct);
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
-  const consensusSimpleMeanText = fmtTargetOrFloor(consensus?.simple_mean_target_price, currencyContext);
   const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
   const consensusChangeText = typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A";
   const overallDisagreement =
@@ -1382,10 +1370,6 @@ export function HedgeDashboard({
         name: b.name,
         target,
         investment: b.investment_amount,
-        weightPct:
-          typeof b.weight_pct === "number" && Number.isFinite(Number(b.weight_pct))
-            ? Number(b.weight_pct)
-            : null,
         changePct,
         combinedScore: combinedScore(b.investment_amount, changePct),
       };
@@ -1417,10 +1401,6 @@ export function HedgeDashboard({
           name: String(member.persona || `Valuator ${idx + 1}`).trim(),
           target,
           investment,
-          weightPct:
-            typeof member.weight_pct === "number" && Number.isFinite(Number(member.weight_pct))
-              ? Number(member.weight_pct)
-              : null,
           changePct,
           combinedScore: combinedScore(investment, changePct),
         };
@@ -1869,23 +1849,14 @@ export function HedgeDashboard({
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Weighted Target Price</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Target Price</p>
                       <AutoFitMetric
                         text={consensusMeanText}
                         maxPx={42}
                         minPx={16}
                         className={`hib-metric-value mt-1 font-bold leading-tight ${consensusMeanClass}`}
-                      />
-                    </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Simple Mean</p>
-                      <AutoFitMetric
-                        text={consensusSimpleMeanText}
-                        maxPx={42}
-                        minPx={16}
-                        className={`hib-metric-value mt-1 font-bold leading-tight ${consensusSimpleMeanClass}`}
                       />
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
@@ -1969,11 +1940,8 @@ export function HedgeDashboard({
                               <span className={`font-semibold ${toneClassFromSign(row.changePct)}`}>
                                 {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                               </span>
-                              <span className="text-right">
-                                <span className={`block font-semibold ${toneClassFromSign(row.investment)}`}>
-                                  {fmtNotionalPct(row.investment)}
-                                </span>
-                                <span className="block text-[11px] text-zinc-500">Weight {fmtWeightPct(row.weightPct)}</span>
+                              <span className={`font-semibold ${toneClassFromSign(row.investment)}`}>
+                                {fmtNotionalPct(row.investment)}
                               </span>
                             </div>
                             <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
@@ -1984,7 +1952,7 @@ export function HedgeDashboard({
                       })}
                     </div>
                     <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
-                    <table className="hidden w-full min-w-[720px] text-sm sm:table">
+                    <table className="hidden w-full min-w-[640px] text-sm sm:table">
                       <thead className="border-b border-white/10 text-zinc-400">
                         <tr>
                           <th className="px-3 py-2 text-left font-medium">Model Name</th>
@@ -1996,7 +1964,6 @@ export function HedgeDashboard({
                               <InfoTip text="This is the total amount the model chose to invest in the stock (negative means a short position)." />
                             </span>
                           </th>
-                          <th className="px-3 py-2 text-right font-medium">Weight</th>
                           <th className="px-3 py-2 text-right font-medium">Score</th>
                         </tr>
                       </thead>
@@ -2024,9 +1991,6 @@ export function HedgeDashboard({
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
                               {fmtNotionalPct(row.investment)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-semibold text-zinc-200">
-                              {fmtWeightPct(row.weightPct)}
                             </td>
                             <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
                               {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
@@ -2061,11 +2025,8 @@ export function HedgeDashboard({
                                   <span className={`font-semibold ${toneClassFromSign(row.changePct)}`}>
                                     {typeof row.changePct === "number" ? fmtPct(row.changePct) : "-"}
                                   </span>
-                                  <span className="text-right">
-                                    <span className={`block font-semibold ${toneClassFromSign(row.investment)}`}>
-                                      {fmtNotionalPct(row.investment)}
-                                    </span>
-                                    <span className="block text-[11px] text-zinc-500">Weight {fmtWeightPct(row.weightPct)}</span>
+                                  <span className={`font-semibold ${toneClassFromSign(row.investment)}`}>
+                                    {fmtNotionalPct(row.investment)}
                                   </span>
                                 </div>
                                 <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
@@ -2076,14 +2037,13 @@ export function HedgeDashboard({
                           })}
                         </div>
                         <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/30">
-                          <table className="hidden w-full min-w-[720px] text-sm sm:table">
+                          <table className="hidden w-full min-w-[640px] text-sm sm:table">
                             <thead className="border-b border-white/10 text-zinc-400">
                               <tr>
                                 <th className="px-3 py-2 text-left font-medium">Valuator Name</th>
                                 <th className="px-3 py-2 text-right font-medium">Target Price</th>
                                 <th className="px-3 py-2 text-right font-medium">Change vs Current</th>
                                 <th className="px-3 py-2 text-right font-medium">Investment %</th>
-                                <th className="px-3 py-2 text-right font-medium">Weight</th>
                                 <th className="px-3 py-2 text-right font-medium">Score</th>
                               </tr>
                             </thead>
@@ -2109,9 +2069,6 @@ export function HedgeDashboard({
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(row.investment)}`}>
                                       {fmtNotionalPct(row.investment)}
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-semibold text-zinc-200">
-                                      {fmtWeightPct(row.weightPct)}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-semibold ${toneClassFromSign(rowAdjustedScore)}`}>
                                       {typeof rowAdjustedScore === "number" && Number.isFinite(rowAdjustedScore) ? rowAdjustedScore.toFixed(2) : "N/A"}
@@ -2139,9 +2096,6 @@ export function HedgeDashboard({
                       </p>
                       <p className="text-sm text-zinc-400">
                         Mean Investment: <span className={`font-semibold ${activeMethodInvestmentClass}`}>{fmtNotionalPct(activeMethod.investment_amount)}</span>{" "}
-                      </p>
-                      <p className="text-sm text-zinc-400">
-                        Model Weight: <span className="font-semibold text-zinc-100">{fmtWeightPct(activeMethod.weight_pct)}</span>
                       </p>
                       {[...activeMethodProbabilityItems, ...activeMethodOtherMetricItems].map((item) => (
                         <p key={item.key} className="text-xs text-zinc-500">
@@ -2187,11 +2141,6 @@ export function HedgeDashboard({
                                 <p>
                                   Investment: <span className={`font-semibold ${selectedOutputInvestmentClass}`}>{fmtNotionalPct(selectedOutput.investment_amount)}</span>{" "}
                                 </p>
-                                {typeof selectedOutput.weight_pct === "number" && Number.isFinite(selectedOutput.weight_pct) ? (
-                                  <p>
-                                    Weight: <span className="font-semibold text-zinc-100">{fmtWeightPct(selectedOutput.weight_pct)}</span>
-                                  </p>
-                                ) : null}
                               </div>
                               <div className="mt-2 max-h-[28rem] overflow-auto text-sm text-zinc-200">
                                 {selectedOutput.reason_sections.length ? (
@@ -2338,21 +2287,12 @@ export function HedgeDashboard({
                     {typeof finalAdjustedScore === "number" && Number.isFinite(finalAdjustedScore) ? finalAdjustedScore.toFixed(2) : "N/A"}
                   </p>
                   <p className="mt-2 text-xl font-semibold text-zinc-100">
-                    <span>Weighted Target Price: </span>
+                    <span>Mean Target Price: </span>
                     <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
                     <span className={consensusChangeClass}>
                       {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
                     </span>
                   </p>
-                  {typeof consensusSimpleMean === "number" && Number.isFinite(consensusSimpleMean) ? (
-                    <p className="text-sm font-semibold text-zinc-300">
-                      <span>Simple Mean: </span>
-                      <span className={consensusSimpleMeanClass}>{consensusSimpleMeanText}</span>{" "}
-                      <span className={consensusSimpleChangeClass}>
-                        {typeof consensusSimpleChangePct === "number" ? `(${fmtPct(consensusSimpleChangePct)})` : "(N/A)"}
-                      </span>
-                    </p>
-                  ) : null}
                   <p className="text-lg font-semibold text-zinc-100">
                     <span>Mean Investment Score Input: </span>
                     <span className={toneClassFromSign(scoreCard.position_size_pct_of_notional)}>

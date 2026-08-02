@@ -3480,90 +3480,6 @@ DREAM_TEAM_DESCRIPTION_FILES = {
     "Stanley Druckenmiller": "stanley_druckenmiller.txt",
 }
 
-DEFAULT_DREAM_TEAM_VALUATORS = [
-    "Warren Buffett",
-    "Aswath Damodaran",
-    "Charlie Munger",
-    "Peter Lynch",
-    "Peter Thiel",
-    "Howard Marks",
-    "Bill Ackman",
-    "Cathie Wood",
-    "Ray Dalio",
-    "Stanley Druckenmiller",
-]
-
-VALUATION_METHOD_ORDER = [
-    "Scenario DCF",
-    "Target Scenario",
-    "Earnings Scenario",
-    "Revenue Scenario",
-    "Composite Scenario",
-    "SOTP Scenario",
-    "Dream Team",
-]
-
-VALUATION_METHOD_DESCRIPTIONS = {
-    "Scenario DCF": (
-        "A probability-weighted discounted cash flow framework. It asks for bull, base, "
-        "and bear cases, explicit cash-flow and discount-rate assumptions, and a final "
-        "intrinsic equity target."
-    ),
-    "Target Scenario": (
-        "A direct bull/base/bear target-market-cap model. It is useful when the company "
-        "can be valued from scenario-level equity outcomes rather than a full DCF."
-    ),
-    "Earnings Scenario": (
-        "A bull/base/bear earnings and P/E model. It is strongest for profitable "
-        "companies where representative earnings and valuation multiples matter."
-    ),
-    "Revenue Scenario": (
-        "A bull/base/bear revenue and EV/sales model. It is useful when sales scale, "
-        "growth durability, or revenue multiples are more reliable than earnings."
-    ),
-    "Composite Scenario": (
-        "A multi-driver scenario model combining revenue growth, margins, financing, tax, "
-        "and P/E assumptions. It is useful when no single driver should dominate."
-    ),
-    "SOTP Scenario": (
-        "A sum-of-the-parts scenario model. It is useful for conglomerates, platforms, "
-        "segments, cash/debt bridges, or businesses where separate activities deserve "
-        "different valuation logic."
-    ),
-    "Dream Team": (
-        "A panel of investor-persona valuators. Each persona applies a distinct investing "
-        "style, and the selected persona outputs are blended into one Dream Team model."
-    ),
-}
-
-VALUATION_METHOD_ALIASES = {
-    "dcf": "Scenario DCF",
-    "scenario dcf price valuation": "Scenario DCF",
-    "scenario dcf valuation": "Scenario DCF",
-    "target": "Target Scenario",
-    "target scenario valuation": "Target Scenario",
-    "earnings": "Earnings Scenario",
-    "earnings scenario valuation": "Earnings Scenario",
-    "net income": "Earnings Scenario",
-    "net income & p/e": "Earnings Scenario",
-    "revenue": "Revenue Scenario",
-    "revenue scenario valuation": "Revenue Scenario",
-    "revenue & ev/s": "Revenue Scenario",
-    "composite": "Composite Scenario",
-    "composite scenario valuation": "Composite Scenario",
-    "sotp": "SOTP Scenario",
-    "sotp scenario valuation": "SOTP Scenario",
-    "sum of the parts": "SOTP Scenario",
-    "sum-of-the-parts": "SOTP Scenario",
-    "dream": "Dream Team",
-    "dream team model": "Dream Team",
-    "dream team target price valuation": "Dream Team",
-}
-
-VALUATION_ROUTER_MIN_METHODS = 3
-VALUATION_ROUTER_MIN_DREAM_PERSONAS = 3
-VALUATION_ROUTER_MIN_DREAM_WEIGHT_PCT = 10.0
-
 
 @lru_cache(maxsize=32)
 def _dream_team_description_for(name: str) -> str:
@@ -5415,538 +5331,6 @@ def _normalize_valuation_contexts(base_text, valuation_contexts):
     return [base]
 
 
-def _router_float(value: Any) -> Optional[float]:
-    if isinstance(value, bool):
-        return None
-    try:
-        out = float(value)
-    except Exception:
-        return None
-    if not np.isfinite(out):
-        return None
-    return out
-
-
-def _router_clean_text(value: Any, max_chars: int = 500) -> str:
-    text_value = str(value or "").strip()
-    if len(text_value) <= max_chars:
-        return text_value
-    return text_value[:max_chars].rstrip()
-
-
-def _canonical_valuation_method_name(value: Any) -> Optional[str]:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    for method_name in VALUATION_METHOD_ORDER:
-        if raw.lower() == method_name.lower():
-            return method_name
-    return VALUATION_METHOD_ALIASES.get(raw.lower())
-
-
-def _canonical_dream_persona_name(value: Any, available_personas: Iterable[str]) -> Optional[str]:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    for persona in available_personas:
-        if raw.lower() == str(persona).lower():
-            return str(persona)
-    return None
-
-
-def _router_items(value: Any, *, name_keys: Tuple[str, ...]) -> List[Dict[str, Any]]:
-    if isinstance(value, dict):
-        rows: List[Dict[str, Any]] = []
-        for name, weight in value.items():
-            if isinstance(weight, dict):
-                row = dict(weight)
-                row.setdefault("name", name)
-                rows.append(row)
-            else:
-                rows.append({"name": name, "weight_pct": weight})
-        return rows
-    if isinstance(value, list):
-        rows = []
-        for item in value:
-            if isinstance(item, dict):
-                row = dict(item)
-                if "name" not in row:
-                    for key in name_keys:
-                        if key in row:
-                            row["name"] = row.get(key)
-                            break
-                rows.append(row)
-            elif isinstance(item, str):
-                rows.append({"name": item})
-        return rows
-    return []
-
-
-def _extract_router_weight(row: Dict[str, Any]) -> Optional[float]:
-    for key in ("weight_pct", "weight_percent", "weight", "allocation_pct", "allocation_percent"):
-        if key not in row:
-            continue
-        val = _router_float(row.get(key))
-        if val is not None:
-            return max(0.0, float(val))
-    return None
-
-
-def _normalize_weights(
-    rows: List[Dict[str, Any]],
-    *,
-    name_key: str = "name",
-    min_weight_by_name: Optional[Dict[str, float]] = None,
-) -> List[Dict[str, Any]]:
-    if not rows:
-        return []
-    weights = []
-    for row in rows:
-        weight = _router_float(row.get("weight_pct"))
-        weights.append(max(0.0, float(weight)) if weight is not None else 0.0)
-
-    total = sum(weights)
-    if total <= 1e-9:
-        weights = [100.0 / len(rows)] * len(rows)
-    else:
-        weights = [(w / total) * 100.0 for w in weights]
-
-    min_map = min_weight_by_name or {}
-    for required_name, min_weight in min_map.items():
-        required_idx = None
-        for idx, row in enumerate(rows):
-            if str(row.get(name_key, "")).strip() == required_name:
-                required_idx = idx
-                break
-        if required_idx is None:
-            continue
-        min_weight = max(0.0, min(100.0, float(min_weight)))
-        if weights[required_idx] >= min_weight:
-            continue
-        remaining_total = sum(w for idx, w in enumerate(weights) if idx != required_idx)
-        weights[required_idx] = min_weight
-        remaining_budget = max(0.0, 100.0 - min_weight)
-        if remaining_total <= 1e-9:
-            other_count = max(1, len(rows) - 1)
-            for idx in range(len(weights)):
-                if idx != required_idx:
-                    weights[idx] = remaining_budget / other_count
-        else:
-            for idx, weight in enumerate(weights):
-                if idx != required_idx:
-                    weights[idx] = (weight / remaining_total) * remaining_budget
-
-    total = sum(weights)
-    if total > 1e-9:
-        weights = [(w / total) * 100.0 for w in weights]
-
-    normalized: List[Dict[str, Any]] = []
-    for row, weight in zip(rows, weights):
-        next_row = dict(row)
-        next_row["weight_pct"] = float(weight)
-        normalized.append(next_row)
-    return normalized
-
-
-def _valuation_method_catalog_text() -> str:
-    lines = []
-    for method_name in VALUATION_METHOD_ORDER:
-        lines.append(f"- {method_name}: {VALUATION_METHOD_DESCRIPTIONS[method_name]}")
-    return "\n".join(lines)
-
-
-def _dream_team_catalog_text(personas: Iterable[str]) -> str:
-    blocks = []
-    for persona in personas:
-        desc = _dream_team_description_for(str(persona))
-        blocks.append(
-            f"### {persona}\n{desc if desc else 'No additional profile file was available for this persona.'}"
-        )
-    return "\n\n".join(blocks)
-
-
-def _router_json_dumps(value: Any, max_chars: int = 20000) -> str:
-    try:
-        raw = json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        raw = str(value)
-    if len(raw) <= max_chars:
-        return raw
-    return raw[:max_chars].rstrip() + "...[truncated]"
-
-
-def build_valuation_router_prompt(
-    *,
-    ticker: str,
-    info_dict: Dict[str, Any],
-    financial_dict: Dict[str, Any],
-    variables_dict: Dict[str, Any],
-    analysis_text: str,
-    dream_team_personas: Iterable[str],
-) -> str:
-    company_name = ""
-    if isinstance(info_dict, dict):
-        company_name = str(
-            info_dict.get("short_name")
-            or (info_dict.get("info", {}) if isinstance(info_dict.get("info"), dict) else {}).get("shortName")
-            or ticker
-        )
-    financial_snapshot = {}
-    if isinstance(financial_dict, dict):
-        for key in ("currency_statement", "info", "info_financials", "rate"):
-            if key in financial_dict:
-                financial_snapshot[key] = financial_dict.get(key)
-
-    output_schema = """
-{
-  "rationale": "string explaining which valuation evidence matters most",
-  "selected_models": [
-    {
-      "name": "one exact model name from the catalog",
-      "weight_pct": number,
-      "rationale": "string"
-    }
-  ],
-  "dream_team": {
-    "rationale": "string",
-    "selected_valuators": [
-      {
-        "name": "one exact Dream Team persona name from the catalog",
-        "weight_pct": number,
-        "rationale": "string"
-      }
-    ]
-  }
-}
-""".strip()
-
-    return f"""
-You are the valuation-routing agent for {ticker} ({company_name}).
-
-Your job is to choose the right valuation models and Dream Team investor personas before the valuation agents run.
-Use the full company analysis context, financial context, and the model/persona catalogs below.
-
-Hard requirements:
-1) Choose at least {VALUATION_ROUTER_MIN_METHODS} valuation models in total.
-2) One selected model must be exactly "Dream Team".
-3) The "Dream Team" model weight must be at least {VALUATION_ROUTER_MIN_DREAM_WEIGHT_PCT:.0f}%.
-4) Choose at least {VALUATION_ROUTER_MIN_DREAM_PERSONAS} Dream Team personas.
-5) Model weights must sum to 100.
-6) Dream Team persona weights must sum to 100.
-7) Use only exact names from the catalogs.
-8) Return raw JSON only.
-
-Valuation model catalog:
-<valuation_models>
-{_valuation_method_catalog_text()}
-</valuation_models>
-
-Dream Team persona catalog:
-<dream_team_personas>
-{_dream_team_catalog_text(dream_team_personas)}
-</dream_team_personas>
-
-Structured company context:
-<structured_context>
-Ticker: {ticker}
-Company: {company_name}
-Variables: {_router_json_dumps(variables_dict)}
-Info: {_router_json_dumps(info_dict, max_chars=12000)}
-Financial snapshot: {_router_json_dumps(financial_snapshot, max_chars=20000)}
-</structured_context>
-
-Full analysis context:
-<analysis_context>
-{analysis_text}
-</analysis_context>
-
-Return this JSON shape exactly:
-{output_schema}
-""".strip()
-
-
-def _normalize_valuation_router_plan(
-    raw_plan: Dict[str, Any],
-    *,
-    available_methods: Iterable[str],
-    available_personas: Iterable[str],
-) -> Optional[Dict[str, Any]]:
-    if not isinstance(raw_plan, dict):
-        return None
-
-    available_method_set = set(str(m) for m in available_methods)
-    available_persona_list = [str(p) for p in available_personas]
-
-    raw_model_items = _router_items(
-        raw_plan.get("selected_models")
-        or raw_plan.get("models")
-        or raw_plan.get("valuation_models")
-        or raw_plan.get("selected_methods"),
-        name_keys=("name", "model", "method"),
-    )
-    model_rows: List[Dict[str, Any]] = []
-    seen_methods: Set[str] = set()
-    for row in raw_model_items:
-        method_name = _canonical_valuation_method_name(
-            row.get("name") or row.get("model") or row.get("method")
-        )
-        if not method_name or method_name not in available_method_set or method_name in seen_methods:
-            continue
-        seen_methods.add(method_name)
-        model_rows.append(
-            {
-                "name": method_name,
-                "weight_pct": _extract_router_weight(row),
-                "rationale": _router_clean_text(
-                    row.get("rationale")
-                    or row.get("reason")
-                    or row.get("why")
-                    or raw_plan.get("rationale")
-                ),
-            }
-        )
-
-    if "Dream Team" not in seen_methods:
-        return None
-    if len(model_rows) < VALUATION_ROUTER_MIN_METHODS:
-        return None
-
-    raw_dream = raw_plan.get("dream_team") if isinstance(raw_plan.get("dream_team"), dict) else {}
-    raw_persona_items = _router_items(
-        raw_dream.get("selected_valuators")
-        or raw_dream.get("valuators")
-        or raw_dream.get("selected_personas")
-        or raw_plan.get("selected_valuators")
-        or raw_plan.get("selected_personas")
-        or raw_plan.get("dream_team_personas"),
-        name_keys=("name", "persona", "valuator"),
-    )
-    persona_rows: List[Dict[str, Any]] = []
-    seen_personas: Set[str] = set()
-    for row in raw_persona_items:
-        persona_name = _canonical_dream_persona_name(
-            row.get("name") or row.get("persona") or row.get("valuator"),
-            available_persona_list,
-        )
-        if not persona_name or persona_name in seen_personas:
-            continue
-        seen_personas.add(persona_name)
-        persona_rows.append(
-            {
-                "name": persona_name,
-                "weight_pct": _extract_router_weight(row),
-                "rationale": _router_clean_text(
-                    row.get("rationale")
-                    or row.get("reason")
-                    or row.get("why")
-                    or raw_dream.get("rationale")
-                ),
-            }
-        )
-
-    if len(persona_rows) < VALUATION_ROUTER_MIN_DREAM_PERSONAS:
-        return None
-
-    model_rows = _normalize_weights(
-        model_rows,
-        min_weight_by_name={"Dream Team": VALUATION_ROUTER_MIN_DREAM_WEIGHT_PCT},
-    )
-    persona_rows = _normalize_weights(persona_rows)
-
-    method_weights = {row["name"]: float(row["weight_pct"]) for row in model_rows}
-    persona_weights = {row["name"]: float(row["weight_pct"]) for row in persona_rows}
-
-    return {
-        "status": "success",
-        "mode": "weighted_router",
-        "rationale": _router_clean_text(raw_plan.get("rationale"), max_chars=1200),
-        "selected_methods": model_rows,
-        "selected_personas": persona_rows,
-        "method_weights": method_weights,
-        "persona_weights": persona_weights,
-        "constraints": {
-            "min_methods_including_dream_team": VALUATION_ROUTER_MIN_METHODS,
-            "min_dream_team_personas": VALUATION_ROUTER_MIN_DREAM_PERSONAS,
-            "min_dream_team_weight_pct": VALUATION_ROUTER_MIN_DREAM_WEIGHT_PCT,
-        },
-    }
-
-
-def _fallback_valuation_router_plan(reason: str, *, raw_response: Optional[str] = None) -> Dict[str, Any]:
-    method_weight = 100.0 / len(VALUATION_METHOD_ORDER)
-    persona_weight = 100.0 / len(DEFAULT_DREAM_TEAM_VALUATORS)
-    payload = {
-        "status": "fallback",
-        "mode": "simple_all",
-        "reason": _router_clean_text(reason, max_chars=800),
-        "selected_methods": [
-            {"name": method_name, "weight_pct": method_weight, "rationale": "Fallback all-model simple mean."}
-            for method_name in VALUATION_METHOD_ORDER
-        ],
-        "selected_personas": [
-            {"name": persona, "weight_pct": persona_weight, "rationale": "Fallback full Dream Team."}
-            for persona in DEFAULT_DREAM_TEAM_VALUATORS
-        ],
-        "method_weights": {method_name: method_weight for method_name in VALUATION_METHOD_ORDER},
-        "persona_weights": {persona: persona_weight for persona in DEFAULT_DREAM_TEAM_VALUATORS},
-    }
-    if raw_response:
-        payload["raw_response"] = _router_clean_text(raw_response, max_chars=2000)
-    return payload
-
-
-def resolve_valuation_router_plan(
-    *,
-    ticker: str,
-    info_dict: Dict[str, Any],
-    financial_dict: Dict[str, Any],
-    variables_dict: Dict[str, Any],
-    analysis_text: str,
-    dream_team_personas: Iterable[str],
-) -> Dict[str, Any]:
-    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip() or globals().get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        return _fallback_valuation_router_plan("DEEPSEEK_API_KEY is not configured.")
-
-    prompt = build_valuation_router_prompt(
-        ticker=ticker,
-        info_dict=info_dict if isinstance(info_dict, dict) else {},
-        financial_dict=financial_dict if isinstance(financial_dict, dict) else {},
-        variables_dict=variables_dict if isinstance(variables_dict, dict) else {},
-        analysis_text=str(analysis_text or ""),
-        dream_team_personas=dream_team_personas,
-    )
-    raw_response = ""
-    try:
-        with _obs_llm_context(stage="valuation.router"):
-            raw_response = deepseek_simple_text(
-                api_key=str(api_key),
-                prompt=prompt,
-                model="deepseek-reasoner",
-                temperature=0.0,
-                short_answer=False,
-            )
-        parsed = _extract_raw_json_dict(raw_response)
-        plan = _normalize_valuation_router_plan(
-            parsed,
-            available_methods=VALUATION_METHOD_ORDER,
-            available_personas=dream_team_personas,
-        )
-        if plan is None:
-            return _fallback_valuation_router_plan(
-                "Valuation router returned an invalid plan.",
-                raw_response=raw_response,
-            )
-        plan["raw_json"] = parsed
-        return plan
-    except Exception as exc:
-        return _fallback_valuation_router_plan(
-            f"Valuation router failed: {exc}",
-            raw_response=raw_response,
-        )
-
-
-def _mean_or_none(values: Iterable[float]) -> Optional[float]:
-    cleaned = []
-    for value in values:
-        val = _router_float(value)
-        if val is not None:
-            cleaned.append(float(val))
-    if not cleaned:
-        return None
-    return float(sum(cleaned) / len(cleaned))
-
-
-def _weighted_mean_from_map(values: Dict[str, Optional[float]], weights: Dict[str, float]) -> Optional[float]:
-    weighted_sum = 0.0
-    total_weight = 0.0
-    for key, raw_value in values.items():
-        value = _router_float(raw_value)
-        weight = _router_float(weights.get(key))
-        if value is None or weight is None or weight <= 0:
-            continue
-        weighted_sum += float(value) * float(weight)
-        total_weight += float(weight)
-    if total_weight <= 1e-9:
-        return None
-    return float(weighted_sum / total_weight)
-
-
-def _weighted_item_mean(
-    items: List[Dict[str, Any]],
-    *,
-    name_key: str,
-    value_key: str,
-    weights: Dict[str, float],
-) -> Optional[float]:
-    grouped: Dict[str, List[float]] = {}
-    iterable_items = items if isinstance(items, list) else []
-    for item in iterable_items:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get(name_key, "") or "").strip()
-        value = _router_float(item.get(value_key))
-        if not name or value is None:
-            continue
-        grouped.setdefault(name, []).append(float(value))
-    values = {
-        name: _mean_or_none(vals)
-        for name, vals in grouped.items()
-        if name in weights and vals
-    }
-    return _weighted_mean_from_map(values, weights)
-
-
-def _redistribute_weights_to_successful(
-    requested_weights: Dict[str, float],
-    successful_names: Iterable[str],
-) -> Dict[str, float]:
-    successful = [str(name) for name in successful_names if str(name) in requested_weights]
-    if not successful:
-        return {}
-    total = sum(max(0.0, float(requested_weights.get(name, 0.0) or 0.0)) for name in successful)
-    if total <= 1e-9:
-        equal = 100.0 / len(successful)
-        return {name: equal for name in successful}
-    return {
-        name: (max(0.0, float(requested_weights.get(name, 0.0) or 0.0)) / total) * 100.0
-        for name in successful
-    }
-
-
-def make_weighted_short_list_prices(
-    list_of_all_results,
-    price_currency,
-    requested_method_weights: Dict[str, float],
-):
-    final_list, price_dict = make_short_list_prices(list_of_all_results, price_currency)
-    method_means = {
-        name: float(price_dict[name][0])
-        for _, name in list_of_all_results
-        if name in price_dict
-        and isinstance(price_dict.get(name), (list, tuple))
-        and len(price_dict[name]) >= 1
-        and _router_float(price_dict[name][0]) is not None
-    }
-    if not method_means:
-        return final_list, price_dict, {}, list(requested_method_weights.keys()), None
-
-    final_weights = _redistribute_weights_to_successful(requested_method_weights, method_means.keys())
-    weighted_mean = _weighted_mean_from_map(method_means, final_weights)
-    simple_mean = _mean_or_none(method_means.values())
-    method_values = list(method_means.values())
-    p25, p75 = np.quantile(np.asarray(method_values, dtype=float), [0.25, 0.75])
-    if weighted_mean is not None:
-        weighted_triplet = [float(weighted_mean), float(p25), float(p75)]
-        price_dict["Overall"] = weighted_triplet
-        price_dict["Weighted Overall"] = weighted_triplet
-    if simple_mean is not None:
-        price_dict["Simple Mean"] = [float(simple_mean), float(p25), float(p75)]
-    price_dict["Method Weights"] = final_weights
-    failed_methods = [name for name in requested_method_weights if name not in method_means]
-    return final_list, price_dict, final_weights, failed_methods, simple_mean
-
-
 # ---------------------------------------------------------------------
 # 4) Run ALL valuation blocks together in parallel
 #    - Collect their results + summary text
@@ -5985,14 +5369,32 @@ def run_valuations(
         text_input=text,
     )
 
-    dream_valuation_team = list(DEFAULT_DREAM_TEAM_VALUATORS)
+    dream_valuation_team = [
+    "Warren Buffett",
+    "Aswath Damodaran",
+    "Charlie Munger",
+    "Peter Lynch",
+    "Peter Thiel",
+    "Howard Marks",
+    "Bill Ackman",
+    "Cathie Wood",
+    "Ray Dalio",
+    "Stanley Druckenmiller",
+    ]
 
     price_currency = variables_dict.get("price_currency", 1)
     financial_currency = variables_dict.get("financial_currency", 1)
     collect_explain = isinstance(explain_collector, dict)
     collect_details_for_metrics = True
-    method_order = list(VALUATION_METHOD_ORDER)
-    method_details = {method_name: [] for method_name in method_order}
+    method_details = {
+        "Scenario DCF": [],
+        "Target Scenario": [],
+        "Earnings Scenario": [],
+        "Revenue Scenario": [],
+        "Composite Scenario": [],
+        "SOTP Scenario": [],
+        "Dream Team": [],
+    }
     def _collect_investment_values(items):
         out = []
         if not isinstance(items, list):
@@ -6024,61 +5426,6 @@ def run_valuations(
     context_model_schedule = ["deepseek-reasoner"] * len(context_schedule)
     print("valuation context passes:", len(context_schedule))
     print("valuation models per pass:", context_model_schedule)
-    valuation_router_plan = resolve_valuation_router_plan(
-        ticker=ticker,
-        info_dict=info_dict if isinstance(info_dict, dict) else {},
-        financial_dict=financial_dict if isinstance(financial_dict, dict) else {},
-        variables_dict=variables_dict if isinstance(variables_dict, dict) else {},
-        analysis_text=context_schedule[-1] if context_schedule else str(text or ""),
-        dream_team_personas=dream_valuation_team,
-    )
-    router_active = valuation_router_plan.get("mode") == "weighted_router"
-    selected_method_names = [
-        str(row.get("name", "")).strip()
-        for row in valuation_router_plan.get("selected_methods", [])
-        if isinstance(row, dict) and str(row.get("name", "")).strip() in method_order
-    ]
-    if not router_active:
-        selected_method_names = list(method_order)
-    selected_method_names = [name for name in method_order if name in set(selected_method_names)]
-    if not selected_method_names:
-        selected_method_names = list(method_order)
-        router_active = False
-    method_weight_pct_requested = (
-        {
-            str(name): float(weight)
-            for name, weight in (valuation_router_plan.get("method_weights") or {}).items()
-            if str(name) in selected_method_names and _router_float(weight) is not None
-        }
-        if router_active
-        else {}
-    )
-    selected_dream_personas = [
-        str(row.get("name", "")).strip()
-        for row in valuation_router_plan.get("selected_personas", [])
-        if isinstance(row, dict) and str(row.get("name", "")).strip() in dream_valuation_team
-    ]
-    if not router_active:
-        selected_dream_personas = list(dream_valuation_team)
-    if "Dream Team" in selected_method_names and len(selected_dream_personas) < VALUATION_ROUTER_MIN_DREAM_PERSONAS:
-        selected_dream_personas = list(dream_valuation_team)
-        router_active = False
-        valuation_router_plan = _fallback_valuation_router_plan("Router did not select enough Dream Team personas.")
-        selected_method_names = list(method_order)
-        method_weight_pct_requested = {}
-    dream_persona_weight_pct_requested = (
-        {
-            str(name): float(weight)
-            for name, weight in (valuation_router_plan.get("persona_weights") or {}).items()
-            if str(name) in selected_dream_personas and _router_float(weight) is not None
-        }
-        if router_active
-        else {}
-    )
-    print("valuation router mode:", valuation_router_plan.get("mode"))
-    print("valuation selected methods:", selected_method_names)
-    if "Dream Team" in selected_method_names:
-        print("valuation selected Dream Team personas:", selected_dream_personas)
     current_price = variables_dict["price"]
     current_revenue = variables_dict["revenue"]
     current_ni = variables_dict["net_income"]
@@ -6296,7 +5643,7 @@ def run_valuations(
                     ctx_results, ctx_summary, ctx_details = dream_valuation_full(
                         financial_dict,
                         ctx_text,
-                        selected_dream_personas,
+                        dream_valuation_team,
                         llm_workers=llm_workers_each_block,
                         model=model_name,
                         runtime_context=runtime_context,
@@ -6307,61 +5654,19 @@ def run_valuations(
                     ctx_results, ctx_summary = dream_valuation_full(
                         financial_dict,
                         ctx_text,
-                        selected_dream_personas,
+                        dream_valuation_team,
                         llm_workers=llm_workers_each_block,
                         model=model_name,
                         runtime_context=runtime_context,
                     )
                 all_results.extend(ctx_results)
                 summary_name = ctx_summary[1]
-        persona_final_weights: Dict[str, float] = {}
-        persona_failed: List[str] = []
-        if router_active and dream_persona_weight_pct_requested and details:
-            persona_targets: Dict[str, Optional[float]] = {}
-            for persona_name in selected_dream_personas:
-                vals = [
-                    float(item.get("target_price"))
-                    for item in details
-                    if isinstance(item, dict)
-                    and str(item.get("persona", "") or "").strip() == persona_name
-                    and _router_float(item.get("target_price")) is not None
-                ]
-                persona_targets[persona_name] = _mean_or_none(vals)
-            successful_personas = [
-                name for name, value in persona_targets.items() if _router_float(value) is not None
-            ]
-            persona_final_weights = _redistribute_weights_to_successful(
-                dream_persona_weight_pct_requested,
-                successful_personas,
-            )
-            persona_failed = [name for name in selected_dream_personas if name not in successful_personas]
-            weighted_dream_target = _weighted_mean_from_map(persona_targets, persona_final_weights)
-            if weighted_dream_target is not None:
-                all_results_mean = [float(weighted_dream_target)]
-            elif all_results:
-                all_results_mean = [sum(all_results) / len(all_results)]
-            else:
-                all_results_mean = []
-        elif all_results:
+        if all_results:
             all_results_mean = [sum(all_results) / len(all_results)]
         else:
             all_results_mean = []
-
-        if persona_final_weights:
-            for item in details:
-                if not isinstance(item, dict):
-                    continue
-                persona_name = str(item.get("persona", "") or "").strip()
-                if persona_name in persona_final_weights:
-                    item["weight_pct"] = float(persona_final_weights[persona_name])
-
-        return (
-            all_results_mean,
-            _plot_summary_or_empty(all_results_mean, summary_name),
-            details,
-            persona_final_weights,
-            persona_failed,
-        )
+            
+        return all_results_mean, _plot_summary_or_empty(all_results_mean, summary_name), details
 
     def _safe_future_result(fut, fallback, block_name):
         try:
@@ -6393,114 +5698,86 @@ def run_valuations(
             print(f"[INFO] {block_name} retry succeeded with valid JSON output.")
         return retried
 
-    all_results_dcf, text_dcf, details_dcf = [], ("\nNo results\n\n", "Scenario DCF Price Valuation"), []
-    all_results_target_scenario, text_target_scenario, details_target_scenario = [], ("\nNo results\n\n", "Target Scenario Valuation"), []
-    (
-        all_results_earnings_scenario,
-        ni_results_earnings_scenario,
-        pe_results_earnings_scenario,
-        text_earnings_scenario,
-        details_earnings_scenario,
-    ) = ([], [], [], ("\nNo results\n\n", "Earnings Scenario Valuation"), [])
-    (
-        all_results_revenue_scenario,
-        ps_results_revenue_scenario,
-        revenue_results_revenue_scenario,
-        text_revenue_scenario,
-        details_revenue_scenario,
-    ) = ([], [], [], ("\nNo results\n\n", "Revenue Scenario Valuation"), [])
-    (
-        all_results_composite_scenario,
-        revenue_results_composite_scenario,
-        ni_results_composite_scenario,
-        pe_results_composite_scenario,
-        text_composite_scenario,
-        details_composite_scenario,
-    ) = ([], [], [], [], ("\nNo results\n\n", "Composite Scenario Valuation"), [])
-    all_results_sotp_scenario, text_sotp_scenario, details_sotp_scenario = [], ("\nNo results\n\n", "SOTP Scenario Valuation"), []
-    (
-        all_results_dream,
-        text_dream,
-        details_dream,
-        dream_persona_weight_pct_final,
-        dream_failed_personas,
-    ) = ([], ("\nNo results\n\n", "Dream Team Target Price Valuation"), [], {}, [])
+    # Launch all blocks in parallel
+    with ThreadPoolExecutor(max_workers=blocks_workers) as ex:
+        fut_dcf = ex.submit(_run_dcf_mixed)
+        fut_target_scenario = ex.submit(_run_target_scenario_mixed)
+        fut_earnings_scenario = ex.submit(_run_earnings_scenario_mixed)
+        fut_revenue_scenario = ex.submit(_run_revenue_scenario_mixed)
+        fut_composite_scenario = ex.submit(_run_composite_scenario_mixed)
+        fut_sotp_scenario = ex.submit(_run_sotp_scenario_mixed)
+        fut_dream = ex.submit(_run_dream_mixed)
 
-    runner_specs = {
-        "Scenario DCF": (
-            _run_dcf_mixed,
+        dcf_result = _safe_future_result(
+            fut_dcf,
             ([], ("\nNo results\n\n", "Scenario DCF Price Valuation"), []),
             "Scenario DCF block",
-        ),
-        "Target Scenario": (
-            _run_target_scenario_mixed,
+        )
+        dcf_result = _retry_block_once_if_empty(dcf_result, _run_dcf_mixed, "Scenario DCF block")
+        all_results_dcf, text_dcf, details_dcf = dcf_result
+
+        target_result = _safe_future_result(
+            fut_target_scenario,
             ([], ("\nNo results\n\n", "Target Scenario Valuation"), []),
             "Target Scenario block",
-        ),
-        "Earnings Scenario": (
-            _run_earnings_scenario_mixed,
+        )
+        target_result = _retry_block_once_if_empty(target_result, _run_target_scenario_mixed, "Target Scenario block")
+        all_results_target_scenario, text_target_scenario, details_target_scenario = target_result
+
+        earnings_result = _safe_future_result(
+            fut_earnings_scenario,
             ([], [], [], ("\nNo results\n\n", "Earnings Scenario Valuation"), []),
             "Earnings Scenario block",
-        ),
-        "Revenue Scenario": (
-            _run_revenue_scenario_mixed,
-            ([], [], [], ("\nNo results\n\n", "Revenue Scenario Valuation"), []),
-            "Revenue Scenario block",
-        ),
-        "Composite Scenario": (
-            _run_composite_scenario_mixed,
-            ([], [], [], [], ("\nNo results\n\n", "Composite Scenario Valuation"), []),
-            "Composite Scenario block",
-        ),
-        "SOTP Scenario": (
-            _run_sotp_scenario_mixed,
-            ([], ("\nNo results\n\n", "SOTP Scenario Valuation"), []),
-            "SOTP Scenario block",
-        ),
-        "Dream Team": (
-            _run_dream_mixed,
-            ([], ("\nNo results\n\n", "Dream Team Target Price Valuation"), [], {}, []),
-            "Dream Team block",
-        ),
-    }
-
-    max_block_workers = max(1, min(int(blocks_workers or 1), len(selected_method_names)))
-    with ThreadPoolExecutor(max_workers=max_block_workers) as ex:
-        futures = {
-            method_name: ex.submit(runner_specs[method_name][0])
-            for method_name in selected_method_names
-            if method_name in runner_specs
-        }
-        block_results = {}
-        for method_name in selected_method_names:
-            if method_name not in futures:
-                continue
-            rerun_fn, fallback, block_name = runner_specs[method_name]
-            result = _safe_future_result(futures[method_name], fallback, block_name)
-            result = _retry_block_once_if_empty(result, rerun_fn, block_name)
-            block_results[method_name] = result
-
-    if "Scenario DCF" in block_results:
-        all_results_dcf, text_dcf, details_dcf = block_results["Scenario DCF"]
-    if "Target Scenario" in block_results:
-        all_results_target_scenario, text_target_scenario, details_target_scenario = block_results["Target Scenario"]
-    if "Earnings Scenario" in block_results:
+        )
+        earnings_result = _retry_block_once_if_empty(
+            earnings_result,
+            _run_earnings_scenario_mixed,
+            "Earnings Scenario block",
+        )
         (
             all_results_earnings_scenario,
             ni_results_earnings_scenario,
             pe_results_earnings_scenario,
             text_earnings_scenario,
             details_earnings_scenario,
-        ) = block_results["Earnings Scenario"]
-    if "Revenue Scenario" in block_results:
+        ) = earnings_result
+
+        revenue_result = _safe_future_result(
+            fut_revenue_scenario,
+            ([], [], [], ("\nNo results\n\n", "Revenue Scenario Valuation"), []),
+            "Revenue Scenario block",
+        )
+        revenue_result = _retry_block_once_if_empty(
+            revenue_result,
+            _run_revenue_scenario_mixed,
+            "Revenue Scenario block",
+        )
         (
             all_results_revenue_scenario,
             ps_results_revenue_scenario,
             revenue_results_revenue_scenario,
             text_revenue_scenario,
             details_revenue_scenario,
-        ) = block_results["Revenue Scenario"]
-    if "Composite Scenario" in block_results:
+        ) = revenue_result
+
+        dream_result = _safe_future_result(
+            fut_dream,
+            ([], ("\nNo results\n\n", "Dream Team Target Price Valuation"), []),
+            "Dream Team block",
+        )
+        dream_result = _retry_block_once_if_empty(dream_result, _run_dream_mixed, "Dream Team block")
+        all_results_dream, text_dream, details_dream = dream_result
+
+        composite_result = _safe_future_result(
+            fut_composite_scenario,
+            ([], [], [], [], ("\nNo results\n\n", "Composite Scenario Valuation"), []),
+            "Composite Scenario block",
+        )
+        composite_result = _retry_block_once_if_empty(
+            composite_result,
+            _run_composite_scenario_mixed,
+            "Composite Scenario block",
+        )
         (
             all_results_composite_scenario,
             revenue_results_composite_scenario,
@@ -6508,17 +5785,15 @@ def run_valuations(
             pe_results_composite_scenario,
             text_composite_scenario,
             details_composite_scenario,
-        ) = block_results["Composite Scenario"]
-    if "SOTP Scenario" in block_results:
-        all_results_sotp_scenario, text_sotp_scenario, details_sotp_scenario = block_results["SOTP Scenario"]
-    if "Dream Team" in block_results:
-        (
-            all_results_dream,
-            text_dream,
-            details_dream,
-            dream_persona_weight_pct_final,
-            dream_failed_personas,
-        ) = block_results["Dream Team"]
+        ) = composite_result
+
+        sotp_result = _safe_future_result(
+            fut_sotp_scenario,
+            ([], ("\nNo results\n\n", "SOTP Scenario Valuation"), []),
+            "SOTP Scenario block",
+        )
+        sotp_result = _retry_block_once_if_empty(sotp_result, _run_sotp_scenario_mixed, "SOTP Scenario block")
+        all_results_sotp_scenario, text_sotp_scenario, details_sotp_scenario = sotp_result
 
     method_details["Scenario DCF"] = details_dcf
     method_details["Target Scenario"] = details_target_scenario
@@ -6528,130 +5803,18 @@ def run_valuations(
     method_details["SOTP Scenario"] = details_sotp_scenario
     method_details["Dream Team"] = details_dream
 
-    all_results_list_all = [
-        (all_results_dcf, "Scenario DCF"),
-        (all_results_target_scenario, "Target Scenario"),
-        (all_results_earnings_scenario, "Earnings Scenario"),
-        (all_results_revenue_scenario, "Revenue Scenario"),
-        (all_results_composite_scenario, "Composite Scenario"),
-        (all_results_sotp_scenario, "SOTP Scenario"),
-        (all_results_dream, "Dream Team"),
-    ]
-    all_results_list = [
-        (results, method_name)
-        for results, method_name in all_results_list_all
-        if method_name in selected_method_names
-    ]
-
-    if router_active:
-        (
-            all_results_currency,
-            dict_of_prices,
-            method_weight_pct_final,
-            failed_methods,
-            simple_mean_price,
-        ) = make_weighted_short_list_prices(
-            all_results_list,
-            price_currency,
-            method_weight_pct_requested,
-        )
-        if "Overall" not in dict_of_prices:
-            all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
-            method_weight_pct_final = {}
-            failed_methods = [
-                method_name for _, method_name in all_results_list if method_name not in dict_of_prices
-            ]
-            simple_mean_price = (
-                float(dict_of_prices["Overall"][0])
-                if isinstance(dict_of_prices.get("Overall"), (list, tuple)) and dict_of_prices["Overall"]
-                else None
-            )
-            valuation_router_plan = _fallback_valuation_router_plan(
-                "No selected valuation model produced a valid target after retry."
-            )
-            router_active = False
-    else:
-        all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
-        method_weight_pct_final = {}
-        failed_methods = []
-        simple_mean_price = (
-            float(dict_of_prices["Overall"][0])
-            if isinstance(dict_of_prices.get("Overall"), (list, tuple)) and dict_of_prices["Overall"]
-            else None
-        )
-
-    if "Overall" not in dict_of_prices:
-        fallback_price = float(current_price * price_currency)
-        dict_of_prices["Overall"] = [fallback_price, fallback_price, fallback_price]
-        dict_of_prices["STD"] = 0.0
-    dict_of_prices["Current"] = current_price * price_currency
-    if "STD" not in dict_of_prices:
-        dict_of_prices["STD"] = 0.0
-    mean_overall = dict_of_prices["Overall"][0]
-    dict_of_prices["CV"] = (
-        dict_of_prices["STD"] / ((dict_of_prices["Current"] + mean_overall) / 2)
-        if abs((dict_of_prices["Current"] + mean_overall) / 2) > 1e-9
-        else 0.0
-    )
-    if router_active and simple_mean_price is not None:
-        dict_of_prices["Simple Mean"] = dict_of_prices.get("Simple Mean") or [
-            float(simple_mean_price),
-            float(simple_mean_price),
-            float(simple_mean_price),
-        ]
-        dict_of_prices["Weighted Overall"] = dict_of_prices.get("Weighted Overall") or dict_of_prices["Overall"]
-        dict_of_prices["Requested Method Weights"] = method_weight_pct_requested
-        dict_of_prices["Final Method Weights"] = method_weight_pct_final
-        dict_of_prices["Failed Methods"] = failed_methods
-
-    if method_weight_pct_final:
-        for method_name, items in method_details.items():
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if isinstance(item, dict) and method_name in method_weight_pct_final:
-                    item["method_weight_pct"] = float(method_weight_pct_final[method_name])
-
     all_investment_values = []
     for method_name, items in method_details.items():
         _ = method_name
         all_investment_values.extend(_collect_investment_values(items))
 
-    aggregate_investments = {
-        "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
-        "Target Scenario": _mean_investment_for_method(method_details["Target Scenario"]),
-        "Earnings Scenario": _mean_investment_for_method(method_details["Earnings Scenario"]),
-        "Revenue Scenario": _mean_investment_for_method(method_details["Revenue Scenario"]),
-        "Composite Scenario": _mean_investment_for_method(method_details["Composite Scenario"]),
-        "SOTP Scenario": _mean_investment_for_method(method_details["SOTP Scenario"]),
-        "Dream Team": (
-            _weighted_item_mean(
-                method_details["Dream Team"],
-                name_key="persona",
-                value_key="investment_amount",
-                weights=dream_persona_weight_pct_final,
-            )
-            if router_active and dream_persona_weight_pct_final
-            else _mean_investment_for_method(method_details["Dream Team"])
-        ),
-    }
-
     if all_investment_values:
         inv_arr = np.asarray(all_investment_values, dtype=float)
+        mean_investment = float(inv_arr.mean())
         std_investment = float(inv_arr.std())
     else:
-        std_investment = 0.0
-    weighted_investment = (
-        _weighted_mean_from_map(aggregate_investments, method_weight_pct_final)
-        if router_active and method_weight_pct_final
-        else None
-    )
-    if weighted_investment is not None:
-        mean_investment = float(weighted_investment)
-    elif all_investment_values:
-        mean_investment = float(np.asarray(all_investment_values, dtype=float).mean())
-    else:
         mean_investment = 0.0
+        std_investment = 0.0
 
     mean_investment_percent = (mean_investment / 100000.0) * 100.0
     if abs(mean_investment) > 1e-9:
@@ -6660,6 +5823,15 @@ def run_valuations(
         investment_cv = 0.0
     lmil = [mean_investment_percent, investment_cv]
 
+    aggregate_investments = {
+        "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
+        "Target Scenario": _mean_investment_for_method(method_details["Target Scenario"]),
+        "Earnings Scenario": _mean_investment_for_method(method_details["Earnings Scenario"]),
+        "Revenue Scenario": _mean_investment_for_method(method_details["Revenue Scenario"]),
+        "Composite Scenario": _mean_investment_for_method(method_details["Composite Scenario"]),
+        "SOTP Scenario": _mean_investment_for_method(method_details["SOTP Scenario"]),
+        "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
+    }
     aggregate_investment_percents = {
         method_name: (
             (float(amount) / 100000.0) * 100.0
@@ -6669,6 +5841,21 @@ def run_valuations(
         for method_name, amount in aggregate_investments.items()
     }
 
+    # Build final_dict (same logic as your original)
+    all_results_list = [
+        (all_results_dcf, "Scenario DCF"),
+        (all_results_target_scenario, "Target Scenario"),
+        (all_results_earnings_scenario, "Earnings Scenario"),
+        (all_results_revenue_scenario, "Revenue Scenario"),
+        (all_results_composite_scenario, "Composite Scenario"),
+        (all_results_sotp_scenario, "SOTP Scenario"),
+        (all_results_dream, "Dream Team"),
+    ]
+
+    all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
+    dict_of_prices["Current"] = current_price * price_currency
+    mean_overall = dict_of_prices["Overall"][0]
+    dict_of_prices["CV"] = dict_of_prices["STD"] / ((dict_of_prices["Current"] + mean_overall) / 2)
     dict_of_prices["LMIL"] = lmil
     dict_of_prices["LMIL Mean Investment"] = mean_investment
     dict_of_prices["LMIL Investment STD"] = std_investment
@@ -6708,72 +5895,40 @@ def run_valuations(
       append_text_to_file(text="", header="Our Analysts Price Valuations", two_rows_n=False)
       append_text_to_file(text=f"Current Price: ${current_price}", two_rows_n=False)
 
-      text_by_method = {
-          "Scenario DCF": text_dcf,
-          "Target Scenario": text_target_scenario,
-          "Earnings Scenario": text_earnings_scenario,
-          "Revenue Scenario": text_revenue_scenario,
-          "Composite Scenario": text_composite_scenario,
-          "SOTP Scenario": text_sotp_scenario,
-          "Dream Team": text_dream,
-      }
-      for method_name in method_order:
-          if method_name not in selected_method_names:
-              continue
-          method_text = text_by_method.get(method_name)
-          if isinstance(method_text, (list, tuple)) and len(method_text) >= 2:
-              append_text_to_file(text=method_text[0], header=method_text[1])
+      append_text_to_file(text = text_dcf[0], header = text_dcf[1])
+      append_text_to_file(text = text_target_scenario[0], header = text_target_scenario[1])
+      append_text_to_file(text = text_earnings_scenario[0], header = text_earnings_scenario[1])
+      append_text_to_file(text = text_revenue_scenario[0], header = text_revenue_scenario[1])
+      append_text_to_file(text = text_composite_scenario[0], header = text_composite_scenario[1])
+      append_text_to_file(text = text_sotp_scenario[0], header = text_sotp_scenario[1])
+      append_text_to_file(text = text_dream[0], header = text_dream[1])
 
       # If you still want the "overall_valuation" sections written to file, keep it here (sequential)
       all_results = [x / price_currency for x in all_results_currency]
       overall_valuation(all_results, revenue_results, ni_results, pe_results, variables_dict)
 
     if collect_explain:
-      aggregate_targets = {
-          "Scenario DCF": float(all_results_dcf[0]) if all_results_dcf else None,
-          "Target Scenario": float(all_results_target_scenario[0]) if all_results_target_scenario else None,
-          "Earnings Scenario": float(all_results_earnings_scenario[0]) if all_results_earnings_scenario else None,
-          "Revenue Scenario": float(all_results_revenue_scenario[0]) if all_results_revenue_scenario else None,
-          "Composite Scenario": float(all_results_composite_scenario[0]) if all_results_composite_scenario else None,
-          "SOTP Scenario": float(all_results_sotp_scenario[0]) if all_results_sotp_scenario else None,
-          "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
-      }
-      router_payload = dict(valuation_router_plan) if isinstance(valuation_router_plan, dict) else {}
-      router_payload["active"] = bool(router_active)
-      router_payload["selected_method_names"] = list(selected_method_names)
-      router_payload["selected_dream_personas"] = list(selected_dream_personas)
-      router_payload["requested_method_weights"] = method_weight_pct_requested
-      router_payload["final_method_weights"] = method_weight_pct_final
-      router_payload["requested_persona_weights"] = dream_persona_weight_pct_requested
-      router_payload["final_persona_weights"] = dream_persona_weight_pct_final
-      router_payload["failed_methods_after_retry"] = failed_methods
-      router_payload["failed_personas_after_retry"] = dream_failed_personas
       explain_collector.clear()
       explain_collector.update(
           {
               "ticker": ticker,
               "current_price": current_price * price_currency,
-              "valuation_router": router_payload,
               "methods": method_details,
               "all_investments": all_investment_values,
               "mean_investment": mean_investment,
               "investment_std": std_investment,
               "lmil": lmil,
-              "weighted_mean_target_price": (
-                  float(dict_of_prices["Overall"][0])
-                  if isinstance(dict_of_prices.get("Overall"), (list, tuple)) and dict_of_prices["Overall"]
-                  else None
-              ),
-              "simple_mean_target_price": (
-                  float(dict_of_prices["Simple Mean"][0])
-                  if isinstance(dict_of_prices.get("Simple Mean"), (list, tuple)) and dict_of_prices["Simple Mean"]
-                  else None
-              ),
-              "aggregate_targets": aggregate_targets,
+              "aggregate_targets": {
+                  "Scenario DCF": float(all_results_dcf[0]) if all_results_dcf else None,
+                  "Target Scenario": float(all_results_target_scenario[0]) if all_results_target_scenario else None,
+                  "Earnings Scenario": float(all_results_earnings_scenario[0]) if all_results_earnings_scenario else None,
+                  "Revenue Scenario": float(all_results_revenue_scenario[0]) if all_results_revenue_scenario else None,
+                  "Composite Scenario": float(all_results_composite_scenario[0]) if all_results_composite_scenario else None,
+                  "SOTP Scenario": float(all_results_sotp_scenario[0]) if all_results_sotp_scenario else None,
+                  "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
+              },
               "aggregate_investments": aggregate_investments,
               "aggregate_investment_percents": aggregate_investment_percents,
-              "method_weight_pct": method_weight_pct_final,
-              "persona_weight_pct": dream_persona_weight_pct_final,
           }
       )
 

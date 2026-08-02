@@ -35,11 +35,9 @@ export type TickerSummaryAggregation = {
   };
   overview: {
     mean_target_price: number | null;
-    simple_mean_target_price: number | null;
     mean_allocation_pct: number | null;
     mean_disagreement_score: number | null;
     target_samples: number;
-    simple_target_samples: number;
     allocation_samples: number;
     disagreement_samples: number;
   };
@@ -89,11 +87,6 @@ function safeTarget(value: unknown): number | null {
   const n = toNumOrNull(value);
   if (n === null) return null;
   return n < 0 ? 0 : n;
-}
-
-function priceRowMean(value: unknown): number | null {
-  if (!Array.isArray(value) || value.length < 1) return null;
-  return safeTarget(value[0]);
 }
 
 function normalizeLabel(value: string): string {
@@ -393,7 +386,6 @@ export function computeTickerSummaryAggregation(
 ): TickerSummaryAggregation {
   const filtered = filterReportsByWindow(reports, window);
   const overviewAcc = createMeanAccumulator();
-  const simpleMeanTargetAcc = createMeanAccumulator();
   const modelMap = new Map<string, MeanAccumulator>();
   const valuatorMap = new Map<string, MeanAccumulator>();
   const assumptionsMap = new Map<string, { label: string; acc: AssumptionAccumulator }>();
@@ -422,15 +414,11 @@ export function computeTickerSummaryAggregation(
   for (const report of filtered) {
     const payload = report.payload;
     const overviewTarget = safeTarget(payload.valuation_hub?.consensus?.mean_target_price);
-    const simpleMeanTarget =
-      safeTarget(payload.valuation_hub?.consensus?.simple_mean_target_price) ??
-      priceRowMean(payload.valuation_hub?.prices?.["Simple Mean"]);
     const overviewAllocation =
       toNumOrNull((payload.score_card || payload.decision_card)?.position_size_pct_of_notional) ??
       allocationPctFromAmount((payload.score_card || payload.decision_card)?.mean_investment_amount);
     const disagreementScore = disagreementScoreForReport(payload);
     applyMean(overviewAcc, overviewTarget, overviewAllocation, disagreementScore);
-    applyMean(simpleMeanTargetAcc, simpleMeanTarget, null, null);
 
     const methodTabs = Array.isArray(payload.valuation_hub?.method_tabs) ? payload.valuation_hub.method_tabs : [];
     const methodBlocks = Array.isArray(payload.valuation_hub?.method_blocks) ? payload.valuation_hub.method_blocks : [];
@@ -452,9 +440,6 @@ export function computeTickerSummaryAggregation(
       applyModel(row.name, row.targetPrice, row.allocationPct);
     }
     applyModel("Overall", overviewTarget, overviewAllocation);
-    if (simpleMeanTarget !== null) {
-      applyModel("Simple Mean", simpleMeanTarget, overviewAllocation);
-    }
 
     for (const tab of methodTabs) {
       const outputs = Array.isArray(tab.outputs) ? tab.outputs : [];
@@ -508,11 +493,9 @@ export function computeTickerSummaryAggregation(
     },
     overview: {
       mean_target_price: mean(overviewAcc.sumTarget, overviewAcc.countTarget),
-      simple_mean_target_price: mean(simpleMeanTargetAcc.sumTarget, simpleMeanTargetAcc.countTarget),
       mean_allocation_pct: mean(overviewAcc.sumAllocation, overviewAcc.countAllocation),
       mean_disagreement_score: mean(overviewAcc.sumDisagreement, overviewAcc.countDisagreement),
       target_samples: overviewAcc.countTarget,
-      simple_target_samples: simpleMeanTargetAcc.countTarget,
       allocation_samples: overviewAcc.countAllocation,
       disagreement_samples: overviewAcc.countDisagreement,
     },

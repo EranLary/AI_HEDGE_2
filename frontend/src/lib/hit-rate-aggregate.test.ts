@@ -54,7 +54,7 @@ test("Overall model uses dashboard mean target and mean investment with correct 
     },
   ];
   payload.valuation_hub.consensus.mean_target_price = 80;
-  payload.decision_card!.mean_investment_amount = -5000;
+  payload.decision_card.mean_investment_amount = -5000;
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
@@ -78,32 +78,10 @@ test("Overall model uses dashboard mean target and mean investment with correct 
   assert.equal(overall.allocations.hit_rate_pct, 0);
 });
 
-test("Simple Mean model row does not contribute to weighted overview", () => {
-  const payload = basePayload();
-  payload.valuation_hub.consensus.mean_target_price = 80;
-  payload.valuation_hub.consensus.simple_mean_target_price = 130;
-  payload.decision_card!.mean_investment_amount = -5000;
-
-  const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
-  const live = new Map<string, number | null>([["TEST", 120]]);
-
-  const agg = computeHitRateAggregation(reports, live);
-  const simpleMean = agg.by_model.find((row) => row.key === "Simple Mean");
-  assert.ok(simpleMean);
-
-  assert.equal(simpleMean.targets.hits, 1);
-  assert.equal(simpleMean.targets.misses, 0);
-  assert.equal(simpleMean.targets.considered, 1);
-
-  assert.equal(agg.overview.targets.hits, 0);
-  assert.equal(agg.overview.targets.misses, 1);
-  assert.equal(agg.overview.targets.considered, 1);
-});
-
 test("Overall target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100
-  payload.decision_card!.mean_investment_amount = 0; // neutral allocation verdict
+  payload.decision_card.mean_investment_amount = 0; // neutral allocation verdict
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down

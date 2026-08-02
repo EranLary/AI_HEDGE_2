@@ -206,12 +206,7 @@ export function computeHitRateAggregation(
             investment_amount: toNumOrNull(block.investment_amount),
           }));
 
-    const applyModelPrediction = (
-      modelKey: string,
-      targetPrice: number | null,
-      investmentAmount: number | null,
-      includeOverview = true,
-    ) => {
+    const applyModelPrediction = (modelKey: string, targetPrice: number | null, investmentAmount: number | null) => {
       if (!byModelMap.has(modelKey)) {
         byModelMap.set(modelKey, createMetricSet());
       }
@@ -222,15 +217,11 @@ export function computeHitRateAggregation(
 
       if (shouldIncludePrediction(mode, targetDirection)) {
         applyPrediction(modelMetric, "target", targetDirection, actualDirection);
-        if (includeOverview) {
-          applyPrediction(overview, "target", targetDirection, actualDirection);
-        }
+        applyPrediction(overview, "target", targetDirection, actualDirection);
       }
       if (shouldIncludePrediction(mode, allocationDirection)) {
         applyPrediction(modelMetric, "allocation", allocationDirection, actualDirection);
-        if (includeOverview) {
-          applyPrediction(overview, "allocation", allocationDirection, actualDirection);
-        }
+        applyPrediction(overview, "allocation", allocationDirection, actualDirection);
       }
     };
 
@@ -242,14 +233,6 @@ export function computeHitRateAggregation(
     const overallMeanInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
     if (overallMeanTarget !== null || overallMeanInvestment !== null) {
       applyModelPrediction("Overall", overallMeanTarget, overallMeanInvestment);
-    }
-    const simpleMeanTarget =
-      toNumOrNull(payload.valuation_hub?.consensus?.simple_mean_target_price) ??
-      (Array.isArray(payload.valuation_hub?.prices?.["Simple Mean"])
-        ? toNumOrNull((payload.valuation_hub?.prices?.["Simple Mean"] as unknown[])[0])
-        : null);
-    if (simpleMeanTarget !== null) {
-      applyModelPrediction("Simple Mean", simpleMeanTarget, overallMeanInvestment, false);
     }
 
     for (const tab of methodTabs) {

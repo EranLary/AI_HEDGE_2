@@ -53,8 +53,7 @@ function basePayload(): DashboardPayload {
 test("computes overview/model/valuator/assumptions means across reports", () => {
   const p1 = basePayload();
   p1.valuation_hub.consensus.mean_target_price = 120;
-  p1.valuation_hub.consensus.simple_mean_target_price = 100;
-  p1.decision_card!.position_size_pct_of_notional = 10;
+  p1.decision_card.position_size_pct_of_notional = 10;
   p1.valuation_hub.method_tabs = [
     {
       name: "DCF",
@@ -114,8 +113,7 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
 
   const p2 = basePayload();
   p2.valuation_hub.consensus.mean_target_price = 140;
-  p2.valuation_hub.consensus.simple_mean_target_price = 160;
-  p2.decision_card!.position_size_pct_of_notional = 20;
+  p2.decision_card.position_size_pct_of_notional = 20;
   p2.valuation_hub.method_tabs = [
     {
       name: "DCF",
@@ -182,13 +180,7 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
   assert.equal(agg.coverage.reports_total, 2);
   assert.equal(agg.coverage.reports_in_window, 2);
   assert.equal(agg.overview.mean_target_price, 130);
-  assert.equal(agg.overview.simple_mean_target_price, 130);
   assert.equal(agg.overview.mean_allocation_pct, 15);
-
-  const simpleMean = agg.by_model.find((row) => row.key === "Simple Mean");
-  assert.ok(simpleMean);
-  assert.equal(simpleMean.mean_target_price, 130);
-  assert.equal(simpleMean.mean_allocation_pct, 15);
 
   const dcf = agg.by_model.find((row) => row.key === "Scenario DCF");
   assert.ok(dcf);

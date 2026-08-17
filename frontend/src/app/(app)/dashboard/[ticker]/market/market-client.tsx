@@ -67,23 +67,6 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function formatLarge(value: unknown): string {
-  const n = numeric(value);
-  if (n === null) return "-";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
-
-function formatPercent(value: unknown): string {
-  const n = numeric(value);
-  if (n === null) return "-";
-  const pct = Math.abs(n) <= 1 ? n * 100 : n;
-  return `${pct.toFixed(1)}%`;
-}
-
 function formatMultiple(value: unknown): string {
   const n = numeric(value);
   if (n === null || n <= 0) return "-";
@@ -742,7 +725,7 @@ function ProductOverlapTable({ market }: { market: MarketReviewPayload }) {
   );
 }
 
-function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
+function EquityMultiplesTable({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
   const rows = buildComparisonRows(market, ticker);
   if (!rows.length || rows.every((row) => !Object.keys(row.info).length)) return null;
 
@@ -754,10 +737,10 @@ function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; 
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-            Financial Scale
+            Provider-Reported Multiples
           </p>
           <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
-            Size And Growth
+            Equity Multiples
           </h2>
         </div>
       </div>
@@ -768,10 +751,11 @@ function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; 
             <tr>
               <th className="hib-market-table-head">Rank</th>
               <th className="hib-market-table-head">Company</th>
-              <th className="hib-market-table-head">Market Cap</th>
-              <th className="hib-market-table-head">EV</th>
-              <th className="hib-market-table-head">Revenue (TTM)</th>
-              <th className="hib-market-table-head">Rev Growth</th>
+              <th className="hib-market-table-head">P/E (TTM)</th>
+              <th className="hib-market-table-head">Forward P/E</th>
+              <th className="hib-market-table-head">PEG</th>
+              <th className="hib-market-table-head">P/S</th>
+              <th className="hib-market-table-head">P/B</th>
             </tr>
           </thead>
           <tbody>
@@ -781,10 +765,11 @@ function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; 
                 <tr key={`${row.ticker || row.company_name}-${idx}`}>
                   <td className="hib-market-table-cell font-mono text-xs">{row.rank}</td>
                   <CompanyCell row={row} />
-                  <td className="hib-market-table-cell font-mono">{formatLarge(info.marketCap)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatLarge(info.enterpriseValue)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatLarge(info.totalRevenue)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPercent(info.revenueGrowth)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.trailingPE)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.forwardPE)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.pegRatio)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.priceToSalesTrailing12Months)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.priceToBook)}</td>
                 </tr>
               );
             })}
@@ -795,7 +780,7 @@ function FinancialScaleTable({ market, ticker }: { market: MarketReviewPayload; 
   );
 }
 
-function MarginValuationTable({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
+function EnterpriseMultiplesTable({ market, ticker }: { market: MarketReviewPayload; ticker: string }) {
   const rows = buildComparisonRows(market, ticker);
   if (!rows.length || rows.every((row) => !Object.keys(row.info).length)) return null;
 
@@ -807,10 +792,10 @@ function MarginValuationTable({ market, ticker }: { market: MarketReviewPayload;
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
-            Profitability And Multiples
+            Provider-Reported Multiples
           </p>
           <h2 className="break-words font-display text-lg text-[color:var(--text-primary)]">
-            Margins And Valuation
+            Enterprise Multiples
           </h2>
         </div>
       </div>
@@ -821,11 +806,8 @@ function MarginValuationTable({ market, ticker }: { market: MarketReviewPayload;
             <tr>
               <th className="hib-market-table-head">Rank</th>
               <th className="hib-market-table-head">Company</th>
-              <th className="hib-market-table-head">Gross Margin (TTM)</th>
-              <th className="hib-market-table-head">EBITDA Margin (TTM)</th>
-              <th className="hib-market-table-head">Net Margin (TTM)</th>
-              <th className="hib-market-table-head">P/E (TTM)</th>
               <th className="hib-market-table-head">EV/Revenue (TTM)</th>
+              <th className="hib-market-table-head">EV/EBITDA (TTM)</th>
             </tr>
           </thead>
           <tbody>
@@ -835,11 +817,8 @@ function MarginValuationTable({ market, ticker }: { market: MarketReviewPayload;
                 <tr key={`${row.ticker || row.company_name}-${idx}`}>
                   <td className="hib-market-table-cell font-mono text-xs">{row.rank}</td>
                   <CompanyCell row={row} />
-                  <td className="hib-market-table-cell font-mono">{formatPercent(info.grossMargins)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPercent(info.ebitdaMargins)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatPercent(info.profitMargins)}</td>
-                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.trailingPE)}</td>
                   <td className="hib-market-table-cell font-mono">{formatMultiple(info.enterpriseToRevenue)}</td>
+                  <td className="hib-market-table-cell font-mono">{formatMultiple(info.enterpriseToEbitda)}</td>
                 </tr>
               );
             })}
@@ -895,8 +874,8 @@ export function MarketClient({ ticker, data, reportsForTicker, resolvedReportId 
         <MarketReturnComparison market={market} ticker={ticker} />
         <PeerStrategyTable market={market} ticker={ticker} />
         <ProductOverlapTable market={market} />
-        <FinancialScaleTable market={market} ticker={ticker} />
-        <MarginValuationTable market={market} ticker={ticker} />
+        <EquityMultiplesTable market={market} ticker={ticker} />
+        <EnterpriseMultiplesTable market={market} ticker={ticker} />
       </div>
     </div>
   );

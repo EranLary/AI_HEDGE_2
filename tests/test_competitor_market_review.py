@@ -43,11 +43,21 @@ def test_normalize_competitors_keeps_more_than_five_and_adds_israeli_suffix():
 
 
 def test_discovery_prompt_allows_more_than_five_and_israeli_suffix():
-    prompt = cmr.build_discovery_prompt("TEST.TA", {"country": "Israel", "longBusinessSummary": "software"})
+    prompt = cmr.build_discovery_prompt(
+        "TEST.TA",
+        {
+            "country": "Israel",
+            "longBusinessSummary": "software",
+            "revenueGrowth": -0.128,
+            "grossMargins": 0.94763,
+        },
+    )
     assert "okay to return more than 5" in prompt
     assert "top 5 ranked companies" in prompt
     assert ".TA" in prompt
     assert "United States" in prompt
+    assert "revenueGrowth" not in prompt
+    assert "grossMargins" not in prompt
 
 
 def test_collect_competitor_context_caps_to_five_and_uses_info_engine():
@@ -68,6 +78,8 @@ def test_collect_competitor_context_caps_to_five_and_uses_info_engine():
                 "marketCap": 123,
                 "financial_currency_to_USD": 2,
                 "longBusinessSummary": "summary",
+                "revenueGrowth": -0.128,
+                "grossMargins": 0.94763,
             }
         }
 
@@ -86,6 +98,8 @@ def test_collect_competitor_context_caps_to_five_and_uses_info_engine():
     assert info_calls == ["T1", "T2", "T3", "T4", "T5"]
     assert annual_calls == [("T1", 2), ("T2", 2), ("T3", 2), ("T4", 2), ("T5", 2)]
     assert out[0]["info"]["marketCap"] == 123
+    assert "revenueGrowth" not in out[0]["info"]
+    assert "grossMargins" not in out[0]["info"]
 
 
 def test_collect_competitor_context_retries_invalid_ticker_then_skips():
@@ -168,6 +182,8 @@ def test_build_original_company_context_uses_info_and_annual_income_statement():
                 "marketCap": 123,
                 "financial_currency_to_USD": 1,
                 "longBusinessSummary": "Cybersecurity platform.",
+                "revenueGrowth": -0.128,
+                "grossMargins": 0.94763,
             }
         },
         annual_table_fetcher=fake_annual,
@@ -177,6 +193,8 @@ def test_build_original_company_context_uses_info_and_annual_income_statement():
     assert context["ticker"] == "CHKP"
     assert context["company_name"] == "Check Point"
     assert context["info"]["marketCap"] == 123
+    assert "revenueGrowth" not in context["info"]
+    assert "grossMargins" not in context["info"]
     assert "Revenue,Net Income" in context["annual_financials"]
 
 
@@ -259,25 +277,40 @@ def test_normalize_price_history_does_not_rescale_non_ta_ticker():
     assert normalized is rows
 
 
-def test_review_prompt_requires_original_company_financial_comparison():
+def test_review_prompt_requires_statement_financials_and_sanitizes_info():
     prompt = cmr.build_review_prompt(
         {
             "ticker": "CHKP",
             "name_of_market": "Enterprise Cybersecurity",
             "original_company": {
                 "ticker": "CHKP",
-                "info": {"shortName": "Check Point", "marketCap": 123},
+                "info": {
+                    "shortName": "Check Point",
+                    "marketCap": 123,
+                    "revenueGrowth": -0.128,
+                    "grossMargins": 0.94763,
+                },
                 "annual_financials": "### Annual Income Statement\n```csv\nRevenue\n```",
             },
-            "competitors": [{"ticker": "PANW", "annual_financials": "### Annual Income Statement\nNot available"}],
+            "competitors": [
+                {
+                    "ticker": "PANW",
+                    "info": {"profitMargins": 0.2},
+                    "annual_financials": "### Annual Income Statement\nNot available",
+                }
+            ],
         }
     )
 
-    assert 'original company info_dict["info"]' in prompt
+    assert "original company profile and provider-reported valuation context" in prompt
     assert "original company annual income-statement table" in prompt
     assert "Include the original company in the financial and strategic comparison" in prompt
     assert 'clear "-" cells when data is missing' in prompt
     assert '"original_company"' in prompt
+    assert "revenueGrowth" not in prompt
+    assert "grossMargins" not in prompt
+    assert "profitMargins" not in prompt
+    assert "statement-derived growth or margin cues" in prompt
 
 
 def test_run_competitor_market_review_includes_original_company_payload(monkeypatch):

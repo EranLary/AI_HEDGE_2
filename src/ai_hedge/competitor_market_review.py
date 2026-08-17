@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yfinance as yf
+
+from .provider_data_policy import safe_company_profile
 
 
 CONTEXT_HEADER = "Competitor Market Review"
@@ -130,41 +133,11 @@ def normalize_competitors(
 
 
 def _compact_info_for_llm(info: Dict[str, Any]) -> Dict[str, Any]:
-    keys = [
-        "shortName",
-        "longName",
-        "symbol",
-        "quoteType",
-        "industry",
-        "sector",
-        "country",
-        "currency",
-        "financialCurrency",
-        "original_price_currency",
-        "original_financial_currency",
-        "marketCap",
-        "enterpriseValue",
-        "totalRevenue",
-        "revenueGrowth",
-        "grossMargins",
-        "operatingMargins",
-        "profitMargins",
-        "ebitdaMargins",
-        "netIncomeToCommon",
-        "trailingPE",
-        "forwardPE",
-        "priceToSalesTrailing12Months",
-        "enterpriseToRevenue",
-        "enterpriseToEbitda",
-        "returnOnAssets",
-        "returnOnEquity",
-        "totalDebt",
-        "totalCash",
-        "fullTimeEmployees",
-        "website",
-        "longBusinessSummary",
-    ]
-    return {key: info.get(key) for key in keys if key in info}
+    return safe_company_profile(
+        info,
+        include_market_context=True,
+        include_valuation_context=True,
+    )
 
 
 def _clean_price_history_frame(df: Any) -> List[Dict[str, Any]]:
@@ -406,7 +379,8 @@ def build_original_company_context(
 
 
 def build_discovery_prompt(ticker: str, info: Dict[str, Any]) -> str:
-    original_country = str(info.get("country") or "").strip()
+    profile = safe_company_profile(info)
+    original_country = str(profile.get("country") or "").strip()
     suffix_guidance = COUNTRY_SUFFIX_GUIDANCE.get(_country_key(original_country))
     local_guidance = ""
     if original_country and _country_key(original_country) not in {"united states", "usa", "us"}:
@@ -435,8 +409,8 @@ Think in two passes before producing the JSON:
 
 Original ticker: {ticker}
 Original country: {original_country or "Unknown"}
-Original company info_dict["info"]:
-{json.dumps(info, ensure_ascii=False, default=str)}
+Original company profile (business identity and description only):
+{json.dumps(profile, ensure_ascii=False, default=str)}
 
 Return ONLY valid JSON with this exact shape:
 {{
@@ -550,20 +524,29 @@ def collect_competitor_context(
 
 
 def build_review_prompt(payload: Dict[str, Any]) -> str:
+    clean_payload = deepcopy(payload) if isinstance(payload, dict) else {}
+    original_company = clean_payload.get("original_company")
+    if isinstance(original_company, dict):
+        original_company["info"] = _compact_info_for_llm(original_company.get("info", {}))
+    competitors = clean_payload.get("competitors")
+    if isinstance(competitors, list):
+        for competitor in competitors:
+            if isinstance(competitor, dict):
+                competitor["info"] = _compact_info_for_llm(competitor.get("info", {}))
     return f"""
 You are a senior buy-side market analyst writing a dashboard-ready market review.
 
 You receive:
 - the original ticker
 - the market name
-- original company info_dict["info"]
+- original company profile and provider-reported valuation context
 - original company annual income-statement table
 - ranked public competitors
-- normalized competitor info produced by the same info engine used for the original company
+- normalized competitor profiles and provider-reported valuation context
 - competitor annual income-statement tables produced by the same financial table engine
 
 Payload:
-{json.dumps(payload, ensure_ascii=False, default=str)}
+{json.dumps(clean_payload, ensure_ascii=False, default=str)}
 
 Write a comprehensive market review in Markdown for a tab called "Market".
 
@@ -580,9 +563,11 @@ Rules:
 - Focus on what matters to investors and valuation.
 - Include the original company in the financial and strategic comparison wherever the payload provides data.
 - Use the original company and competitor annual income-statement data when available; explicitly say when data is unavailable.
+- Derive operating growth, profitability, margins, cash flow, and balance-sheet claims only from the supplied financial statement tables. The company profile fields are not an operating-financial source.
+- Treat provider-reported multiples as a separate valuation snapshot. Compare only like-for-like multiples and period types, and do not reverse-engineer operating claims from them.
 - Compare business model, scale, profitability, growth, pricing power, cyclicality, and competitive intensity.
 - Prefer Markdown tables for ranked competitors, financial comparison, product/customer overlap, and any exact-data comparison.
-- Make tables compact and directly useful: include tickers, latest available annual figures, growth or margin cues when present, and clear "-" cells when data is missing.
+- Make tables compact and directly useful: include tickers, latest available annual figures, statement-derived growth or margin cues when present, provider-reported multiples in a separate valuation comparison, and clear "-" cells when data is missing.
 - Ground every material claim in the payload. Use only:
   1. original company info,
   2. original annual income-statement table,

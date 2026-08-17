@@ -8,6 +8,8 @@ from pathlib import Path
 from re import compile as re_compile
 from typing import Any, Dict, List, Tuple
 
+from .provider_data_policy import safe_company_profile
+
 TICKER_REGEX = re_compile(r"^[A-Z0-9\.\-]{1,10}$")
 
 
@@ -539,7 +541,13 @@ def _generate_sec_analysis_text(
         errors.append("No official filing text available in files_dict.")
         return "", errors
 
-    info_text = _truncate_text(json.dumps(info_dict.get("info", {}), ensure_ascii=False), 120_000)
+    info_text = _truncate_text(
+        json.dumps(
+            safe_company_profile(info_dict.get("info", {}), include_market_context=True),
+            ensure_ascii=False,
+        ),
+        120_000,
+    )
     reports_value = financial_dict.get("all_reports", financial_dict.get("All Reports", ""))
     all_reports_text = _truncate_text(reports_value, 160_000)
 
@@ -912,7 +920,7 @@ def _run_sec_analysis(
 
         header = (
             f"# {ticker_u} - {'SEC Summary' if short_mode else 'SEC Full'} Analysis\n\n"
-            "This report is based strictly on official filing text + info_dict['info'] + financial_dict['All Reports'].\n\n"
+            "This report is based strictly on official filing text + an allowlisted company profile + financial_dict['All Reports'].\n\n"
             "\n\n"
         )
         analysis_target.write_text(header + generated_text + "\n", encoding="utf-8")

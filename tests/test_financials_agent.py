@@ -4,6 +4,7 @@ import pandas as pd
 
 from ai_hedge.financials_agent import (
     REQUIRED_METRICS,
+    build_financials_prompt,
     build_raw_financials_payload,
     financials_analysis_to_markdown,
     normalize_financials_analysis,
@@ -62,10 +63,34 @@ def test_build_raw_financials_payload_uses_original_provider_currency_quote_fiel
     assert payload["info"]["current_price"] == 724.6
     assert payload["info"]["market_cap"] == 132440792
     assert payload["info"]["enterprise_value"] == 110804120
-    assert payload["info"]["total_debt"] == 2710000
-    assert payload["info"]["total_cash"] == 24949000
-    assert payload["info"]["total_revenue"] == 17395000
+    assert "total_debt" not in payload["info"]
+    assert "total_cash" not in payload["info"]
+    assert "total_revenue" not in payload["info"]
     assert "financial_currency_to_USD" not in payload["info"]
+
+
+def test_build_raw_financials_payload_quarantines_yahooquery_financial_data():
+    info_dict = {
+        "info": {"symbol": "RIT1.TA", "original_financial_currency": "ILS"},
+        "yahooquery": {
+            "status": "success",
+            "ticker": "RIT1.TA",
+            "valuation_measures": {
+                "latest": {"periodType": "TTM", "PeRatio": 8.5, "PsRatio": 4.1}
+            },
+            "financial_data": {"revenueGrowth": -0.128, "grossMargins": 0.94763},
+        },
+    }
+
+    with patch("ai_hedge.financials_agent.yf.Ticker", return_value=EmptyTicker({})):
+        payload = build_raw_financials_payload("RIT1.TA", info_dict)
+
+    assert "financial_data" not in payload["yahooquery"]
+    assert payload["yahooquery"]["valuation_measures"]["latest"]["PeRatio"] == 8.5
+    prompt = build_financials_prompt("RIT1.TA", payload)
+    assert "revenueGrowth" not in prompt
+    assert "grossMargins" not in prompt
+    assert "yahooquery financial_data" not in prompt
 
 
 def test_normalize_financials_analysis_preserves_required_order_and_caps_added_rows():

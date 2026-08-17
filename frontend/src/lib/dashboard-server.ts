@@ -67,6 +67,33 @@ export type YahooqueryInfo = {
   financial_data?: Record<string, unknown>;
 };
 
+const SAFE_ANALYST_CONTEXT_KEYS = [
+  "financialCurrency",
+  "recommendationKey",
+  "targetMeanPrice",
+  "targetMedianPrice",
+  "numberOfAnalystOpinions",
+] as const;
+
+function infoTabYahooqueryPayload(value: YahooqueryInfo, ticker: string): YahooqueryInfo {
+  const rawAnalyst = value?.financial_data;
+  const analystContext: Record<string, unknown> = {};
+  if (rawAnalyst && typeof rawAnalyst === "object" && !Array.isArray(rawAnalyst)) {
+    for (const key of SAFE_ANALYST_CONTEXT_KEYS) {
+      if (key in rawAnalyst) analystContext[key] = rawAnalyst[key];
+    }
+  }
+  return {
+    status: value?.status,
+    ticker: String(value?.ticker || ticker).toUpperCase(),
+    generated_at: value?.generated_at,
+    error: value?.error,
+    valuation_measures: value?.valuation_measures,
+    live_quote: value?.live_quote,
+    financial_data: analystContext,
+  };
+}
+
 async function loadReportsList(): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
   const deletedFilter = await getDeletedReportFilter();
@@ -483,10 +510,7 @@ export const getLiveYahooqueryInfo = unstable_cache(
     const tk = ticker.toUpperCase();
     try {
       const result = await runLiveYahooqueryInfoScript(tk);
-      return {
-        ...result,
-        ticker: String(result?.ticker || tk).toUpperCase(),
-      };
+      return infoTabYahooqueryPayload(result, tk);
     } catch (err) {
       return {
         status: "error",

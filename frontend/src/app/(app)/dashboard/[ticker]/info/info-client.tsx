@@ -177,7 +177,9 @@ export function InfoClient({
   const currency = String(
     quote.currency || quote.financialCurrency || analyst.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD"),
   ).toUpperCase();
-  const recommendation = String(analyst.recommendationKey || "none").replace(/_/g, " ");
+  const recommendation = analyst.recommendationKey
+    ? String(analyst.recommendationKey).replace(/_/g, " ")
+    : "N/A";
   const status = String(info.status || "").toLowerCase();
   const multipleCards = MULTIPLE_MAP.map((item) => {
     const liveKey = LIVE_QUOTE_MULTIPLE_KEYS[item.key];
@@ -217,7 +219,7 @@ export function InfoClient({
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <MetricTile card={{ label: "Live Price", value: liveCurrentPrice ?? quote.currentPrice ?? quote.regularMarketPrice, kind: "currency" }} currency={currency} />
             <MetricTile card={{ label: "Currency", value: currency, kind: "plain" }} currency={currency} />
-            <MetricTile card={{ label: "Recommendation", value: recommendation, kind: "plain" }} currency={currency} />
+            <MetricTile card={{ label: "Wall St. Consensus", value: recommendation, kind: "plain" }} currency={currency} />
             <MetricTile card={{ label: "Data Rows", value: rows.length, kind: "plain" }} currency={currency} />
           </div>
         </div>

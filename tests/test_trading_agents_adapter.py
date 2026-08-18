@@ -53,6 +53,45 @@ def test_context_framing_includes_research_lens_and_excludes_market_payload():
     assert "market_report" not in payload
 
 
+def test_final_decision_metadata_is_preserved_but_excluded_from_valuation_context():
+    raw_decision = """
+**Rating**: BUY
+**Executive Summary**: Durable growth with manageable execution risk.
+**Investment Thesis**: Earnings quality supports the tactical view.
+**Price Target**: $123.45
+**Time Horizon**: 6-12 months
+""".strip()
+    payload = ta.normalize_trading_agents_state(
+        "TEST",
+        {
+            "fundamentals_report": "Revenue quality is improving.",
+            "final_trade_decision": raw_decision,
+        },
+        decision="BUY",
+    )
+
+    assert payload["final_committee_view"] == raw_decision
+    assert payload["rating"] == "BUY"
+    assert payload["price_target"] == 123.45
+    assert payload["time_horizon"] == "6-12 months"
+
+    context = ta.build_trading_agents_context(payload)
+    assert "Durable growth" in context
+    assert "123.45" not in context
+    assert "6-12 months" not in context
+    assert "Price Target" not in context
+
+    final_decision = ta.build_trading_agents_final_decision_body(payload)
+    assert "TradingAgents Tactical Price Target:** 123.45" in final_decision
+    assert "Time Horizon:** 6-12 months" in final_decision
+    assert "excluded from AI Hedge valuation prompts" in final_decision
+
+    artifact = ta.build_trading_agents_artifact_text(payload)
+    assert artifact.index("## Independent Multi-Agent Research Lens") < artifact.index(
+        "## TradingAgents Final Decision"
+    )
+
+
 def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
     payload = ta.normalize_trading_agents_state(
         "TEST",
@@ -76,6 +115,30 @@ def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
     assert "fundamentals_report" not in compact
     assert "compact brief" in context
     assert "fundamental point" not in context
+
+
+def test_compaction_keeps_tactical_metadata_out_of_generated_research_brief(monkeypatch):
+    payload = ta.normalize_trading_agents_state(
+        "TEST",
+        {
+            "fundamentals_report": "fundamental evidence",
+            "final_trade_decision": "**Price Target**: 88\n**Time Horizon**: 9 months",
+        },
+        decision="HOLD",
+    )
+    monkeypatch.setattr(
+        legacy,
+        "deepseek_simple_text",
+        lambda **_kwargs: "Business remains stable.\nPrice Target: 999\nTime Horizon: 1 month",
+    )
+
+    compact = ta.compact_trading_agents_payload(payload, api_key="key")
+
+    assert compact["price_target"] == 88
+    assert compact["time_horizon"] == "9 months"
+    assert compact["rating"] == "HOLD"
+    assert compact["research_brief"] == "Business remains stable."
+    assert "999" not in ta.build_trading_agents_context(compact)
 
 
 def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):

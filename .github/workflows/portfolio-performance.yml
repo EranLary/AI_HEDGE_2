@@ -1,0 +1,95 @@
+name: Portfolio Performance Refresh
+
+on:
+  schedule:
+    # Weekdays after the US close, with enough margin for delayed market data.
+    - cron: '30 23 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Portfolio track to refresh
+        type: choice
+        required: true
+        default: paper
+        options:
+          - paper
+          - backtest
+      through:
+        description: Optional inclusive end date (YYYY-MM-DD)
+        type: string
+        required: false
+      start_cutoff:
+        description: Backtest first month-end cutoff (YYYY-MM-DD)
+        type: string
+        required: false
+        default: '2026-04-30'
+      replace_backtest:
+        description: Explicitly replace the selected backtest methodology version
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-performance-${{ github.event.inputs.track || 'paper' }}
+  cancel-in-progress: false
+
+env:
+  FLY_APP: hedge-in-a-box-site
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve Fly token
+        env:
+          FLY_API_TOKEN_PRIMARY: ${{ secrets.FLY_API_TOKEN }}
+          FLY_TOKEN: ${{ secrets.FLY_TOKEN }}
+          FLY_AUTH_TOKEN_INPUT: ${{ secrets.FLY_AUTH_TOKEN }}
+        run: |
+          TOKEN="${FLY_API_TOKEN_PRIMARY:-${FLY_TOKEN:-$FLY_AUTH_TOKEN_INPUT}}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::No Fly token found. Set FLY_API_TOKEN in repo secrets."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Refresh portfolio data inside Fly
+        env:
+          INPUT_TRACK: ${{ github.event.inputs.track }}
+          INPUT_THROUGH: ${{ github.event.inputs.through }}
+          INPUT_START_CUTOFF: ${{ github.event.inputs.start_cutoff }}
+          INPUT_REPLACE: ${{ github.event.inputs.replace_backtest }}
+        run: |
+          set -euo pipefail
+          TRACK="${INPUT_TRACK:-paper}"
+          if [ "$TRACK" != "paper" ] && [ "$TRACK" != "backtest" ]; then
+            echo "::error::track must be paper or backtest"
+            exit 1
+          fi
+          COMMAND="cd /app/frontend && npm run portfolio:refresh -- --track $TRACK"
+          if [ -n "${INPUT_THROUGH:-}" ]; then
+            if ! [[ "$INPUT_THROUGH" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::through must use YYYY-MM-DD"
+              exit 1
+            fi
+            COMMAND="$COMMAND --through $INPUT_THROUGH"
+          fi
+          if [ "$TRACK" = "backtest" ]; then
+            START_CUTOFF="${INPUT_START_CUTOFF:-2026-04-30}"
+            if ! [[ "$START_CUTOFF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::start_cutoff must use YYYY-MM-DD"
+              exit 1
+            fi
+            COMMAND="$COMMAND --start-cutoff $START_CUTOFF"
+            if [ "${INPUT_REPLACE:-false}" = "true" ]; then
+              COMMAND="$COMMAND --replace-backtest"
+            fi
+          fi
+          flyctl ssh console --app "$FLY_APP" --command "$COMMAND"

@@ -383,8 +383,9 @@ export function filterReportsByWindow(
 export function computeTickerSummaryAggregation(
   reports: SummarySourceReport[],
   window: SummaryWindow,
+  nowMs: number = Date.now(),
 ): TickerSummaryAggregation {
-  const filtered = filterReportsByWindow(reports, window);
+  const filtered = filterReportsByWindow(reports, window, nowMs);
   const overviewAcc = createMeanAccumulator();
   const modelMap = new Map<string, MeanAccumulator>();
   const valuatorMap = new Map<string, MeanAccumulator>();

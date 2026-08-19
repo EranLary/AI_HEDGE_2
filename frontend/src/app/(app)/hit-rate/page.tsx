@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { PortfolioReturnsSection } from "@/components/portfolio-returns-section";
+
 type MetricCounts = {
   hits: number;
   misses: number;
@@ -350,6 +352,8 @@ export default function HitRatePage() {
           </div>
         </div>
       </header>
+
+      <PortfolioReturnsSection />
 
       {loading || !data ? (
         <div className="grid gap-4 md:grid-cols-3">

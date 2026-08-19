@@ -254,9 +254,9 @@ jobs:
             exit 0
           fi
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "cd /app/frontend && npm run portfolio:refresh -- --track backtest --start-cutoff 2026-04-30"
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track backtest --start-cutoff 2026-04-30'"
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "cd /app/frontend && npm run portfolio:refresh -- --track paper"
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track paper'"
 
       - name: Diagnostics on deploy failure
         if: failure() && steps.deploy.conclusion == 'failure'

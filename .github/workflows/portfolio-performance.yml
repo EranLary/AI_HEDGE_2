@@ -92,4 +92,4 @@ jobs:
               COMMAND="$COMMAND --replace-backtest"
             fi
           fi
-          flyctl ssh console --app "$FLY_APP" --command "$COMMAND"
+          flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"

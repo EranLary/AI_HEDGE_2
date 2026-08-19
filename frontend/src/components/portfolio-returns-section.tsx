@@ -181,7 +181,7 @@ export function PortfolioReturnsSection() {
             <h2 className="font-display text-xl text-[color:var(--text-primary)]">Portfolio Returns</h2>
             <span className="rounded-full border border-[color:var(--warning)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--warning)]">Public Beta</span>
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Monthly Top 20 positive-score portfolios, equal weighted and measured in USD against the S&amp;P 500 Total Return Index.</p>
+          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Monthly Top 20 positive-score portfolios, equal weighted and measured in USD against the full S&amp;P 500 Total Return Index.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Portfolio track">
@@ -217,7 +217,7 @@ export function PortfolioReturnsSection() {
         {track === "paper"
           ? "Paper records each portfolio from the day it is created, and its holdings are never rewritten later. "
           : "Backtest reconstructs what each portfolio would have held at earlier month-ends, using only information available at the time. "}
-        The 90-day rule is about report freshness, not the holding period: at each month-end, only stocks analyzed during the previous 90 days can enter the ranking. This is our recently analyzed universe, not the full S&amp;P 500. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
+        Benchmark: every portfolio is compared with the full S&amp;P 500 Total Return Index, including reinvested dividends. Portfolio selection: only stocks we analyzed during the previous 90 days can enter our ranking. That limitation affects what we can select for our portfolios; it does not narrow the S&amp;P 500 benchmark. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
       </p>
     </section>
   );

@@ -55,6 +55,7 @@ type PriceBundle = {
 type CliArgs = {
   track: PortfolioTrack;
   startCutoff: string;
+  paperCutoff: string | null;
   throughDate: string;
   replaceBacktest: boolean;
 };
@@ -75,7 +76,12 @@ function parseCliArgs(): CliArgs {
   const track: PortfolioTrack = rawTrack;
   const throughDate = valueFor("--through") || new Date().toISOString().slice(0, 10);
   const startCutoff = valueFor("--start-cutoff") || "2026-04-30";
-  for (const [name, value] of [["--through", throughDate], ["--start-cutoff", startCutoff]]) {
+  const paperCutoff = valueFor("--paper-cutoff");
+  for (const [name, value] of [
+    ["--through", throughDate],
+    ["--start-cutoff", startCutoff],
+    ...(paperCutoff ? [["--paper-cutoff", paperCutoff]] : []),
+  ]) {
     const parsed = Date.parse(`${value}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed) || isoDate(new Date(parsed)) !== value) {
       throw new Error(`${name} must be a valid YYYY-MM-DD date.`);
@@ -84,6 +90,7 @@ function parseCliArgs(): CliArgs {
   return {
     track,
     startCutoff,
+    paperCutoff,
     throughDate,
     replaceBacktest: values.includes("--replace-backtest"),
   };
@@ -246,6 +253,9 @@ async function main() {
   if (args.replaceBacktest && args.track !== "backtest") {
     throw new Error("--replace-backtest is only valid with --track backtest.");
   }
+  if (args.paperCutoff && args.track !== "paper") {
+    throw new Error("--paper-cutoff is only valid with --track paper.");
+  }
   const owner = `${process.env.HOSTNAME || "local"}:${process.pid}:${randomUUID()}`;
   const lockKey = `portfolio-performance:${args.track}:${PORTFOLIO_METHODOLOGY_VERSION}`;
   if (!(await acquirePortfolioRefreshLock(lockKey, owner))) {
@@ -263,7 +273,7 @@ async function main() {
     if (args.track === "backtest") {
       cutoffs = monthlyCutoffDates(args.startCutoff, previousMonthEnd(new Date(`${args.throughDate}T23:59:59Z`)));
     } else if (!existing.length) {
-      cutoffs = [previousNyCalendarDay(now)];
+      cutoffs = [args.paperCutoff || previousNyCalendarDay(now)];
     } else {
       const existingCutoffDates = Array.from(new Set(
         existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt))),

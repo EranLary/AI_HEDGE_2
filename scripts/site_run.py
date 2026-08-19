@@ -193,6 +193,7 @@ def main() -> int:
         write_err: str | None = None
         try:
             from ai_hedge.db.writer import (
+                attribute_report_to_user,
                 find_report_id_by_source_run_id,
                 write_run_to_db,
             )
@@ -208,11 +209,17 @@ def main() -> int:
                     source="site",
                     max_attempts=5,
                     retry_backoff_seconds=2.0,
+                    user_id=existing_status.get("user_id"),
                 )
                 report_id = find_report_id_by_source_run_id(
                     source_run_id=job_id,
                     source="site",
                     ticker=ticker,
+                )
+            if report_id:
+                attribute_report_to_user(
+                    report_id,
+                    existing_status.get("user_id"),
                 )
             if not report_id:
                 base_msg = (

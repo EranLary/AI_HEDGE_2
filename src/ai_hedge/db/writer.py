@@ -4,6 +4,44 @@ import os
 import time
 import sys
 from pathlib import Path
+from uuid import UUID
+
+
+def _normalized_uuid(value: object) -> str | None:
+    try:
+        return str(UUID(str(value or "").strip()))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
+    """Best-effort ownership attribution for a completed site report."""
+    clean_report_id = _normalized_uuid(report_id)
+    clean_user_id = _normalized_uuid(user_id)
+    if not clean_report_id or not clean_user_id:
+        return False
+    if not (os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")):
+        return False
+    try:
+        from ai_hedge.db.connection import get_conn
+
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE reports
+                       SET user_id = %s
+                     WHERE id = %s
+                       AND (user_id IS NULL OR user_id = %s)
+                     RETURNING id;
+                    """,
+                    (clean_user_id, clean_report_id, clean_user_id),
+                )
+                updated = cur.fetchone() is not None
+            conn.commit()
+        return updated
+    except Exception:
+        return False
 
 
 def find_report_id_by_source_run_id(
@@ -53,6 +91,7 @@ def write_run_to_db(
     max_attempts: int = 1,
     retry_backoff_seconds: float = 1.5,
     r2_keys: dict | None = None,
+    user_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Best-effort DB write at the end of a successful run.
@@ -98,6 +137,7 @@ def write_run_to_db(
 
     if r2_keys is not None:
         bundle["artifact_row"]["r2_keys"] = r2_keys
+    bundle["report_row"]["user_id"] = _normalized_uuid(user_id)
 
     attempts = max(1, int(max_attempts or 1))
     last_exc: Exception | None = None

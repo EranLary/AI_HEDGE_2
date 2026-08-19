@@ -74,6 +74,36 @@ export function readRunStatus(jobId: string): RunStatusPayload | null {
   }
 }
 
+export function listActiveRunStatusesFromFs(userId: string, limit = 20): RunStatusPayload[] {
+  const cleanUserId = String(userId || "").trim();
+  if (!cleanUserId) return [];
+
+  const root = siteRunsRoot();
+  if (!fs.existsSync(root)) return [];
+
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const runs: RunStatusPayload[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const status = readRunStatus(entry.name);
+    if (!status) continue;
+    if (String(status.user_id || "").trim() !== cleanUserId) continue;
+    if (status.status !== "queued" && status.status !== "running") continue;
+    runs.push(status);
+  }
+
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  return runs
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, safeLimit);
+}
+
 export function readProgressLines(progressPath: string, maxLines = 80): string[] {
   if (!progressPath || !fs.existsSync(progressPath)) {
     return [];

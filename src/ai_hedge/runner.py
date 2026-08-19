@@ -585,21 +585,6 @@ def _upsert_markdown_block(text: str, marker: str, block: str) -> str:
     return f"{block_txt}\n"
 
 
-def _append_trading_agents_final_decision(text: str, payload: Dict[str, Any]) -> str:
-    """Append the display-only TradingAgents decision after valuation has completed."""
-
-    from .trading_agents_adapter import build_trading_agents_final_decision_body
-
-    decision_body = build_trading_agents_final_decision_body(payload)
-    if not decision_body:
-        return str(text or "").strip()
-    return _upsert_markdown_block(
-        text,
-        "## TradingAgents Final Decision",
-        f"## TradingAgents Final Decision\n\n{decision_body}",
-    )
-
-
 def _wall_st_synthesis_to_markdown(wall_st_payload: Dict[str, Any]) -> str:
     synthesis = wall_st_payload.get("synthesis") if isinstance(wall_st_payload, dict) else {}
     synthesis = synthesis if isinstance(synthesis, dict) else {}
@@ -1924,12 +1909,6 @@ def _run_ticker_valuation_impl(
                 "## Financials",
                 financials_markdown,
             )
-        # Deliberately append this only after run_valuations. The tactical target and
-        # horizon remain stored for transparency but never cross the valuation boundary.
-        merged_analysis_text = _append_trading_agents_final_decision(
-            merged_analysis_text,
-            trading_agents_payload,
-        )
         if merged_analysis_text.strip():
             analysis_src.write_text(merged_analysis_text + "\n", encoding="utf-8")
             analysis_dst.write_text(merged_analysis_text + "\n", encoding="utf-8")

@@ -88,25 +88,6 @@ def test_build_sec_source_of_truth_guidance_mentions_contradictions():
     assert "valuation assumptions" in text
 
 
-def test_append_trading_agents_final_decision_adds_display_only_section():
-    original = "# Analysis\n\nFundamental valuation is complete."
-    result = runner._append_trading_agents_final_decision(
-        original,
-        {
-            "status": "success",
-            "final_committee_view": "**Rating**: BUY\n**Price Target**: 150\n**Time Horizon**: 12 months",
-            "price_target": 150,
-            "time_horizon": "12 months",
-        },
-    )
-
-    assert result.startswith(original)
-    assert result.count("## TradingAgents Final Decision") == 1
-    assert "TradingAgents Tactical Price Target:** 150" in result
-    assert "Time Horizon:** 12 months" in result
-    assert "excluded from AI Hedge valuation prompts" in result
-
-
 def test_prices_explain_uses_analysis_current_price_for_usd_targets():
     text = runner._build_prices_explain_text(
         "PAYT.TA",

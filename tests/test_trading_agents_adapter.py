@@ -70,26 +70,22 @@ def test_final_decision_metadata_is_preserved_but_excluded_from_valuation_contex
         decision="BUY",
     )
 
-    assert payload["final_committee_view"] == raw_decision
+    assert payload["final_committee_view"] == "BUY"
     assert payload["rating"] == "BUY"
     assert payload["price_target"] == 123.45
     assert payload["time_horizon"] == "6-12 months"
 
     context = ta.build_trading_agents_context(payload)
-    assert "Durable growth" in context
+    assert "Durable growth" not in context
     assert "123.45" not in context
     assert "6-12 months" not in context
     assert "Price Target" not in context
 
-    final_decision = ta.build_trading_agents_final_decision_body(payload)
-    assert "TradingAgents Tactical Price Target:** 123.45" in final_decision
-    assert "Time Horizon:** 6-12 months" in final_decision
-    assert "excluded from AI Hedge valuation prompts" in final_decision
-
     artifact = ta.build_trading_agents_artifact_text(payload)
-    assert artifact.index("## Independent Multi-Agent Research Lens") < artifact.index(
-        "## TradingAgents Final Decision"
-    )
+    assert "## Independent Multi-Agent Research Lens" in artifact
+    assert "TradingAgents Final Decision" not in artifact
+    assert "123.45" not in artifact
+    assert "6-12 months" not in artifact
 
 
 def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
@@ -118,19 +114,23 @@ def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
 
 
 def test_compaction_keeps_tactical_metadata_out_of_generated_research_brief(monkeypatch):
+    prompts = []
     payload = ta.normalize_trading_agents_state(
         "TEST",
         {
             "fundamentals_report": "fundamental evidence",
             "final_trade_decision": "**Price Target**: 88\n**Time Horizon**: 9 months",
+            "risk_debate_state": {
+                "judge_decision": "**Price Target**: 88\n**Time Horizon**: 9 months",
+            },
         },
         decision="HOLD",
     )
-    monkeypatch.setattr(
-        legacy,
-        "deepseek_simple_text",
-        lambda **_kwargs: "Business remains stable.\nPrice Target: 999\nTime Horizon: 1 month",
-    )
+    def fake_summary(**kwargs):
+        prompts.append(kwargs["prompt"])
+        return "Business remains stable.\nPrice Target: 999\nTime Horizon: 1 month"
+
+    monkeypatch.setattr(legacy, "deepseek_simple_text", fake_summary)
 
     compact = ta.compact_trading_agents_payload(payload, api_key="key")
 
@@ -139,6 +139,64 @@ def test_compaction_keeps_tactical_metadata_out_of_generated_research_brief(monk
     assert compact["rating"] == "HOLD"
     assert compact["research_brief"] == "Business remains stable."
     assert "999" not in ta.build_trading_agents_context(compact)
+    assert len(prompts) == 1
+    assert "88" not in prompts[0]
+    assert "9 months" not in prompts[0]
+
+
+def test_required_target_portfolio_manager_contract():
+    class FakeStructured:
+        def __init__(self, schema, owner):
+            self.schema = schema
+            self.owner = owner
+
+        def invoke(self, prompt):
+            self.owner.prompt = prompt
+            return self.schema(
+                rating="Underweight",
+                executive_summary="Reduce exposure.",
+                investment_thesis="Risk outweighs reward.",
+                price_target=210,
+                time_horizon="6 months",
+            )
+
+    class FakeLlm:
+        def __init__(self):
+            self.schema = None
+            self.prompt = ""
+
+        def with_structured_output(self, schema):
+            self.schema = schema
+            return FakeStructured(schema, self)
+
+        def invoke(self, _prompt):
+            raise AssertionError("structured output should be used")
+
+    llm = FakeLlm()
+    node = ta._create_required_target_portfolio_manager(llm)
+    state = {
+        "company_of_interest": "IBM",
+        "investment_plan": "Reduce exposure.",
+        "trader_investment_plan": "Sell into strength.",
+        "risk_debate_state": {
+            "history": "Risks dominate.",
+            "aggressive_history": "Aggressive view.",
+            "conservative_history": "Conservative view.",
+            "neutral_history": "Neutral view.",
+            "current_aggressive_response": "",
+            "current_conservative_response": "",
+            "current_neutral_response": "",
+            "count": 3,
+        },
+    }
+
+    result = node(state)
+
+    assert llm.schema.model_fields["price_target"].is_required()
+    assert llm.schema.model_fields["time_horizon"].is_required()
+    assert "Always provide one numeric **Price Target**" in llm.prompt
+    assert "**Price Target**: 210.0" in result["final_trade_decision"]
+    assert "**Time Horizon**: 6 months" in result["final_trade_decision"]
 
 
 def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):

@@ -309,12 +309,36 @@ export default function HitRatePage() {
   }, [data, mode]);
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-4 py-6 text-zinc-100 sm:px-8">
-      <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
+    <div className="mx-auto w-full max-w-[1600px] px-4 py-6 text-[color:var(--text-primary)] sm:px-8">
+      <header className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-overlay)] p-4 sm:p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">Measurement</p>
+        <h1 className="mt-1 font-display text-2xl">Our Track Record</h1>
+        <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">
+          Two simple views of how our analysis performs over time.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+            <h2 className="font-semibold text-[color:var(--text-primary)]">Portfolio Returns</h2>
+            <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
+              Shows what happened to each monthly Top 20 portfolio, compared with the S&amp;P 500 Total Return Index.
+            </p>
+          </article>
+          <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+            <h2 className="font-semibold text-[color:var(--text-primary)]">Hit Rate</h2>
+            <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
+              Shows how often our targets, allocations, and signals pointed in the right direction after each report.
+            </p>
+          </article>
+        </div>
+      </header>
+
+      <PortfolioReturnsSection />
+
+      <section className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-overlay)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl">Hit Rate</h1>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Global Accuracy Across All Historical Reports</p>
+            <h2 className="font-display text-xl text-[color:var(--text-primary)]">Hit Rate</h2>
+            <p className="mt-1 text-sm text-[color:var(--text-muted)]">Accuracy across all historical reports.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
@@ -345,15 +369,13 @@ export default function HitRatePage() {
               type="button"
               onClick={() => setRefreshToken((v) => v + 1)}
               disabled={loading}
-              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
               {loading ? "Refreshing..." : "Refresh Hit Rate"}
             </button>
           </div>
         </div>
-      </header>
-
-      <PortfolioReturnsSection />
+      </section>
 
       {loading || !data ? (
         <div className="grid gap-4 md:grid-cols-3">

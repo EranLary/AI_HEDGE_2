@@ -55,10 +55,9 @@ function formatPercent(value: number | null): string {
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return "N/A";
-  const date = new Date(`${value}T00:00:00Z`);
-  if (!Number.isFinite(date.getTime())) return "N/A";
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit", timeZone: "UTC" });
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "N/A";
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 function returnTone(value: number | null): string {
@@ -203,8 +202,10 @@ export function PortfolioReturnsSection() {
       )}
 
       <p className="mt-4 text-xs leading-relaxed text-[color:var(--text-muted)]">
-        {track === "paper" ? "Forward Paper uses immutable portfolio snapshots from launch. " : "Reconstructed Backtest uses only reports and prices available at each historical cutoff. "}
-        Universe: analyzed tickers with reports in the trailing 90 days—not the full S&amp;P 500. Gross simulated total returns exclude fees, slippage, taxes, and cash interest. Adjusted prices and FX are sourced from yfinance for research/personal-use beta evaluation; missing or stale market data is never silently filled.
+        {track === "paper"
+          ? "Paper records each portfolio from the day it is created, and its holdings are never rewritten later. "
+          : "Backtest reconstructs what each portfolio would have held at earlier month-ends, using only information available at the time. "}
+        The 90-day rule is about report freshness, not the holding period: at each month-end, only stocks analyzed during the previous 90 days can enter the ranking. This is our recently analyzed universe, not the full S&amp;P 500. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
       </p>
     </section>
   );

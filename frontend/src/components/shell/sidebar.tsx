@@ -33,7 +33,7 @@ const GLOBAL_NAV: NavItem[] = [
   { href: "/compare", label: "Compare", icon: GitCompareArrows },
   { href: "/screeners", label: "Screeners", icon: ScanSearch },
   { href: "/discovery", label: "Discovery", icon: Compass },
-  { href: "/hit-rate", label: "Hit Rate", icon: Target },
+  { href: "/hit-rate", label: "Track Record", icon: Target },
 ];
 
 type SidebarProps = {

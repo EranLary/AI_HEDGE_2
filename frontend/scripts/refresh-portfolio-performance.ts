@@ -34,6 +34,7 @@ import {
   type PortfolioSnapshotDefinition,
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
+import { planPaperCutoffs } from "../src/lib/portfolio-refresh-policy";
 
 type PriceBundle = {
   provider: string;
@@ -272,17 +273,19 @@ async function main() {
     let cutoffs: string[];
     if (args.track === "backtest") {
       cutoffs = monthlyCutoffDates(args.startCutoff, previousMonthEnd(new Date(`${args.throughDate}T23:59:59Z`)));
-    } else if (!existing.length) {
-      cutoffs = [args.paperCutoff || previousNyCalendarDay(now)];
     } else {
       const existingCutoffDates = Array.from(new Set(
         existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt))),
       )).sort();
-      const latestCutoffDate = existingCutoffDates[existingCutoffDates.length - 1];
-      cutoffs = Array.from(new Set([
-        ...existingCutoffDates,
-        ...monthlyCutoffDates(addDays(latestCutoffDate, 1), previousMonthEnd(now)),
-      ])).sort();
+      const latestCutoffDate = existingCutoffDates[existingCutoffDates.length - 1] || null;
+      cutoffs = planPaperCutoffs({
+        explicitCutoff: args.paperCutoff,
+        existingCutoffDates,
+        defaultInitialCutoff: previousNyCalendarDay(now),
+        newMonthlyCutoffs: latestCutoffDate
+          ? monthlyCutoffDates(addDays(latestCutoffDate, 1), previousMonthEnd(now))
+          : [],
+      });
     }
 
     const allCutoffDates = [...cutoffs, ...existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt)))];
@@ -408,7 +411,7 @@ async function main() {
       });
     }
     if (priceBundle.errors?.length) {
-      console.warn(`[portfolio] provider returned ${priceBundle.errors.length} symbol warnings.`);
+      console.warn(`[portfolio] provider warnings: ${JSON.stringify(priceBundle.errors)}`);
     }
     console.log(`[portfolio] refreshed ${args.track}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
   } finally {

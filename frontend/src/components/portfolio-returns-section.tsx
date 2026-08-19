@@ -91,7 +91,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
                 <Link href={rowHref(row)} className="font-semibold text-[color:var(--accent)] underline-offset-2 hover:underline">
                   {row.label}
                 </Link>
-                <p className="mt-1 text-xs text-[color:var(--text-muted)]">{statusLabel(row) || `${row.holdings_count} holdings`}</p>
+                <p className="mt-1 text-xs text-[color:var(--text-muted)]">{statusLabel(row) || `${row.holdings_count} latest holdings`}</p>
               </div>
               <p className={`text-xl font-bold tabular-nums ${returnTone(row.return_pct)}`}>{formatPercent(row.return_pct)}</p>
             </div>
@@ -111,7 +111,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
               <th className="px-3 py-2 text-right font-medium">Portfolio return</th>
               <th className="px-3 py-2 text-right font-medium">S&amp;P 500 TR</th>
               <th className="px-3 py-2 text-right font-medium">Excess</th>
-              <th className="px-3 py-2 text-right font-medium">Holdings</th>
+              <th className="px-3 py-2 text-right font-medium">Latest holdings</th>
               <th className="px-3 py-2 text-right font-medium">Start</th>
             </tr>
           </thead>
@@ -197,7 +197,7 @@ export function PortfolioReturnsSection() {
       ) : (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
           <ReturnsTable title="Models" rows={data.by_model} />
-          <ReturnsTable title="Personas" rows={data.by_valuator} />
+          <ReturnsTable title="Valuators" rows={data.by_valuator} />
         </div>
       )}
 
@@ -205,7 +205,7 @@ export function PortfolioReturnsSection() {
         {track === "paper"
           ? "Paper records each portfolio from the day it is created, and its holdings are never rewritten later. "
           : "Backtest reconstructs what each portfolio would have held at earlier month-ends, using only information available at the time. "}
-        The 90-day rule is about report freshness, not the holding period: at each month-end, only stocks analyzed during the previous 90 days can enter the ranking. This is our recently analyzed universe, not the full S&amp;P 500. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
+        The 90-day rule is about report freshness, not the holding period: at each month-end, only stocks analyzed during the previous 90 days can enter the ranking. This is our recently analyzed universe, not the full S&amp;P 500. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
       </p>
     </section>
   );

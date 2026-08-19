@@ -93,3 +93,10 @@ jobs:
             fi
           fi
           flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"
+
+      - name: Refresh backtest alongside scheduled paper tracking
+        if: github.event_name == 'schedule'
+        run: >-
+          flyctl ssh console --app "$FLY_APP" --command
+          "sh -lc 'cd /app/frontend && npm run portfolio:refresh --
+          --track backtest --start-cutoff 2026-04-30'"

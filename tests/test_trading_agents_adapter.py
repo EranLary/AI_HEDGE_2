@@ -228,6 +228,26 @@ def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):
     assert "Do not use any other Markdown headers or subheaders" in calls[0]["prompt"]
 
 
+def test_summarize_preserves_brief_above_legacy_character_limit(monkeypatch):
+    brief = ("Earlier evidence. " * 550) + (
+        "\n\n### What Valuators Should Watch\n"
+        "Operating margin trajectory near 22%: continued gross-margin discipline."
+    )
+    assert 9_000 < len(brief) < ta.COMPACT_BRIEF_MAX_CHARS
+    monkeypatch.setattr(legacy, "deepseek_simple_text", lambda **_kwargs: brief)
+    payload = ta.normalize_trading_agents_state(
+        "TEST",
+        {"fundamentals_report": "fundamental point"},
+        decision="committee output",
+    )
+
+    result = ta._summarize_trading_agents_payload(payload, api_key="key")
+
+    assert result == brief
+    assert result.endswith("continued gross-margin discipline.")
+    assert "[Truncated]" not in result
+
+
 def test_reuse_accepts_fresh_success_with_matching_config(tmp_path):
     now = datetime(2026, 5, 27, tzinfo=timezone.utc)
     old_dir = tmp_path / "outputs" / "_site_runs" / "old" / "TEST"
@@ -253,23 +273,24 @@ def test_reuse_accepts_fresh_success_with_matching_config(tmp_path):
     assert found[0] == artifact.resolve()
 
 
-def test_reuse_rejects_stale_failure_and_config_mismatch(tmp_path):
+def test_reuse_rejects_stale_failure_and_version_mismatches(tmp_path):
     now = datetime(2026, 5, 27, tzinfo=timezone.utc)
     new_dir = tmp_path / "outputs" / "_site_runs" / "new" / "TEST"
     new_dir.mkdir(parents=True)
     cases = [
-        ("stale", "success", now - timedelta(days=10), ta.CONFIG_VERSION),
-        ("failed", "unavailable", now - timedelta(days=1), ta.CONFIG_VERSION),
-        ("config", "success", now - timedelta(days=1), "old-config"),
+        ("stale", "success", now - timedelta(days=10), ta.ADAPTER_VERSION, ta.CONFIG_VERSION),
+        ("failed", "unavailable", now - timedelta(days=1), ta.ADAPTER_VERSION, ta.CONFIG_VERSION),
+        ("adapter", "success", now - timedelta(days=1), "old-adapter", ta.CONFIG_VERSION),
+        ("config", "success", now - timedelta(days=1), ta.ADAPTER_VERSION, "old-config"),
     ]
-    for name, status, generated_at, config_version in cases:
+    for name, status, generated_at, adapter_version, config_version in cases:
         directory = tmp_path / "outputs" / "_site_runs" / name / "TEST"
         directory.mkdir(parents=True)
         payload = {
             "status": status,
             "ticker": "TEST",
             "generated_at": generated_at.isoformat(),
-            "adapter_version": ta.ADAPTER_VERSION,
+            "adapter_version": adapter_version,
             "config_version": config_version,
             "selected_analysts": ta.SELECTED_ANALYSTS,
         }

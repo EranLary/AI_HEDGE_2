@@ -29,6 +29,7 @@ export type CurrencyContext = {
   financialCode: string;
   financialSymbol: string;
   isIsraeli: boolean;
+  priceUnitNote?: string;
   priceUsdToDisplay: number;
   financialUsdToDisplay: number;
 };
@@ -174,6 +175,7 @@ export function buildCurrencyContext(data: DashboardPayload | null): CurrencyCon
     financialCode,
     financialSymbol: currencySymbol(financialCode),
     isIsraeli,
+    priceUnitNote: String(data?.header?.price_unit_note || "").trim() || undefined,
     // Dashboard numeric values are already emitted in display scale.
     // Do not apply an extra multiplier in the UI.
     priceUsdToDisplay: 1,
@@ -645,7 +647,13 @@ function splitMarkdownHeadingBlocks(title: string, text: string): Array<{ title:
   return blocks.map((block) => ({ title: block.title, text: block.lines.join("\n").trim() }));
 }
 
-function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_agents"] }) {
+function TradingAgentsPanel({
+  payload,
+  currencyContext,
+}: {
+  payload?: DashboardPayload["trading_agents"];
+  currencyContext: CurrencyContext;
+}) {
   if (!payload || !Object.keys(payload).length) {
     return <p className="mt-3 text-sm text-zinc-500">No TradingAgents lens was stored for this report.</p>;
   }
@@ -679,6 +687,12 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
       : decisionTone === "down"
         ? "border-red-500/45 bg-red-500/10"
         : "border-white/10 bg-black/30";
+  const tacticalPriceTarget =
+    typeof payload.price_target === "number" && Number.isFinite(payload.price_target) && payload.price_target > 0
+      ? payload.price_target
+      : null;
+  const timeHorizon = String(payload.time_horizon || "").trim();
+  const hasTacticalDecisionMetadata = tacticalPriceTarget !== null || timeHorizon.length > 0;
 
   return (
     <div className="mt-3 space-y-3">
@@ -691,13 +705,43 @@ function TradingAgentsPanel({ payload }: { payload?: DashboardPayload["trading_a
         </div>
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">
           This is a separate research memo from a small agent team. It reads the business, recent news, and market
-          sentiment, then stages bull, bear, and risk debates before a final committee view. The memo itself does not
-          set the target price or score.
+          sentiment, then stages bull, bear, and risk debates before a final committee view. Its tactical decision is
+          kept separate from the AI Hedge valuation target and score.
         </p>
         {status !== "success" && payload.error ? (
           <p className="mt-2 text-xs text-zinc-400">Reason: {payload.error}</p>
         ) : null}
       </div>
+
+      {hasTacticalDecisionMetadata ? (
+        <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)]">
+            TradingAgents Final Decision
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {tacticalPriceTarget !== null ? (
+              <div className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+                <p className="text-xs text-[color:var(--text-secondary)]">
+                  Tactical Price Target{currencyContext.priceUnitNote ? ` (${currencyContext.priceUnitNote})` : ""}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[color:var(--text-primary)]">
+                  {fmtMoney(tacticalPriceTarget, currencyContext, "price")}
+                </p>
+              </div>
+            ) : null}
+            {timeHorizon ? (
+              <div className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+                <p className="text-xs text-[color:var(--text-secondary)]">Time Horizon</p>
+                <p className="mt-1 text-lg font-semibold text-[color:var(--text-primary)]">{timeHorizon}</p>
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-[color:var(--text-muted)]">
+            Independent tactical output. It is excluded from AI Hedge valuation prompts, model target-price
+            calculations, and consensus target aggregation to preserve an unanchored fundamental valuation process.
+          </p>
+        </section>
+      ) : null}
 
       {renderedSections.map((section, index) => {
         const isDecision = section.title.toLowerCase() === "final committee decision";
@@ -2083,7 +2127,7 @@ export function HedgeDashboard({
                     ) : null}
                   </div>
                 ) : valuationTab === "trading-agents" ? (
-                  <TradingAgentsPanel payload={tradingAgentsPayload} />
+                  <TradingAgentsPanel payload={tradingAgentsPayload} currencyContext={currencyContext} />
                 ) : activeMethod ? (
                   <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_1.2fr]">
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import inspect
 from datetime import datetime, timedelta, timezone
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-ADAPTER_VERSION = "2026-05-27.v2"
+ADAPTER_VERSION = "2026-08-19.v3"
 CONFIG_VERSION = "deepseek-v0.2.4-fundamentals-news-social"
 REUSE_WINDOW_DAYS = 7
 SELECTED_ANALYSTS = ["fundamentals", "news", "social"]
@@ -21,6 +22,26 @@ DEEP_THINK_LLM = "deepseek-reasoner"
 SUMMARY_LLM = "deepseek-v4-flash"
 DEEPSEEK_BACKEND_URL = "https://api.deepseek.com/v1"
 COMPACT_BRIEF_MAX_CHARS = 9000
+
+FINAL_DECISION_INDEPENDENCE_NOTE = (
+    "This tactical output is preserved for transparency as an independent TradingAgents view. "
+    "Its price target and time horizon are excluded from AI Hedge valuation prompts, model target-price "
+    "calculations, and consensus target aggregation to avoid anchoring the fundamental valuation process."
+)
+
+_TACTICAL_CONTEXT_LINE_RE = re.compile(
+    r"\b(?:price[\s_-]*target|target[\s_-]*price|entry[\s_-]*price|stop[\s_-]*loss|"
+    r"time[\s_-]*horizon|holding[\s_-]*period)\b",
+    flags=re.IGNORECASE,
+)
+_PRICE_TARGET_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:price\s*target|target\s*price)(?:\*\*)?\s*:\s*"
+    r"(?:[A-Z]{3}\s*)?(?:[$€£₪]\s*)?([+-]?\d[\d,]*(?:\.\d+)?)",
+)
+_TIME_HORIZON_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:time\s*horizon|holding\s*period)(?:\*\*)?\s*:\s*(.+?)\s*$",
+)
+_RATING_RE = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?rating(?:\*\*)?\s*:\s*(.+?)\s*$")
 
 CONTEXT_HEADER = "Independent Multi-Agent Research Lens"
 CONTEXT_INTRO = (
@@ -84,6 +105,84 @@ def _trim_chars(value: str, limit: int) -> str:
     return text[: max(0, int(limit))].rstrip() + "\n\n[Truncated]"
 
 
+def _without_tactical_decision_lines(value: Any) -> str:
+    """Remove tactical price/holding lines before content crosses a valuation boundary."""
+
+    text = _text(value)
+    if not text:
+        return ""
+    lines = [line for line in text.splitlines() if not _TACTICAL_CONTEXT_LINE_RE.search(line)]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _clean_markdown_value(value: Any) -> str:
+    return re.sub(r"\*+", "", _text(value)).strip()
+
+
+def _extract_final_decision_metadata(final_decision: Any, processed_decision: Any = None) -> Dict[str, Any]:
+    text = _text(final_decision)
+    price_target: Optional[float] = None
+    price_match = _PRICE_TARGET_RE.search(text)
+    if price_match:
+        try:
+            parsed = float(price_match.group(1).replace(",", ""))
+            if math.isfinite(parsed) and parsed > 0:
+                price_target = parsed
+        except Exception:
+            price_target = None
+
+    time_horizon = ""
+    horizon_match = _TIME_HORIZON_RE.search(text)
+    if horizon_match:
+        time_horizon = _clean_markdown_value(horizon_match.group(1))
+
+    rating = _clean_markdown_value(processed_decision)
+    if not rating:
+        rating_match = _RATING_RE.search(text)
+        if rating_match:
+            rating = _clean_markdown_value(rating_match.group(1))
+
+    return {
+        "rating": rating,
+        "price_target": price_target,
+        "time_horizon": time_horizon,
+    }
+
+
+def _format_tactical_price(value: Any) -> str:
+    try:
+        number = float(value)
+    except Exception:
+        return ""
+    if not math.isfinite(number) or number <= 0:
+        return ""
+    return f"{number:,.2f}".rstrip("0").rstrip(".")
+
+
+def build_trading_agents_final_decision_body(payload: Dict[str, Any]) -> str:
+    """Render display-only decision metadata; this body must be appended after valuation."""
+
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        return ""
+    final_view = _text(payload.get("final_committee_view"))
+    safe_final_view = _without_tactical_decision_lines(final_view)
+    price_target = _format_tactical_price(payload.get("price_target"))
+    time_horizon = _clean_markdown_value(payload.get("time_horizon"))
+
+    parts: List[str] = []
+    if safe_final_view:
+        parts.append(safe_final_view)
+    metadata: List[str] = []
+    if price_target:
+        metadata.append(f"**TradingAgents Tactical Price Target:** {price_target} (instrument quote currency)")
+    if time_horizon:
+        metadata.append(f"**Time Horizon:** {time_horizon}")
+    if metadata:
+        parts.append("\n\n".join(metadata))
+        parts.append(f"> **Independence note:** {FINAL_DECISION_INDEPENDENCE_NOTE}")
+    return "\n\n".join(part.strip() for part in parts if str(part or "").strip()).strip()
+
+
 def _section(title: str, body: Any) -> str:
     text = _text(body)
     if not text:
@@ -94,7 +193,7 @@ def _section(title: str, body: Any) -> str:
 def build_trading_agents_context(payload: Dict[str, Any]) -> str:
     if not isinstance(payload, dict) or payload.get("status") != "success":
         return ""
-    research_brief = _text(payload.get("research_brief"))
+    research_brief = _without_tactical_decision_lines(payload.get("research_brief"))
     if research_brief:
         sections = [
             CONTEXT_INTRO,
@@ -104,12 +203,12 @@ def build_trading_agents_context(payload: Dict[str, Any]) -> str:
 
     sections = [
         CONTEXT_INTRO,
-        _section("Fundamentals Report", payload.get("fundamentals_report")),
-        _section("News Report", payload.get("news_report")),
-        _section("Social / Sentiment Report", payload.get("sentiment_report")),
-        _section("Bull/Bear Debate", payload.get("bull_bear_debate")),
-        _section("Risk Debate", payload.get("risk_debate")),
-        _section("Final Committee View", payload.get("final_committee_view")),
+        _section("Fundamentals Report", _without_tactical_decision_lines(payload.get("fundamentals_report"))),
+        _section("News Report", _without_tactical_decision_lines(payload.get("news_report"))),
+        _section("Social / Sentiment Report", _without_tactical_decision_lines(payload.get("sentiment_report"))),
+        _section("Bull/Bear Debate", _without_tactical_decision_lines(payload.get("bull_bear_debate"))),
+        _section("Risk Debate", _without_tactical_decision_lines(payload.get("risk_debate"))),
+        _section("Final Committee View", _without_tactical_decision_lines(payload.get("final_committee_view"))),
     ]
     return "\n\n".join(part.strip() for part in sections if str(part or "").strip()).strip()
 
@@ -117,7 +216,11 @@ def build_trading_agents_context(payload: Dict[str, Any]) -> str:
 def build_trading_agents_artifact_text(payload: Dict[str, Any]) -> str:
     body = build_trading_agents_context(payload)
     if body:
-        return f"## {CONTEXT_HEADER}\n\n{body}\n"
+        parts = [f"## {CONTEXT_HEADER}\n\n{body}"]
+        final_decision = build_trading_agents_final_decision_body(payload)
+        if final_decision:
+            parts.append(f"## TradingAgents Final Decision\n\n{final_decision}")
+        return "\n\n".join(parts).strip() + "\n"
 
     status = str(payload.get("status") or "unavailable") if isinstance(payload, dict) else "unavailable"
     error = str(payload.get("error") or payload.get("message") or "") if isinstance(payload, dict) else ""
@@ -135,19 +238,19 @@ def build_trading_agents_artifact_text(payload: Dict[str, Any]) -> str:
 
 def _raw_trading_agents_bundle(payload: Dict[str, Any]) -> str:
     sections = [
-        _section("Final Committee View", payload.get("final_committee_view")),
-        _section("Fundamentals Report", payload.get("fundamentals_report")),
-        _section("News Report", payload.get("news_report")),
-        _section("Social / Sentiment Report", payload.get("sentiment_report")),
-        _section("Bull/Bear Debate", payload.get("bull_bear_debate")),
-        _section("Risk Debate", payload.get("risk_debate")),
+        _section("Final Committee View", _without_tactical_decision_lines(payload.get("final_committee_view"))),
+        _section("Fundamentals Report", _without_tactical_decision_lines(payload.get("fundamentals_report"))),
+        _section("News Report", _without_tactical_decision_lines(payload.get("news_report"))),
+        _section("Social / Sentiment Report", _without_tactical_decision_lines(payload.get("sentiment_report"))),
+        _section("Bull/Bear Debate", _without_tactical_decision_lines(payload.get("bull_bear_debate"))),
+        _section("Risk Debate", _without_tactical_decision_lines(payload.get("risk_debate"))),
     ]
     return "\n\n".join(part.strip() for part in sections if str(part or "").strip()).strip()
 
 
 def _fallback_compact_research_brief(payload: Dict[str, Any]) -> str:
     pieces = []
-    final_view = _text(payload.get("final_committee_view"))
+    final_view = _without_tactical_decision_lines(payload.get("final_committee_view"))
     if final_view:
         pieces.append(f"### Final Committee View\n{_trim_chars(final_view, 1200)}")
     for title, key in [
@@ -157,7 +260,7 @@ def _fallback_compact_research_brief(payload: Dict[str, Any]) -> str:
         ("Bull/Bear Debate", "bull_bear_debate"),
         ("Risk Debate", "risk_debate"),
     ]:
-        text = _text(payload.get(key))
+        text = _without_tactical_decision_lines(payload.get(key))
         if text:
             pieces.append(f"### {title}\n{_trim_chars(text, 1400)}")
     return _trim_chars("\n\n".join(pieces).strip(), COMPACT_BRIEF_MAX_CHARS)
@@ -193,7 +296,8 @@ Preserve:
 
 Rules:
 - Keep it useful for valuation work: business quality, growth durability, earnings quality, margin drivers, capital intensity, competitive position, key news, sentiment, bull case, bear case, risk debate, and any other points that are relevant to fundamental valuation.
-- Do not add a target price, score, instruction, or trading order.
+- Omit every TradingAgents price target, target price, entry price, stop-loss, time horizon, and holding period. These tactical fields are preserved separately and must never enter the valuation context.
+- Do not add a score, instruction, or trading order.
 - Do not include chart or technical-analysis claims.
 - Do not mention that you are summarizing.
 - If the transcript evidence is ordinary, mixed, or thin, say so plainly.
@@ -231,7 +335,7 @@ TradingAgents raw transcript:
         )
         summary = _text(summary)
         if summary:
-            return _trim_chars(summary, COMPACT_BRIEF_MAX_CHARS)
+            return _trim_chars(_without_tactical_decision_lines(summary), COMPACT_BRIEF_MAX_CHARS)
     except Exception:
         pass
     return _fallback_compact_research_brief(payload)
@@ -248,6 +352,15 @@ def compact_trading_agents_payload(payload: Dict[str, Any], *, api_key: str = ""
             "trade_date": payload.get("trade_date"),
             "research_brief": brief,
             "final_committee_view": _text(payload.get("final_committee_view")),
+            "rating": _text(payload.get("rating")),
+            "price_target": payload.get("price_target"),
+            "time_horizon": _text(payload.get("time_horizon")),
+            "valuation_prompt_excluded_fields": [
+                "price_target",
+                "time_horizon",
+                "entry_price",
+                "stop_loss",
+            ],
             "market_report_excluded": bool(payload.get("market_report_excluded")),
             "compacted": True,
             "summary_model": SUMMARY_LLM if str(api_key or "").strip() else "fallback",
@@ -351,6 +464,15 @@ def _base_payload(ticker: str, now: Optional[datetime] = None) -> Dict[str, Any]
         "excluded_analysts": list(EXCLUDED_ANALYSTS),
         "reuse_window_days": REUSE_WINDOW_DAYS,
         "reused": False,
+        "rating": "",
+        "price_target": None,
+        "time_horizon": "",
+        "valuation_prompt_excluded_fields": [
+            "price_target",
+            "time_horizon",
+            "entry_price",
+            "stop_loss",
+        ],
         "included_sections": [
             "fundamentals_report",
             "news_report",
@@ -385,6 +507,12 @@ def normalize_trading_agents_state(
     payload = _base_payload(ticker, now=now)
     investment_debate = state.get("investment_debate_state") if isinstance(state, dict) else {}
     risk_debate = state.get("risk_debate_state") if isinstance(state, dict) else {}
+    raw_final_decision = _text(
+        state.get("final_trade_decision")
+        or state.get("investment_plan")
+        or state.get("trader_investment_plan")
+    )
+    metadata = _extract_final_decision_metadata(raw_final_decision, decision)
     payload.update(
         {
             "status": "success",
@@ -399,12 +527,10 @@ def normalize_trading_agents_state(
                 risk_debate,
                 ["aggressive_history", "conservative_history", "neutral_history", "judge_decision", "history"],
             ),
-            "final_committee_view": _text(
-                decision
-                or state.get("final_trade_decision")
-                or state.get("investment_plan")
-                or state.get("trader_investment_plan")
-            ),
+            "final_committee_view": raw_final_decision or _text(decision),
+            "rating": metadata["rating"],
+            "price_target": metadata["price_target"],
+            "time_horizon": metadata["time_horizon"],
             "market_report_excluded": bool(_text(state.get("market_report"))),
         }
     )

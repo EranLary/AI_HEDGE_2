@@ -1490,7 +1490,7 @@ def _build_current_assumption_values(
     earnings = _safe_float(variables_dict.get("net_income"))
     ev = _safe_float(variables_dict.get("ev"))
     market_cap = _safe_float(variables_dict.get("market_cap"))
-    fcf = _safe_float(info.get("freeCashflow"))
+    fcf = _safe_float(variables_dict.get("free_cashflow"))
 
     def _scaled_financial(value: Optional[float]) -> Optional[float]:
         if value is None:

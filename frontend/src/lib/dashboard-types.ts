@@ -59,6 +59,10 @@ export type TradingAgentsPayload = {
   bull_bear_debate?: string;
   risk_debate?: string;
   final_committee_view?: string;
+  rating?: string;
+  price_target?: number | null;
+  time_horizon?: string;
+  valuation_prompt_excluded_fields?: string[];
   artifact_json?: string;
   artifact_txt?: string;
 };

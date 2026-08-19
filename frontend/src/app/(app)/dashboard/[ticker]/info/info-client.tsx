@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BadgeDollarSign, CalendarDays, Gauge, History, Info, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
+import { Activity, BadgeDollarSign, CalendarDays, Gauge, History, Info, RefreshCw, TrendingUp } from "lucide-react";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { ReportListItem } from "@/lib/dashboard-types";
@@ -43,23 +43,10 @@ const LIVE_QUOTE_MULTIPLE_KEYS: Record<string, string> = {
   EnterpriseValue: "enterpriseValue",
 };
 
-const FINANCIAL_CARD_MAP: MetricCard[] = [
-  { label: "Current Price", value: "currentPrice", kind: "currency" },
+const ANALYST_CARD_MAP: MetricCard[] = [
   { label: "Target Mean", value: "targetMeanPrice", kind: "currency" },
   { label: "Target Median", value: "targetMedianPrice", kind: "currency" },
   { label: "Analysts", value: "numberOfAnalystOpinions", kind: "plain" },
-  { label: "Revenue Growth", value: "revenueGrowth", kind: "percent" },
-  { label: "Earnings Growth", value: "earningsGrowth", kind: "percent" },
-  { label: "Gross Margin", value: "grossMargins", kind: "percent" },
-  { label: "EBITDA Margin", value: "ebitdaMargins", kind: "percent" },
-  { label: "Operating Margin", value: "operatingMargins", kind: "percent" },
-  { label: "Profit Margin", value: "profitMargins", kind: "percent" },
-  { label: "ROA", value: "returnOnAssets", kind: "percent" },
-  { label: "ROE", value: "returnOnEquity", kind: "percent" },
-  { label: "Cash", value: "totalCash", kind: "currency" },
-  { label: "Debt", value: "totalDebt", kind: "currency" },
-  { label: "Current Ratio", value: "currentRatio", kind: "ratio" },
-  { label: "Debt / Equity", value: "debtToEquity", kind: "ratio" },
 ];
 
 function num(value: unknown): number | null {
@@ -122,7 +109,7 @@ function latestMultiple(info: YahooqueryInfo): Record<string, unknown> {
   return info.valuation_measures?.latest || {};
 }
 
-function financialData(info: YahooqueryInfo): Record<string, unknown> {
+function analystData(info: YahooqueryInfo): Record<string, unknown> {
   return info.financial_data || {};
 }
 
@@ -185,12 +172,14 @@ export function InfoClient({
 }: InfoClientProps) {
   const rows = rowsFromInfo(info);
   const latest = latestMultiple(info);
-  const finance = financialData(info);
+  const analyst = analystData(info);
   const quote = liveQuote(info);
   const currency = String(
-    quote.financialCurrency || finance.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD"),
+    quote.currency || quote.financialCurrency || analyst.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD"),
   ).toUpperCase();
-  const recommendation = String(finance.recommendationKey || "none").replace(/_/g, " ");
+  const recommendation = analyst.recommendationKey
+    ? String(analyst.recommendationKey).replace(/_/g, " ")
+    : "N/A";
   const status = String(info.status || "").toLowerCase();
   const multipleCards = MULTIPLE_MAP.map((item) => {
     const liveKey = LIVE_QUOTE_MULTIPLE_KEYS[item.key];
@@ -206,9 +195,9 @@ export function InfoClient({
           : undefined,
     };
   });
-  const financeCards = FINANCIAL_CARD_MAP.map((item) => ({
+  const analystCards = ANALYST_CARD_MAP.map((item) => ({
     label: item.label,
-    value: finance[String(item.value)],
+    value: analyst[String(item.value)],
     kind: item.kind,
   }));
 
@@ -224,13 +213,13 @@ export function InfoClient({
               Information
             </h1>
             <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
-              {ticker} - live yahooquery profile, multiples, and market context
+              {ticker} - live market data and provider-reported valuation multiples
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <MetricTile card={{ label: "Live Price", value: liveCurrentPrice ?? finance.currentPrice, kind: "currency" }} currency={currency} />
+            <MetricTile card={{ label: "Live Price", value: liveCurrentPrice ?? quote.currentPrice ?? quote.regularMarketPrice, kind: "currency" }} currency={currency} />
             <MetricTile card={{ label: "Currency", value: currency, kind: "plain" }} currency={currency} />
-            <MetricTile card={{ label: "Recommendation", value: recommendation, kind: "plain" }} currency={currency} />
+            <MetricTile card={{ label: "Wall St. Consensus", value: recommendation, kind: "plain" }} currency={currency} />
             <MetricTile card={{ label: "Data Rows", value: rows.length, kind: "plain" }} currency={currency} />
           </div>
         </div>
@@ -254,6 +243,9 @@ export function InfoClient({
               <p className="mt-1 text-sm text-[color:var(--text-muted)]">
                 Latest preferred row: {dateLabel(latest.asOfDate)} / {String(latest.periodType || "N/A")}
               </p>
+              <p className="mt-1 text-xs text-[color:var(--text-muted)]">
+                Provider-reported snapshot; compare like-for-like periods and treat unavailable or non-positive values as N/A.
+              </p>
             </div>
             <RefreshCw size={15} className="text-[color:var(--text-muted)]" />
           </div>
@@ -267,25 +259,16 @@ export function InfoClient({
         <div className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
           <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
             <Gauge size={15} />
-            Quality Snapshot
+            Analyst Snapshot
           </h2>
+          <p className="mt-1 text-sm text-[color:var(--text-muted)]">
+            Consensus targets and coverage only. Operating metrics belong in the Financials tab.
+          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {financeCards.slice(4, 12).map((card) => (
+            {analystCards.map((card) => (
               <MetricTile key={card.label} card={card} currency={currency} />
             ))}
           </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
-        <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
-          <ShieldCheck size={15} />
-          Financial Data
-        </h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {financeCards.map((card) => (
-            <MetricTile key={card.label} card={card} currency={currency} />
-          ))}
         </div>
       </section>
 
@@ -300,7 +283,7 @@ export function InfoClient({
           </div>
           <p className="inline-flex items-center gap-1 text-xs text-[color:var(--text-muted)]">
             <CalendarDays size={13} />
-            {info.generated_at ? `Updated ${dateLabel(info.generated_at)}` : "Live fetch"}
+            {info.generated_at ? `Fetched ${dateLabel(info.generated_at)}` : "Live fetch"}
           </p>
         </div>
         <div className="overflow-auto rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)]">

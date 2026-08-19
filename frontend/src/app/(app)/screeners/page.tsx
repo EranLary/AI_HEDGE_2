@@ -107,9 +107,10 @@ function csvEscape(value: unknown): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function downloadCsv(rows: ScreenerRow[], filename: string) {
+function downloadCsv(rows: ScreenerRow[], filename: string, positionByRow: ReadonlyMap<ScreenerRow, number>) {
   const header = [
     "Rank",
+    "Size Rank",
     "Ticker",
     "Company",
     "Valuation Score",
@@ -122,6 +123,7 @@ function downloadCsv(rows: ScreenerRow[], filename: string) {
     "Industry",
   ];
   const body = rows.map((row) => [
+    positionByRow.get(row) ?? "",
     row.rank,
     row.ticker,
     row.company_name,
@@ -359,9 +361,9 @@ export default function ScreenersPage() {
       return sectorMatch && industryMatch && queryMatch;
     });
   }, [industry, query, rows, sector]);
-  const sortedRows = useMemo(() => {
+  const sortedUniverseRows = useMemo(() => {
     const direction = sortDirection === "asc" ? 1 : -1;
-    return [...filteredRows].sort((left, right) => {
+    return [...rows].sort((left, right) => {
       const leftValue = sortValue(left, sortKey);
       const rightValue = sortValue(right, sortKey);
       const leftMissing = leftValue === null || leftValue === "";
@@ -376,7 +378,15 @@ export default function ScreenersPage() {
       const diff = String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: "base", numeric: true });
       return diff === 0 ? left.rank - right.rank : diff * direction;
     });
-  }, [filteredRows, sortDirection, sortKey]);
+  }, [rows, sortDirection, sortKey]);
+  const positionByRow = useMemo(
+    () => new Map(sortedUniverseRows.map((row, index) => [row, index + 1])),
+    [sortedUniverseRows],
+  );
+  const sortedRows = useMemo(() => {
+    const visibleRows = new Set(filteredRows);
+    return sortedUniverseRows.filter((row) => visibleRows.has(row));
+  }, [filteredRows, sortedUniverseRows]);
 
   const sectorCount = sectors.length > 0 ? sectors.length - 1 : 0;
   const industryCount = useMemo(
@@ -539,7 +549,7 @@ export default function ScreenersPage() {
             </button>
             <button
               type="button"
-              onClick={() => downloadCsv(sortedRows, `${activeScreener}-screener.csv`)}
+              onClick={() => downloadCsv(sortedRows, `${activeScreener}-screener.csv`, positionByRow)}
               disabled={!sortedRows.length}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
@@ -584,10 +594,17 @@ export default function ScreenersPage() {
           </div>
         ) : (
           <div className="hib-market-table-wrap m-0 max-h-[72vh]">
-            <table className="hib-market-table min-w-[104rem] table-fixed">
+            <table className="hib-market-table min-w-[109rem] table-fixed">
               <thead>
                 <tr>
-                  <SortHeader id="rank" label="Rank" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-20" />
+                  <th
+                    scope="col"
+                    title="Position in the full screener under the current sort"
+                    className="hib-market-table-head w-20"
+                  >
+                    Rank
+                  </th>
+                  <SortHeader id="rank" label="Size Rank" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-28" />
                   <SortHeader id="ticker" label="Ticker" sortKey={sortKey} sortDirection={sortDirection} onSort={toggleSort} className="w-28" />
                   <SortHeader
                     id="company_name"
@@ -653,6 +670,9 @@ export default function ScreenersPage() {
                 {sortedRows.length ? (
                   sortedRows.map((row) => (
                     <tr key={`${row.rank}-${row.ticker}`}>
+                      <td className="hib-market-table-cell font-mono text-xs font-semibold text-[color:var(--text-primary)]">
+                        #{positionByRow.get(row) ?? "-"}
+                      </td>
                       <td className="hib-market-table-cell font-mono text-xs text-[color:var(--text-muted)]">#{row.rank}</td>
                       <td className="hib-market-table-cell">
                         <button
@@ -699,7 +719,7 @@ export default function ScreenersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={11} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
+                    <td colSpan={12} className="hib-market-table-cell py-14 text-center text-[color:var(--text-muted)]">
                       No companies match this filter.
                     </td>
                   </tr>

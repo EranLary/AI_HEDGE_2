@@ -184,7 +184,6 @@ def main() -> int:
         "currency_statement": str(financial_dict.get("currency_statement") or ""),
         "info_financials": _to_jsonable(financial_dict.get("info_financials", {})),
         "rate": financial_dict.get("rate", 0),
-        "ticker_info": _to_jsonable((info_dict or {}).get("info", {})),
     }
 
     rows = _extract_filing_entries(files_dict)

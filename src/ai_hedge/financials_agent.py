@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from .provider_data_policy import valuation_only_yahooquery
+
 
 REQUIRED_METRICS = [
     "Revenue",
@@ -172,20 +174,19 @@ def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict
     yahooquery = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
     if not isinstance(yahooquery, dict):
         yahooquery = {}
-    financial_data = _yahooquery_section(yahooquery, "financial_data")
-    key_stats = _yahooquery_section(yahooquery, "key_stats")
-    summary_detail = _yahooquery_section(yahooquery, "summary_detail")
+    yahooquery = valuation_only_yahooquery(yahooquery)
+    live_quote = _yahooquery_section(yahooquery, "live_quote")
     valuation_latest = _latest_valuation_measures(yahooquery)
     financial_currency = (
         provider_info.get("financialCurrency")
-        or financial_data.get("financialCurrency")
+        or live_quote.get("financialCurrency")
         or info.get("original_financial_currency")
         or info.get("financial_currency")
         or "USD"
     )
     price_currency = (
         provider_info.get("currency")
-        or summary_detail.get("currency")
+        or live_quote.get("currency")
         or info.get("original_price_currency")
         or None
     )
@@ -206,20 +207,17 @@ def build_raw_financials_payload(ticker: str, info_dict: Dict[str, Any]) -> Dict
         "financial_currency": financial_currency,
         "original_price_currency": price_currency,
         "currency_policy": "original_provider_currency_only",
-        "current_price": _first_present(provider_info.get("currentPrice"), provider_info.get("regularMarketPrice"), financial_data.get("currentPrice")),
-        "shares_outstanding": _first_present(provider_info.get("sharesOutstanding"), provider_info.get("impliedSharesOutstanding"), key_stats.get("sharesOutstanding")),
-        "market_cap": _first_present(provider_info.get("marketCap"), valuation_latest.get("MarketCap"), summary_detail.get("marketCap")),
-        "enterprise_value": _first_present(provider_info.get("enterpriseValue"), valuation_latest.get("EnterpriseValue"), key_stats.get("enterpriseValue")),
-        "price_to_book": _first_present(provider_info.get("priceToBook"), key_stats.get("priceToBook")),
-        "price_to_earnings": _first_present(provider_info.get("trailingPE"), summary_detail.get("trailingPE")),
-        "forward_price_to_earnings": _first_present(provider_info.get("forwardPE"), summary_detail.get("forwardPE")),
-        "price_to_sales": _first_present(provider_info.get("priceToSalesTrailing12Months"), key_stats.get("priceToSalesTrailing12Months")),
-        "enterprise_to_revenue": _first_present(provider_info.get("enterpriseToRevenue"), key_stats.get("enterpriseToRevenue")),
-        "enterprise_to_ebitda": _first_present(provider_info.get("enterpriseToEbitda"), key_stats.get("enterpriseToEbitda")),
-        "peg_ratio": _first_present(provider_info.get("pegRatio"), key_stats.get("pegRatio")),
-        "total_debt": _first_present(provider_info.get("totalDebt"), financial_data.get("totalDebt")),
-        "total_cash": _first_present(provider_info.get("totalCash"), financial_data.get("totalCash")),
-        "total_revenue": _first_present(provider_info.get("totalRevenue"), financial_data.get("totalRevenue")),
+        "current_price": _first_present(provider_info.get("currentPrice"), provider_info.get("regularMarketPrice"), live_quote.get("currentPrice"), live_quote.get("regularMarketPrice")),
+        "shares_outstanding": _first_present(provider_info.get("sharesOutstanding"), provider_info.get("impliedSharesOutstanding"), live_quote.get("sharesOutstanding"), live_quote.get("impliedSharesOutstanding")),
+        "market_cap": _first_present(provider_info.get("marketCap"), live_quote.get("marketCap"), valuation_latest.get("MarketCap")),
+        "enterprise_value": _first_present(provider_info.get("enterpriseValue"), live_quote.get("enterpriseValue"), valuation_latest.get("EnterpriseValue")),
+        "price_to_book": _first_present(provider_info.get("priceToBook"), valuation_latest.get("PbRatio")),
+        "price_to_earnings": _first_present(provider_info.get("trailingPE"), valuation_latest.get("PeRatio")),
+        "forward_price_to_earnings": _first_present(provider_info.get("forwardPE"), valuation_latest.get("ForwardPeRatio")),
+        "price_to_sales": _first_present(provider_info.get("priceToSalesTrailing12Months"), valuation_latest.get("PsRatio")),
+        "enterprise_to_revenue": _first_present(provider_info.get("enterpriseToRevenue"), valuation_latest.get("EnterprisesValueRevenueRatio")),
+        "enterprise_to_ebitda": _first_present(provider_info.get("enterpriseToEbitda"), valuation_latest.get("EnterprisesValueEBITDARatio")),
+        "peg_ratio": _first_present(provider_info.get("pegRatio"), valuation_latest.get("PegRatio")),
     }
     return {
         "ticker": str(ticker).upper(),
@@ -262,14 +260,14 @@ Use Deep Reasoning:
 - Keep values in the original financial currency. Ratios and margins should be decimals, not strings.
 - Keep currency/count numeric values as raw statement values. Do not rescale to thousands, millions, or billions; the dashboard will handle display formatting.
 - Treat this payload as original-provider-currency-only. Do not convert any value to USD, do not infer USD values, and do not mix USD-normalized legacy values with original financial statements.
-- Current quote snapshot fields in payload.info, including market_cap, enterprise_value, debt, cash, revenue, and valuation multiples, are selected from original provider data for this Financials tab. Use them as-is and preserve the payload currency.
+- Current quote snapshot fields in payload.info are limited to price, shares, market capitalization, enterprise value, and provider-reported valuation multiples. Operating financial metrics must come from the statement tables.
 - If the price currency differs from the financial currency, use provider market_cap and enterprise_value for currency metrics rather than multiplying price by shares. Some exchanges quote price units differently from financial statement currency.
 - Make the table simple enough for a dashboard but deep enough to explain the economics.
 
 Mandatory rows, in this exact order:
 {required}
 
-Current market snapshot fields, outside the period table. Use the yahooquery valuation_measures and financial_data payload as the preferred source for these current multiple boxes, especially P/S, EV/Revenue, EV/EBITDA, PEG, and Forward P/E. If multiple period rows exist, prefer the latest TTM row; if TTM is missing, use the latest available row and state that in the note. The recent_average object may be used as context in the note, not as a replacement for the current latest value unless the latest value is missing:
+Current market snapshot fields, outside the period table. Use only the yahooquery valuation_measures payload and the allowlisted quote fields as the source for these current multiple boxes. If multiple period rows exist, prefer the latest TTM row; if TTM is missing, use the latest available row and state that in the note. The recent_average object may be used as context in the note, not as a replacement for the current latest value unless the latest value is missing:
 {snapshot}
 
 Optional rows:
@@ -286,7 +284,7 @@ Balance sheet and market-value logic:
 - Total Assets, receivables, inventory, liquid assets, liabilities, equity, debt, and net liquidity should come from the balance sheet whenever available.
 - Liquid Assets means cash + cash equivalents + short-term investments / marketable securities. If yfinance reports only cash and equivalents, use that and say so in the note.
 - Working Capital = Total Current Assets - Total Current Liabilities. Use reported current asset/current liability lines from the balance sheet. If either side is unavailable, use null and explain which side is missing.
-- Total Debt means short-term debt plus long-term debt. If only total debt is available from quote info, use it only where period-specific statement debt is missing and mark the row "derived" or "mixed".
+- Total Debt means short-term debt plus long-term debt and must come from the period-specific statement. If it is unavailable, use null.
 - Net Liquidity = Liquid Assets - Total Debt.
 - Equity-to-Assets Ratio = Total Shareholders' Equity / Total Assets. It is a ratio decimal, not a percent string.
 - Tax Rate = tax provision / pretax income when both are available. If either line is missing, use null.
@@ -295,7 +293,7 @@ Balance sheet and market-value logic:
 - Capital Expenditures (Capex) should come from the cash flow statement when available. Use the absolute cash outflow amount as a positive currency value even if the statement reports capex as negative.
 - Capex / Revenue = Capital Expenditures (Capex) / Revenue when both are available. It is a ratio decimal, not a percent string.
 - SBC / Revenue = Stock-Based Compensation / Revenue when both are available. If SBC is not disclosed separately, use null.
-- Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), Price-to-Earnings Ratio (P/E), Forward P/E, Price-to-Sales, EV/Revenue, EV/EBITDA, and PEG are current quote/multiple snapshot fields, not period-table rows. Put them in current_metrics only when available from quote info, yahooquery valuation_measures, yahooquery financial_data, or defensible from quote info plus latest statements. Do not invent historical values for them.
+- Market Capitalization, Enterprise Value (EV), Price-to-Book Ratio (P/B), Price-to-Earnings Ratio (P/E), Forward P/E, Price-to-Sales, EV/Revenue, EV/EBITDA, and PEG are current quote/multiple snapshot fields, not period-table rows. Put them in current_metrics only when available from the allowlisted quote info or yahooquery valuation_measures. Do not invent historical values for them.
 
 Return ONLY valid JSON with this exact shape:
 {{

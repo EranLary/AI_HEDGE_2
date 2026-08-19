@@ -115,7 +115,7 @@ function normalizeFinancial(value: Partial<FinancialContext> | null | undefined)
     all_reports: String(value?.all_reports || ""),
     info: value?.info ?? {},
     currency_statement: String(value?.currency_statement || ""),
-    info_financials: value?.info_financials ?? {},
+    info_financials: {},
     rate: value?.rate ?? 0,
   };
 }
@@ -194,7 +194,7 @@ function toContextBlocks(args: {
     financial_info: args.financial.info ?? {},
     currency_statement: trimText(args.financial.currency_statement, 8000),
     today_date: new Date().toISOString().slice(0, 10),
-    info_financials: args.financial.info_financials ?? {},
+    info_financials: {},
     rate: args.financial.rate ?? 0,
     persona_prior_text: trimText(args.personaPlainText, 35000),
     annual_report_text: trimText(args.annualText, 50000),

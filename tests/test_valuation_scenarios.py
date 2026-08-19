@@ -167,7 +167,7 @@ def test_dashboard_current_assumption_values_use_original_financial_currency_sca
     values = dashboard._build_current_assumption_values(
         info={
             "financial_currency_to_USD": 3.5,
-            "freeCashflow": 10.0,
+            "freeCashflow": 999.0,
             "enterpriseToRevenue": 2.25,
             "trailingPE": 18.0,
         },
@@ -175,6 +175,7 @@ def test_dashboard_current_assumption_values_use_original_financial_currency_sca
             "financial_currency": 3.5,
             "revenue": 100.0,
             "net_income": 8.0,
+            "free_cashflow": 10.0,
             "ev": 225.0,
             "market_cap": 144.0,
         },

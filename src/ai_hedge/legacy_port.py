@@ -35,6 +35,11 @@ def get_10_day_avg_risk_free_rate():
 from typing import Any, Dict, Optional
 import pandas as pd
 
+from .provider_data_policy import (
+    safe_company_profile,
+    valuation_only_yahooquery,
+)
+
 def _df_to_table_payload(
     df: pd.DataFrame,
     scale_abs_gt: float = 1,
@@ -398,76 +403,19 @@ def find_currency(curr):
 
 def recalculate_derived_metrics(info: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Recalculates ratios like PE, PriceToBook, EV, etc. based on the
-    unifed USD values of price and financials.
+    Normalize market capitalization after quote-currency conversion.
+
+    Provider financial-summary fields are not a trusted basis for deriving
+    valuation multiples. Preserve the provider's directly reported multiples
+    instead of rebuilding P/E, P/B, P/S, EV, or EV ratios from those fields.
     """
-    # 1. Ensure basic values exist
     price = info.get("currentPrice")
     shares = _select_shares_outstanding(info, default=None)
 
     if not price or not shares:
         return info
 
-    # 2. Recalculate Market Cap (Must be accurate for other calcs)
-    market_cap = price * shares
-    info["marketCap"] = market_cap
-
-    # 3. Recalculate EPS (Net Income / Shares)
-    # YFinance often reports EPS in ILS even if financials are USD.
-    # Best to recalc from Net Income which is reliable.
-    net_income = info.get("netIncomeToCommon")
-    if _is_number(net_income):
-        info["trailingEps"] = net_income / shares
-        # Now Recalculate PE
-        if info["trailingEps"] > 0:
-            info["trailingPE"] = price / info["trailingEps"]
-        else:
-            info["trailingPE"] = None
-
-    # 4. Recalculate Price to Book
-    book_value = info.get("bookValue") # Assumed to be in USD after conversion
-    if _is_number(book_value) and book_value != 0:
-        info["priceToBook"] = price / book_value
-
-    # 5. Recalculate Enterprise Value (EV)
-    # EV = Market Cap + Total Debt - Total Cash
-    total_debt = info.get("totalDebt")
-    total_cash = info.get("totalCash")
-
-    if _is_number(total_debt) and _is_number(total_cash):
-        ev = market_cap + total_debt - total_cash
-        info["enterpriseValue"] = ev
-
-    # 6. EV based ratios
-        ebitda = info.get("ebitda")
-        if _is_number(ebitda) and ebitda != 0:
-            info["enterpriseToEbitda"] = ev / ebitda
-
-        revenue = info.get("totalRevenue")
-        if _is_number(revenue) and revenue != 0:
-            info["enterpriseToRevenue"] = ev / revenue
-
-    # 7. Dividend ratios - FIXED
-    yield_val = info.get("dividendYield")
-
-    if _is_number(price) and _is_number(yield_val):
-        if yield_val > 0.5:
-            yield_decimal = yield_val / 100.0
-        else:
-            yield_decimal = yield_val
-
-        calculated_rate = price * yield_decimal
-
-        info["dividendRate"] = calculated_rate
-
-    else:
-        info.pop("dividendRate", None)
-        info.pop("trailingAnnualDividendRate", None)
-
-    # 8. Recalculate Price to Sales (P/S)
-    revenue = info.get("totalRevenue")
-    if _is_number(revenue) and revenue > 0:
-        info["priceToSalesTrailing12Months"] = market_cap / revenue
+    info["marketCap"] = price * shares
 
     return info
 
@@ -1067,15 +1015,246 @@ warnings.filterwarnings('ignore')
 #  'price_currency_to_USD': 3.1077,
 #  'financial_currency_to_USD': 3.1077
 
+def _safe_ticker_frame(ticker_obj: Any, attribute: str) -> pd.DataFrame:
+    try:
+        frame = getattr(ticker_obj, attribute)
+    except Exception:
+        return pd.DataFrame()
+    return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()
+
+
+def _ordered_statement_columns(df: pd.DataFrame) -> List[Any]:
+    columns = list(getattr(df, "columns", []))
+    try:
+        return sorted(columns, key=lambda value: pd.Timestamp(value), reverse=True)
+    except Exception:
+        return columns
+
+
+def _statement_series(df: pd.DataFrame, aliases: Iterable[str]) -> Optional[pd.Series]:
+    if df is None or getattr(df, "empty", True):
+        return None
+    for alias in aliases:
+        if alias not in df.index:
+            continue
+        row = df.loc[alias]
+        if isinstance(row, pd.DataFrame):
+            row = row.iloc[0]
+        if isinstance(row, pd.Series):
+            return row
+    return None
+
+
+def _statement_value(
+    df: pd.DataFrame,
+    aliases: Iterable[str],
+) -> Tuple[Optional[float], Optional[str]]:
+    row = _statement_series(df, aliases)
+    if row is None:
+        return None, None
+    for column in _ordered_statement_columns(df):
+        try:
+            value = float(row[column])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if pd.notna(value):
+            return value, str(column)
+    return None, None
+
+
+def _statement_ttm_value(
+    quarterly_df: pd.DataFrame,
+    aliases: Iterable[str],
+) -> Tuple[Optional[float], Optional[str]]:
+    row = _statement_series(quarterly_df, aliases)
+    if row is None:
+        return None, None
+    values: List[float] = []
+    newest_period: Optional[str] = None
+    for column in _ordered_statement_columns(quarterly_df):
+        try:
+            value = float(row[column])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if pd.isna(value):
+            continue
+        if newest_period is None:
+            newest_period = str(column)
+        values.append(value)
+        if len(values) == 4:
+            return sum(values), newest_period
+    return None, None
+
+
+def _scaled_statement_amount(value: Optional[float], currency_rate: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        divisor = float(currency_rate)
+    except (TypeError, ValueError):
+        divisor = 1.0
+    if divisor <= 0:
+        divisor = 1.0
+    return float(value) / divisor
+
+
+def _build_statement_metrics(
+    *,
+    financials_annual: pd.DataFrame,
+    financials_quarterly: pd.DataFrame,
+    balance_sheet_annual: pd.DataFrame,
+    balance_sheet_quarterly: pd.DataFrame,
+    cashflow_annual: pd.DataFrame,
+    cashflow_quarterly: pd.DataFrame,
+    currency_rate: Any,
+) -> Dict[str, Any]:
+    revenue, income_period = _statement_ttm_value(
+        financials_quarterly,
+        ("Total Revenue", "Operating Revenue"),
+    )
+    if revenue is None:
+        revenue, income_period = _statement_value(
+            financials_annual,
+            ("Total Revenue", "Operating Revenue"),
+        )
+
+    net_income, net_income_period = _statement_ttm_value(
+        financials_quarterly,
+        (
+            "Net Income Common Stockholders",
+            "Net Income",
+            "Net Income Continuous Operations",
+        ),
+    )
+    if net_income is None:
+        net_income, net_income_period = _statement_value(
+            financials_annual,
+            (
+                "Net Income Common Stockholders",
+                "Net Income",
+                "Net Income Continuous Operations",
+            ),
+        )
+    income_period = income_period or net_income_period
+
+    balance_sheet = balance_sheet_quarterly
+    if balance_sheet is None or getattr(balance_sheet, "empty", True):
+        balance_sheet = balance_sheet_annual
+
+    total_cash, balance_period = _statement_value(
+        balance_sheet,
+        (
+            "Cash Cash Equivalents And Short Term Investments",
+            "Cash And Cash Equivalents",
+            "Cash Financial",
+        ),
+    )
+    total_debt, debt_period = _statement_value(balance_sheet, ("Total Debt",))
+    if total_debt is None:
+        current_debt, current_debt_period = _statement_value(
+            balance_sheet,
+            ("Current Debt And Capital Lease Obligation", "Current Debt"),
+        )
+        long_debt, long_debt_period = _statement_value(
+            balance_sheet,
+            ("Long Term Debt And Capital Lease Obligation", "Long Term Debt"),
+        )
+        if current_debt is not None or long_debt is not None:
+            total_debt = float(current_debt or 0) + float(long_debt or 0)
+            debt_period = current_debt_period or long_debt_period
+
+    total_equity, equity_period = _statement_value(
+        balance_sheet,
+        ("Stockholders Equity", "Total Equity Gross Minority Interest"),
+    )
+    total_assets, assets_period = _statement_value(balance_sheet, ("Total Assets",))
+    current_assets, current_assets_period = _statement_value(
+        balance_sheet,
+        ("Current Assets", "Total Current Assets"),
+    )
+    current_liabilities, current_liabilities_period = _statement_value(
+        balance_sheet,
+        ("Current Liabilities", "Total Current Liabilities"),
+    )
+    balance_period = (
+        balance_period
+        or debt_period
+        or equity_period
+        or assets_period
+        or current_assets_period
+        or current_liabilities_period
+    )
+
+    free_cashflow, cashflow_period = _statement_ttm_value(
+        cashflow_quarterly,
+        ("Free Cash Flow",),
+    )
+    if free_cashflow is None:
+        operating_cashflow, operating_period = _statement_ttm_value(
+            cashflow_quarterly,
+            ("Operating Cash Flow", "Total Cash From Operating Activities"),
+        )
+        capital_expenditure, capex_period = _statement_ttm_value(
+            cashflow_quarterly,
+            ("Capital Expenditure", "Capital Expenditures"),
+        )
+        if operating_cashflow is not None and capital_expenditure is not None:
+            free_cashflow = operating_cashflow - abs(capital_expenditure)
+            cashflow_period = operating_period or capex_period
+    if free_cashflow is None:
+        free_cashflow, cashflow_period = _statement_value(cashflow_annual, ("Free Cash Flow",))
+
+    current_ratio = None
+    if current_assets is not None and current_liabilities not in (None, 0):
+        current_ratio = float(current_assets) / float(current_liabilities)
+
+    equity_to_assets = None
+    if total_equity is not None and total_assets not in (None, 0):
+        equity_to_assets = float(total_equity) / float(total_assets)
+
+    return {
+        "source": "yfinance_statement_tables",
+        "income_period_end": income_period,
+        "balance_sheet_period_end": balance_period,
+        "cashflow_period_end": cashflow_period,
+        "revenue": _scaled_statement_amount(revenue, currency_rate),
+        "net_income": _scaled_statement_amount(net_income, currency_rate),
+        "free_cashflow": _scaled_statement_amount(free_cashflow, currency_rate),
+        "total_cash": _scaled_statement_amount(total_cash, currency_rate),
+        "total_debt": _scaled_statement_amount(total_debt, currency_rate),
+        "total_equity": _scaled_statement_amount(total_equity, currency_rate),
+        "total_assets": _scaled_statement_amount(total_assets, currency_rate),
+        "current_ratio": current_ratio,
+        "equity_to_assets": equity_to_assets,
+    }
+
+
 def get_financial_data(ticker: str, info_dict: dict, info_financials: dict) -> dict:
     financial_dict = {}
     ticker_obj = yf.Ticker(ticker)
 
-    # 1. Maintain original metadata keys
-    financial_dict["info"] = info_dict
+    # Provider financial summaries stay available in info_dict for diagnostics,
+    # but never cross an analysis/chat boundary.
+    financial_dict["info"] = safe_company_profile(info_dict, include_market_context=True)
     financial_currency_rate = info_dict.get("financial_currency_to_USD", 1)
     financial_dict["currency_statement"] = "Financial data is in USD"
-    financial_dict["info_financials"] = info_financials
+    financial_dict["info_financials"] = {}
+
+    financials_annual = _safe_ticker_frame(ticker_obj, "financials")
+    financials_quarterly = _safe_ticker_frame(ticker_obj, "quarterly_financials")
+    balance_sheet_annual = _safe_ticker_frame(ticker_obj, "balance_sheet")
+    balance_sheet_quarterly = _safe_ticker_frame(ticker_obj, "quarterly_balance_sheet")
+    cashflow_annual = _safe_ticker_frame(ticker_obj, "cashflow")
+    cashflow_quarterly = _safe_ticker_frame(ticker_obj, "quarterly_cashflow")
+    financial_dict["statement_metrics"] = _build_statement_metrics(
+        financials_annual=financials_annual,
+        financials_quarterly=financials_quarterly,
+        balance_sheet_annual=balance_sheet_annual,
+        balance_sheet_quarterly=balance_sheet_quarterly,
+        cashflow_annual=cashflow_annual,
+        cashflow_quarterly=cashflow_quarterly,
+        currency_rate=financial_currency_rate,
+    )
 
     # Helper to wrap the original df_to_llm_csv with a name
     def get_named_table(df, title):
@@ -1093,16 +1272,16 @@ def get_financial_data(ticker: str, info_dict: dict, info_financials: dict) -> d
             return f"### {title}\nNot available\n\n"
 
     # --- 2. Financials (Income Statement) ---
-    financial_dict["financials_annual"] = get_named_table(ticker_obj.financials, "Annual Income Statement")
-    financial_dict["financials_quarterly"] = get_named_table(ticker_obj.quarterly_financials, "Quarterly Income Statement")
+    financial_dict["financials_annual"] = get_named_table(financials_annual, "Annual Income Statement")
+    financial_dict["financials_quarterly"] = get_named_table(financials_quarterly, "Quarterly Income Statement")
 
     # --- 3. Balance Sheet ---
-    financial_dict["balance_sheet_annual"] = get_named_table(ticker_obj.balance_sheet, "Annual Balance Sheet")
-    financial_dict["balance_sheet_quarterly"] = get_named_table(ticker_obj.quarterly_balance_sheet, "Quarterly Balance Sheet")
+    financial_dict["balance_sheet_annual"] = get_named_table(balance_sheet_annual, "Annual Balance Sheet")
+    financial_dict["balance_sheet_quarterly"] = get_named_table(balance_sheet_quarterly, "Quarterly Balance Sheet")
 
     # --- 4. Cash Flow ---
-    financial_dict["cashflow_annual"] = get_named_table(ticker_obj.cashflow, "Annual Cash Flow Statement")
-    financial_dict["cashflow_quarterly"] = get_named_table(ticker_obj.quarterly_cashflow, "Quarterly Cash Flow Statement")
+    financial_dict["cashflow_annual"] = get_named_table(cashflow_annual, "Annual Cash Flow Statement")
+    financial_dict["cashflow_quarterly"] = get_named_table(cashflow_quarterly, "Quarterly Cash Flow Statement")
 
     # --- 5. Aggregates (Built as structured strings instead of raw tuples) ---
     try:
@@ -1170,8 +1349,15 @@ warnings.filterwarnings('ignore')
 #  'price_currency_to_USD': 3.1077,
 #  'financial_currency_to_USD': 3.1077
 
-def get_variables(ticker: str, info_dict: dict, financial_dict_quarter_bs, financial_dict_annual_finance, info_financials: dict) -> dict:
+def get_variables(
+    ticker: str,
+    info_dict: dict,
+    statement_metrics: dict,
+    financial_dict_annual_finance=None,
+    info_financials: Optional[dict] = None,
+) -> dict:
     variables_dict = {}
+    statement_metrics = statement_metrics if isinstance(statement_metrics, dict) else {}
     variables_dict["shares_outstanding"] = _select_shares_outstanding(info_dict, default=1)
     price = info_dict.get("currentPrice", 0)
     variables_dict["price"] = price if _is_number(price) else 0
@@ -1184,39 +1370,29 @@ def get_variables(ticker: str, info_dict: dict, financial_dict_quarter_bs, finan
         variables_dict["market_cap"] = 0
     variables_dict["price_currency"] = info_dict.get("price_currency_to_USD", 1)
     variables_dict["financial_currency"] = info_dict.get("financial_currency_to_USD", 1)
-    total_debt = info_dict.get("totalDebt")
-    total_cash = info_dict.get("totalCash")
-    enterprise_value = info_dict.get("enterpriseValue")
+    total_debt = statement_metrics.get("total_debt")
+    total_cash = statement_metrics.get("total_cash")
 
-    # Keep EV/Market Cap bridge consistent across currencies.
-    # Prefer EV rebuilt from debt/cash when available in normalized info.
+    # The EV/equity bridge uses dated balance-sheet rows, never opaque INFO
+    # debt/cash fields. If statement net debt is unavailable, retain the
+    # existing neutral fallback and make its provenance explicit.
     if _is_number(total_debt) and _is_number(total_cash):
       variables_dict["ev"] = variables_dict["market_cap"] + total_debt - total_cash
-    elif _is_number(enterprise_value):
-      variables_dict["ev"] = enterprise_value
+      variables_dict["ev_source"] = "statement_net_debt"
     else:
       variables_dict["ev"] = variables_dict["market_cap"]
+      variables_dict["ev_source"] = "market_cap_fallback_missing_statement_net_debt"
     variables_dict["differnce"] = variables_dict["ev"] - variables_dict["market_cap"]
-    book_value = info_dict.get("bookValue", 0)
-    variables_dict["Equity"] = book_value * variables_dict["shares_outstanding"]
-    variables_dict["current_ratio"] = info_dict.get("currentRatio", 0)
-    try:
-        bs = financial_dict_quarter_bs
-        variables_dict["Total_assets"] = bs["values"][bs["index"].index("Total Assets")][0]
-    except:
-        variables_dict["Total_assets"] = 1
-    try:
-        variables_dict["Equity_to_assets"] = variables_dict["Equity"] / variables_dict["Total_assets"]
-    except:
-        variables_dict["Equity_to_assets"] = 0
-    try:
-        variables_dict["revenue"] = info_financials.get("totalRevenue", 1)
-    except:
-        variables_dict["revenue"] = 1
-    try:
-        variables_dict["net_income"] = info_financials.get("netIncomeToCommon", 1)
-    except:
-        variables_dict["net_income"] = 1
+    variables_dict["Equity"] = statement_metrics.get("total_equity")
+    variables_dict["Total_assets"] = statement_metrics.get("total_assets")
+    variables_dict["current_ratio"] = statement_metrics.get("current_ratio")
+    variables_dict["Equity_to_assets"] = statement_metrics.get("equity_to_assets")
+    variables_dict["revenue"] = statement_metrics.get("revenue")
+    variables_dict["net_income"] = statement_metrics.get("net_income")
+    variables_dict["free_cashflow"] = statement_metrics.get("free_cashflow")
+    variables_dict["statement_metrics_source"] = statement_metrics.get("source")
+    variables_dict["statement_income_period_end"] = statement_metrics.get("income_period_end")
+    variables_dict["statement_balance_sheet_period_end"] = statement_metrics.get("balance_sheet_period_end")
 
     print(f"Downloaded variables for {ticker}")
     return variables_dict
@@ -1231,7 +1407,11 @@ def get_dicts(ticker):
     info_payload = info_dict.get("info") if isinstance(info_dict, dict) else {}
     files_dict = latest_filing_full_text(ticker, company_info=info_payload if isinstance(info_payload, dict) else {})
     financial_dict = get_financial_data(ticker, info_dict["info"], info_dict["financials"])
-    variables_dict = get_variables(ticker, info_dict["info"], financial_dict["balance_sheet_quarterly"], financial_dict["financials_annual"], info_dict["financials"])
+    variables_dict = get_variables(
+        ticker,
+        info_dict["info"],
+        financial_dict.get("statement_metrics", {}),
+    )
     return info_dict, files_dict, financial_dict, variables_dict
 
 
@@ -1507,12 +1687,13 @@ def what_it_does_insights_result(info_dict) -> Tuple[str, str]:
     """
 
     header = "What the company is doing"
+    profile = safe_company_profile(info_dict.get("info") if isinstance(info_dict, dict) else {})
 
     prompt = f"""
 You are a sharp equity analyst.
 
-Here is raw company information data:
-{info_dict["info"]}
+Here is an allowlisted company profile containing business-description and identity fields only:
+{json.dumps(profile, ensure_ascii=False, default=str)}
 
 Your task:
 Explain, in clear and simple language, what this company actually does in practice.
@@ -1560,16 +1741,19 @@ def info_insights_result(info_dict) -> Tuple[str, str]:
     """
 
     header = "General Information Insights"
+    profile = safe_company_profile(
+        info_dict.get("info") if isinstance(info_dict, dict) else {},
+        include_market_context=True,
+    )
 
     prompt = f"""
 You are a world-class equity analyst, long-term investor, and strategic thinker.
 
-You are given a single Python dictionary called info_dict["info"], extracted from a financial API.
-This dictionary contains company profile data, governance indicators, market data, valuation metrics,
-growth rates, profitability ratios, balance sheet strength, ownership structure, analyst expectations,
-and operational details.
+You are given an allowlisted company profile containing business-description,
+identity, geography, and limited current market-context fields. Opaque provider
+financial statistics have intentionally been excluded.
 
-Your task is to extract the deepest, smartest, and most non-obvious insights possible from this data.
+Your task is to extract useful strategic and business-model insights from this limited profile.
 
 Rules:
 - Think like a buy-side analyst managing concentrated capital.
@@ -1580,9 +1764,9 @@ Rules:
 - Be explicit about what truly matters and what is misleading.
 - If something looks extraordinary, explain why.
 - If something looks risky or unsustainable, explain the mechanism.
-- If valuation implies extreme expectations, articulate them clearly.
-- If governance, ownership, margins, growth, or capital structure stand out, explain the consequences.
-- Connect business model, financials, and market expectations into a single coherent story.
+- Do not infer revenue growth, profitability, balance-sheet strength, or accounting quality from absent data.
+- Treat price, shares, and market capitalization only as market context, not evidence of operating quality.
+- Focus on business model, customers, geography, scale, and strategic positioning supported by the profile.
 
 {ANALYSIS_CALIBRATION_RULES}
 
@@ -1593,7 +1777,7 @@ Output format:
 - No filler or repetition.
 
 Here is the data:
-{info_dict["info"]}
+{json.dumps(profile, ensure_ascii=False, default=str)}
 
 Now extract the smartest possible insights.
 """.strip()
@@ -1919,26 +2103,35 @@ def multiple_insights_result(info_dict) -> Tuple[str, str]:
     """
 
     header = "Multiple Analysis"
-    yq = info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    yq = valuation_only_yahooquery(
+        info_dict.get("yahooquery") if isinstance(info_dict, dict) else {}
+    )
     if not isinstance(yq, dict) or yq.get("status") != "success":
         error = yq.get("error") if isinstance(yq, dict) else "No yahooquery payload found."
         return header, f"Yahooquery valuation measures are not available. {error or ''}".strip()
+    profile = safe_company_profile(
+        info_dict.get("info") if isinstance(info_dict, dict) else {},
+        include_market_context=True,
+    )
 
     prompt = f"""
 You are a senior equity analyst writing the valuation-multiple context chapter for a company analysis.
 
 You are given:
 1) yahooquery valuation_measures, including historical rows of market cap, enterprise value, P/E, forward P/E, PEG, P/B, P/S, EV/Revenue, and EV/EBITDA.
-2) yahooquery financial_data with current financial, margin, analyst, liquidity, and leverage fields.
-3) The existing info_dict["info"] company context from the product pipeline.
+2) An allowlisted company profile with identity, business, currency, and limited market context.
 
 Objective:
-Extract the important valuation information from the multiple data and explain what it says about how the market currently prices the company.
+Compare like-for-like valuation multiples across the supplied dates and period types, and explain what the history says about how the market prices the company.
 
 Rules:
 - Use only the supplied data.
 - This is company context, not a buy/sell recommendation.
-- Highlight current valuation level, historical movement in multiples, growth expectations embedded in PEG/forward P/E, balance-sheet effects in EV multiples, and margin/ROE context from financial_data.
+- Keep TTM, annual, and other period types distinct. Do not compare unlike periods as if they were identical.
+- Highlight current valuation level, historical movement in multiples, differences between trailing and forward P/E, and balance-sheet effects visible in EV-based versus equity-based multiples.
+- Provider-reported multiples are comparison inputs, not audited accounting facts.
+- Do not infer revenue growth, margins, ROA, ROE, liquidity, or financial quality; those fields are intentionally absent.
+- Treat missing, zero-placeholder, negative-denominator, or economically inapplicable multiples as unavailable rather than forcing an interpretation.
 - When data is missing or mixed by period, say so plainly.
 - For non-USD or .TA tickers, do not assume USD; use the currency fields as context.
 - Keep it concise and user-friendly.
@@ -1950,8 +2143,8 @@ Rules:
 yahooquery payload:
 {json.dumps(yq, ensure_ascii=False)[:90000]}
 
-info_dict["info"]:
-{json.dumps(info_dict.get("info", {}), ensure_ascii=False)[:60000]}
+Company profile:
+{json.dumps(profile, ensure_ascii=False, default=str)[:30000]}
 
 Now write the valuation-multiple context chapter.
 """.strip()
@@ -3998,10 +4191,12 @@ import datetime as dt
 
 def build_prompt(ticker, financial_dict, instruction, text):
   financial_data = financial_dict["All Reports"]
-  info = financial_dict["info"]
+  info = safe_company_profile(
+      financial_dict.get("info"),
+      include_market_context=True,
+  )
   currency_statement = financial_dict["currency_statement"]
   today_date = dt.date.today().strftime("%Y-%m-%d")
-  additional_data = financial_dict["info_financials"]
   rate = financial_dict.get("rate", 0)
   if rate > 0:
     rate_statement = f"The 10-Day Average Risk-Free Rate (USA 10Y Treasury) is: {rate:.4f}%"
@@ -4016,7 +4211,7 @@ def build_prompt(ticker, financial_dict, instruction, text):
   You are given:
   1) - Prepared analysis document (raw text)
   2) - Financial data (structured)
-  3) - Company Profile Stats (structured)
+  3) - Company profile and current market context (structured)
   4) - Explicit output instructions (strict JSON schema)
 
   Treat the prepared analysis as a very professional analyst opinion - very strong and high quality - but not the truth itself.
@@ -4036,10 +4231,6 @@ def build_prompt(ticker, financial_dict, instruction, text):
   Company Profile Stats:
   <Company_Profile_Stats>
   {info}
-
-  Relevant financial data from the Company Profile Stats:
-  {additional_data}
-  {currency_statement}
   </Company_Profile_Stats>
 
   <Internal_Thinking_Process>
@@ -6009,7 +6200,10 @@ def extract_gaap_sbc_non_recurring_json(text: str, variables_dict: Dict[str, Any
 
 def _run_sicum_once(ticker, text, financial_dict, as_of_date, n, variables_dict):
   financial_reports = financial_dict["All Reports"]
-  info = financial_dict["info"]
+  info = safe_company_profile(
+      financial_dict.get("info"),
+      include_market_context=True,
+  )
   currrency_statement = financial_dict["currency_statement"]
   prompt = f"""
 You are a senior buy-side equity analyst and forensic accountant.

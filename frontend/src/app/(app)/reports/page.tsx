@@ -89,7 +89,14 @@ async function CommunityTabContent({
     return <EmptyState tab="community" signedIn={signedIn} hasQuery={Boolean(query)} />;
   }
 
-  return <CommunityList initialRows={rows} initialHasMore={hasMore} query={query} />;
+  return (
+    <CommunityList
+      key={query.trim().toLowerCase() || "all-reports"}
+      initialRows={rows}
+      initialHasMore={hasMore}
+      query={query}
+    />
+  );
 }
 
 async function MineTabContent({

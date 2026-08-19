@@ -241,6 +241,23 @@ jobs:
             --ha=false \
             --wait-timeout 5m
 
+      - name: Bootstrap portfolio performance preview data
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' \
+            | grep -qx 'src/ai_hedge/db/migrations/006_portfolio_performance.sql'; then
+            echo "Portfolio migration is not part of this PR; skipping preview backfill."
+            exit 0
+          fi
+          flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track backtest --start-cutoff 2026-04-30'"
+          flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track paper --paper-cutoff 2026-08-17'"
+
       - name: Diagnostics on deploy failure
         if: failure() && steps.deploy.conclusion == 'failure'
         env:

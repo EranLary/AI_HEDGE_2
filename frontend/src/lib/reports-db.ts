@@ -593,17 +593,17 @@ export async function listDashboardsForDiscovery(): Promise<
  * pages like Hit Rate.
  */
 export async function listAllDashboardsForHitRate(): Promise<
-  { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
+  { id: string; ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
 > {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT r.ticker, r.generated_at, r.source_run_id, a.dashboard
+    SELECT r.id::text AS id, r.ticker, r.generated_at, r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
      WHERE r.deleted_at IS NULL
      ORDER BY r.generated_at DESC;
-  `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
+  `) as unknown as { id: string; ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
   return filterExcludedTickers(rows, (row) => row.ticker);
 }
 

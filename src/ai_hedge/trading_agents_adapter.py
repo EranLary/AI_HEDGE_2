@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-ADAPTER_VERSION = "2026-08-19.v4"
+ADAPTER_VERSION = "2026-08-19.v5"
 CONFIG_VERSION = "deepseek-v0.2.4-fundamentals-news-social"
 REUSE_WINDOW_DAYS = 7
 SELECTED_ANALYSTS = ["fundamentals", "news", "social"]
@@ -22,7 +22,9 @@ QUICK_THINK_LLM = "deepseek-chat"
 DEEP_THINK_LLM = "deepseek-reasoner"
 SUMMARY_LLM = "deepseek-v4-flash"
 DEEPSEEK_BACKEND_URL = "https://api.deepseek.com/v1"
-COMPACT_BRIEF_MAX_CHARS = 9000
+# The summary prompt allows up to roughly 1,600 words. Keep a modest safety
+# margin above that expected output so the final section is not cut mid-sentence.
+COMPACT_BRIEF_MAX_CHARS = 12_000
 _GRAPH_SETUP_LOCK = threading.Lock()
 
 _TACTICAL_CONTEXT_LINE_RE = re.compile(

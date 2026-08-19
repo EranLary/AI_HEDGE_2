@@ -84,22 +84,7 @@ export async function listPortfolioReportInputs(args: {
   latestGeneratedAt: string;
 }): Promise<PortfolioReportInput[]> {
   const sql = requireSql();
-  const rows = (await sql`
-    SELECT r.id::text AS id,
-           r.ticker,
-           r.generated_at::text AS generated_at,
-           r.created_at::text AS created_at,
-           r.deleted_at::text AS deleted_at,
-           r.source_run_id,
-           COALESCE(NULLIF(t.currency, ''), NULLIF(a.dashboard->'header'->>'currency', ''), 'USD') AS currency,
-           a.dashboard
-      FROM reports r
-      JOIN report_artifacts a ON a.report_id = r.id
-      JOIN tickers t ON t.symbol = r.ticker
-     WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
-       AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
-     ORDER BY r.generated_at;
-  `) as Array<{
+  type ReportRow = {
     id: string;
     ticker: string;
     generated_at: string;
@@ -108,7 +93,31 @@ export async function listPortfolioReportInputs(args: {
     source_run_id: string | null;
     currency: string;
     dashboard: DashboardPayload;
-  }>;
+  };
+  const rows: ReportRow[] = [];
+  const pageSize = 20;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = (await sql`
+      SELECT r.id::text AS id,
+             r.ticker,
+             r.generated_at::text AS generated_at,
+             r.created_at::text AS created_at,
+             r.deleted_at::text AS deleted_at,
+             r.source_run_id,
+             COALESCE(NULLIF(t.currency, ''), NULLIF(a.dashboard->'header'->>'currency', ''), 'USD') AS currency,
+             a.dashboard
+        FROM reports r
+        JOIN report_artifacts a ON a.report_id = r.id
+        JOIN tickers t ON t.symbol = r.ticker
+       WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
+         AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
+       ORDER BY r.generated_at, r.id
+       LIMIT ${pageSize}
+      OFFSET ${offset};
+    `) as ReportRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
   return rows.map((row) => ({
     id: row.id,
     ticker: String(row.ticker || "").toUpperCase(),

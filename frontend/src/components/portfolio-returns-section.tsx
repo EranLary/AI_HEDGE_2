@@ -79,12 +79,24 @@ function statusLabel(row: PortfolioReturnRow): string | null {
   return null;
 }
 
+function sortRowsByReturn(rows: PortfolioReturnRow[]): PortfolioReturnRow[] {
+  return rows.slice().sort((a, b) => {
+    const aReturn = typeof a.return_pct === "number" && Number.isFinite(a.return_pct) ? a.return_pct : null;
+    const bReturn = typeof b.return_pct === "number" && Number.isFinite(b.return_pct) ? b.return_pct : null;
+    if (aReturn === null && bReturn === null) return a.label.localeCompare(b.label);
+    if (aReturn === null) return 1;
+    if (bReturn === null) return -1;
+    return bReturn - aReturn || a.label.localeCompare(b.label);
+  });
+}
+
 function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow[] }) {
+  const sortedRows = sortRowsByReturn(rows);
   return (
     <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h3>
       <div className="space-y-2 md:hidden">
-        {rows.map((row) => (
+        {sortedRows.map((row) => (
           <article key={`${row.lens_type}:${row.lens_key || "overall"}:mobile`} className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -116,7 +128,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr key={`${row.lens_type}:${row.lens_key || "overall"}`} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
                 <td className="px-3 py-2">
                   <Link href={rowHref(row)} className="font-medium text-[color:var(--accent)] underline-offset-2 hover:underline">{row.label}</Link>

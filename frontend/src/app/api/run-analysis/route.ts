@@ -9,6 +9,7 @@ import { auth } from "@/auth";
 import { hostnameFromRequestUrl, shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 import {
   appBootIso,
+  listActiveRunStatusesFromFs,
   reconcileStaleRunsAfterRestart,
   reconcileStaleRunsViaSql,
   TICKER_RE,
@@ -18,7 +19,7 @@ import {
   runStatusFile,
   siteRunsRoot,
 } from "@/lib/site-runner";
-import { insertQueuedRun, updateRunStatusFromNode } from "@/lib/site-runs-db";
+import { insertQueuedRun, listActiveRunsForUser, updateRunStatusFromNode } from "@/lib/site-runs-db";
 import { yahooValidate } from "@/lib/yahoo-lookup";
 
 export const runtime = "nodejs";
@@ -31,6 +32,32 @@ function nowIso(): string {
 function writeStatus(filePath: string, payload: RunStatusPayload): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf-8");
+}
+
+export async function GET(req: Request) {
+  reconcileStaleRunsAfterRestart();
+  void reconcileStaleRunsViaSql();
+
+  const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
+  const session = await auth();
+  const userId = session?.user?.id || (bypassAuth ? "local-dev" : "");
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!bypassAuth && session?.user?.isGuest) {
+    return NextResponse.json(
+      {
+        error: "Please sign in with Google to view active runs.",
+        code: "SIGN_IN_REQUIRED",
+      },
+      { status: 403 },
+    );
+  }
+
+  const dbRuns = await listActiveRunsForUser(userId);
+  const runs = dbRuns ?? listActiveRunStatusesFromFs(userId);
+
+  return NextResponse.json({ count: runs.length, runs });
 }
 
 export async function POST(req: Request) {

@@ -7,8 +7,17 @@ type RunStatusApi = {
   ticker: string;
   status: "queued" | "running" | "completed" | "failed";
   llm_progress_pct?: number;
+  created_at?: string;
   error?: string;
 };
+
+type ActiveRunsApi = {
+  runs?: RunStatusApi[];
+};
+
+type RunStatusResult =
+  | { ok: true; status: RunStatusApi }
+  | { ok: false; statusCode: number };
 
 export type CompletionEvent = {
   job_id: string;
@@ -42,7 +51,34 @@ async function pollOnce() {
   if (polling) return;
   polling = true;
   try {
-    const current = listActiveRuns();
+    const discovered: ClientActiveRun[] = [];
+    try {
+      const res = await fetch("/api/run-analysis", { cache: "no-store" });
+      if (res.ok) {
+        const payload = (await res.json()) as ActiveRunsApi;
+        for (const run of payload.runs || []) {
+          if (run.status !== "queued" && run.status !== "running") continue;
+          const activeRun: ClientActiveRun = {
+            job_id: run.job_id,
+            ticker: String(run.ticker || "").toUpperCase(),
+            status: run.status,
+            llm_progress_pct: safePct(run.llm_progress_pct),
+            created_at: run.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          upsertActiveRun(activeRun);
+          discovered.push(activeRun);
+        }
+      }
+    } catch {
+      // The per-job poll below keeps locally-known runs alive during outages.
+    }
+
+    const currentById = new Map<string, ClientActiveRun>();
+    for (const run of [...listActiveRuns(), ...discovered]) {
+      currentById.set(run.job_id, run);
+    }
+    const current = Array.from(currentById.values());
     if (!current.length) {
       latestRuns = [];
       emit();
@@ -52,8 +88,8 @@ async function pollOnce() {
     const results = await Promise.allSettled(
       current.map(async (run) => {
         const res = await fetch(`/api/run-analysis/${encodeURIComponent(run.job_id)}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(String(res.status));
-        return (await res.json()) as RunStatusApi;
+        if (!res.ok) return { ok: false, statusCode: res.status } as RunStatusResult;
+        return { ok: true, status: (await res.json()) as RunStatusApi } as RunStatusResult;
       }),
     );
 
@@ -65,7 +101,16 @@ async function pollOnce() {
         nextRuns.push(localRun);
         continue;
       }
-      const api = result.value;
+      if (!result.value.ok) {
+        if ([401, 403, 404].includes(result.value.statusCode)) {
+          removeActiveRun(localRun.job_id);
+          delete previousStatuses[localRun.job_id];
+          continue;
+        }
+        nextRuns.push(localRun);
+        continue;
+      }
+      const api = result.value.status;
       const nextStatus = api.status;
       const prevStatus = previousStatuses[localRun.job_id] || localRun.status;
       previousStatuses[localRun.job_id] = nextStatus;
@@ -80,6 +125,7 @@ async function pollOnce() {
           for (const listener of completionListeners) listener(event);
         }
         removeActiveRun(localRun.job_id);
+        delete previousStatuses[localRun.job_id];
         continue;
       }
 

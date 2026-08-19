@@ -29,6 +29,27 @@ interface SiteRunRow {
   report_id: string | null;
 }
 
+function rowToRunStatus(row: SiteRunRow): Partial<RunStatusPayload> {
+  const llmTotal = asNumber(row.llm_total_estimated, 30);
+  const llmDone = asNumber(row.llm_completed, 0);
+  const llmPct = llmTotal > 0 ? Math.min(100, Number(((llmDone / llmTotal) * 100).toFixed(2))) : 0;
+
+  return {
+    job_id: row.job_id,
+    ticker: row.ticker,
+    status: row.status as RunStatusPayload["status"],
+    created_at: row.created_at,
+    started_at: row.started_at,
+    finished_at: row.finished_at,
+    user_id: row.user_id,
+    llm_total_estimated: llmTotal,
+    llm_completed: llmDone,
+    llm_progress_pct: llmPct,
+    error: row.error || "",
+    report_id: row.report_id,
+  };
+}
+
 /**
  * Insert the row for a freshly-queued run. Best-effort: returns false on any
  * failure so the FS sink keeps running. The Python worker will UPSERT the same
@@ -95,26 +116,48 @@ export async function readRunStatusFromDb(jobId: string): Promise<Partial<RunSta
     const row = rows[0];
     if (!row) return null;
 
-    const llmTotal = asNumber(row.llm_total_estimated, 30);
-    const llmDone = asNumber(row.llm_completed, 0);
-    const llmPct = llmTotal > 0 ? Math.min(100, Number(((llmDone / llmTotal) * 100).toFixed(2))) : 0;
-
-    return {
-      job_id: row.job_id,
-      ticker: row.ticker,
-      status: row.status as RunStatusPayload["status"],
-      created_at: row.created_at,
-      started_at: row.started_at,
-      finished_at: row.finished_at,
-      user_id: row.user_id,
-      llm_total_estimated: llmTotal,
-      llm_completed: llmDone,
-      llm_progress_pct: llmPct,
-      error: row.error || "",
-      report_id: row.report_id,
-    };
+    return rowToRunStatus(row);
   } catch (err) {
     console.warn(`[site-runs-db] readRunStatusFromDb failed for ${jobId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Return the active runs owned by one signed-in user. A null result means the
+ * durable store is unavailable; an empty array is a successful query with no
+ * active runs. Keeping those cases distinct lets callers use the FS fallback
+ * only when it is actually needed.
+ */
+export async function listActiveRunsForUser(
+  userId: string,
+  limit = 20,
+): Promise<Partial<RunStatusPayload>[] | null> {
+  const sql = getSql();
+  const cleanUserId = asUuid(userId);
+  if (!sql || !cleanUserId) return null;
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+
+  try {
+    const rows = (await sql`
+      SELECT job_id, ticker,
+             user_id::text AS user_id,
+             status,
+             created_at::text AS created_at,
+             started_at::text AS started_at,
+             finished_at::text AS finished_at,
+             llm_total_estimated, llm_completed,
+             error,
+             report_id::text AS report_id
+        FROM site_runs
+       WHERE user_id = ${cleanUserId}::uuid
+         AND status IN ('queued', 'running')
+       ORDER BY created_at DESC
+       LIMIT ${safeLimit};
+    `) as unknown as SiteRunRow[];
+    return rows.map(rowToRunStatus);
+  } catch (err) {
+    console.warn(`[site-runs-db] listActiveRunsForUser failed for ${cleanUserId}:`, err);
     return null;
   }
 }

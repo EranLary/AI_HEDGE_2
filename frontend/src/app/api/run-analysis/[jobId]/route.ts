@@ -218,11 +218,27 @@ async function reconcileCompletedStatus(status: RunStatusPayload): Promise<RunSt
 }
 
 export async function GET(
-  _: Request,
+  req: Request,
   context: { params: Promise<{ jobId: string }> },
 ) {
   reconcileStaleRunsAfterRestart();
   void reconcileStaleRunsViaSql();
+
+  const bypassAuth = shouldBypassAuthForHostname(hostnameFromRequestUrl(req.url));
+  const session = await auth();
+  const userId = session?.user?.id || (bypassAuth ? "local-dev" : "");
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!bypassAuth && session?.user?.isGuest) {
+    return NextResponse.json(
+      {
+        error: "Please sign in with Google to view this run.",
+        code: "SIGN_IN_REQUIRED",
+      },
+      { status: 403 },
+    );
+  }
 
   const { jobId } = await context.params;
   const cleanJobId = String(jobId || "").trim();
@@ -233,6 +249,11 @@ export async function GET(
   const fsStatus = readRunStatus(cleanJobId);
   const dbStatus = await readRunStatusFromDb(cleanJobId);
   if (!fsStatus && !dbStatus) {
+    return NextResponse.json({ error: "Job not found." }, { status: 404 });
+  }
+
+  const ownerId = String(dbStatus?.user_id || fsStatus?.user_id || "").trim();
+  if (!bypassAuth && ownerId !== userId) {
     return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
 
@@ -328,7 +349,7 @@ export async function DELETE(
 
   // Only the run owner can cancel unless local bypass is active.
   const statusUserId = String(status.user_id || "").trim();
-  if (!bypassAuth && statusUserId && statusUserId !== userId) {
+  if (!bypassAuth && statusUserId !== userId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

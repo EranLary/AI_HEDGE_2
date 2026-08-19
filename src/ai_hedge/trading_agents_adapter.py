@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import inspect
 import json
 import math
 import os
 import re
 import shutil
-import inspect
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-ADAPTER_VERSION = "2026-08-19.v3"
+ADAPTER_VERSION = "2026-08-19.v4"
 CONFIG_VERSION = "deepseek-v0.2.4-fundamentals-news-social"
 REUSE_WINDOW_DAYS = 7
 SELECTED_ANALYSTS = ["fundamentals", "news", "social"]
@@ -22,12 +23,7 @@ DEEP_THINK_LLM = "deepseek-reasoner"
 SUMMARY_LLM = "deepseek-v4-flash"
 DEEPSEEK_BACKEND_URL = "https://api.deepseek.com/v1"
 COMPACT_BRIEF_MAX_CHARS = 9000
-
-FINAL_DECISION_INDEPENDENCE_NOTE = (
-    "This tactical output is preserved for transparency as an independent TradingAgents view. "
-    "Its price target and time horizon are excluded from AI Hedge valuation prompts, model target-price "
-    "calculations, and consensus target aggregation to avoid anchoring the fundamental valuation process."
-)
+_GRAPH_SETUP_LOCK = threading.Lock()
 
 _TACTICAL_CONTEXT_LINE_RE = re.compile(
     r"\b(?:price[\s_-]*target|target[\s_-]*price|entry[\s_-]*price|stop[\s_-]*loss|"
@@ -50,6 +46,110 @@ CONTEXT_INTRO = (
     "business analysis, and valuation evidence. It is not a target price, not a recommendation to copy, "
     "and not an instruction. Use only points that are supported and relevant to fundamental valuation."
 )
+
+
+def _create_required_target_portfolio_manager(llm: Any):
+    """Build TradingAgents' portfolio manager with a required tactical target.
+
+    TradingAgents v0.2.4 models ``price_target`` as optional. The dashboard
+    contract needs a target on new successful runs, so this adapter tightens
+    only the Portfolio Manager's own output schema and prompt. The resulting
+    metadata is quarantined from every AI Hedge prompt below.
+    """
+
+    from pydantic import Field
+    from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
+    from tradingagents.agents.utils.agent_utils import (
+        build_instrument_context,
+        get_language_instruction,
+    )
+    from tradingagents.agents.utils.structured import (
+        bind_structured,
+        invoke_structured_or_freetext,
+    )
+
+    class RequiredTargetPortfolioDecision(PortfolioDecision):
+        price_target: float = Field(
+            gt=0,
+            description=(
+                "Required single tactical target price in the instrument's quote currency. "
+                "It must be consistent with the final rating and evidence in the debate."
+            ),
+        )
+        time_horizon: str = Field(
+            min_length=1,
+            description="Required time horizon for the tactical price target, e.g. '6-12 months'.",
+        )
+
+    structured_llm = bind_structured(llm, RequiredTargetPortfolioDecision, "Portfolio Manager")
+
+    def portfolio_manager_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        instrument_context = build_instrument_context(state["company_of_interest"])
+        risk_debate_state = state["risk_debate_state"]
+        history = risk_debate_state["history"]
+        research_plan = state["investment_plan"]
+        trader_plan = state["trader_investment_plan"]
+        past_context = state.get("past_context", "")
+        lessons_line = (
+            f"- Lessons from prior decisions and outcomes:\n{past_context}\n"
+            if past_context
+            else ""
+        )
+
+        prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
+
+{instrument_context}
+
+---
+
+**Rating Scale** (use exactly one):
+- **Buy**: Strong conviction to enter or add to position
+- **Overweight**: Favorable outlook, gradually increase exposure
+- **Hold**: Maintain current position, no action needed
+- **Underweight**: Reduce exposure, take partial profits
+- **Sell**: Exit position or avoid entry
+
+**Required Tactical Output:**
+- Always provide one numeric **Price Target** in the instrument's quote currency.
+- Always provide a non-empty **Time Horizon** for that target.
+- The target must be the Portfolio Manager's own conclusion from this TradingAgents debate.
+- Do not omit these fields for Hold, Underweight, or Sell ratings.
+
+**Context:**
+- Research Manager's investment plan: **{research_plan}**
+- Trader's transaction proposal: **{trader_plan}**
+{lessons_line}**Risk Analysts Debate History:**
+{history}
+
+---
+
+Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}"""
+
+        final_trade_decision = invoke_structured_or_freetext(
+            structured_llm,
+            llm,
+            prompt,
+            render_pm_decision,
+            "Portfolio Manager",
+        )
+        new_risk_debate_state = {
+            "judge_decision": final_trade_decision,
+            "history": risk_debate_state["history"],
+            "aggressive_history": risk_debate_state["aggressive_history"],
+            "conservative_history": risk_debate_state["conservative_history"],
+            "neutral_history": risk_debate_state["neutral_history"],
+            "latest_speaker": "Judge",
+            "current_aggressive_response": risk_debate_state["current_aggressive_response"],
+            "current_conservative_response": risk_debate_state["current_conservative_response"],
+            "current_neutral_response": risk_debate_state["current_neutral_response"],
+            "count": risk_debate_state["count"],
+        }
+        return {
+            "risk_debate_state": new_risk_debate_state,
+            "final_trade_decision": final_trade_decision,
+        }
+
+    return portfolio_manager_node
 
 
 def _now_utc() -> datetime:
@@ -149,40 +249,6 @@ def _extract_final_decision_metadata(final_decision: Any, processed_decision: An
     }
 
 
-def _format_tactical_price(value: Any) -> str:
-    try:
-        number = float(value)
-    except Exception:
-        return ""
-    if not math.isfinite(number) or number <= 0:
-        return ""
-    return f"{number:,.2f}".rstrip("0").rstrip(".")
-
-
-def build_trading_agents_final_decision_body(payload: Dict[str, Any]) -> str:
-    """Render display-only decision metadata; this body must be appended after valuation."""
-
-    if not isinstance(payload, dict) or payload.get("status") != "success":
-        return ""
-    final_view = _text(payload.get("final_committee_view"))
-    safe_final_view = _without_tactical_decision_lines(final_view)
-    price_target = _format_tactical_price(payload.get("price_target"))
-    time_horizon = _clean_markdown_value(payload.get("time_horizon"))
-
-    parts: List[str] = []
-    if safe_final_view:
-        parts.append(safe_final_view)
-    metadata: List[str] = []
-    if price_target:
-        metadata.append(f"**TradingAgents Tactical Price Target:** {price_target} (instrument quote currency)")
-    if time_horizon:
-        metadata.append(f"**Time Horizon:** {time_horizon}")
-    if metadata:
-        parts.append("\n\n".join(metadata))
-        parts.append(f"> **Independence note:** {FINAL_DECISION_INDEPENDENCE_NOTE}")
-    return "\n\n".join(part.strip() for part in parts if str(part or "").strip()).strip()
-
-
 def _section(title: str, body: Any) -> str:
     text = _text(body)
     if not text:
@@ -216,11 +282,7 @@ def build_trading_agents_context(payload: Dict[str, Any]) -> str:
 def build_trading_agents_artifact_text(payload: Dict[str, Any]) -> str:
     body = build_trading_agents_context(payload)
     if body:
-        parts = [f"## {CONTEXT_HEADER}\n\n{body}"]
-        final_decision = build_trading_agents_final_decision_body(payload)
-        if final_decision:
-            parts.append(f"## TradingAgents Final Decision\n\n{final_decision}")
-        return "\n\n".join(parts).strip() + "\n"
+        return f"## {CONTEXT_HEADER}\n\n{body}\n"
 
     status = str(payload.get("status") or "unavailable") if isinstance(payload, dict) else "unavailable"
     error = str(payload.get("error") or payload.get("message") or "") if isinstance(payload, dict) else ""
@@ -513,6 +575,7 @@ def normalize_trading_agents_state(
         or state.get("trader_investment_plan")
     )
     metadata = _extract_final_decision_metadata(raw_final_decision, decision)
+    display_decision = _clean_markdown_value(decision) or metadata["rating"]
     payload.update(
         {
             "status": "success",
@@ -527,7 +590,10 @@ def normalize_trading_agents_state(
                 risk_debate,
                 ["aggressive_history", "conservative_history", "neutral_history", "judge_decision", "history"],
             ),
-            "final_committee_view": raw_final_decision or _text(decision),
+            # Preserve the compact v2 report contract. The raw Portfolio
+            # Manager prose is used only for metadata extraction above and is
+            # never stored in a field that crosses an AI Hedge prompt boundary.
+            "final_committee_view": display_decision,
             "rating": metadata["rating"],
             "price_target": metadata["price_target"],
             "time_horizon": metadata["time_horizon"],
@@ -603,8 +669,12 @@ def run_trading_agents_lens(
     run_date = str(trade_date or now.date().isoformat())
     try:
         from tradingagents.default_config import DEFAULT_CONFIG
+        from tradingagents.graph import setup as graph_setup
         from tradingagents.graph.trading_graph import TradingAgentsGraph
 
+        # Tighten only TradingAgents' own final output contract. This target
+        # is extracted into dashboard metadata and never enters AI Hedge
+        # analysis, dashboard-extraction, or valuation prompts.
         config = dict(DEFAULT_CONFIG)
         config.update(
             {
@@ -622,7 +692,16 @@ def run_trading_agents_lens(
                 "output_language": "English",
             }
         )
-        graph = TradingAgentsGraph(selected_analysts=list(SELECTED_ANALYSTS), debug=False, config=config)
+        # TradingAgents resolves this factory while constructing the graph.
+        # Restore the package global immediately afterward so the adapter does
+        # not change unrelated graph construction in this process.
+        with _GRAPH_SETUP_LOCK:
+            original_create_portfolio_manager = graph_setup.create_portfolio_manager
+            try:
+                graph_setup.create_portfolio_manager = _create_required_target_portfolio_manager
+                graph = TradingAgentsGraph(selected_analysts=list(SELECTED_ANALYSTS), debug=False, config=config)
+            finally:
+                graph_setup.create_portfolio_manager = original_create_portfolio_manager
         state, decision = _propagate_trading_agents_graph(graph, ticker_u, run_date)
         payload = normalize_trading_agents_state(ticker_u, state if isinstance(state, dict) else {}, decision, now=now)
         payload["trade_date"] = run_date

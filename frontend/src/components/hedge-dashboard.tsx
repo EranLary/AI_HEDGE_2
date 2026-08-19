@@ -9,6 +9,11 @@ import remarkGfm from "remark-gfm";
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { canonicalModelName } from "@/lib/method-display";
+import {
+  tradingAgentsDecisionTone,
+  tradingAgentsDisplayDecision,
+  type TradingAgentsDecisionTone,
+} from "@/lib/trading-agents";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
@@ -419,19 +424,7 @@ function BulletList({ items, tone = "bull" }: { items: string[]; tone?: "bull" |
   );
 }
 
-type TabTone = "up" | "down" | "neutral";
-
-function tradingAgentsDecisionTone(text?: string): TabTone {
-  const src = String(text || "").toLowerCase();
-  const compact = src.replace(/[\s_-]+/g, "");
-  if (/\b(strong\s*buy|buy|overweight|overwhight|outperform|accumulate)\b/.test(src) || compact.includes("strongbuy")) {
-    return "up";
-  }
-  if (/\b(strong\s*sell|sell|underweight|underwhight|underperform|reduce)\b/.test(src) || compact.includes("strongsell")) {
-    return "down";
-  }
-  return "neutral";
-}
+type TabTone = TradingAgentsDecisionTone;
 
 function tabToneClass(tone: TabTone, active: boolean): string {
   if (tone === "up") {
@@ -666,9 +659,10 @@ function TradingAgentsPanel({
     : status === "success"
       ? `Generated fresh ${generatedAt}`
       : `Unavailable ${generatedAt}`;
+  const finalCommitteeView = tradingAgentsDisplayDecision(payload.rating, payload.final_committee_view);
   const sections = [
     ["Research Brief", payload.research_brief],
-    ["Final Committee Decision", payload.final_committee_view],
+    ["Final Committee Decision", finalCommitteeView],
     ["Fundamentals Report", payload.fundamentals_report],
     ["News Report", payload.news_report],
     ["Social / Sentiment Report", payload.sentiment_report],
@@ -680,7 +674,7 @@ function TradingAgentsPanel({
     if (!cleanText) return [];
     return splitMarkdownHeadingBlocks(title, cleanText);
   });
-  const decisionTone = tradingAgentsDecisionTone(payload.final_committee_view);
+  const decisionTone = tradingAgentsDecisionTone(payload.rating, payload.final_committee_view);
   const decisionPanelClass =
     decisionTone === "up"
       ? "border-emerald-500/45 bg-emerald-500/10"
@@ -716,7 +710,7 @@ function TradingAgentsPanel({
       {hasTacticalDecisionMetadata ? (
         <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)]">
-            TradingAgents Final Decision
+            TradingAgents Tactical Target
           </p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {tacticalPriceTarget !== null ? (
@@ -1297,7 +1291,10 @@ export function HedgeDashboard({
   }, [methodTabs]);
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
   const tradingAgentsPayload = data?.trading_agents;
-  const tradingAgentsTone = tradingAgentsDecisionTone(tradingAgentsPayload?.final_committee_view);
+  const tradingAgentsTone = tradingAgentsDecisionTone(
+    tradingAgentsPayload?.rating,
+    tradingAgentsPayload?.final_committee_view,
+  );
   const hasTradingAgents =
     !!tradingAgentsPayload &&
     (Object.keys(tradingAgentsPayload).length > 0 || String(tradingAgentsPayload.status || "").trim().length > 0);

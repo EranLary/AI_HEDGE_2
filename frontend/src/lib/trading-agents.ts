@@ -44,3 +44,8 @@ export function tradingAgentsDecisionTone(
   }
   return "neutral";
 }
+
+export function tradingAgentsDisplayDecision(rating?: unknown, finalCommitteeView?: unknown): string {
+  const structuredRating = String(rating || "").trim();
+  return structuredRating || String(finalCommitteeView || "").trim();
+}

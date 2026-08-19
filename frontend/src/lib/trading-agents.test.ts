@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { tradingAgentsDecisionTone } from "./trading-agents";
+import { tradingAgentsDecisionTone, tradingAgentsDisplayDecision } from "./trading-agents";
 
 test("uses the structured rating before words in the decision prose", () => {
   const decision = `
@@ -28,4 +28,11 @@ test("does not infer tone from incidental recommendation words", () => {
 test("keeps compact legacy decisions working", () => {
   assert.equal(tradingAgentsDecisionTone(undefined, "Overweight"), "up");
   assert.equal(tradingAgentsDecisionTone(undefined, "Hold"), "neutral");
+});
+
+test("uses the structured rating as the compact decision for verbose v3 reports", () => {
+  assert.equal(
+    tradingAgentsDisplayDecision("Underweight", "**Rating: Underweight**\nLong Portfolio Manager transcript."),
+    "Underweight",
+  );
 });

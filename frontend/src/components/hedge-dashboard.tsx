@@ -9,7 +9,11 @@ import remarkGfm from "remark-gfm";
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { canonicalModelName } from "@/lib/method-display";
-import { tradingAgentsDecisionTone, type TradingAgentsDecisionTone } from "@/lib/trading-agents";
+import {
+  tradingAgentsDecisionTone,
+  tradingAgentsDisplayDecision,
+  type TradingAgentsDecisionTone,
+} from "@/lib/trading-agents";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
 
@@ -655,9 +659,10 @@ function TradingAgentsPanel({
     : status === "success"
       ? `Generated fresh ${generatedAt}`
       : `Unavailable ${generatedAt}`;
+  const finalCommitteeView = tradingAgentsDisplayDecision(payload.rating, payload.final_committee_view);
   const sections = [
     ["Research Brief", payload.research_brief],
-    ["Final Committee Decision", payload.final_committee_view],
+    ["Final Committee Decision", finalCommitteeView],
     ["Fundamentals Report", payload.fundamentals_report],
     ["News Report", payload.news_report],
     ["Social / Sentiment Report", payload.sentiment_report],

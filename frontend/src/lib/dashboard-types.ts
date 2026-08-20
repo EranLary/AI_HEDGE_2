@@ -222,6 +222,44 @@ export type FinancialsPayload = {
   };
 };
 
+export type WebSearchPayload = {
+  status?: "success" | "error" | "unavailable" | string;
+  ticker?: string;
+  generated_at?: string;
+  planner_model?: string;
+  researcher_model?: string;
+  search_provider?: string;
+  queries?: Array<{
+    id?: string;
+    query?: string;
+    research_goal?: string;
+    valuation_relevance?: string;
+    focus?: string;
+  }>;
+  search_results?: Array<{
+    query_id?: string;
+    query?: string;
+    sources?: WebSearchSource[];
+    errors?: string[];
+  }>;
+  sources?: WebSearchSource[];
+  report_markdown?: string;
+  errors?: string[];
+  artifact_json?: string;
+  artifact_txt?: string;
+};
+
+export type WebSearchSource = {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  publisher?: string;
+  published_at?: string;
+  kind?: "news" | "web" | string;
+  query_ids?: string[];
+  content_excerpt?: string;
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   generated_at?: string;
@@ -442,6 +480,7 @@ export type DashboardPayload = {
   market_review?: MarketReviewPayload;
   wall_st?: WallStPayload;
   financials?: FinancialsPayload;
+  web_search?: WebSearchPayload;
   sec_qna?: SecQnaPayload;
   filings?: {
     annual?: {
@@ -474,6 +513,8 @@ export type DashboardPayload = {
     trading_agents_json?: string;
     trading_agents_txt?: string;
     market_review_json?: string;
+    web_search_json?: string;
+    web_search_txt?: string;
   };
   downloads?: {
     analysis_pdf: string;

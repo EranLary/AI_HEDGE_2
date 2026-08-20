@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -18,6 +18,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "financials", label: "Financials", icon: Calculator },
   { slug: "market", label: "Market", icon: Store },
+  { slug: "web-search", label: "Web Search", icon: Globe2 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },
   { slug: "sec-qa", label: "SEC Q&A", icon: FileQuestion },
   { slug: "wall-st", label: "WALL ST.", icon: Landmark },

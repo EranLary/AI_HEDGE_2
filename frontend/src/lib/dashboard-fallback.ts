@@ -156,6 +156,15 @@ export function createFallbackDashboard(ticker: string): DashboardPayload {
       },
       errors: ["Run a fresh analysis to populate analyst expectation data."],
     },
+    web_search: {
+      status: "unavailable",
+      ticker: tk,
+      queries: [],
+      search_results: [],
+      sources: [],
+      report_markdown: "",
+      errors: [],
+    },
     sec_qna: {
       status: "unavailable",
       ticker: tk,

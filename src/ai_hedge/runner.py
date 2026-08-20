@@ -58,6 +58,8 @@ class RunArtifacts:
     trading_agents_json: str
     trading_agents_txt: str
     market_review_json: str
+    web_search_json: str
+    web_search_txt: str
     financials_json: str
     notes: List[str]
     current_revenue: Optional[float]
@@ -1689,6 +1691,66 @@ def _run_ticker_valuation_impl(
             trading_agents_executor.shutdown(wait=False)
     _append_progress(progress_file, "Finished TradingAgents Research Lens")
 
+    web_search_payload: Dict[str, Any] = {
+        "status": "unavailable",
+        "ticker": ticker,
+        "queries": [],
+        "search_results": [],
+        "sources": [],
+        "report_markdown": "",
+        "errors": [],
+    }
+    web_search_json = ""
+    web_search_txt = ""
+    try:
+        from .web_research import build_web_search_markdown, run_web_research
+
+        info_payload = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
+        company_name = ""
+        if isinstance(info_payload, dict):
+            company_name = str(
+                info_payload.get("longName")
+                or info_payload.get("shortName")
+                or info_dict.get("short_name")
+                or ticker
+            ).strip()
+        web_search_payload = run_web_research(
+            ticker=ticker,
+            company_name=company_name or ticker,
+            analysis_text=regular_text,
+            api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+            output_dir=out_dir,
+        )
+        web_search_json = str(web_search_payload.get("artifact_json") or "")
+        web_search_txt = str(web_search_payload.get("artifact_txt") or "")
+        web_search_report = str(web_search_payload.get("report_markdown") or "").strip()
+        if web_search_report:
+            legacy.append_text_to_file(
+                text=build_web_search_markdown(web_search_payload, include_title=False),
+                header="Web Search",
+            )
+            latest_text = legacy.load_text_from_file("analysis.txt")
+            if str(latest_text or "").strip():
+                regular_text = str(latest_text or "").strip()
+        if web_search_payload.get("status") != "success":
+            web_errors = [str(error) for error in web_search_payload.get("errors") or [] if str(error)]
+            notes.append(
+                "Web Search research unavailable: "
+                + (web_errors[-1] if web_errors else str(web_search_payload.get("status") or "unavailable"))
+            )
+    except Exception as web_search_err:
+        web_search_payload = {
+            "status": "error",
+            "ticker": ticker,
+            "queries": [],
+            "search_results": [],
+            "sources": [],
+            "report_markdown": "",
+            "errors": [str(web_search_err)],
+        }
+        notes.append(f"Web Search research failed: {web_search_err}")
+    _append_progress(progress_file, "Finished Web Search Research")
+
     pre_dashboard_red_flags = deterministic_red_flags(
         price_cv=None,
         lmil=None,
@@ -1941,6 +2003,7 @@ def _run_ticker_valuation_impl(
             technical_analysis=technical_analysis_payload,
             trading_agents=trading_agents_payload,
             market_review=market_review_payload,
+            web_search=web_search_payload,
             wall_st=wall_st_payload,
             financials=financials_payload,
             filings=filing_sources,
@@ -1956,6 +2019,8 @@ def _run_ticker_valuation_impl(
                 "trading_agents_json": trading_agents_json,
                 "trading_agents_txt": trading_agents_txt,
                 "market_review_json": market_review_json,
+                "web_search_json": web_search_json,
+                "web_search_txt": web_search_txt,
                 "financials_json": financials_json,
             },
         )
@@ -2061,6 +2126,8 @@ def _run_ticker_valuation_impl(
         "trading-agents-json": Path(trading_agents_json) if trading_agents_json else None,
         "trading-agents-txt": Path(trading_agents_txt) if trading_agents_txt else None,
         "market-review-json": Path(market_review_json) if market_review_json else None,
+        "web-search-json": Path(web_search_json) if web_search_json else None,
+        "web-search-txt": Path(web_search_txt) if web_search_txt else None,
         "financials-json": Path(financials_json) if financials_json else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -2101,6 +2168,8 @@ def _run_ticker_valuation_impl(
         trading_agents_json=trading_agents_json,
         trading_agents_txt=trading_agents_txt,
         market_review_json=market_review_json,
+        web_search_json=web_search_json,
+        web_search_txt=web_search_txt,
         financials_json=financials_json,
         notes=notes,
         current_revenue=current_revenue,
@@ -2127,6 +2196,8 @@ def _run_ticker_valuation_impl(
         "trading_agents_json": artifacts.trading_agents_json,
         "trading_agents_txt": artifacts.trading_agents_txt,
         "market_review_json": artifacts.market_review_json,
+        "web_search_json": artifacts.web_search_json,
+        "web_search_txt": artifacts.web_search_txt,
         "financials_json": artifacts.financials_json,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,

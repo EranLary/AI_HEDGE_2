@@ -64,6 +64,11 @@ export type YahooqueryInfo = {
     recent_average?: Record<string, number | null>;
   };
   live_quote?: Record<string, unknown>;
+  company_profile?: {
+    sector?: string;
+    industry?: string;
+    source?: string;
+  };
   financial_data?: Record<string, unknown>;
 };
 
@@ -83,6 +88,14 @@ function infoTabYahooqueryPayload(value: YahooqueryInfo, ticker: string): Yahooq
       if (key in rawAnalyst) analystContext[key] = rawAnalyst[key];
     }
   }
+  const rawProfile = value?.company_profile;
+  const companyProfile = rawProfile && typeof rawProfile === "object"
+    ? {
+        sector: String(rawProfile.sector || "").trim(),
+        industry: String(rawProfile.industry || "").trim(),
+        source: String(rawProfile.source || "yahooquery.asset_profile").trim(),
+      }
+    : undefined;
   return {
     status: value?.status,
     ticker: String(value?.ticker || ticker).toUpperCase(),
@@ -90,6 +103,7 @@ function infoTabYahooqueryPayload(value: YahooqueryInfo, ticker: string): Yahooq
     error: value?.error,
     valuation_measures: value?.valuation_measures,
     live_quote: value?.live_quote,
+    company_profile: companyProfile,
     financial_data: analystContext,
   };
 }

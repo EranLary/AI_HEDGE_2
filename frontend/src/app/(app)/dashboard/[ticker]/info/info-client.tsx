@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BadgeDollarSign, CalendarDays, Gauge, History, Info, RefreshCw, TrendingUp } from "lucide-react";
+import { Activity, BadgeDollarSign, Building2, CalendarDays, Factory, Gauge, History, Info, RefreshCw, TrendingUp } from "lucide-react";
 
 import { ReportChipRow } from "@/components/dashboard-chrome";
 import type { ReportListItem } from "@/lib/dashboard-types";
@@ -117,6 +117,11 @@ function liveQuote(info: YahooqueryInfo): Record<string, unknown> {
   return info.live_quote || {};
 }
 
+function profileValue(value: unknown): string {
+  const text = String(value || "").trim();
+  return text || "Not classified";
+}
+
 function MetricTile({ card, currency }: { card: MetricCard; currency: string }) {
   return (
     <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
@@ -174,6 +179,7 @@ export function InfoClient({
   const latest = latestMultiple(info);
   const analyst = analystData(info);
   const quote = liveQuote(info);
+  const profile = info.company_profile || {};
   const currency = String(
     quote.currency || quote.financialCurrency || analyst.financialCurrency || (ticker.endsWith(".TA") ? "ILS" : "USD"),
   ).toUpperCase();
@@ -229,6 +235,51 @@ export function InfoClient({
           </p>
         ) : null}
       </header>
+
+      <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
+              <Building2 size={15} />
+              Company Classification
+            </h2>
+            <p className="mt-1 text-sm text-[color:var(--text-muted)]">
+              Yahoo Finance classification used by the screeners and refreshed with this Info view.
+            </p>
+          </div>
+          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+            YahooQuery asset profile
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <article className="group rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--accent)]">
+                <Building2 size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Sector</p>
+                <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
+                  {profileValue(profile.sector)}
+                </p>
+              </div>
+            </div>
+          </article>
+          <article className="group rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--info)]">
+                <Factory size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Industry</p>
+                <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
+                  {profileValue(profile.industry)}
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
 
       <PricePerformance rows={returnsPct} />
 

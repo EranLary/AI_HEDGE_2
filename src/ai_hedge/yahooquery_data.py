@@ -97,6 +97,15 @@ def _live_quote_payload(info: Any) -> Dict[str, Any]:
     return _json_safe({key: info.get(key) for key in keys if info.get(key) is not None})
 
 
+def _company_profile_payload(profile: Any, symbol: str) -> Dict[str, Any]:
+    clean = _dict_for_symbol(profile, symbol)
+    return {
+        "sector": str(clean.get("sector") or "").strip(),
+        "industry": str(clean.get("industry") or "").strip(),
+        "source": "yahooquery.asset_profile",
+    }
+
+
 def _fetch_live_quote(symbol: str) -> Dict[str, Any]:
     try:
         import yfinance as yf
@@ -236,6 +245,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
     earning_history = _fetch_attr(ticker_obj, "earning_history")
     corporate_events = _fetch_attr(ticker_obj, "corporate_events")
     share_purchase_activity = _fetch_attr(ticker_obj, "share_purchase_activity")
+    asset_profile = _fetch_attr(ticker_obj, "asset_profile")
     live_quote = _fetch_live_quote(symbol)
 
     valuation_rows = _df_records(valuation_measures)
@@ -263,6 +273,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
             "recent_average": _average_recent(valuation_rows),
         },
         "live_quote": live_quote,
+        "company_profile": _company_profile_payload(asset_profile, symbol),
         "financial_data": financial_data_clean,
         "earnings_surprise": {
             "rows": earning_history_rows,

@@ -43,6 +43,21 @@ jobs:
       - name: flyctl version
         run: flyctl version
 
+      - name: Configure Nasdaq worker connection on site
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          NASDAQ_WORKER_TOKEN: ${{ secrets.NASDAQ_WORKER_TOKEN }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+        run: |
+          if [ -z "$NASDAQ_WORKER_TOKEN" ] || [ -z "$R2_PUBLIC_BASE_URL" ]; then
+            echo "::warning::Nasdaq worker connection is not fully configured; site will keep the one-worker fallback."
+            exit 0
+          fi
+          flyctl secrets set --stage --app hedge-in-a-box-site \
+            "NASDAQ_WORKER_URL=https://hedge-in-a-box-nasdaq-worker.fly.dev" \
+            "NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN" \
+            "R2_PUBLIC_BASE_URL=$R2_PUBLIC_BASE_URL"
+
       - name: Deploy site app
         run: |
           n=0
@@ -144,20 +159,75 @@ jobs:
           fi
           echo "FLY_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
-      - name: Check worker app
-        id: worker_exists
+      - name: Validate Nasdaq worker configuration
+        id: worker_config
         env:
-          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          NASDAQ_WORKER_TOKEN: ${{ secrets.NASDAQ_WORKER_TOKEN }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
         run: |
-          if flyctl status --app hedge-in-a-box-nasdaq-worker >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          missing=0
+          for name in DEEPSEEK_API_KEY DATABASE_URL_UNPOOLED NASDAQ_WORKER_TOKEN R2_ENDPOINT_URL R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET R2_PUBLIC_BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::warning::Missing GitHub Actions secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Nasdaq worker provisioning skipped until Cloudflare R2 secrets are configured."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Nasdaq worker app does not exist yet; skipping deploy. See docs/nasdaq100-workspace.md."
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Ensure worker app exists
+        if: steps.worker_config.outputs.ready == 'true'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+        run: |
+          if ! flyctl status --app hedge-in-a-box-nasdaq-worker >/dev/null 2>&1; then
+            flyctl apps create hedge-in-a-box-nasdaq-worker --org "$FLY_ORG"
+          fi
+
+      - name: Configure worker secrets
+        if: steps.worker_config.outputs.ready == 'true'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          OBS_DATABASE_URL: ${{ secrets.OBS_DATABASE_URL }}
+          NASDAQ_WORKER_TOKEN: ${{ secrets.NASDAQ_WORKER_TOKEN }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+        run: |
+          flyctl secrets set --stage --app hedge-in-a-box-nasdaq-worker \
+            "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" \
+            "DATABASE_URL=$DATABASE_URL" \
+            "DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED" \
+            "OBS_DATABASE_URL=$OBS_DATABASE_URL" \
+            "NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN" \
+            "R2_ENDPOINT_URL=$R2_ENDPOINT_URL" \
+            "R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID" \
+            "R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY" \
+            "R2_BUCKET=$R2_BUCKET" \
+            "R2_PUBLIC_BASE_URL=$R2_PUBLIC_BASE_URL"
+
       - name: Deploy Nasdaq worker
-        if: steps.worker_exists.outputs.exists == 'true'
+        if: steps.worker_config.outputs.ready == 'true'
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
         run: flyctl deploy --remote-only --ha=false --config fly.nasdaq-worker.toml --app hedge-in-a-box-nasdaq-worker
+
+      - name: Verify Nasdaq worker health
+        if: steps.worker_config.outputs.ready == 'true'
+        run: curl --fail --retry 8 --retry-delay 5 --retry-all-errors https://hedge-in-a-box-nasdaq-worker.fly.dev/health

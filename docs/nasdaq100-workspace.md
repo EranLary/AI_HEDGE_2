@@ -50,19 +50,16 @@ is dispatched. Peak/off-peak token accounting follows the
 [official DeepSeek pricing schedule](https://api-docs.deepseek.com/quick_start/pricing/).
 
 The worker is a separate scale-to-zero Fly app because the public site machine
-must remain responsive. Before enabling remote execution:
+must remain responsive. The production workflow creates the app, stages its
+secrets, deploys it, and connects the site automatically once these GitHub
+Actions secrets exist:
 
-1. Create a dedicated S3-compatible R2 bucket and a public/custom read domain
-   for report artifacts. Object keys include release and timestamp identifiers;
-   do not enable directory listing.
-2. Create `hedge-in-a-box-nasdaq-worker` once with `flyctl apps create`.
-3. Generate one random `NASDAQ_WORKER_TOKEN` and set it on both the site and
-   worker apps.
-4. Set `DEEPSEEK_API_KEY`, `DATABASE_URL_UNPOOLED`, `OBS_DATABASE_URL`, and the
-   `R2_*` credentials on the worker app. Set `NASDAQ_WORKER_URL`,
-   `NASDAQ_WORKER_TOKEN`, and `R2_PUBLIC_BASE_URL` on the site app.
-5. Deploy with `fly.nasdaq-worker.toml`. Subsequent merges deploy the worker
-   automatically when the app exists.
+`NASDAQ_WORKER_TOKEN`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_PUBLIC_BASE_URL`. Existing
+`DEEPSEEK_API_KEY`, database, observability, and Fly secrets are reused. The R2
+bucket needs a public/custom read domain for report artifacts; object keys
+include release and timestamp identifiers, and directory listing must remain
+disabled.
 
 If `NASDAQ_WORKER_URL` is absent, the API preserves a one-worker local fallback
 for development and emergency operation. Do not use that fallback for the full

@@ -207,6 +207,31 @@ jobs:
             flyctl apps create hedge-in-a-box-nasdaq-worker --org "$FLY_ORG"
           fi
 
+      - name: Verify R2 credentials
+        if: steps.worker_config.outputs.ready == 'true'
+        env:
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          python -m pip install --disable-pip-version-check --quiet boto3
+          python - <<'PY'
+          import os
+
+          import boto3
+
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["R2_ENDPOINT_URL"],
+              aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+              aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+              region_name="auto",
+          )
+          client.head_bucket(Bucket=os.environ["R2_BUCKET"])
+          print("R2 bucket credentials verified.")
+          PY
+
       - name: Configure worker secrets
         if: steps.worker_config.outputs.ready == 'true'
         env:

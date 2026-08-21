@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -10,7 +10,7 @@ import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
 import type { ReportListItem } from "@/lib/dashboard-types";
 import { useWorkspace } from "@/components/shell/workspace-context";
-import { WORKSPACES, WORKSPACE_CONFIG, workspacePath, type Workspace } from "@/lib/workspace";
+import { workspacePath, type Workspace } from "@/lib/workspace";
 
 type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
 
@@ -36,14 +36,6 @@ type TopbarProps = {
 export function Topbar({ onMobileMenu }: TopbarProps) {
   const { activeTicker, activeSection } = useTickerContext();
   const { workspace } = useWorkspace();
-  const pathname = usePathname() || `/${workspace}/reports`;
-
-  const switchHref = (target: Workspace): string => {
-    if (target === workspace) return pathname;
-    const inner = pathname.replace(/^\/(?:analysis|nasdaq100)/, "") || "/reports";
-    if (inner.startsWith("/dashboard") || inner.startsWith("/compare")) return workspacePath(target, "/reports");
-    return workspacePath(target, inner);
-  };
 
   return (
     <header className="hib-topbar sticky top-0 z-30 flex items-center gap-3 px-3 py-2 sm:px-6">
@@ -58,22 +50,6 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
             <Menu size={16} />
           </button>
         ) : null}
-        <nav aria-label="Workspace" className="flex rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-0.5">
-          {WORKSPACES.map((item) => (
-            <Link
-              key={item}
-              href={switchHref(item)}
-              aria-current={workspace === item ? "page" : undefined}
-              className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition sm:px-2.5 sm:text-[11px] ${
-                workspace === item
-                  ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
-                  : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
-              }`}
-            >
-              {WORKSPACE_CONFIG[item].label}
-            </Link>
-          ))}
-        </nav>
         {activeTicker ? (
           <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" score={null} workspace={workspace} />}>
             <TickerBadgeWithReport activeTicker={activeTicker} workspace={workspace} />

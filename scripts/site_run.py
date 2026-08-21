@@ -96,6 +96,9 @@ def main() -> int:
     parser.add_argument("--ticker", required=True, help="Ticker symbol")
     parser.add_argument("--output-dir", required=True, help="Job output directory")
     parser.add_argument("--status-file", required=True, help="Status JSON file path")
+    parser.add_argument("--workspace", choices=("analysis", "nasdaq100"), default="analysis")
+    parser.add_argument("--release-id", default=None, help="Required for Nasdaq-100 reports")
+    parser.add_argument("--batch-id", default=None, help="Parent Nasdaq universe run id")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -106,6 +109,11 @@ def main() -> int:
     from ai_hedge.io.status import make_default_sink
 
     ticker = str(args.ticker or "").strip().upper()
+    workspace = str(args.workspace or "analysis").strip().lower()
+    release_id = str(args.release_id or "").strip() or None
+    batch_id = str(args.batch_id or "").strip() or None
+    if workspace == "nasdaq100" and not release_id:
+        parser.error("--release-id is required for the nasdaq100 workspace")
     output_dir = str(Path(args.output_dir).resolve())
     status_file = Path(args.status_file).resolve()
     progress_file = str(Path(output_dir).resolve() / "_progress.log")
@@ -142,6 +150,9 @@ def main() -> int:
         "error": "",
         "report_id": None,
         "persistence_error": "",
+        "workspace": workspace,
+        "release_id": release_id,
+        "batch_id": batch_id,
     }
     sink.update_status(running_payload)
 
@@ -202,6 +213,8 @@ def main() -> int:
                 source_run_id=job_id,
                 source="site",
                 ticker=ticker,
+                workspace=workspace,
+                release_id=release_id,
             )
             if not report_id:
                 _, write_err = write_run_to_db(
@@ -210,16 +223,21 @@ def main() -> int:
                     max_attempts=5,
                     retry_backoff_seconds=2.0,
                     user_id=existing_status.get("user_id"),
+                    workspace=workspace,
+                    release_id=release_id,
                 )
                 report_id = find_report_id_by_source_run_id(
                     source_run_id=job_id,
                     source="site",
                     ticker=ticker,
+                    workspace=workspace,
+                    release_id=release_id,
                 )
             if report_id:
                 attribute_report_to_user(
                     report_id,
                     existing_status.get("user_id"),
+                    workspace=workspace,
                 )
             if not report_id:
                 base_msg = (

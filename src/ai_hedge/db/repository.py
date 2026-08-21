@@ -10,9 +10,13 @@ from psycopg.types.json import Jsonb
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 _DROP_SQL = """
+ALTER TABLE IF EXISTS site_runs DROP CONSTRAINT IF EXISTS site_runs_batch_id_fkey;
+ALTER TABLE IF EXISTS site_runs DROP CONSTRAINT IF EXISTS site_runs_release_id_fkey;
 DROP TRIGGER IF EXISTS reports_validate_release ON reports;
 DROP TRIGGER IF EXISTS reports_after_change ON reports;
 DROP FUNCTION IF EXISTS trg_reports_after_change();
+DROP TABLE IF EXISTS nasdaq_universe_run_items;
+DROP TABLE IF EXISTS nasdaq_universe_runs;
 DROP TABLE IF EXISTS report_artifacts;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS report_releases;
@@ -144,7 +148,7 @@ def get_latest_by_ticker(
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rr ON rr.id = r.release_id
      WHERE r.ticker = %s AND r.workspace = %s AND r.deleted_at IS NULL
-       AND (r.workspace = 'analysis' OR rr.status = 'active')
+       AND (r.workspace = 'analysis' OR rr.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC
      LIMIT 1;
     """

@@ -112,5 +112,21 @@ def test_attribute_report_to_user_updates_only_the_requested_owner(monkeypatch):
     monkeypatch.setattr(connection, "get_conn", lambda: fake_conn)
 
     assert writer.attribute_report_to_user(report_id, user_id) is True
-    assert fake_conn.cursor_instance.params == (user_id, report_id, user_id)
+    assert fake_conn.cursor_instance.params == (user_id, report_id, "analysis", user_id)
     assert fake_conn.committed is True
+
+
+def test_attribute_report_to_user_scopes_nasdaq_ownership(monkeypatch):
+    report_id = "e37cdde7-e6d1-41d2-aa28-149f12f6a396"
+    user_id = "a2d2c986-b9d9-4cd6-81a5-11f9d85b1a34"
+    fake_conn = FakeAttributionConnection()
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr(connection, "get_conn", lambda: fake_conn)
+
+    assert writer.attribute_report_to_user(
+        report_id,
+        user_id,
+        workspace="nasdaq100",
+    ) is True
+    assert fake_conn.cursor_instance.params == (user_id, report_id, "nasdaq100", user_id)

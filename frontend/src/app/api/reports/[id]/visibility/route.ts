@@ -28,7 +28,7 @@ export async function GET(
       LEFT JOIN report_releases rel ON rel.id = reports.release_id
      WHERE reports.id = ${id}::uuid
        AND reports.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
        AND reports.deleted_at IS NULL
      LIMIT 1
   `) as Array<{ id: string; user_id: string | null; visibility: string }>;

@@ -109,10 +109,7 @@ export async function listPortfolioReportInputs(args: {
              r.ticker,
              r.generated_at::text AS generated_at,
              r.created_at::text AS created_at,
-             CASE WHEN r.workspace = 'nasdaq100'
-                  THEN rr.activated_at::text
-                  ELSE r.created_at::text
-              END AS available_at,
+             r.available_at::text AS available_at,
              r.deleted_at::text AS deleted_at,
              r.source_run_id,
              COALESCE(NULLIF(t.currency, ''), NULLIF(a.dashboard->'header'->>'currency', ''), 'USD') AS currency,
@@ -124,7 +121,7 @@ export async function listPortfolioReportInputs(args: {
        WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
          AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
          AND r.workspace = ${args.workspace}
-         AND (r.workspace = 'analysis' OR rr.status = 'active')
+         AND (r.workspace = 'analysis' OR (rr.status = 'active' AND rr.coverage_complete))
        ORDER BY r.generated_at, r.id
        LIMIT ${pageSize}
       OFFSET ${offset};

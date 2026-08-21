@@ -86,7 +86,7 @@ export async function fetchLatestReport(ticker: string, workspace: Workspace = "
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.ticker = ${ticker.toUpperCase()}
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
        AND r.deleted_at IS NULL
      ORDER BY r.generated_at DESC
      LIMIT 1
@@ -130,7 +130,7 @@ export async function fetchReportById(id: string, workspace: Workspace = "analys
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.id = ${id}::uuid
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
        AND r.deleted_at IS NULL
      LIMIT 1
   `) as unknown as DbReportFull[];
@@ -147,7 +147,7 @@ export async function listAllTickerSymbols(workspace: Workspace = "analysis"): P
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY symbol;
   `) as unknown as { symbol: string }[];
   return filterExcludedTickers(rows.map((r) => r.symbol));
@@ -165,7 +165,7 @@ export async function listTickers(workspace: Workspace = "analysis"): Promise<Db
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      GROUP BY t.symbol, t.company_name, t.exchange, t.currency
      ORDER BY report_count DESC, t.symbol;
   `) as unknown as DbTickerRow[];
@@ -205,7 +205,7 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -397,7 +397,7 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -433,7 +433,7 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
      WHERE r.user_id = ${userId}::uuid
        AND r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -470,7 +470,7 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
          WHERE r.visibility = 'public'
            AND r.deleted_at IS NULL
            AND r.workspace = ${workspace}
-           AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
     return filterExcludedTickers(rows, (row) => row.ticker);
@@ -537,7 +537,7 @@ export async function listCommunityReportsPaged(opts: {
          WHERE r.visibility = 'public'
            AND r.deleted_at IS NULL
            AND r.workspace = ${workspace}
-           AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
            AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
          ORDER BY r.generated_at DESC
          LIMIT ${fetchN}
@@ -646,7 +646,7 @@ export async function listDashboardsForDiscovery(workspace: Workspace = "analysi
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -663,14 +663,14 @@ export async function listAllDashboardsForHitRate(workspace: Workspace = "analys
   if (!sql) return [];
   const rows = (await sql`
     SELECT r.id::text AS id, r.ticker, r.generated_at,
-           CASE WHEN r.workspace = 'nasdaq100' THEN rel.activated_at ELSE r.created_at END AS available_at,
+           r.available_at,
            r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as { id: string; ticker: string; generated_at: string; available_at: string; dashboard: unknown; source_run_id: string | null }[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -689,7 +689,7 @@ export async function listDashboardsForTicker(ticker: string, workspace: Workspa
      WHERE r.deleted_at IS NULL
        AND r.ticker = ${String(ticker || "").toUpperCase()}
        AND r.workspace = ${workspace}
-       AND (${workspace} = 'analysis' OR rel.status = 'active')
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
   return filterExcludedTickers(rows, (row) => row.ticker);

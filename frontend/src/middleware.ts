@@ -7,6 +7,17 @@ const LEGACY_APP_PREFIXES = ["/reports", "/compare", "/screeners", "/discovery",
 
 function workspaceRouting(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const routedWorkspace = req.headers.get("x-ai-hedge-workspace");
+  // A canonical workspace URL is internally rewritten to the shared app route.
+  // Next may pass that rewritten request through middleware again; preserve it
+  // instead of treating the inner route as a legacy URL and redirecting back to
+  // Analysis (which otherwise creates a rewrite/redirect loop).
+  if (
+    (routedWorkspace === "analysis" || routedWorkspace === "nasdaq100")
+    && LEGACY_APP_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  ) {
+    return NextResponse.next({ request: { headers: req.headers } });
+  }
   const match = pathname.match(/^\/(analysis|nasdaq100)(\/.*)?$/);
   if (match) {
     const workspace = match[1];

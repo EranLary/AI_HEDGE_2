@@ -25,6 +25,9 @@ export type RunStatusPayload = {
   persistence_error?: string;
   error?: string;
   traceback?: string;
+  workspace?: "analysis" | "nasdaq100";
+  release_id?: string | null;
+  batch_id?: string | null;
 };
 
 const APP_BOOT_TIME_MS = Date.now();
@@ -94,6 +97,7 @@ export function listActiveRunStatusesFromFs(userId: string, limit = 20): RunStat
     const status = readRunStatus(entry.name);
     if (!status) continue;
     if (String(status.user_id || "").trim() !== cleanUserId) continue;
+    if ((status.workspace || "analysis") !== "analysis") continue;
     if (status.status !== "queued" && status.status !== "running") continue;
     runs.push(status);
   }

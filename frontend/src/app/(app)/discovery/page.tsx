@@ -300,7 +300,7 @@ export default function DiscoveryPage() {
             </p>
             {workspace === "nasdaq100" && data.count === 0 ? (
               <div className="mb-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4 text-sm text-[color:var(--text-muted)]">
-                Nasdaq 100 Discovery will appear after the first release is activated.
+                Nasdaq 100 Discovery will appear as the first universe reports complete.
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

@@ -190,12 +190,12 @@ function EmptyState({
     <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
       <p className="text-sm text-zinc-300">
         {workspace === "nasdaq100"
-          ? "The first Nasdaq 100 release has not been activated yet."
+          ? "No Nasdaq 100 reports have completed yet."
           : "No public reports yet."}
       </p>
       {workspace === "nasdaq100" ? (
         <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
-          Reports will appear together when an operator activates a completed release.
+          Completed reports will appear here while the universe run continues.
         </p>
       ) : null}
       <p className={`${workspace === "nasdaq100" ? "hidden " : ""}mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500`}>

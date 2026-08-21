@@ -21,7 +21,12 @@ def _normalized_uuid(value: object) -> str | None:
         return None
 
 
-def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
+def attribute_report_to_user(
+    report_id: str,
+    user_id: str | None,
+    *,
+    workspace: str = ANALYSIS_WORKSPACE,
+) -> bool:
     """Best-effort ownership attribution for a completed site report."""
     clean_report_id = _normalized_uuid(report_id)
     clean_user_id = _normalized_uuid(user_id)
@@ -29,6 +34,7 @@ def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
         return False
     if not (os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")):
         return False
+    clean_workspace = normalize_workspace(workspace)
     try:
         from ai_hedge.db.connection import get_conn
 
@@ -39,11 +45,11 @@ def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
                     UPDATE reports
                        SET user_id = %s
                      WHERE id = %s
-                       AND workspace = 'analysis'
+                       AND workspace = %s
                        AND (user_id IS NULL OR user_id = %s)
                      RETURNING id;
                     """,
-                    (clean_user_id, clean_report_id, clean_user_id),
+                    (clean_user_id, clean_report_id, clean_workspace, clean_user_id),
                 )
                 updated = cur.fetchone() is not None
             conn.commit()

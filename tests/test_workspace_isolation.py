@@ -64,3 +64,22 @@ def test_workspace_migration_contains_atomic_release_and_scoped_portfolio_guards
     assert "FOR UPDATE" in migration
     assert "portfolio_snapshots_workspace_unique" in migration
     assert "PRIMARY KEY (workspace, track, lens_type, lens_key, methodology_version, nav_date)" in migration
+
+
+def test_universe_run_migration_supports_incremental_visibility_and_resume() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "008_nasdaq_universe_runs.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "'staged', 'running', 'active'" in migration
+    assert "release_status NOT IN ('staged', 'running')" in migration
+    assert "nasdaq_universe_runs" in migration
+    assert "nasdaq_universe_run_items" in migration
+    assert "max_attempts" in migration
+    assert "available_at" in migration
+    assert "coverage_complete" in migration

@@ -19,7 +19,7 @@ export function portfolioWorkspaceConfig(workspace: Workspace) {
     ? {
         benchmarkSymbol: "QQQ",
         benchmarkName: "Invesco QQQ — total-return proxy",
-        universe: "Nasdaq 100 reports from active releases in the trailing 90 days",
+        universe: "Nasdaq 100 reports from fully covered active releases in the trailing 90 days",
       }
     : {
         benchmarkSymbol: PORTFOLIO_BENCHMARK_SYMBOL,

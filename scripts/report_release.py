@@ -80,6 +80,10 @@ def main() -> int:
                 updated = cur.fetchone()
                 if not updated:
                     raise ValueError("Release is already active.")
+                cur.execute(
+                    "UPDATE reports SET available_at = %s WHERE release_id = %s::uuid;",
+                    (updated[5], release[0]),
+                )
                 rows = [updated]
             else:
                 cur.execute(

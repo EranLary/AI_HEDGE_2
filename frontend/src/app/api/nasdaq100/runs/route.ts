@@ -55,7 +55,7 @@ export async function GET(request: Request) {
       isAdmin: true,
       authorized: hasNasdaqRunAuthorization(request, admin.email),
       runs: [],
-      error: "Universe-run storage is unavailable. Apply migrations through 009 before using RUN.",
+      error: "Universe-run storage is unavailable. Apply migrations through 010 before using RUN.",
     }, { status: 503 });
   }
 }

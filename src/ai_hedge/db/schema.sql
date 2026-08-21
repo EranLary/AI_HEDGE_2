@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS nasdaq_universe_runs (
     estimated_cost_per_attempt_usd numeric(10, 4) NOT NULL DEFAULT 2.0 CHECK (estimated_cost_per_attempt_usd > 0),
     estimated_cost_usd    numeric(12, 4) NOT NULL DEFAULT 0 CHECK (estimated_cost_usd >= 0),
     observed_cost_usd     numeric(12, 4) NOT NULL DEFAULT 0 CHECK (observed_cost_usd >= 0),
-    budget_limit_usd      numeric(12, 2) NOT NULL DEFAULT 300 CHECK (budget_limit_usd > 0),
+    budget_limit_usd      numeric(12, 2) NOT NULL DEFAULT 600 CHECK (budget_limit_usd > 0),
     stop_requested_at     timestamptz,
     created_at            timestamptz NOT NULL DEFAULT now(),
     started_at            timestamptz,

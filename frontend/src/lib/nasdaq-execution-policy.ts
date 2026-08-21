@@ -25,5 +25,5 @@ export function configuredNasdaqCostPerAttempt(): number {
 }
 
 export function configuredNasdaqBudget(): number {
-  return Number(positiveNumber("NASDAQ_RUN_BUDGET_USD", 300).toFixed(2));
+  return Number(positiveNumber("NASDAQ_RUN_BUDGET_USD", 600).toFixed(2));
 }

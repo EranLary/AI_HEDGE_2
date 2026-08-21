@@ -109,3 +109,16 @@ def test_universe_worker_reconciles_committed_reports_before_retrying() -> None:
 
     assert "A process can be interrupted after the report transaction commits" in worker
     assert "SET status = 'completed', report_id = existing.id" in worker
+
+
+def test_nasdaq_budget_migration_raises_the_default_to_600() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "010_nasdaq_budget_limit_600.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER COLUMN budget_limit_usd SET DEFAULT 600" in migration

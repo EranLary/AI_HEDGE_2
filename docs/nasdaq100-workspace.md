@@ -37,7 +37,7 @@ npm run portfolio:refresh -- --workspace nasdaq100 --track backtest --start-cuto
 Universe runs use a durable database queue. Each ticker attempt is claimed with
 a renewable lease, so a crashed worker can be replaced without running the
 same ticker twice. The initial production setting is four concurrent tickers,
-an estimated $2 per attempt, up to three attempts per ticker, and a $300 hard
+an estimated $2 per attempt, up to three attempts per ticker, and a $600 hard
 planned-cost limit. An individual attempt is terminated after two hours so a
 hung provider call cannot hold the batch forever. Completed reports remain visible immediately; a stopped,
 interrupted, budget-limited, or window-limited batch can be resumed for seven

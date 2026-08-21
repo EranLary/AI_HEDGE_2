@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from ai_hedge.nasdaq_execution import (
     budget_allows_attempt,
+    configured_budget_limit_usd,
     configured_ticker_timeout_seconds,
     is_preferred_off_peak_utc,
     retry_delay_seconds,
@@ -30,8 +31,13 @@ def test_retry_backoff_is_bounded() -> None:
 
 
 def test_budget_guard_includes_the_next_attempt() -> None:
-    assert budget_allows_attempt(298, 2, 300)
-    assert not budget_allows_attempt(299, 2, 300)
+    assert budget_allows_attempt(598, 2, 600)
+    assert not budget_allows_attempt(599, 2, 600)
+
+
+def test_default_budget_limit_is_600_usd(monkeypatch) -> None:
+    monkeypatch.delenv("NASDAQ_RUN_BUDGET_USD", raising=False)
+    assert configured_budget_limit_usd() == 600.0
 
 
 def test_ticker_timeout_is_bounded(monkeypatch) -> None:

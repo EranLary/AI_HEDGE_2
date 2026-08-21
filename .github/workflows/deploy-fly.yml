@@ -6,6 +6,15 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      target:
+        description: Deployment target
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - nasdaq-worker
 
 permissions:
   contents: read
@@ -16,6 +25,7 @@ concurrency:
 
 jobs:
   deploy-site:
+    if: github.event_name == 'push' || inputs.target == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -77,6 +87,7 @@ jobs:
           FLY_ACCESS_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
 
   deploy-obs:
+    if: github.event_name == 'push' || inputs.target == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -135,6 +146,7 @@ jobs:
 
   deploy-nasdaq-worker:
     needs: deploy-site
+    if: always() && (github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'nasdaq-worker')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

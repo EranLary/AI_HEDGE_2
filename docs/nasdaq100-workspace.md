@@ -61,6 +61,11 @@ bucket needs a public/custom read domain for report artifacts; object keys
 include release and timestamp identifiers, and directory listing must remain
 disabled.
 
+To provision or repair only the worker without deploying the production site,
+run the `Deploy to Fly` workflow manually with target `nasdaq-worker`. Normal
+pushes to `main` and manual runs with target `all` retain the full deployment
+behavior.
+
 If `NASDAQ_WORKER_URL` is absent, the API preserves a one-worker local fallback
 for development and emergency operation. Do not use that fallback for the full
 universe on the 1-CPU/2-GB site machine.

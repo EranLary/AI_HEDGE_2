@@ -1385,6 +1385,8 @@ def run_ticker_valuation(
     valuation_blocks_workers: int = DEFAULT_VALUATION_BLOCK_WORKERS,
     progress_file: Optional[str] = None,
     run_source: str = "site",
+    source_run_id: str | None = None,
+    user_id: str | None = None,
     workspace: str = "analysis",
     release_id: str | None = None,
 ) -> Dict[str, object]:
@@ -1394,7 +1396,12 @@ def run_ticker_valuation(
     workspace, release_id = normalize_workspace_release(workspace, release_id)
     _obs.install()
     ticker_clean = ticker.upper().strip()
-    obs_run_id = _obs.db.insert_run(ticker=ticker_clean, source=run_source)
+    obs_run_id = _obs.db.insert_run(
+        ticker=ticker_clean,
+        source=run_source,
+        source_run_id=source_run_id,
+        user_id=user_id,
+    )
     token = _obs.RUN_ID.set(obs_run_id) if obs_run_id else None
     obs_started = time.perf_counter()
     obs_status = "success"

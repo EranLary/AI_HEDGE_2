@@ -11,7 +11,7 @@ AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Four s
 - **Next.js dashboard** (`frontend/`) — "Hedge in a Box", customer-facing site at `hedge-in-a-box.com`. Reads `outputs/**/<TICKER>_dashboard.json` and renders the analysis.
 - **Observability app** (`frontend-obs/`) — internal-only admin app at `observability.hedge-in-a-box.com`. Reads `obs_runs` / `obs_calls` from the obs Neon DB and renders the LLM call DAG. DB-backed admin allowlist (`obs_admins` table) editable from `/users` — no env-var allowlist.
 
-Deployment target is Fly.io (three apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-site`, `hedge-in-a-box-obs`).
+Deployment target is Fly.io (four apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-site`, `hedge-in-a-box-obs`, and the scale-to-zero `hedge-in-a-box-nasdaq-worker`).
 
 ## Layout
 
@@ -28,7 +28,7 @@ Deployment target is Fly.io (three apps: `ai-hedge-telegram-bot`, `hedge-in-a-bo
 - [frontend-obs/](frontend-obs/) — Next.js 16 observability admin app. Independent NextAuth (Google), DB-backed admin allowlist via `obs_admins`. No persistent volume — reads from Neon only.
 - [outputs/](outputs/) — run artifacts per ticker (gitignored).
 - [logs/](logs/) — bot logs (gitignored).
-- [Dockerfile](Dockerfile) / [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) — Fly images (bot / site / obs). Not needed for local dev.
+- [Dockerfile](Dockerfile) / [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) / [Dockerfile.nasdaq-worker](Dockerfile.nasdaq-worker) — Fly images (bot / site / obs / Nasdaq worker). Not needed for local dev.
 
 ## Required env
 

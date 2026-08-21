@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 
 import { getSql } from "@/lib/db";
 import type { NasdaqAdmin } from "@/lib/nasdaq-admin";
+import {
+  configuredNasdaqBudget,
+  configuredNasdaqConcurrency,
+  configuredNasdaqCostPerAttempt,
+} from "@/lib/nasdaq-execution-policy";
 import { selectNasdaqRunStocks } from "@/lib/nasdaq-run-policy";
 import type { NasdaqUniverseSnapshot, NasdaqUniverseStock } from "@/lib/nasdaq-universe";
 
@@ -19,6 +24,13 @@ export type NasdaqRunSummary = {
   requestedCount: number;
   completedCount: number;
   failedCount: number;
+  activeCount: number;
+  concurrency: number;
+  estimatedCostPerAttemptUsd: number;
+  estimatedCostUsd: number;
+  observedCostUsd: number;
+  budgetLimitUsd: number;
+  stopRequestedAt: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -43,6 +55,13 @@ type RunRow = {
   requested_count: number;
   completed_count: number;
   failed_count: number;
+  active_count: number;
+  concurrency: number;
+  estimated_cost_per_attempt_usd: number;
+  estimated_cost_usd: number;
+  observed_cost_usd: number;
+  budget_limit_usd: number;
+  stop_requested_at: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -78,6 +97,13 @@ function toSummary(row: RunRow): NasdaqRunSummary {
     requestedCount: Number(row.requested_count || 0),
     completedCount: Number(row.completed_count || 0),
     failedCount: Number(row.failed_count || 0),
+    activeCount: Number(row.active_count || 0),
+    concurrency: Number(row.concurrency || 1),
+    estimatedCostPerAttemptUsd: Number(row.estimated_cost_per_attempt_usd || 0),
+    estimatedCostUsd: Number(row.estimated_cost_usd || 0),
+    observedCostUsd: Number(row.observed_cost_usd || 0),
+    budgetLimitUsd: Number(row.budget_limit_usd || 0),
+    stopRequestedAt: row.stop_requested_at,
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -100,6 +126,8 @@ export async function reconcileStaleNasdaqRuns(): Promise<number> {
         UPDATE nasdaq_universe_run_items item
            SET status = 'failed',
                finished_at = coalesce(item.finished_at, now()),
+               worker_id = NULL,
+               lease_expires_at = NULL,
                last_error = CASE WHEN item.last_error = ''
                  THEN 'Interrupted before completion; eligible for a seven-day resume.'
                  ELSE item.last_error END
@@ -164,6 +192,11 @@ export async function listNasdaqRuns(limit = 5): Promise<NasdaqRunSummary[]> {
     SELECT id::text AS id, release_id::text AS release_id,
            requested_mode, effective_mode, status,
            requested_count, completed_count, failed_count,
+           (SELECT count(*)::int FROM nasdaq_universe_run_items item
+             WHERE item.run_id = nasdaq_universe_runs.id AND item.status = 'running') AS active_count,
+           concurrency, estimated_cost_per_attempt_usd::float8,
+           estimated_cost_usd::float8, observed_cost_usd::float8,
+           budget_limit_usd::float8, stop_requested_at::text,
            created_at::text AS created_at,
            started_at::text AS started_at,
            finished_at::text AS finished_at,
@@ -184,6 +217,21 @@ export async function failNasdaqRunSpawn(runId: string, error: string): Promise<
      WHERE id = ${runId}::uuid
        AND status IN ('queued', 'running');
   `;
+}
+
+export async function requestNasdaqRunStop(runId: string): Promise<boolean> {
+  const sql = requireSql();
+  const cleanId = asUuid(runId);
+  if (!cleanId) throw new NasdaqRunConflictError("Invalid universe run id.", 400);
+  const rows = (await sql`
+    UPDATE nasdaq_universe_runs
+       SET stop_requested_at = coalesce(stop_requested_at, now()),
+           heartbeat_at = now()
+     WHERE id = ${cleanId}::uuid
+       AND status IN ('queued', 'running')
+    RETURNING id::text AS id;
+  `) as unknown as Array<{ id: string }>;
+  return rows.length > 0;
 }
 
 async function recentResume(): Promise<ResumeRow | null> {
@@ -307,6 +355,9 @@ export async function createNasdaqRun(opts: {
   const releaseKey = `universe-${new Date().toISOString().replace(/[:.]/g, "-")}-${runId.slice(0, 8)}`;
   const userId = asUuid(opts.admin.userId);
   const universeAsOf = asOf && Number.isFinite(Date.parse(asOf)) ? asOf : null;
+  const concurrency = configuredNasdaqConcurrency();
+  const estimatedCostPerAttempt = configuredNasdaqCostPerAttempt();
+  const budgetLimit = configuredNasdaqBudget();
 
   let rows: RunRow[];
   try {
@@ -317,12 +368,14 @@ export async function createNasdaqRun(opts: {
             id, release_id, requested_by_user_id, requested_by_email,
             requested_mode, effective_mode, status,
             universe_source, universe_as_of, universe_snapshot,
-            universe_count, requested_count, max_attempts, heartbeat_at
+            universe_count, requested_count, max_attempts, heartbeat_at,
+            concurrency, estimated_cost_per_attempt_usd, budget_limit_usd
           ) VALUES (
             ${runId}::uuid, ${createdReleaseId}::uuid, ${userId}::uuid, ${opts.admin.email},
             ${opts.mode}, ${effectiveMode}, 'queued',
             ${source}, ${universeAsOf}::timestamptz, ${JSON.stringify(universeSnapshot)}::jsonb,
-            ${universeSnapshot.length}, ${stocks.length}, 3, now()
+            ${universeSnapshot.length}, ${stocks.length}, 3, now(),
+            ${concurrency}, ${estimatedCostPerAttempt}, ${budgetLimit}
           )
           RETURNING *
         ), inserted_items AS (
@@ -334,6 +387,10 @@ export async function createNasdaqRun(opts: {
         SELECT id::text AS id, release_id::text AS release_id,
                requested_mode, effective_mode, status,
                requested_count, completed_count, failed_count,
+               0::int AS active_count, concurrency,
+               estimated_cost_per_attempt_usd::float8,
+               estimated_cost_usd::float8, observed_cost_usd::float8,
+               budget_limit_usd::float8, stop_requested_at::text,
                created_at::text AS created_at,
                started_at::text AS started_at,
                finished_at::text AS finished_at, error
@@ -350,12 +407,14 @@ export async function createNasdaqRun(opts: {
             id, release_id, requested_by_user_id, requested_by_email,
             requested_mode, effective_mode, status,
             universe_source, universe_as_of, universe_snapshot,
-            universe_count, requested_count, max_attempts, heartbeat_at
+            universe_count, requested_count, max_attempts, heartbeat_at,
+            concurrency, estimated_cost_per_attempt_usd, budget_limit_usd
           )
           SELECT ${runId}::uuid, inserted_release.id, ${userId}::uuid, ${opts.admin.email},
                  ${opts.mode}, ${effectiveMode}, 'queued',
                  ${source}, ${universeAsOf}::timestamptz, ${JSON.stringify(universeSnapshot)}::jsonb,
-                 ${universeSnapshot.length}, ${stocks.length}, 3, now()
+                 ${universeSnapshot.length}, ${stocks.length}, 3, now(),
+                 ${concurrency}, ${estimatedCostPerAttempt}, ${budgetLimit}
             FROM inserted_release
           RETURNING *
         ), inserted_items AS (
@@ -367,6 +426,10 @@ export async function createNasdaqRun(opts: {
         SELECT id::text AS id, release_id::text AS release_id,
                requested_mode, effective_mode, status,
                requested_count, completed_count, failed_count,
+               0::int AS active_count, concurrency,
+               estimated_cost_per_attempt_usd::float8,
+               estimated_cost_usd::float8, observed_cost_usd::float8,
+               budget_limit_usd::float8, stop_requested_at::text,
                created_at::text AS created_at,
                started_at::text AS started_at,
                finished_at::text AS finished_at, error

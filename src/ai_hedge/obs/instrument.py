@@ -142,6 +142,8 @@ def install() -> None:
             tokens_in = usage.get("prompt_tokens")
             tokens_out = usage.get("completion_tokens")
             tokens_total = usage.get("total_tokens")
+            prompt_cache_hit_tokens = usage.get("prompt_cache_hit_tokens")
+            prompt_cache_miss_tokens = usage.get("prompt_cache_miss_tokens")
             model_actual = result.get("model_actual")
 
             if ctx.run_id:
@@ -160,7 +162,14 @@ def install() -> None:
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
                     tokens_total=tokens_total,
-                    cost_usd=cost_usd(model_actual or model, tokens_in, tokens_out),
+                    cost_usd=cost_usd(
+                        model_actual or model,
+                        tokens_in,
+                        tokens_out,
+                        prompt_cache_hit_tokens=prompt_cache_hit_tokens,
+                        prompt_cache_miss_tokens=prompt_cache_miss_tokens,
+                        at=started_at,
+                    ),
                     latency_ms=int(result.get("latency_ms") or 0),
                     retries=int(result.get("retries") or 0),
                     status="ok",

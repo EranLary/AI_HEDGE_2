@@ -20,6 +20,7 @@ export type RunStatusPayload = {
   llm_completed?: number;
   llm_progress_pct?: number;
   llm_calls_note?: string;
+  observed_cost_usd?: number;
   result?: Record<string, unknown> | null;
   report_id?: string | null;
   persistence_error?: string;

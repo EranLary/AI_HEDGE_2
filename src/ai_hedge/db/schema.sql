@@ -159,6 +159,12 @@ CREATE TABLE IF NOT EXISTS nasdaq_universe_runs (
     completed_count       int NOT NULL DEFAULT 0 CHECK (completed_count >= 0),
     failed_count          int NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
     max_attempts          int NOT NULL DEFAULT 3 CHECK (max_attempts BETWEEN 1 AND 10),
+    concurrency           smallint NOT NULL DEFAULT 4 CHECK (concurrency BETWEEN 1 AND 12),
+    estimated_cost_per_attempt_usd numeric(10, 4) NOT NULL DEFAULT 2.0 CHECK (estimated_cost_per_attempt_usd > 0),
+    estimated_cost_usd    numeric(12, 4) NOT NULL DEFAULT 0 CHECK (estimated_cost_usd >= 0),
+    observed_cost_usd     numeric(12, 4) NOT NULL DEFAULT 0 CHECK (observed_cost_usd >= 0),
+    budget_limit_usd      numeric(12, 2) NOT NULL DEFAULT 300 CHECK (budget_limit_usd > 0),
+    stop_requested_at     timestamptz,
     created_at            timestamptz NOT NULL DEFAULT now(),
     started_at            timestamptz,
     finished_at           timestamptz,
@@ -184,11 +190,23 @@ CREATE TABLE IF NOT EXISTS nasdaq_universe_run_items (
     last_error      text NOT NULL DEFAULT '',
     started_at      timestamptz,
     finished_at     timestamptz,
+    worker_id       text,
+    lease_expires_at timestamptz,
+    heartbeat_at    timestamptz,
+    next_attempt_at timestamptz NOT NULL DEFAULT now(),
+    estimated_cost_usd numeric(12, 4) NOT NULL DEFAULT 0,
+    observed_cost_usd numeric(12, 4) NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, ticker)
 );
 
 CREATE INDEX IF NOT EXISTS nasdaq_universe_items_status_idx
     ON nasdaq_universe_run_items (run_id, status, ticker);
+CREATE INDEX IF NOT EXISTS nasdaq_universe_items_claim_idx
+    ON nasdaq_universe_run_items (run_id, next_attempt_at, ticker)
+    WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS nasdaq_universe_items_lease_idx
+    ON nasdaq_universe_run_items (run_id, lease_expires_at)
+    WHERE status = 'running';
 
 ALTER TABLE IF EXISTS site_runs
     ADD COLUMN IF NOT EXISTS workspace text NOT NULL DEFAULT 'analysis',

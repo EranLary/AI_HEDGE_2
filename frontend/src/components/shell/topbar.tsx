@@ -8,6 +8,7 @@ import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
+import { WorkspaceBar } from "@/components/shell/workspace-bar";
 import type { ReportListItem } from "@/lib/dashboard-types";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { workspacePath, type Workspace } from "@/lib/workspace";
@@ -62,7 +63,7 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
           <SectionPills activeTicker={activeTicker} activeSection={activeSection} workspace={workspace} />
         </Suspense>
       ) : (
-        <div className="min-w-0 flex-1" />
+        <WorkspaceBar />
       )}
 
       <div className="hidden shrink-0 items-center gap-2 md:flex">

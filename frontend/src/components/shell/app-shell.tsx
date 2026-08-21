@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ActiveRunIndicator } from "@/components/active-run-indicator";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
-import { WorkspaceBar } from "@/components/shell/workspace-bar";
 import { TickerProvider } from "@/components/shell/ticker-context";
 import { ToastProvider } from "@/components/shell/toast";
 import { NewRunProvider } from "@/components/shell/new-run-context";
@@ -88,7 +87,6 @@ export function AppShell({ children, initialWorkspace }: { children: ReactNode; 
 
           <div className="hib-content flex min-w-0 flex-1 flex-col">
             <Topbar onMobileMenu={() => setMobileOpen(true)} />
-            <WorkspaceBar />
             <WorkspaceActiveRunIndicator />
             <main className="flex-1">{children}</main>
             <footer className="border-t border-white/10 bg-black/35 px-4 py-2 text-center text-[11px] text-zinc-400 sm:px-8">

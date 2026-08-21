@@ -30,7 +30,6 @@ export function WorkspaceBar() {
   }, [workspace]);
 
   const switchHref = (target: Workspace): string => {
-    if (target === workspace) return pathname;
     const inner = pathname.replace(/^\/(?:analysis|nasdaq100)/, "") || "/reports";
     if (inner.startsWith("/dashboard") || inner.startsWith("/compare")) return workspacePath(target, "/reports");
     return workspacePath(target, inner);
@@ -43,7 +42,7 @@ export function WorkspaceBar() {
 
   return (
     <>
-      <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-3 py-2 sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="hidden text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)] sm:inline">
             Workspace

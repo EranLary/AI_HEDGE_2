@@ -20,6 +20,13 @@ export type NasdaqRunSummary = {
   requestedCount: number;
   completedCount: number;
   failedCount: number;
+  activeCount: number;
+  concurrency: number;
+  estimatedCostPerAttemptUsd: number;
+  estimatedCostUsd: number;
+  observedCostUsd: number;
+  budgetLimitUsd: number;
+  stopRequestedAt: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -31,6 +38,7 @@ export type NasdaqRunsResponse = {
   authorized: boolean;
   runs: NasdaqRunSummary[];
   universe?: UniverseSnapshot | null;
+  executionWindow?: { open: boolean; enforced: boolean; label: string };
   error?: string;
 };
 
@@ -148,6 +156,28 @@ export function NasdaqRunModal({
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to start the universe run.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stopRun = async () => {
+    if (!liveRun) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/nasdaq100/runs", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: liveRun.id }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to stop the universe run.");
+      setNotice("Stop requested. Active stocks will finish; no new stocks will start.");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to stop the universe run.");
     } finally {
       setBusy(false);
     }
@@ -276,6 +306,12 @@ export function NasdaqRunModal({
               <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--text-secondary)]">
                 <p>Each ticker is retried up to 3 times. A completed report is published immediately, even if the wider run later stops.</p>
                 <p className="mt-2 text-xs text-[color:var(--text-muted)]">
+                  Execution window: {data.executionWindow?.label || "10:00-01:00 UTC"}
+                  {data.executionWindow?.enforced
+                    ? (data.executionWindow.open ? " · open now" : " · currently closed")
+                    : " · enforcement disabled"}
+                </p>
+                <p className="mt-2 text-xs text-[color:var(--text-muted)]">
                   Universe: {stocks.length} securities · {data.universe?.source || "Unknown source"} · as of {formatDate(data.universe?.asOf)}
                 </p>
               </div>
@@ -288,22 +324,44 @@ export function NasdaqRunModal({
                   </div>
                   <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
                     {latestRun.completedCount}/{latestRun.requestedCount} completed
+                    {latestRun.activeCount ? ` · ${latestRun.activeCount} active` : ""}
                     {latestRun.failedCount ? ` · ${latestRun.failedCount} failed` : ""}
                     {latestRun.effectiveMode === "resume_week" ? " · seven-day resume" : ""}
                   </p>
+                  <p className="mt-2 text-xs text-[color:var(--text-muted)]">
+                    {latestRun.concurrency} workers · ${latestRun.estimatedCostUsd.toFixed(2)} planned
+                    {latestRun.observedCostUsd > 0 ? ` · $${latestRun.observedCostUsd.toFixed(2)} observed` : ""}
+                    {` · $${latestRun.budgetLimitUsd.toFixed(0)} limit`}
+                  </p>
+                  {latestRun.stopRequestedAt ? (
+                    <p className="mt-2 text-xs text-[color:var(--warning)]">Stop requested. Active stocks are finishing.</p>
+                  ) : null}
                   {latestRun.error ? <p className="mt-2 text-xs text-[color:var(--danger)]">{latestRun.error}</p> : null}
                 </div>
               ) : null}
 
               <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
                 <button type="button" onClick={closeModal} className="rounded-lg border border-[color:var(--border-strong)] px-4 py-2 text-sm text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]">Close</button>
+                {liveRun && !liveRun.stopRequestedAt ? (
+                  <button
+                    type="button"
+                    onClick={stopRun}
+                    disabled={busy}
+                    className="rounded-lg border border-[color:var(--danger)] px-4 py-2 text-sm font-semibold text-[color:var(--danger)] hover:bg-[color:var(--surface-elevated)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
+                  >
+                    Stop after active stocks
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={startRun}
-                  disabled={busy || Boolean(liveRun) || (mode === "selected" && selected.size === 0)}
+                  disabled={busy || Boolean(liveRun) || (mode === "selected" && selected.size === 0)
+                    || Boolean(data.executionWindow?.enforced && !data.executionWindow.open)}
                   className="rounded-lg bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--text-on-accent)] hover:bg-[color:var(--accent-hover)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
                 >
-                  {busy ? "Starting…" : liveRun ? "Run in progress" : "Start run"}
+                  {busy ? "Starting…" : liveRun ? "Run in progress"
+                    : data.executionWindow?.enforced && !data.executionWindow.open ? "Off-peak window closed"
+                      : "Start run"}
                 </button>
               </div>
             </div>

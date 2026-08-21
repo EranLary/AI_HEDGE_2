@@ -83,3 +83,42 @@ def test_universe_run_migration_supports_incremental_visibility_and_resume() -> 
     assert "max_attempts" in migration
     assert "available_at" in migration
     assert "coverage_complete" in migration
+
+
+def test_worker_pool_migration_has_leases_budget_and_concurrency_guards() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "009_nasdaq_worker_pool.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "lease_expires_at" in migration
+    assert "next_attempt_at" in migration
+    assert "estimated_cost_per_attempt_usd" in migration
+    assert "budget_limit_usd" in migration
+    assert "concurrency BETWEEN 1 AND 12" in migration
+
+
+def test_universe_worker_reconciles_committed_reports_before_retrying() -> None:
+    worker = (
+        Path(__file__).resolve().parents[1] / "scripts" / "nasdaq_universe_run.py"
+    ).read_text(encoding="utf-8")
+
+    assert "A process can be interrupted after the report transaction commits" in worker
+    assert "SET status = 'completed', report_id = existing.id" in worker
+
+
+def test_nasdaq_budget_migration_raises_the_default_to_600() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "010_nasdaq_budget_limit_600.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER COLUMN budget_limit_usd SET DEFAULT 600" in migration

@@ -1,0 +1,35 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    fonts-dejavu-core \
+    libcairo2-dev \
+    libffi8 \
+    libgdk-pixbuf-2.0-dev \
+    libjpeg62-turbo \
+    libpango1.0-dev \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libpng16-16 \
+    pkg-config \
+    shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --upgrade pip && python -m pip install -r /app/requirements.txt
+
+COPY . /app
+
+EXPOSE 8080
+
+CMD ["python", "scripts/nasdaq_worker_server.py"]

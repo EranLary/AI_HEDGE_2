@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from ai_hedge.nasdaq_execution import (
+    budget_allows_attempt,
+    configured_budget_limit_usd,
+    configured_ticker_timeout_seconds,
+    is_preferred_off_peak_utc,
+    retry_delay_seconds,
+)
+
+
+def _utc(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 8, 21, hour, minute, tzinfo=timezone.utc)
+
+
+def test_preferred_window_uses_utc_and_crosses_midnight() -> None:
+    assert is_preferred_off_peak_utc(_utc(10, 0))
+    assert is_preferred_off_peak_utc(_utc(23, 59))
+    assert is_preferred_off_peak_utc(_utc(0, 59))
+    assert not is_preferred_off_peak_utc(_utc(1, 0))
+    assert not is_preferred_off_peak_utc(_utc(9, 59))
+
+
+def test_retry_backoff_is_bounded() -> None:
+    assert retry_delay_seconds(1) == 60
+    assert retry_delay_seconds(2) == 120
+    assert retry_delay_seconds(5) == 900
+    assert retry_delay_seconds(20) == 900
+
+
+def test_budget_guard_includes_the_next_attempt() -> None:
+    assert budget_allows_attempt(598, 2, 600)
+    assert not budget_allows_attempt(599, 2, 600)
+
+
+def test_default_budget_limit_is_600_usd(monkeypatch) -> None:
+    monkeypatch.delenv("NASDAQ_RUN_BUDGET_USD", raising=False)
+    assert configured_budget_limit_usd() == 600.0
+
+
+def test_ticker_timeout_is_bounded(monkeypatch) -> None:
+    monkeypatch.setenv("NASDAQ_TICKER_TIMEOUT_SECONDS", "60")
+    assert configured_ticker_timeout_seconds() == 30 * 60
+    monkeypatch.setenv("NASDAQ_TICKER_TIMEOUT_SECONDS", "999999")
+    assert configured_ticker_timeout_seconds() == 6 * 60 * 60

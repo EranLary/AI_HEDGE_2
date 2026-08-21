@@ -1,0 +1,33 @@
+app = "hedge-in-a-box-nasdaq-worker"
+primary_region = "fra"
+kill_signal = "SIGINT"
+kill_timeout = "5m0s"
+
+[build]
+  dockerfile = "Dockerfile.nasdaq-worker"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  ARTIFACT_STORE = "r2"
+  NASDAQ_ENFORCE_EXECUTION_WINDOW = "1"
+  NASDAQ_RUN_CONCURRENCY = "4"
+  NASDAQ_ESTIMATED_COST_PER_ATTEMPT_USD = "2"
+  NASDAQ_RUN_BUDGET_USD = "600"
+  NASDAQ_TICKER_TIMEOUT_SECONDS = "7200"
+  ANALYSIS_WORKERS = "3"
+  LLM_WORKERS = "3"
+  VALUATION_BLOCK_WORKERS = "3"
+  RUN_KEEPALIVE = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "performance"
+  cpus = 4
+  memory_mb = 8192

@@ -1066,6 +1066,8 @@ def run_full_analysis(
     ticker: str,
     output_dir: str,
     run_source: str = "site",
+    source_run_id: str | None = None,
+    user_id: str | None = None,
     workspace: str = "analysis",
     release_id: str | None = None,
 ) -> Dict[str, object]:
@@ -1117,6 +1119,8 @@ def run_full_analysis(
                 show_plots=False,
                 progress_file=str(out_dir / "_progress.log"),
                 run_source=run_source,
+                source_run_id=source_run_id,
+                user_id=user_id,
                 workspace=workspace,
                 release_id=release_id,
             )

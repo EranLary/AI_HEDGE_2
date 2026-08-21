@@ -17,7 +17,7 @@ def _utc_now() -> str:
 
 
 def _maybe_start_preview_keepalive() -> Tuple[Optional[threading.Event], Optional[threading.Thread]]:
-    """Keep a Fly *preview* machine alive while this run executes.
+    """Keep a scale-to-zero Fly machine alive while this run executes.
 
     Preview machines run with ``auto_stop_machines = "stop"`` so they shut down
     when the Fly edge proxy sees no inbound traffic. A detached run gets killed
@@ -26,12 +26,15 @@ def _maybe_start_preview_keepalive() -> Tuple[Optional[threading.Event], Optiona
     Fly proxy and routes back in, resetting the idle timer. Loopback pings do not
     count (the proxy never sees them), so the public URL is required.
 
-    Gated to previews only: needs ``PREVIEW_KEEPALIVE`` truthy *and* a Fly-injected
-    ``FLY_APP_NAME``. Prod never sets ``PREVIEW_KEEPALIVE``; local dev has no
-    ``FLY_APP_NAME``. Returns ``(None, None)`` when disabled. Best-effort: ping
-    failures are swallowed so they can never affect the run.
+    Enabled by ``RUN_KEEPALIVE`` (or the legacy ``PREVIEW_KEEPALIVE`` alias)
+    plus Fly's injected ``FLY_APP_NAME``. Returns ``(None, None)`` when
+    disabled. Best-effort: ping failures never affect the run.
     """
-    flag = str(os.getenv("PREVIEW_KEEPALIVE", "") or "").strip().lower()
+    flag = str(
+        os.getenv("RUN_KEEPALIVE", "")
+        or os.getenv("PREVIEW_KEEPALIVE", "")
+        or ""
+    ).strip().lower()
     if flag not in {"1", "true", "yes", "on"}:
         return (None, None)
     app = str(os.getenv("FLY_APP_NAME", "") or "").strip()
@@ -119,6 +122,7 @@ def main() -> int:
     progress_file = str(Path(output_dir).resolve() / "_progress.log")
     llm_total_estimated = _estimate_total_llm_calls()
     llm_completed = 0
+    observed_cost_usd = 0.0
     lock = threading.Lock()
     existing_status: Dict[str, Any] = {}
     if status_file.exists():
@@ -144,6 +148,7 @@ def main() -> int:
         "worker_pid": os.getpid(),
         "llm_total_estimated": llm_total_estimated,
         "llm_completed": llm_completed,
+        "observed_cost_usd": observed_cost_usd,
         "llm_progress_pct": 0.0,
         "llm_calls_note": "Estimated total calls for one full valuation + dashboard extraction run.",
         "result": None,
@@ -196,7 +201,18 @@ def main() -> int:
             ticker=ticker,
             output_dir=output_dir,
             run_source="site",
+            source_run_id=job_id,
+            user_id=str(existing_status.get("user_id") or "").strip() or None,
+            workspace=workspace,
+            release_id=release_id,
         )
+
+        try:
+            from ai_hedge.obs.db import total_cost_for_source_run_id
+
+            observed_cost_usd = total_cost_for_source_run_id(job_id)
+        except Exception:
+            observed_cost_usd = 0.0
 
         # Ensure DB persistence before marking run as completed.
         report_id = None
@@ -223,6 +239,7 @@ def main() -> int:
                     max_attempts=5,
                     retry_backoff_seconds=2.0,
                     user_id=existing_status.get("user_id"),
+                    r2_keys=result.get("r2_keys") if isinstance(result.get("r2_keys"), dict) else None,
                     workspace=workspace,
                     release_id=release_id,
                 )
@@ -262,6 +279,7 @@ def main() -> int:
                 "finished_at": _utc_now(),
                 "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
                 "llm_progress_pct": 100.0,
+                "observed_cost_usd": observed_cost_usd,
                 "result": result,
                 "report_id": None,
                 "persistence_error": persistence_error or "DB persistence failed.",
@@ -292,6 +310,7 @@ def main() -> int:
             "result": result,
             "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
             "llm_progress_pct": 100.0,
+            "observed_cost_usd": observed_cost_usd,
             "report_id": report_id,
         }
         sink.update_status(completed_payload)
@@ -300,12 +319,19 @@ def main() -> int:
         legacy_port.deepseek_simple_text = original_deepseek
         return 0
     except Exception as exc:
+        try:
+            from ai_hedge.obs.db import total_cost_for_source_run_id
+
+            observed_cost_usd = total_cost_for_source_run_id(job_id)
+        except Exception:
+            pass
         failed_payload = {
             **running_payload,
             "status": "failed",
             "finished_at": _utc_now(),
             "llm_completed": llm_completed,
             "llm_progress_pct": round(min(99.0, (llm_completed / float(llm_total_estimated)) * 100.0), 2),
+            "observed_cost_usd": observed_cost_usd,
             "error": str(exc),
             "traceback": traceback.format_exc(limit=6),
         }

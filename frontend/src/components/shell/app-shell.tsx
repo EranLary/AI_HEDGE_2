@@ -10,6 +10,7 @@ import { ToastProvider } from "@/components/shell/toast";
 import { NewRunProvider } from "@/components/shell/new-run-context";
 import { NewRunModal } from "@/components/shell/new-run-modal";
 import { useWorkspace, WorkspaceProvider } from "@/components/shell/workspace-context";
+import type { Workspace } from "@/lib/workspace";
 
 const COLLAPSE_KEY = "hib-sidebar-v1";
 
@@ -18,7 +19,7 @@ function WorkspaceActiveRunIndicator() {
   return workspace === "analysis" ? <ActiveRunIndicator /> : null;
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, initialWorkspace }: { children: ReactNode; initialWorkspace: Workspace }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -53,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [mobileOpen]);
 
   return (
-    <WorkspaceProvider>
+    <WorkspaceProvider initialWorkspace={initialWorkspace}>
     <TickerProvider>
       <ToastProvider>
         <NewRunProvider>

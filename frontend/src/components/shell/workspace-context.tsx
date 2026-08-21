@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 import {
   WORKSPACE_CONFIG,
-  workspaceFromPathname,
+  isWorkspace,
   workspacePath,
   withWorkspaceQuery,
   type Workspace,
@@ -25,9 +25,12 @@ const WorkspaceContext = createContext<WorkspaceContextValue>({
   api: (url) => withWorkspaceQuery(url, "analysis"),
 });
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+export function WorkspaceProvider({ children, initialWorkspace }: { children: ReactNode; initialWorkspace: Workspace }) {
   const pathname = usePathname();
-  const workspace = workspaceFromPathname(pathname);
+  const firstSegment = String(pathname || "").split("/").filter(Boolean)[0];
+  // Middleware supplies the initial value because SSR sees the rewritten inner
+  // page path. Once hydrated, the canonical browser pathname takes precedence.
+  const workspace = isWorkspace(firstSegment) ? firstSegment : initialWorkspace;
   const value = useMemo<WorkspaceContextValue>(() => ({
     workspace,
     label: WORKSPACE_CONFIG[workspace].label,

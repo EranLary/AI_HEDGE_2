@@ -10,17 +10,19 @@ function workspaceRouting(req: NextRequest) {
   const match = pathname.match(/^\/(analysis|nasdaq100)(\/.*)?$/);
   if (match) {
     const workspace = match[1];
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("x-ai-hedge-workspace", workspace);
     const innerPath = match[2] && match[2] !== "/" ? match[2] : "/reports";
     if (workspace === "nasdaq100" && (innerPath === "/compare" || innerPath.startsWith("/compare/"))) {
       const notFoundUrl = req.nextUrl.clone();
       notFoundUrl.pathname = "/workspace-not-found";
       notFoundUrl.searchParams.set("workspace", workspace);
-      return NextResponse.rewrite(notFoundUrl);
+      return NextResponse.rewrite(notFoundUrl, { request: { headers: requestHeaders } });
     }
     const rewriteUrl = req.nextUrl.clone();
     rewriteUrl.pathname = innerPath;
     rewriteUrl.searchParams.set("workspace", workspace);
-    return NextResponse.rewrite(rewriteUrl);
+    return NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } });
   }
 
   if (pathname === "/") {

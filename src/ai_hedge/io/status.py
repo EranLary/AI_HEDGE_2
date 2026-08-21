@@ -57,12 +57,12 @@ class NeonStatusSink(StatusSink):
         job_id, ticker, user_id, status,
         started_at, finished_at,
         llm_total_estimated, llm_completed,
-        error, report_id
+        error, report_id, workspace, release_id, batch_id, heartbeat_at
     ) VALUES (
         %(job_id)s, %(ticker)s, %(user_id)s, %(status)s,
         %(started_at)s, %(finished_at)s,
         %(llm_total_estimated)s, %(llm_completed)s,
-        %(error)s, %(report_id)s
+        %(error)s, %(report_id)s, %(workspace)s, %(release_id)s, %(batch_id)s, now()
     )
     ON CONFLICT (job_id) DO UPDATE SET
         ticker              = EXCLUDED.ticker,
@@ -73,7 +73,11 @@ class NeonStatusSink(StatusSink):
         llm_total_estimated = EXCLUDED.llm_total_estimated,
         llm_completed       = GREATEST(site_runs.llm_completed, EXCLUDED.llm_completed),
         error               = EXCLUDED.error,
-        report_id           = COALESCE(EXCLUDED.report_id, site_runs.report_id);
+        report_id           = COALESCE(EXCLUDED.report_id, site_runs.report_id),
+        workspace           = EXCLUDED.workspace,
+        release_id          = COALESCE(EXCLUDED.release_id, site_runs.release_id),
+        batch_id            = COALESCE(EXCLUDED.batch_id, site_runs.batch_id),
+        heartbeat_at        = now();
     """
 
     def __init__(self) -> None:
@@ -113,6 +117,14 @@ class NeonStatusSink(StatusSink):
         report_id_raw = payload.get("report_id")
         report_id = report_id_raw if _is_valid_uuid(report_id_raw) else None
 
+        workspace = str(payload.get("workspace") or "analysis").strip().lower()
+        if workspace not in {"analysis", "nasdaq100"}:
+            workspace = "analysis"
+        release_id_raw = payload.get("release_id")
+        release_id = release_id_raw if _is_valid_uuid(release_id_raw) else None
+        batch_id_raw = payload.get("batch_id")
+        batch_id = batch_id_raw if _is_valid_uuid(batch_id_raw) else None
+
         return {
             "job_id": job_id,
             "ticker": ticker,
@@ -124,6 +136,9 @@ class NeonStatusSink(StatusSink):
             "llm_completed": int(payload.get("llm_completed") or 0),
             "error": str(payload.get("error") or ""),
             "report_id": report_id,
+            "workspace": workspace,
+            "release_id": release_id,
+            "batch_id": batch_id,
         }
 
     def _log_once(self, message: str) -> None:

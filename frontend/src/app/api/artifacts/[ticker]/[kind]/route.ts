@@ -7,6 +7,7 @@ import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import { findLatestByFileName, outputsRoot, resolveDashboardReportPath } from "@/lib/server-outputs";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 const KIND_TO_FILE: Record<
   string,
@@ -198,16 +199,17 @@ async function resolveReportScopedFile(
   reportId: string,
   fileName: string,
   fallbackFileName = "",
+  workspace: Workspace = "analysis",
 ): Promise<{ foundPath: string; r2Url: string | null; generatedAt: string }> {
   const spec = KIND_TO_FILE[kind];
   const dbEnabled = isDbEnabled();
-  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker, workspace);
   if (deletedFilter.isDeleted(reportId, ticker)) return { foundPath: "", r2Url: null, generatedAt: "" };
 
   if (dbEnabled) {
     if (!isUuid(reportId)) return { foundPath: "", r2Url: null, generatedAt: "" };
     try {
-      const row = await fetchReportById(reportId);
+      const row = await fetchReportById(reportId, workspace);
       if (!row) return { foundPath: "", r2Url: null, generatedAt: "" };
       if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null, generatedAt: "" };
       const generatedAt = String(row.generated_at || "");
@@ -228,6 +230,10 @@ async function resolveReportScopedFile(
     }
   }
 
+  if (workspace === "nasdaq100") {
+    return { foundPath: "", r2Url: null, generatedAt: "" };
+  }
+
   const reportPath = resolveDashboardReportPath(reportId);
   if (reportPath) {
     if (deletedFilter.isDeleted(reportId, ticker, siteRunIdFromPathLike(reportPath))) {
@@ -243,7 +249,7 @@ async function resolveReportScopedFile(
 
   // UUID report_id path (DB-first): use exact report row, not "latest ticker".
   try {
-    const row = await fetchReportById(reportId);
+    const row = await fetchReportById(reportId, workspace);
     if (!row) return { foundPath: "", r2Url: null, generatedAt: "" };
     if (String(row.ticker || "").toUpperCase() !== ticker) return { foundPath: "", r2Url: null, generatedAt: "" };
     const generatedAt = String(row.generated_at || "");
@@ -281,12 +287,14 @@ export async function GET(
   const fileName = spec.fileName.replace("{TICKER}", ticker);
   const fallbackFileName = spec.fallbackFileName?.replace("{TICKER}", ticker) || "";
   const url = new URL(request.url);
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const reportId = String(url.searchParams.get("report_id") || "").trim();
 
   let foundPath = "";
   let artifactDate = "";
   if (reportId) {
-    const resolved = await resolveReportScopedFile(ticker, kind, reportId, fileName, fallbackFileName);
+    const resolved = await resolveReportScopedFile(ticker, kind, reportId, fileName, fallbackFileName, workspace);
     artifactDate = resolved.generatedAt;
     if (resolved.r2Url) {
       return remoteArtifactResponse(
@@ -307,7 +315,7 @@ export async function GET(
     // No explicit report scope: prefer latest DB report's R2 object when available.
     const dbEnabled = isDbEnabled();
     try {
-      const row = await fetchLatestReport(ticker);
+      const row = await fetchLatestReport(ticker, workspace);
       artifactDate = String(row?.generated_at || "");
       const r2Key = String(row?.r2_keys?.[spec.r2Kind || kind] || "").trim();
       const r2Url = r2PublicUrl(r2Key);
@@ -325,7 +333,11 @@ export async function GET(
     }
   }
 
-  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  if (workspace === "nasdaq100") {
+    return NextResponse.json({ error: `${fileName} was not found.` }, { status: 404 });
+  }
+
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker, workspace);
   const latestPath = foundPath
     ? foundPath
     : findLatestByFileName(fileName)?.path || (fallbackFileName ? findLatestByFileName(fallbackFileName)?.path : "") || "";

@@ -4,6 +4,7 @@ import type { DbReportSummary } from "@/lib/reports-db";
 import { DeleteReportButton } from "./delete-report-button";
 import { FriendlyDate } from "./friendly-date";
 import { VisibilityToggle } from "./visibility-toggle";
+import { workspacePath } from "@/lib/workspace";
 
 function scoreTone(score: number | null): { label: string; cls: string } {
   if (typeof score !== "number" || !Number.isFinite(score)) {
@@ -47,7 +48,7 @@ export function ReportCard({
   showVisibilityToggle?: boolean;
   showDeleteAction?: boolean;
 }) {
-  const href = `/dashboard/${encodeURIComponent(report.ticker)}/summary?report=${encodeURIComponent(report.id)}`;
+  const href = `${workspacePath(report.workspace, `/dashboard/${encodeURIComponent(report.ticker)}/summary`)}?report=${encodeURIComponent(report.id)}`;
   const score = scoreTone(report.score);
   const target = signedMetricTone("Target", targetReturnPct(report.mean_target_price, report.current_price), "%");
   const allocation = signedMetricTone("Allocation", report.allocation_pct, "%");

@@ -3,6 +3,7 @@ import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
+import type { Workspace } from "@/lib/workspace";
 
 export type StoredFiling = {
   available: boolean;
@@ -46,13 +47,13 @@ function extractFromDashboard(payload: DashboardPayload | null | undefined): Sto
   };
 }
 
-async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayload | null> {
+async function readLatestDashboardPayload(ticker: string, workspace: Workspace): Promise<DashboardPayload | null> {
   const tk = String(ticker || "").trim().toUpperCase();
   if (!tk) return null;
   const dbEnabled = isDbEnabled();
 
   try {
-    const dbRow = await fetchLatestReport(tk);
+    const dbRow = await fetchLatestReport(tk, workspace);
     const dashboard = dbRow?.dashboard as DashboardPayload | null | undefined;
     if (dashboard && typeof dashboard === "object") {
       return dashboard;
@@ -62,7 +63,9 @@ async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayl
     // Fall through to outputs scan.
   }
 
-  const deletedFilter = await getDeletedReportFilterForTicker(tk);
+  if (workspace === "nasdaq100") return null;
+
+  const deletedFilter = await getDeletedReportFilterForTicker(tk, workspace);
   for (const entry of listDashboardReports()) {
     if (String(entry.ticker || "").toUpperCase() !== tk) continue;
     if (deletedFilter.isDeleted(entry.report_id, tk, siteRunIdFromPathLike(entry.path))) continue;
@@ -72,9 +75,12 @@ async function readLatestDashboardPayload(ticker: string): Promise<DashboardPayl
   return null;
 }
 
-export async function getStoredTickerFilingsStatus(ticker: string): Promise<StoredFilingsStatus> {
+export async function getStoredTickerFilingsStatus(
+  ticker: string,
+  workspace: Workspace = "analysis",
+): Promise<StoredFilingsStatus> {
   const tk = String(ticker || "").trim().toUpperCase();
-  const payload = await readLatestDashboardPayload(tk);
+  const payload = await readLatestDashboardPayload(tk, workspace);
   if (!payload) {
     return {
       ticker: tk,

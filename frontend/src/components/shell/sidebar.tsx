@@ -12,6 +12,7 @@ import {
   ScanSearch,
   Target,
   Plus,
+  Play,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -19,21 +20,23 @@ import { BrandLogo } from "@/components/brand-logo";
 import { TickerCombobox } from "@/components/shell/ticker-combobox";
 import { ActiveRunsPanel } from "@/components/shell/active-runs-panel";
 import { useNewRunModal } from "@/components/shell/new-run-context";
+import { useNasdaqRunModal } from "@/components/shell/nasdaq-run-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthMenu } from "@/components/shell/auth-menu";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type NavItem = {
-  href: string;
+  path: string;
   label: string;
   icon: ComponentType<{ size?: number }>;
 };
 
 const GLOBAL_NAV: NavItem[] = [
-  { href: "/reports", label: "Reports", icon: FileText },
-  { href: "/compare", label: "Compare", icon: GitCompareArrows },
-  { href: "/screeners", label: "Screeners", icon: ScanSearch },
-  { href: "/discovery", label: "Discovery", icon: Compass },
-  { href: "/hit-rate", label: "Track Record", icon: Target },
+  { path: "/reports", label: "Reports", icon: FileText },
+  { path: "/compare", label: "Compare", icon: GitCompareArrows },
+  { path: "/screeners", label: "Screeners", icon: ScanSearch },
+  { path: "/discovery", label: "Discovery", icon: Compass },
+  { path: "/hit-rate", label: "Track Record", icon: Target },
 ];
 
 type SidebarProps = {
@@ -46,6 +49,8 @@ type SidebarProps = {
 export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname() || "/";
   const { open: openNewRun } = useNewRunModal();
+  const { access: nasdaqAccess, liveRun: nasdaqLiveRun, open: openNasdaqRun } = useNasdaqRunModal();
+  const { workspace, href } = useWorkspace();
   const closeIfMobile = mobile ? onMobileClose : undefined;
 
   const collapsedDesktop = collapsed && !mobile;
@@ -53,6 +58,11 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
   const handleNewAnalysis = () => {
     closeIfMobile?.();
     openNewRun();
+  };
+
+  const handleNasdaqRun = () => {
+    closeIfMobile?.();
+    openNasdaqRun();
   };
 
   return (
@@ -64,7 +74,7 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
       {/* Brand */}
       <div className="flex items-center justify-between gap-2 px-3 py-4">
         <Link
-          href="/"
+          href={href("/reports")}
           onClick={closeIfMobile}
           className="flex items-center gap-2 overflow-hidden"
           aria-label="Home"
@@ -90,21 +100,28 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
-        {/* Primary CTA: + New Analysis */}
-        <div className="mb-4 px-1">
-          <button
-            type="button"
-            onClick={handleNewAnalysis}
-            aria-label="Start a new analysis"
-            title="Start a new analysis"
-            className={`hib-run-btn flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 ${
-              collapsedDesktop ? "h-9 w-9 justify-center px-0" : "w-full justify-center"
-            }`}
-          >
-            <Plus size={14} />
-            {!collapsedDesktop ? <span>New Analysis</span> : null}
-          </button>
-        </div>
+        {/* Workspace-specific primary action */}
+        {workspace === "analysis" || nasdaqAccess?.isAdmin ? (
+          <div className="mb-4 px-1">
+            <button
+              type="button"
+              onClick={workspace === "analysis" ? handleNewAnalysis : handleNasdaqRun}
+              aria-label={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq 100 universe"}
+              title={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq 100 universe"}
+              className={`hib-run-btn flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 ${
+                collapsedDesktop ? "h-9 w-9 justify-center px-0" : "w-full justify-center"
+              }`}
+            >
+              {workspace === "analysis" ? <Plus size={14} /> : <Play size={14} />}
+              {!collapsedDesktop ? <span>{workspace === "analysis" ? "New Analysis" : "Run"}</span> : null}
+            </button>
+            {workspace === "nasdaq100" && nasdaqLiveRun && !collapsedDesktop ? (
+              <p className="mt-1 text-center text-[10px] text-[color:var(--text-muted)]">
+                {nasdaqLiveRun.completedCount}/{nasdaqLiveRun.requestedCount} complete
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Ticker picker */}
         <div className="mb-4 px-1">
@@ -120,13 +137,14 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
             <p className="hib-sidebar-heading mb-1 px-3 text-[10px] uppercase tracking-[0.16em]">Navigate</p>
           ) : null}
           <nav className="space-y-1">
-            {GLOBAL_NAV.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            {GLOBAL_NAV.filter((item) => workspace === "analysis" || item.path !== "/compare").map((item) => {
+              const itemHref = href(item.path);
+              const active = pathname === itemHref || pathname.startsWith(`${itemHref}/`);
               const Icon = item.icon;
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  key={item.path}
+                  href={itemHref}
                   onClick={closeIfMobile}
                   className={`hib-sidebar-item flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
                     active ? "hib-sidebar-item-active" : ""
@@ -142,15 +160,15 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
         </div>
 
         {/* Active runs mini-panel */}
-        {!collapsedDesktop ? (
+        {workspace === "analysis" && !collapsedDesktop ? (
           <div className="mt-4 px-1">
             <ActiveRunsPanel />
           </div>
-        ) : (
+        ) : workspace === "analysis" ? (
           <div className="mt-4 flex justify-center">
             <ActiveRunsPanel collapsed />
           </div>
-        )}
+        ) : null}
       </div>
 
       {!collapsedDesktop ? (

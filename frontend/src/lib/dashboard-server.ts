@@ -23,12 +23,12 @@ import {
   listAllReports,
 } from "@/lib/reports-db";
 import {
-  findLatestByFileName,
   listDashboardReports,
   readJson,
   resolveDashboardReportPath,
 } from "@/lib/server-outputs";
 import { repoRoot } from "@/lib/site-runner";
+import type { Workspace } from "@/lib/workspace";
 
 export type LivePerformance = {
   ticker: string;
@@ -108,13 +108,13 @@ function infoTabYahooqueryPayload(value: YahooqueryInfo, ticker: string): Yahooq
   };
 }
 
-async function loadReportsList(): Promise<ReportListItem[]> {
+async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> {
   const merged = new Map<string, ReportListItem>();
-  const deletedFilter = await getDeletedReportFilter();
+  const deletedFilter = await getDeletedReportFilter(workspace);
   const dbEnabled = isDbEnabled();
 
   try {
-    const dbRows = await listAllReports();
+    const dbRows = await listAllReports(workspace);
     for (const r of dbRows) {
       const row: ReportListItem = {
         report_id: r.id,
@@ -131,6 +131,8 @@ async function loadReportsList(): Promise<ReportListItem[]> {
           typeof r.allocation_pct === "number" && Number.isFinite(r.allocation_pct)
             ? Number(r.allocation_pct)
             : null,
+        workspace: r.workspace,
+        release_id: r.release_id,
       };
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
@@ -149,9 +151,14 @@ async function loadReportsList(): Promise<ReportListItem[]> {
     console.warn("[reports] DB read failed:", err);
   }
 
+  // Atomic Nasdaq releases are database-backed. Never scan the unscoped
+  // outputs tree when the database is unavailable.
+  if (workspace === "nasdaq100") return [];
+
   const reports = listDashboardReports();
   for (const report of reports) {
     const payload = readJson<DashboardPayload>(report.path);
+    if (payload?.workspace === "nasdaq100") continue;
     const generatedAt = String(payload?.generated_at || new Date(report.mtimeMs).toISOString());
     const row: ReportListItem = {
       report_id: report.report_id,
@@ -177,6 +184,8 @@ async function loadReportsList(): Promise<ReportListItem[]> {
               Number.isFinite((payload?.score_card || payload?.decision_card)?.mean_investment_amount)
             ? Number((payload?.score_card || payload?.decision_card)?.mean_investment_amount) / 100000.0
             : null,
+      workspace: "analysis",
+      release_id: null,
     };
     const runId = siteRunIdFromPathLike(report.path);
     const key = runId ? `run:${report.ticker}:${runId}` : `file:${report.path}`;
@@ -195,42 +204,46 @@ async function loadReportsList(): Promise<ReportListItem[]> {
 }
 
 export const getReportsList = unstable_cache(
-  loadReportsList,
-  ["reports-list-v1"],
+  (workspace: Workspace = "analysis") => loadReportsList(workspace),
+  ["reports-list-v2-workspace"],
   { revalidate: 60, tags: ["reports"] },
 );
 
 async function loadDashboardPayload(
   ticker: string,
   reportId: string,
+  workspace: Workspace,
 ): Promise<DashboardPayload> {
   const tk = ticker.toUpperCase();
   const dbEnabled = isDbEnabled();
-  const deletedFilter = await getDeletedReportFilterForTicker(tk);
+  const deletedFilter = await getDeletedReportFilterForTicker(tk, workspace);
+  const empty = () => normalizePayload(tk, { ticker: tk, workspace } as DashboardPayload);
   if (reportId && deletedFilter.isDeleted(reportId, tk)) {
-    return normalizePayload(tk, { ticker: tk } as DashboardPayload, {
-      reportId,
-    });
+    return empty();
   }
   if (dbEnabled && reportId && !isUuid(reportId)) {
-    return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
-      reportId,
-    });
+    return empty();
   }
 
   try {
     const dbRow = reportId
-      ? await fetchReportById(reportId)
-      : await fetchLatestReport(tk);
+      ? await fetchReportById(reportId, workspace)
+      : await fetchLatestReport(tk, workspace);
     if (dbRow && dbRow.dashboard) {
       const generated = new Date(dbRow.generated_at).toISOString();
-      return normalizePayload(tk, dbRow.dashboard as DashboardPayload, {
+      return normalizePayload(tk, {
+        ...(dbRow.dashboard as DashboardPayload),
+        workspace,
+        release_id: dbRow.release_id,
+      }, {
         reportId: dbRow.id,
         reportFile: undefined,
         reportMtime: generated,
       });
     }
     if (dbEnabled) {
+      if (reportId) return empty();
+      if (workspace === "nasdaq100") return empty();
       return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
         reportId: reportId || undefined,
       });
@@ -239,12 +252,16 @@ async function loadDashboardPayload(
     console.warn(`[dashboard] DB read failed for ${tk}:`, err);
   }
 
+  if (workspace === "nasdaq100") return empty();
+
   let dashboardPath = "";
   let dashboardMtime = 0;
 
   if (reportId) {
     const resolved = resolveDashboardReportPath(reportId);
     if (resolved) {
+      const resolvedPayload = readJson<DashboardPayload>(resolved);
+      if (resolvedPayload?.workspace === "nasdaq100") return empty();
       const runId = siteRunIdFromPathLike(resolved);
       if (deletedFilter.isDeleted(reportId, tk, runId)) {
         return normalizePayload(tk, { ticker: tk } as DashboardPayload, {
@@ -264,8 +281,9 @@ async function loadDashboardPayload(
   }
 
   if (!dashboardPath) {
-    const dashboardName = `${tk}_dashboard.json`;
-    const latest = findLatestByFileName(dashboardName);
+    const latest = listDashboardReports()
+      .filter((entry) => entry.ticker === tk)
+      .find((entry) => readJson<DashboardPayload>(entry.path)?.workspace !== "nasdaq100") || null;
     if (latest && !deletedFilter.isDeleted("", tk, siteRunIdFromPathLike(latest.path))) {
       dashboardPath = latest.path;
       dashboardMtime = latest.mtimeMs;
@@ -295,8 +313,9 @@ async function loadDashboardPayload(
 }
 
 export const getDashboardPayload = unstable_cache(
-  (ticker: string, reportId: string) => loadDashboardPayload(ticker, reportId),
-  ["dashboard-payload-v2"],
+  (ticker: string, reportId: string, workspace: Workspace = "analysis") =>
+    loadDashboardPayload(ticker, reportId, workspace),
+  ["dashboard-payload-v3-workspace"],
   { revalidate: 300, tags: ["reports"] },
 );
 
@@ -584,13 +603,14 @@ function reportTimestamp(report: ReportListItem): number {
 export async function loadTickerData(
   rawTicker: string,
   rawReportId?: string,
+  workspace: Workspace = "analysis",
 ): Promise<ResolvedTickerData> {
   const ticker = decodeURIComponent(String(rawTicker || "")).toUpperCase();
   const requestedReportId = String(rawReportId || "").trim();
 
   const [reports, payloadByLatest] = await Promise.all([
-    getReportsList(),
-    requestedReportId ? Promise.resolve(null) : getDashboardPayload(ticker, ""),
+    getReportsList(workspace),
+    requestedReportId ? Promise.resolve(null) : getDashboardPayload(ticker, "", workspace),
   ]);
 
   const reportsForTicker = reports
@@ -604,11 +624,11 @@ export async function loadTickerData(
 
   let data: DashboardPayload;
   if (requestedReportId) {
-    data = await getDashboardPayload(ticker, requestedReportId);
+    data = await getDashboardPayload(ticker, requestedReportId, workspace);
   } else if (payloadByLatest) {
     data = payloadByLatest;
   } else {
-    data = await getDashboardPayload(ticker, "");
+    data = await getDashboardPayload(ticker, "", workspace);
   }
 
   return { ticker, reports, reportsForTicker, resolvedReportId, data };

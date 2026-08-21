@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 from uuid import UUID
 
+from ai_hedge.workspaces import (
+    ANALYSIS_WORKSPACE,
+    NASDAQ100_WORKSPACE,
+    normalize_workspace,
+    normalize_workspace_release,
+)
+
 
 def _normalized_uuid(value: object) -> str | None:
     try:
@@ -14,7 +21,12 @@ def _normalized_uuid(value: object) -> str | None:
         return None
 
 
-def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
+def attribute_report_to_user(
+    report_id: str,
+    user_id: str | None,
+    *,
+    workspace: str = ANALYSIS_WORKSPACE,
+) -> bool:
     """Best-effort ownership attribution for a completed site report."""
     clean_report_id = _normalized_uuid(report_id)
     clean_user_id = _normalized_uuid(user_id)
@@ -22,6 +34,7 @@ def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
         return False
     if not (os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")):
         return False
+    clean_workspace = normalize_workspace(workspace)
     try:
         from ai_hedge.db.connection import get_conn
 
@@ -32,10 +45,11 @@ def attribute_report_to_user(report_id: str, user_id: str | None) -> bool:
                     UPDATE reports
                        SET user_id = %s
                      WHERE id = %s
+                       AND workspace = %s
                        AND (user_id IS NULL OR user_id = %s)
                      RETURNING id;
                     """,
-                    (clean_user_id, clean_report_id, clean_user_id),
+                    (clean_user_id, clean_report_id, clean_workspace, clean_user_id),
                 )
                 updated = cur.fetchone() is not None
             conn.commit()
@@ -49,6 +63,8 @@ def find_report_id_by_source_run_id(
     *,
     source: str = "site",
     ticker: str | None = None,
+    workspace: str = ANALYSIS_WORKSPACE,
+    release_id: str | None = None,
 ) -> str | None:
     """
     Resolve an existing report row by source_run_id (and optional ticker).
@@ -63,13 +79,21 @@ def find_report_id_by_source_run_id(
     except ImportError:
         return None
 
+    clean_workspace = normalize_workspace(workspace)
+    clean_release_id = _normalized_uuid(release_id)
     sql = """
     SELECT id::text
       FROM reports
      WHERE source = %s
        AND source_run_id = %s
+       AND workspace = %s
     """
-    params: list[object] = [source, source_run_id]
+    params: list[object] = [source, source_run_id, clean_workspace]
+    if clean_workspace == NASDAQ100_WORKSPACE:
+        if not clean_release_id:
+            return None
+        sql += " AND release_id = %s::uuid"
+        params.append(clean_release_id)
     if ticker:
         sql += " AND ticker = %s"
         params.append(str(ticker).upper())
@@ -92,6 +116,8 @@ def write_run_to_db(
     retry_backoff_seconds: float = 1.5,
     r2_keys: dict | None = None,
     user_id: str | None = None,
+    workspace: str = ANALYSIS_WORKSPACE,
+    release_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Best-effort DB write at the end of a successful run.
@@ -113,6 +139,7 @@ def write_run_to_db(
         return (None, None)
 
     try:
+        clean_workspace, clean_release_id = normalize_workspace_release(workspace, release_id)
         from ai_hedge.db.connection import get_conn
         from ai_hedge.db.repository import insert_report, upsert_ticker
         from ai_hedge.db.transform import ticker_dir_to_row
@@ -122,7 +149,12 @@ def write_run_to_db(
         return (None, msg)
 
     try:
-        bundle = ticker_dir_to_row(Path(output_dir), source=source)
+        bundle = ticker_dir_to_row(
+            Path(output_dir),
+            source=source,
+            workspace=clean_workspace,
+            release_id=clean_release_id,
+        )
     except Exception as exc:  # noqa: BLE001
         msg = f"{type(exc).__name__}: {exc}"
         print(f"[db.writer] skipping ({msg})", file=sys.stderr)

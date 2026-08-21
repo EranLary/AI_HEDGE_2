@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { parseWorkspace, workspacePath } from "@/lib/workspace";
 
 export default async function DashboardTickerRootPage({
   params,
@@ -10,6 +11,7 @@ export default async function DashboardTickerRootPage({
   const { ticker } = await params;
   const search = await searchParams;
   const report = typeof search?.report === "string" ? search.report : undefined;
+  const workspace = parseWorkspace(search?.workspace);
   const suffix = report ? `?report=${encodeURIComponent(report)}` : "";
-  redirect(`/dashboard/${encodeURIComponent(ticker)}/summary${suffix}`);
+  redirect(`${workspacePath(workspace, `/dashboard/${encodeURIComponent(ticker)}/summary`)}${suffix}`);
 }

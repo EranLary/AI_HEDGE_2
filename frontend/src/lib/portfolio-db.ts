@@ -8,12 +8,14 @@ import type {
   PortfolioSnapshotDefinition,
   PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
+import type { Workspace } from "@/lib/workspace";
 
 export type PortfolioReportInput = {
   id: string;
   ticker: string;
   generatedAt: string;
   createdAt: string;
+  availableAt: string;
   deletedAt: string | null;
   sourceRunId: string | null;
   currency: string;
@@ -29,6 +31,7 @@ export type StoredPortfolioNavPoint = PortfolioNavPoint & {
 
 type SnapshotRow = {
   id: string;
+  workspace: Workspace;
   track: PortfolioTrack;
   lens_type: "overall" | "model" | "valuator";
   lens_key: string;
@@ -36,6 +39,8 @@ type SnapshotRow = {
   cutoff_at: string;
   execution_date: string;
   methodology_version: string;
+  benchmark_symbol: string;
+  benchmark_name: string;
   candidate_count: number;
   status: "ready" | "no_positions";
 };
@@ -80,6 +85,7 @@ export async function releasePortfolioRefreshLock(lockKey: string, owner: string
 }
 
 export async function listPortfolioReportInputs(args: {
+  workspace: Workspace;
   earliestGeneratedAt: string;
   latestGeneratedAt: string;
 }): Promise<PortfolioReportInput[]> {
@@ -89,6 +95,7 @@ export async function listPortfolioReportInputs(args: {
     ticker: string;
     generated_at: string;
     created_at: string;
+    available_at: string;
     deleted_at: string | null;
     source_run_id: string | null;
     currency: string;
@@ -102,6 +109,7 @@ export async function listPortfolioReportInputs(args: {
              r.ticker,
              r.generated_at::text AS generated_at,
              r.created_at::text AS created_at,
+             r.available_at::text AS available_at,
              r.deleted_at::text AS deleted_at,
              r.source_run_id,
              COALESCE(NULLIF(t.currency, ''), NULLIF(a.dashboard->'header'->>'currency', ''), 'USD') AS currency,
@@ -109,8 +117,11 @@ export async function listPortfolioReportInputs(args: {
         FROM reports r
         JOIN report_artifacts a ON a.report_id = r.id
         JOIN tickers t ON t.symbol = r.ticker
+        LEFT JOIN report_releases rr ON rr.id = r.release_id
        WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
          AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
+         AND r.workspace = ${args.workspace}
+         AND (r.workspace = 'analysis' OR (rr.status = 'active' AND rr.coverage_complete))
        ORDER BY r.generated_at, r.id
        LIMIT ${pageSize}
       OFFSET ${offset};
@@ -123,6 +134,7 @@ export async function listPortfolioReportInputs(args: {
     ticker: String(row.ticker || "").toUpperCase(),
     generatedAt: new Date(row.generated_at).toISOString(),
     createdAt: new Date(row.created_at).toISOString(),
+    availableAt: new Date(row.available_at).toISOString(),
     deletedAt: row.deleted_at ? new Date(row.deleted_at).toISOString() : null,
     sourceRunId: row.source_run_id,
     currency: String(row.currency || "USD").toUpperCase(),
@@ -206,6 +218,7 @@ export async function insertPortfolioSnapshot(
     SELECT id::text AS id
       FROM portfolio_snapshots
      WHERE track = ${snapshot.track}
+       AND workspace = ${snapshot.workspace}
        AND lens_type = ${snapshot.lens.type}
        AND lens_key = ${lensKey}
        AND cutoff_at = ${snapshot.cutoffAt}::timestamptz
@@ -213,7 +226,7 @@ export async function insertPortfolioSnapshot(
      LIMIT 1;
   `) as Array<{ id: string }>;
   if (existing[0]) {
-    const loaded = await loadPortfolioSnapshots(snapshot.track, snapshot.methodologyVersion);
+    const loaded = await loadPortfolioSnapshots(snapshot.workspace, snapshot.track, snapshot.methodologyVersion);
     const found = loaded.find((row) => row.id === existing[0].id);
     if (!found) throw new Error(`Portfolio snapshot ${existing[0].id} exists but could not be loaded.`);
     return found;
@@ -225,12 +238,14 @@ export async function insertPortfolioSnapshot(
   await sql.transaction((tx) => [
     tx`
       INSERT INTO portfolio_snapshots (
-        id, track, lens_type, lens_key, lens_label, cutoff_at, execution_date,
-        methodology_version, candidate_count, selected_count, cash_weight, status
+        id, workspace, track, lens_type, lens_key, lens_label, cutoff_at, execution_date,
+        methodology_version, benchmark_symbol, benchmark_name,
+        candidate_count, selected_count, cash_weight, status
       ) VALUES (
-        ${id}::uuid, ${snapshot.track}, ${snapshot.lens.type}, ${lensKey}, ${snapshot.lens.label},
+        ${id}::uuid, ${snapshot.workspace}, ${snapshot.track}, ${snapshot.lens.type}, ${lensKey}, ${snapshot.lens.label},
         ${snapshot.cutoffAt}::timestamptz, ${snapshot.executionDate}::date,
-        ${snapshot.methodologyVersion}, ${snapshot.candidateCount}, ${snapshot.holdings.length},
+        ${snapshot.methodologyVersion}, ${snapshot.benchmarkSymbol}, ${snapshot.benchmarkName},
+        ${snapshot.candidateCount}, ${snapshot.holdings.length},
         ${cashWeight}, ${status}
       );
     `,
@@ -249,16 +264,18 @@ export async function insertPortfolioSnapshot(
 }
 
 export async function loadPortfolioSnapshots(
+  workspace: Workspace,
   track: PortfolioTrack,
   methodologyVersion: string,
 ): Promise<PortfolioSnapshotDefinition[]> {
   const sql = requireSql();
   const snapshotRows = (await sql`
-    SELECT id::text AS id, track, lens_type, lens_key, lens_label,
+    SELECT id::text AS id, workspace, track, lens_type, lens_key, lens_label,
            cutoff_at::text AS cutoff_at, execution_date::text AS execution_date,
-           methodology_version, candidate_count, status
+           methodology_version, benchmark_symbol, benchmark_name, candidate_count, status
       FROM portfolio_snapshots
      WHERE track = ${track}
+       AND workspace = ${workspace}
        AND methodology_version = ${methodologyVersion}
        AND status IN ('ready', 'no_positions')
      ORDER BY execution_date, lens_type, lens_key;
@@ -282,6 +299,7 @@ export async function loadPortfolioSnapshots(
   }
   return snapshotRows.map((row) => ({
     id: row.id,
+    workspace: row.workspace,
     track: row.track,
     lens: {
       type: row.lens_type,
@@ -291,6 +309,8 @@ export async function loadPortfolioSnapshots(
     cutoffAt: new Date(row.cutoff_at).toISOString(),
     executionDate: row.execution_date,
     methodologyVersion: row.methodology_version,
+    benchmarkSymbol: row.benchmark_symbol,
+    benchmarkName: row.benchmark_name,
     candidateCount: Number(row.candidate_count),
     status: row.status,
     holdings: (bySnapshot.get(row.id) || []).map((holding) => ({
@@ -307,6 +327,7 @@ export async function loadPortfolioSnapshots(
 }
 
 export async function deletePortfolioTrack(
+  workspace: Workspace,
   track: PortfolioTrack,
   methodologyVersion: string,
 ): Promise<void> {
@@ -315,16 +336,17 @@ export async function deletePortfolioTrack(
   await sql.transaction((tx) => [
     tx`
       DELETE FROM portfolio_nav_daily
-       WHERE track = ${track} AND methodology_version = ${methodologyVersion};
+       WHERE workspace = ${workspace} AND track = ${track} AND methodology_version = ${methodologyVersion};
     `,
     tx`
       DELETE FROM portfolio_snapshots
-       WHERE track = ${track} AND methodology_version = ${methodologyVersion};
+       WHERE workspace = ${workspace} AND track = ${track} AND methodology_version = ${methodologyVersion};
     `,
   ]);
 }
 
 export async function upsertPortfolioNav(args: {
+  workspace: Workspace;
   track: PortfolioTrack;
   lensType: "overall" | "model" | "valuator";
   lensKey: string;
@@ -339,14 +361,14 @@ export async function upsertPortfolioNav(args: {
     await sql.transaction((tx) =>
       chunk.map((point) => tx`
         INSERT INTO portfolio_nav_daily (
-          track, lens_type, lens_key, methodology_version, nav_date,
+          workspace, track, lens_type, lens_key, methodology_version, nav_date,
           snapshot_id, nav, benchmark_nav, holdings_count, status, updated_at
         ) VALUES (
-          ${args.track}, ${args.lensType}, ${args.lensKey}, ${args.methodologyVersion},
+          ${args.workspace}, ${args.track}, ${args.lensType}, ${args.lensKey}, ${args.methodologyVersion},
           ${point.date}::date, ${point.snapshotId}::uuid, ${point.nav}, ${point.benchmarkNav},
           ${point.holdingsCount}, ${point.status}, now()
         )
-        ON CONFLICT (track, lens_type, lens_key, methodology_version, nav_date) DO UPDATE SET
+        ON CONFLICT (workspace, track, lens_type, lens_key, methodology_version, nav_date) DO UPDATE SET
           snapshot_id = EXCLUDED.snapshot_id,
           nav = EXCLUDED.nav,
           benchmark_nav = EXCLUDED.benchmark_nav,
@@ -359,6 +381,7 @@ export async function upsertPortfolioNav(args: {
 }
 
 export async function loadPortfolioNav(
+  workspace: Workspace,
   track: PortfolioTrack,
   methodologyVersion: string,
 ): Promise<StoredPortfolioNavPoint[]> {
@@ -377,6 +400,7 @@ export async function loadPortfolioNav(
       FROM portfolio_nav_daily n
       LEFT JOIN portfolio_snapshots s ON s.id = n.snapshot_id
      WHERE n.track = ${track}
+       AND n.workspace = ${workspace}
        AND n.methodology_version = ${methodologyVersion}
      ORDER BY n.lens_type, n.lens_key, n.nav_date;
   `) as Array<{

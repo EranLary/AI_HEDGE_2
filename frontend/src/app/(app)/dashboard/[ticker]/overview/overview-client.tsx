@@ -14,6 +14,7 @@ import {
 } from "@/components/hedge-dashboard";
 import { INVESTORS_ORDERED, OVERVIEW_FEATURED_PERSONAS } from "@/components/dream-team/persona-themes";
 import { disagreementScoreForReport } from "@/lib/ticker-summary-aggregate";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
@@ -49,6 +50,7 @@ export function OverviewClient({
   resolvedReportId,
   liveCurrentPrice,
 }: OverviewClientProps) {
+  const { href } = useWorkspace();
   const upper = ticker;
   const ctx = buildCurrencyContext(data);
   const consensus = data.valuation_hub.consensus;
@@ -146,7 +148,7 @@ export function OverviewClient({
       {reportsForTicker.length > 1 ? (
         <div className="mb-4">
           <Link
-            href={`/dashboard/${encodeURIComponent(upper)}/summary`}
+            href={href(`/dashboard/${encodeURIComponent(upper)}/summary`)}
             className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 transition hover:border-white/30 hover:text-zinc-100"
           >
             Open Overall Summary <ArrowRight size={12} />
@@ -225,7 +227,7 @@ export function OverviewClient({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Top Targets</h2>
           <Link
-            href={`/dashboard/${encodeURIComponent(upper)}/valuation`}
+            href={href(`/dashboard/${encodeURIComponent(upper)}/valuation`)}
             className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:text-zinc-100"
           >
             Open full valuation <ArrowRight size={12} />
@@ -301,7 +303,7 @@ export function OverviewClient({
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Dream Team</h2>
             <Link
-              href={`/dashboard/${encodeURIComponent(upper)}/dream-team`}
+              href={href(`/dashboard/${encodeURIComponent(upper)}/dream-team`)}
               className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:text-zinc-100"
             >
               View full analysis <ArrowRight size={12} />

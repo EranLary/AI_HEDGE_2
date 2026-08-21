@@ -6,6 +6,7 @@ import type { DbReportSummary } from "@/lib/reports-db";
 import { loadMoreCommunity } from "@/app/(app)/reports/actions";
 
 import { ReportCard } from "./report-card";
+import type { Workspace } from "@/lib/workspace";
 
 export const COMMUNITY_PAGE_SIZE = 16;
 
@@ -14,11 +15,13 @@ export function CommunityList({
   initialHasMore,
   query,
   pageSize = COMMUNITY_PAGE_SIZE,
+  workspace,
 }: {
   initialRows: DbReportSummary[];
   initialHasMore: boolean;
   query: string;
   pageSize?: number;
+  workspace: Workspace;
 }) {
   const [rows, setRows] = useState<DbReportSummary[]>(initialRows);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -33,6 +36,7 @@ export function CommunityList({
           offset: rows.length,
           limit: pageSize,
           query,
+          workspace,
         });
         setRows((prev) => [...prev, ...next.rows]);
         setHasMore(next.hasMore);

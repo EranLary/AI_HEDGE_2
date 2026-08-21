@@ -15,6 +15,7 @@ import {
 import { isExcludedTicker } from "@/lib/excluded-tickers";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 type LoadedDashboard = {
   ticker: string;
@@ -23,13 +24,13 @@ type LoadedDashboard = {
   reportId?: string;
 };
 
-async function loadDashboards(): Promise<LoadedDashboard[]> {
+async function loadDashboards(workspace: Workspace): Promise<LoadedDashboard[]> {
   const merged = new Map<string, LoadedDashboard>();
-  const deletedFilter = await getDeletedReportFilter();
+  const deletedFilter = await getDeletedReportFilter(workspace);
   const dbEnabled = isDbEnabled();
 
   try {
-    const dbRows = await listAllDashboardsForHitRate();
+    const dbRows = await listAllDashboardsForHitRate(workspace);
     for (const record of dbRows) {
       const ticker = String(record.ticker || "").trim().toUpperCase();
       if (!ticker || isExcludedTicker(ticker)) continue;
@@ -49,6 +50,8 @@ async function loadDashboards(): Promise<LoadedDashboard[]> {
   } catch (error) {
     console.warn("[discovery] DB read failed:", error);
   }
+
+  if (workspace === "nasdaq100") return [];
 
   for (const entry of listDashboardReports()) {
     const payload = readJson<DashboardPayload>(entry.path);
@@ -72,9 +75,11 @@ async function loadDashboards(): Promise<LoadedDashboard[]> {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedType = normalizeDiscoveryLensType(url.searchParams.get("lens_type"));
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const requestedKey = String(url.searchParams.get("lens_key") || "").trim() || null;
   const asOfMs = Date.now();
-  const items = await loadDashboards();
+  const items = await loadDashboards(workspace);
   const reports: DiscoverySourceReport[] = items.map((item) => ({
     ticker: item.ticker,
     generatedAt: item.updatedAt,
@@ -95,6 +100,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     generated_at: new Date(asOfMs).toISOString(),
+    workspace,
     lens,
     lens_options: { models: universe.models, valuators: universe.valuators },
     window: "3m",

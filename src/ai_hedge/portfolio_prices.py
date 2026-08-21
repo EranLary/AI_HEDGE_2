@@ -177,6 +177,7 @@ def fetch_price_bundle(
     end: date,
     repo_root: Path,
     workers: int = 8,
+    benchmark_symbol: str = BENCHMARK_SYMBOL,
 ) -> dict[str, object]:
     _configure_cache(repo_root)
     normalized: list[tuple[str, str]] = []
@@ -185,7 +186,8 @@ def fetch_price_bundle(
         currency = normalize_currency(instrument.get("currency"))
         if symbol and currency:
             normalized.append((symbol, currency))
-    normalized.append((BENCHMARK_SYMBOL, "USD"))
+    normalized_benchmark = str(benchmark_symbol or BENCHMARK_SYMBOL).strip().upper()
+    normalized.append((normalized_benchmark, "USD"))
     normalized = list(dict.fromkeys(normalized))
 
     fx_symbols = {
@@ -225,7 +227,7 @@ def fetch_price_bundle(
 
     return {
         "provider": PROVIDER_NAME,
-        "benchmark_symbol": BENCHMARK_SYMBOL,
+        "benchmark_symbol": normalized_benchmark,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "assets": assets,

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { listDeletedReportRefs, listDeletedReportRefsForTicker } from "@/lib/reports-db";
+import type { Workspace } from "@/lib/workspace";
 
 export function siteRunIdFromPathLike(value: string): string | null {
   const raw = String(value || "").trim();
@@ -38,17 +39,20 @@ function buildDeletedReportFilter(
   };
 }
 
-export async function getDeletedReportFilter(): Promise<DeletedReportFilter> {
+export async function getDeletedReportFilter(workspace: Workspace = "analysis"): Promise<DeletedReportFilter> {
   try {
-    return buildDeletedReportFilter(await listDeletedReportRefs());
+    return buildDeletedReportFilter(await listDeletedReportRefs(workspace));
   } catch {
     return buildDeletedReportFilter([]);
   }
 }
 
-export async function getDeletedReportFilterForTicker(ticker: string): Promise<DeletedReportFilter> {
+export async function getDeletedReportFilterForTicker(
+  ticker: string,
+  workspace: Workspace = "analysis",
+): Promise<DeletedReportFilter> {
   try {
-    return buildDeletedReportFilter(await listDeletedReportRefsForTicker(ticker));
+    return buildDeletedReportFilter(await listDeletedReportRefsForTicker(ticker, workspace));
   } catch {
     return buildDeletedReportFilter([]);
   }

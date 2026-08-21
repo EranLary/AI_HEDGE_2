@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HedgeDashboard } from "@/components/hedge-dashboard";
 import { TargetPriceChart } from "@/components/target-price-chart";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type View = "methods" | "assumptions";
 
@@ -14,6 +15,7 @@ export default function DashboardValuationPage({
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
+  const { workspace, api } = useWorkspace();
   const router = useRouter();
   const search = useSearchParams();
   const reportId = search?.get("report") || undefined;
@@ -24,7 +26,7 @@ export default function DashboardValuationPage({
   useEffect(() => {
     const controller = new AbortController();
     const qs = reportId ? `?report=${encodeURIComponent(reportId)}` : "";
-    fetch(`/api/dashboard/${encodeURIComponent(upper)}${qs}`, {
+    fetch(api(`/api/dashboard/${encodeURIComponent(upper)}${qs}`), {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -36,7 +38,7 @@ export default function DashboardValuationPage({
         setPayload(null);
       });
     return () => controller.abort();
-  }, [upper, reportId]);
+  }, [api, upper, reportId, workspace]);
 
   const handleReportChange = useCallback(
     (nextReportId: string) => {

@@ -12,6 +12,7 @@ import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/de
 import { parseJsonObjectFromMixedOutput } from "@/lib/python-json";
 import { repoRoot, TICKER_RE } from "@/lib/site-runner";
 import { readJson, resolveDashboardReportPath } from "@/lib/server-outputs";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,8 +69,8 @@ function trimText(value: unknown, maxChars: number): string {
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
-function cacheKey(ticker: string, reportId: string): string {
-  return `${String(ticker || "").toUpperCase()}::${String(reportId || "").trim()}`;
+function cacheKey(workspace: Workspace, ticker: string, reportId: string): string {
+  return `${workspace}::${String(ticker || "").toUpperCase()}::${String(reportId || "").trim()}`;
 }
 
 function isUuid(value: string): boolean {
@@ -289,6 +290,8 @@ export async function POST(
   }
 
   const reportId = String(body.report_id || "").trim();
+  const workspace = parseApiWorkspace(new URL(req.url).searchParams.get("workspace") || body.workspace);
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const persona = String(body.persona || "").trim();
   const includeAnnual = Boolean(body.include_annual);
   const includeQuarterly = Boolean(body.include_quarterly);
@@ -300,7 +303,7 @@ export async function POST(
   let reportRow: Awaited<ReturnType<typeof fetchReportById>> | null = null;
   let localDashboardPath = "";
   let localDashboard: DashboardPayload | null = null;
-  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker, workspace);
   if (deletedFilter.isDeleted(reportId, ticker)) {
     return NextResponse.json({ error: "Report not found." }, { status: 404 });
   }
@@ -308,11 +311,14 @@ export async function POST(
     return NextResponse.json({ error: "Report not found." }, { status: 404 });
   }
   try {
-    reportRow = await fetchReportById(reportId);
+    reportRow = await fetchReportById(reportId, workspace);
   } catch {
     reportRow = null;
   }
   if (!reportRow) {
+    if (workspace === "nasdaq100") {
+      return NextResponse.json({ error: "Report not found." }, { status: 404 });
+    }
     localDashboardPath = String(resolveDashboardReportPath(reportId) || "");
     if (!localDashboardPath) {
       return NextResponse.json({ error: "Report not found." }, { status: 404 });
@@ -334,7 +340,11 @@ export async function POST(
   const payload = reportRow
     ? normalizePayload(
         ticker,
-        ((reportRow.dashboard as DashboardPayload | null) || {}) as DashboardPayload,
+        {
+          ...(((reportRow.dashboard as DashboardPayload | null) || {}) as DashboardPayload),
+          workspace,
+          release_id: reportRow.release_id,
+        },
         {
           reportId: reportRow.id,
           reportMtime: new Date(reportRow.generated_at).toISOString(),
@@ -355,7 +365,7 @@ export async function POST(
     return NextResponse.json({ error: "Persona not found in selected report." }, { status: 400 });
   }
 
-  const key = cacheKey(ticker, reportId);
+  const key = cacheKey(workspace, ticker, reportId);
   let cache = getCache(key);
 
   if (!cache?.financial) {

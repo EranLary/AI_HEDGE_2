@@ -5,6 +5,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReportListItem } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 function fmtDateTimeNoSeconds(value: string): string {
   const dt = new Date(value);
@@ -134,11 +135,12 @@ export function ReportChipRow({
 }
 
 export function DashboardError({ error, ticker }: { error: string; ticker: string }) {
+  const { href } = useWorkspace();
   return (
     <div className="rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-sm text-red-100">
       <p className="font-semibold">{error}</p>
       <p className="mt-1 text-xs">No data for {ticker}.</p>
-      <Link href="/dashboard" className="mt-3 inline-block rounded border border-white/30 px-2 py-1 text-xs">
+      <Link href={href("/reports")} className="mt-3 inline-block rounded border border-white/30 px-2 py-1 text-xs">
         Back to dashboards
       </Link>
     </div>

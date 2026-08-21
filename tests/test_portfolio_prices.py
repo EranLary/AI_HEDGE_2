@@ -2,7 +2,8 @@ from datetime import date
 
 import pytest
 
-from ai_hedge.portfolio_prices import build_usd_rows, fx_rate_to_usd
+from ai_hedge import portfolio_prices
+from ai_hedge.portfolio_prices import build_usd_rows, fetch_price_bundle, fx_rate_to_usd
 
 
 def test_fx_conversion_directions_for_ils_cad_and_gbp() -> None:
@@ -44,3 +45,26 @@ def test_stale_fx_is_not_silently_filled() -> None:
         max_fx_age_days=5,
     )
     assert rows == []
+
+
+def test_price_bundle_uses_the_requested_workspace_benchmark(monkeypatch, tmp_path) -> None:
+    requested: list[str] = []
+
+    def fake_history(symbol: str, start: date, end: date):
+        del start, end
+        requested.append(symbol)
+        return {date(2026, 5, 4): 100.0}
+
+    monkeypatch.setattr(portfolio_prices, "fetch_adjusted_closes", fake_history)
+    result = fetch_price_bundle(
+        [],
+        start=date(2026, 5, 4),
+        end=date(2026, 5, 4),
+        repo_root=tmp_path,
+        benchmark_symbol="QQQ",
+        workers=1,
+    )
+
+    assert result["benchmark_symbol"] == "QQQ"
+    assert set(result["assets"]) == {"QQQ"}
+    assert requested == ["QQQ"]

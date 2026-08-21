@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { PortfolioReturnsSection } from "@/components/portfolio-returns-section";
+import { useWorkspace } from "@/components/shell/workspace-context";
+import { WORKSPACE_CONFIG } from "@/lib/workspace";
 
 type MetricCounts = {
   hits: number;
@@ -122,14 +124,15 @@ function HitRateTable({
   rows: HitRateRow[];
   lensType: "model" | "valuator";
 }) {
+  const { href } = useWorkspace();
   const discoveryHrefForRow = (row: HitRateRow): string | null => {
     if (lensType === "model") {
       if (String(row.key || "").trim().toLowerCase() === "overall") {
-        return "/discovery?lens_type=overall";
+        return href("/discovery?lens_type=overall");
       }
-      return `/discovery?lens_type=model&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+      return href(`/discovery?lens_type=model&lens_key=${encodeURIComponent(String(row.label || "").trim())}`);
     }
-    return `/discovery?lens_type=valuator&lens_key=${encodeURIComponent(String(row.label || "").trim())}`;
+    return href(`/discovery?lens_type=valuator&lens_key=${encodeURIComponent(String(row.label || "").trim())}`);
   };
 
   return (
@@ -272,6 +275,8 @@ function SignalHitRateTable({
 }
 
 export default function HitRatePage() {
+  const { workspace, api } = useWorkspace();
+  const workspaceConfig = WORKSPACE_CONFIG[workspace];
   const [data, setData] = useState<HitRatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -282,7 +287,7 @@ export default function HitRatePage() {
     async function run() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/hit-rate?mode=${mode}&refresh=${Date.now()}-${refreshToken}`, { cache: "no-store" });
+        const res = await fetch(api(`/api/hit-rate?mode=${mode}&refresh=${Date.now()}-${refreshToken}`), { cache: "no-store" });
         const json = (await res.json()) as HitRatePayload;
         if (!cancelled) {
           setData(json);
@@ -297,7 +302,7 @@ export default function HitRatePage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshToken, mode]);
+  }, [api, refreshToken, mode, workspace]);
 
   const coverageText = useMemo(() => {
     if (!data) return "";
@@ -320,7 +325,7 @@ export default function HitRatePage() {
           <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
             <h2 className="font-semibold text-[color:var(--text-primary)]">Portfolio Returns</h2>
             <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
-              Shows what happened to each monthly Top 20 portfolio, compared with the S&amp;P 500 Total Return Index.
+              Shows what happened to each monthly Top 20 portfolio, compared with {workspaceConfig.benchmarkName}.
             </p>
           </article>
           <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">

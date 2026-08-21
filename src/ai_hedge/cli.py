@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-show-plots", dest="show_plots", action="store_false", help="Do not display plots")
     parser.set_defaults(show_plots=True)
     parser.add_argument("--output-root", default="outputs", help="Root output directory")
+    parser.add_argument("--workspace", choices=("analysis", "nasdaq100"), default="analysis")
+    parser.add_argument("--release-id", default=None, help="Required UUID when --workspace=nasdaq100")
     parser.add_argument("--analysis-workers", type=int, default=DEFAULT_ANALYSIS_WORKERS, help="Workers for analysis sections")
     parser.add_argument("--llm-workers", type=int, default=DEFAULT_LLM_WORKERS, help="Workers per valuation block")
     parser.add_argument("--valuation-block-workers", type=int, default=DEFAULT_VALUATION_BLOCK_WORKERS, help="Parallel valuation blocks")
@@ -43,6 +45,9 @@ def main() -> None:
         analysis_workers=args.analysis_workers,
         llm_workers_each_block=args.llm_workers,
         valuation_blocks_workers=args.valuation_block_workers,
+        run_source="cli",
+        workspace=args.workspace,
+        release_id=args.release_id,
     )
     print(json.dumps(artifacts, indent=2))
 

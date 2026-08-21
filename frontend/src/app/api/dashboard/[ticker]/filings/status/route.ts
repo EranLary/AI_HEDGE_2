@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getStoredTickerFilingsStatus } from "@/lib/filings-stored";
 import { TICKER_RE } from "@/lib/site-runner";
+import { parseApiWorkspace } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,10 +30,11 @@ export async function GET(
     return NextResponse.json({ error: "Invalid ticker format." }, { status: 400 });
   }
 
-  void req;
+  const workspace = parseApiWorkspace(new URL(req.url).searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
 
   try {
-    const status = await getStoredTickerFilingsStatus(tk);
+    const status = await getStoredTickerFilingsStatus(tk, workspace);
     return NextResponse.json({
       ok: true,
       ticker: status.ticker,

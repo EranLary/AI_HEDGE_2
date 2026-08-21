@@ -14,9 +14,11 @@ import {
   TickerNotFoundError,
 } from "@/lib/run-submission";
 import type { TickerEntry } from "@/lib/ticker-catalog";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 export function NewRunModal() {
   const { isOpen, close } = useNewRunModal();
+  const { workspace } = useWorkspace();
   const { push } = useToast();
   const { data: session } = useSession();
   const [selected, setSelected] = useState<TickerEntry | null>(null);
@@ -25,6 +27,10 @@ export function NewRunModal() {
   const isGuest = Boolean(session?.user?.isGuest);
 
   // Reset state when opened
+  useEffect(() => {
+    if (workspace === "nasdaq100" && isOpen) close();
+  }, [close, isOpen, workspace]);
+
   useEffect(() => {
     if (!isOpen) return;
     setSelected(null);
@@ -52,7 +58,7 @@ export function NewRunModal() {
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen || workspace === "nasdaq100") return null;
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

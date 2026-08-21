@@ -27,14 +27,15 @@ import {
   computePortfolioNavSeries,
   firstExecutionDateForCandidates,
   latestPriceOnOrBefore,
-  PORTFOLIO_BENCHMARK_SYMBOL,
   PORTFOLIO_METHODOLOGY_VERSION,
   PORTFOLIO_PROVIDER,
+  portfolioWorkspaceConfig,
   type MarketPricePoint,
   type PortfolioSnapshotDefinition,
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
 import { planPaperCutoffs } from "../src/lib/portfolio-refresh-policy";
+import type { Workspace } from "../src/lib/workspace";
 
 type PriceBundle = {
   provider: string;
@@ -54,6 +55,7 @@ type PriceBundle = {
 };
 
 type CliArgs = {
+  workspace: Workspace;
   track: PortfolioTrack;
   startCutoff: string;
   paperCutoff: string | null;
@@ -75,6 +77,10 @@ function parseCliArgs(): CliArgs {
     throw new Error("--track must be paper or backtest.");
   }
   const track: PortfolioTrack = rawTrack;
+  const rawWorkspace = valueFor("--workspace") || "analysis";
+  if (rawWorkspace !== "analysis" && rawWorkspace !== "nasdaq100") {
+    throw new Error("--workspace must be analysis or nasdaq100.");
+  }
   const throughDate = valueFor("--through") || new Date().toISOString().slice(0, 10);
   const startCutoff = valueFor("--start-cutoff") || "2026-04-30";
   const paperCutoff = valueFor("--paper-cutoff");
@@ -89,6 +95,7 @@ function parseCliArgs(): CliArgs {
     }
   }
   return {
+    workspace: rawWorkspace,
     track,
     startCutoff,
     paperCutoff,
@@ -224,7 +231,7 @@ function reportsVisibleAt(
   const visible = reports.filter((report) => {
     const generatedMs = Date.parse(report.generatedAt);
     if (generatedMs < windowStart || generatedMs > cutoffMs || isExcludedTicker(report.ticker)) return false;
-    if (track === "paper" && Date.parse(report.createdAt) > cutoffMs) return false;
+    if (track === "paper" && Date.parse(report.availableAt) > cutoffMs) return false;
     return report.deletedAt === null || Date.parse(report.deletedAt) > cutoffMs;
   });
   const deduped = new Map<string, PortfolioReportInput>();
@@ -251,6 +258,7 @@ function lensMapKey(lens: DiscoveryLensSelection): string {
 
 async function main() {
   const args = parseCliArgs();
+  const workspaceConfig = portfolioWorkspaceConfig(args.workspace);
   if (args.replaceBacktest && args.track !== "backtest") {
     throw new Error("--replace-backtest is only valid with --track backtest.");
   }
@@ -258,7 +266,7 @@ async function main() {
     throw new Error("--paper-cutoff is only valid with --track paper.");
   }
   const owner = `${process.env.HOSTNAME || "local"}:${process.pid}:${randomUUID()}`;
-  const lockKey = `portfolio-performance:${args.track}:${PORTFOLIO_METHODOLOGY_VERSION}`;
+  const lockKey = `portfolio-performance:${args.workspace}:${args.track}:${PORTFOLIO_METHODOLOGY_VERSION}`;
   if (!(await acquirePortfolioRefreshLock(lockKey, owner))) {
     console.log(`[portfolio] ${lockKey} is already running; exiting cleanly.`);
     return;
@@ -266,9 +274,9 @@ async function main() {
 
   try {
     if (args.replaceBacktest) {
-      await deletePortfolioTrack("backtest", PORTFOLIO_METHODOLOGY_VERSION);
+      await deletePortfolioTrack(args.workspace, "backtest", PORTFOLIO_METHODOLOGY_VERSION);
     }
-    let existing = await loadPortfolioSnapshots(args.track, PORTFOLIO_METHODOLOGY_VERSION);
+    let existing = await loadPortfolioSnapshots(args.workspace, args.track, PORTFOLIO_METHODOLOGY_VERSION);
     const now = new Date();
     let cutoffs: string[];
     if (args.track === "backtest") {
@@ -292,9 +300,14 @@ async function main() {
     const earliestCutoff = allCutoffDates.sort()[0] || previousNyCalendarDay(now);
     const earliestReport = addDays(earliestCutoff, -90);
     const reports = await listPortfolioReportInputs({
+      workspace: args.workspace,
       earliestGeneratedAt: `${earliestReport}T00:00:00Z`,
       latestGeneratedAt: `${args.throughDate}T23:59:59Z`,
     });
+    if (args.workspace === "nasdaq100" && reports.length === 0) {
+      console.log("[portfolio] Nasdaq 100 has no active release reports; no snapshots were created.");
+      return;
+    }
     const currencyByTicker = new Map<string, string>();
     for (const report of reports) currencyByTicker.set(report.ticker, report.currency);
     for (const snapshot of existing) {
@@ -306,18 +319,19 @@ async function main() {
       start: priceStart,
       end: args.throughDate,
       instruments,
+      benchmark_symbol: workspaceConfig.benchmarkSymbol,
       workers: Number(process.env.PORTFOLIO_PRICE_WORKERS || 8),
     });
     const fetchedPoints = flattenPriceBundle(priceBundle);
     await upsertMarketPrices(fetchedPoints, PORTFOLIO_PROVIDER);
-    const symbols = Array.from(new Set([...currencyByTicker.keys(), PORTFOLIO_BENCHMARK_SYMBOL]));
+    const symbols = Array.from(new Set([...currencyByTicker.keys(), workspaceConfig.benchmarkSymbol]));
     const priceBySymbol = await loadMarketPrices({
       symbols,
       startDate: priceStart,
       endDate: args.throughDate,
       source: PORTFOLIO_PROVIDER,
     });
-    const benchmarkPoints = priceBySymbol.get(PORTFOLIO_BENCHMARK_SYMBOL) || [];
+    const benchmarkPoints = priceBySymbol.get(workspaceConfig.benchmarkSymbol) || [];
     const knownLenses = new Map<string, DiscoveryLensSelection>();
     const lensFirstCutoff = new Map<string, string>();
     knownLenses.set("overall:overall", { type: "overall", key: null, label: "Overall" });
@@ -379,11 +393,14 @@ async function main() {
           currencyByTicker,
         });
         await insertPortfolioSnapshot({
+          workspace: args.workspace,
           track: args.track,
           lens,
           cutoffAt: cutoffAt.toISOString(),
           executionDate,
           methodologyVersion: PORTFOLIO_METHODOLOGY_VERSION,
+          benchmarkSymbol: workspaceConfig.benchmarkSymbol,
+          benchmarkName: workspaceConfig.benchmarkName,
           candidateCount: candidates.length,
           status: holdings.length ? "ready" : "no_positions",
           holdings,
@@ -393,7 +410,7 @@ async function main() {
       console.log(`[portfolio] ${args.track} cutoff ${cutoffDate}: ${createdForCutoff} snapshots (${visibleReports.length} reports).`);
     }
 
-    existing = await loadPortfolioSnapshots(args.track, PORTFOLIO_METHODOLOGY_VERSION);
+    existing = await loadPortfolioSnapshots(args.workspace, args.track, PORTFOLIO_METHODOLOGY_VERSION);
     for (const lensSnapshots of groupSnapshotsByLens(existing)) {
       const first = lensSnapshots[0];
       const nav = computePortfolioNavSeries({
@@ -403,6 +420,7 @@ async function main() {
         throughDate: args.throughDate,
       });
       await upsertPortfolioNav({
+        workspace: args.workspace,
         track: args.track,
         lensType: first.lens.type,
         lensKey: first.lens.key || "overall",
@@ -413,7 +431,7 @@ async function main() {
     if (priceBundle.errors?.length) {
       console.warn(`[portfolio] provider warnings: ${JSON.stringify(priceBundle.errors)}`);
     }
-    console.log(`[portfolio] refreshed ${args.track}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
+    console.log(`[portfolio] refreshed ${args.workspace}/${args.track}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
   } finally {
     await releasePortfolioRefreshLock(lockKey, owner);
   }

@@ -151,6 +151,7 @@ export async function listActiveRunsForUser(
              report_id::text AS report_id
         FROM site_runs
        WHERE user_id = ${cleanUserId}::uuid
+         AND workspace = 'analysis'
          AND status IN ('queued', 'running')
        ORDER BY created_at DESC
        LIMIT ${safeLimit};

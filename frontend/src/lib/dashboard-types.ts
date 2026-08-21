@@ -262,6 +262,8 @@ export type WebSearchSource = {
 
 export type DashboardPayload = {
   dashboard_version?: string;
+  workspace?: "analysis" | "nasdaq100";
+  release_id?: string | null;
   generated_at?: string;
   analysis_duration_minutes?: number | null;
   report_id?: string;
@@ -551,4 +553,6 @@ export type ReportListItem = {
   score?: number | null;
   mean_target_price?: number | null;
   allocation_pct?: number | null;
+  workspace?: "analysis" | "nasdaq100";
+  release_id?: string | null;
 };

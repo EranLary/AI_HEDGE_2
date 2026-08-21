@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Search, X } from "lucide-react";
 import type { ReportListItem } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
 import { useTickerContext } from "@/components/shell/ticker-context";
 
 type ComboboxProps = {
@@ -13,6 +14,7 @@ type ComboboxProps = {
 
 export function TickerCombobox({ collapsed = false, onCollapsedClick }: ComboboxProps) {
   const router = useRouter();
+  const { api, href } = useWorkspace();
   const { activeTicker } = useTickerContext();
   const [tickers, setTickers] = useState<string[]>([]);
   const [reports, setReports] = useState<ReportListItem[]>([]);
@@ -25,8 +27,8 @@ export function TickerCombobox({ collapsed = false, onCollapsedClick }: Combobox
     async function load() {
       try {
         const [tickersRes, reportsRes] = await Promise.all([
-          fetch("/api/tickers", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ tickers: [] })),
-          fetch("/api/reports", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ reports: [] })),
+          fetch(api("/api/tickers"), { cache: "no-store" }).then((r) => r.json()).catch(() => ({ tickers: [] })),
+          fetch(api("/api/reports"), { cache: "no-store" }).then((r) => r.json()).catch(() => ({ reports: [] })),
         ]);
         if (cancelled) return;
         const fromReports: string[] = Array.isArray(reportsRes?.reports)
@@ -49,7 +51,7 @@ export function TickerCombobox({ collapsed = false, onCollapsedClick }: Combobox
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +101,7 @@ export function TickerCombobox({ collapsed = false, onCollapsedClick }: Combobox
     if (!t) return;
     setOpen(false);
     setQuery("");
-    router.push(`/dashboard/${encodeURIComponent(t)}/summary`);
+    router.push(href(`/dashboard/${encodeURIComponent(t)}/summary`));
   }
 
   if (collapsed) {

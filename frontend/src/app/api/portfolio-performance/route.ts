@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 
 import { loadPortfolioNav, type StoredPortfolioNavPoint } from "@/lib/portfolio-db";
 import {
-  PORTFOLIO_BENCHMARK_SYMBOL,
   PORTFOLIO_METHODOLOGY_VERSION,
   PORTFOLIO_PROVIDER,
+  portfolioWorkspaceConfig,
   summarizePortfolioPeriod,
   type PortfolioPeriod,
   type PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,22 +54,26 @@ function summarizeLens(rows: StoredPortfolioNavPoint[], period: PortfolioPeriod)
   };
 }
 
-function emptyResponse(track: PortfolioTrack, period: PortfolioPeriod, message?: string) {
+function emptyResponse(workspace: Workspace, track: PortfolioTrack, period: PortfolioPeriod, message?: string) {
+  const config = portfolioWorkspaceConfig(workspace);
   return {
     generated_at: new Date().toISOString(),
     track,
     period,
     available: false,
-    message: message || "Portfolio performance history is not available yet.",
+    workspace,
+    message: message || (workspace === "nasdaq100"
+      ? "Nasdaq 100 portfolio history will appear after the first release is activated and portfolios are refreshed."
+      : "Portfolio performance history is not available yet."),
     methodology: {
       version: PORTFOLIO_METHODOLOGY_VERSION,
-      universe: "Analyzed tickers with a report available in the trailing 90 days",
+      universe: config.universe,
       construction: "Up to 20 positive-score stocks, equally weighted, rebalanced monthly",
       score: "60% implied target return + 40% allocation, confidence-disagreement penalty applied",
       base_currency: "USD",
       return_type: "Gross simulated total return; no fees, slippage, tax, or cash interest",
-      benchmark_symbol: PORTFOLIO_BENCHMARK_SYMBOL,
-      benchmark_name: "S&P 500 Total Return",
+      benchmark_symbol: config.benchmarkSymbol,
+      benchmark_name: config.benchmarkName,
       market_data_provider: PORTFOLIO_PROVIDER,
       public_beta: true,
     },
@@ -82,9 +87,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const track = parseTrack(url.searchParams.get("track"));
   const period = parsePeriod(url.searchParams.get("period"));
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   try {
-    const rows = await loadPortfolioNav(track, PORTFOLIO_METHODOLOGY_VERSION);
-    if (!rows.length) return NextResponse.json(emptyResponse(track, period));
+    const rows = await loadPortfolioNav(workspace, track, PORTFOLIO_METHODOLOGY_VERSION);
+    if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period));
     const summaries = groupByLens(rows)
       .map((group) => summarizeLens(group, period))
       .sort((a, b) => {
@@ -94,7 +101,7 @@ export async function GET(request: Request) {
       });
     const dates = rows.map((row) => row.date).sort();
     return NextResponse.json({
-      ...emptyResponse(track, period),
+      ...emptyResponse(workspace, track, period),
       available: true,
       message: null,
       range: { start: dates[0], end: dates[dates.length - 1] },
@@ -103,6 +110,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.warn("[portfolio-performance] DB read failed:", error);
-    return NextResponse.json(emptyResponse(track, period));
+    return NextResponse.json(emptyResponse(workspace, track, period));
   }
 }

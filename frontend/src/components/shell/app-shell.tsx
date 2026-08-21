@@ -9,10 +9,18 @@ import { TickerProvider } from "@/components/shell/ticker-context";
 import { ToastProvider } from "@/components/shell/toast";
 import { NewRunProvider } from "@/components/shell/new-run-context";
 import { NewRunModal } from "@/components/shell/new-run-modal";
+import { NasdaqRunProvider } from "@/components/shell/nasdaq-run-context";
+import { useWorkspace, WorkspaceProvider } from "@/components/shell/workspace-context";
+import type { Workspace } from "@/lib/workspace";
 
 const COLLAPSE_KEY = "hib-sidebar-v1";
 
-export function AppShell({ children }: { children: ReactNode }) {
+function WorkspaceActiveRunIndicator() {
+  const { workspace } = useWorkspace();
+  return workspace === "analysis" ? <ActiveRunIndicator /> : null;
+}
+
+export function AppShell({ children, initialWorkspace }: { children: ReactNode; initialWorkspace: Workspace }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -47,8 +55,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [mobileOpen]);
 
   return (
+    <WorkspaceProvider initialWorkspace={initialWorkspace}>
     <TickerProvider>
       <ToastProvider>
+        <NasdaqRunProvider>
         <NewRunProvider>
         <div className="flex min-h-screen">
           {/* Desktop sidebar */}
@@ -79,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="hib-content flex min-w-0 flex-1 flex-col">
             <Topbar onMobileMenu={() => setMobileOpen(true)} />
-            <ActiveRunIndicator />
+            <WorkspaceActiveRunIndicator />
             <main className="flex-1">{children}</main>
             <footer className="border-t border-white/10 bg-black/35 px-4 py-2 text-center text-[11px] text-zinc-400 sm:px-8">
               AI-generated. For informational purposes only. Not investment advice. No guarantee of accuracy or results.
@@ -88,7 +98,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <NewRunModal />
         </NewRunProvider>
+        </NasdaqRunProvider>
       </ToastProvider>
     </TickerProvider>
+    </WorkspaceProvider>
   );
 }

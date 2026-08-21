@@ -10,6 +10,7 @@ import {
   type SummaryWindow,
 } from "@/lib/ticker-summary-aggregate";
 import { listDashboardsForTicker } from "@/lib/reports-db";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
 export const runtime = "nodejs";
@@ -45,13 +46,13 @@ function safeNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport[]> {
+async function loadTickerDashboards(ticker: string, workspace: Workspace): Promise<SummarySourceReport[]> {
   const merged = new Map<string, SummarySourceReport>();
-  const deletedFilter = await getDeletedReportFilterForTicker(ticker);
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker, workspace);
   const dbEnabled = isDbEnabled();
 
   try {
-    const dbRows = await listDashboardsForTicker(ticker);
+    const dbRows = await listDashboardsForTicker(ticker, workspace);
     for (const r of dbRows) {
       const row = {
         ticker: String(r.ticker || "").toUpperCase(),
@@ -71,6 +72,8 @@ async function loadTickerDashboards(ticker: string): Promise<SummarySourceReport
   } catch (err) {
     console.warn("[ticker-summary] DB read failed:", err);
   }
+
+  if (workspace === "nasdaq100") return [];
 
   for (const entry of listDashboardReports()) {
     if (String(entry.ticker || "").toUpperCase() !== ticker) continue;
@@ -105,7 +108,9 @@ export async function GET(
 
   const url = new URL(req.url);
   const window = parseWindow(url.searchParams.get("window"));
-  const reports = await loadTickerDashboards(tk);
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  const reports = await loadTickerDashboards(tk, workspace);
   const aggregation = computeTickerSummaryAggregation(reports, window);
   const [livePriceMap, liveFundamentals] = await Promise.all([
     getLiveCurrentPricesBatch([tk]),

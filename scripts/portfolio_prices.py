@@ -18,12 +18,14 @@ def main() -> int:
         end = date.fromisoformat(str(payload["end"]))
         instruments = payload.get("instruments") or []
         workers = int(payload.get("workers") or 8)
+        benchmark_symbol = str(payload.get("benchmark_symbol") or "^SP500TR").strip().upper()
         result = fetch_price_bundle(
             instruments,
             start=start,
             end=end,
             repo_root=ROOT,
             workers=workers,
+            benchmark_symbol=benchmark_symbol,
         )
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0

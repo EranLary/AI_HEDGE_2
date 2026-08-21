@@ -2,6 +2,7 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
 
@@ -454,6 +455,7 @@ export default function DashboardSummaryPage({
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
+  const { workspace, api } = useWorkspace();
   const search = useSearchParams();
   const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
   const [windowKey, setWindowKey] = useState<SummaryWindow>("all");
@@ -477,7 +479,7 @@ export default function DashboardSummaryPage({
       setLoading(true);
       try {
         const res = await fetch(
-          `/api/dashboard/${encodeURIComponent(upper)}/summary?window=${encodeURIComponent(windowKey)}&refresh=${Date.now()}-${refreshToken}`,
+          api(`/api/dashboard/${encodeURIComponent(upper)}/summary?window=${encodeURIComponent(windowKey)}&refresh=${Date.now()}-${refreshToken}`),
           { cache: "no-store" },
         );
         const json = (await res.json()) as SummaryPayload;
@@ -494,7 +496,7 @@ export default function DashboardSummaryPage({
     return () => {
       cancelled = true;
     };
-  }, [upper, windowKey, refreshToken]);
+  }, [api, upper, windowKey, refreshToken, workspace]);
 
   useEffect(() => {
     let cancelled = false;
@@ -534,7 +536,7 @@ export default function DashboardSummaryPage({
         const refreshQuery =
           refreshToken > 0 ? `?refresh=${encodeURIComponent(`${Date.now()}-${refreshToken}`)}` : "";
         const res = await fetch(
-          `/api/dashboard/${encodeURIComponent(upper)}/filings/status${refreshQuery}`,
+          api(`/api/dashboard/${encodeURIComponent(upper)}/filings/status${refreshQuery}`),
           { cache: "no-store" },
         );
         const json = (await res.json()) as FilingsStatusPayload;
@@ -576,7 +578,7 @@ export default function DashboardSummaryPage({
     return () => {
       cancelled = true;
     };
-  }, [upper, refreshToken]);
+  }, [api, upper, refreshToken, workspace]);
 
   const coverageText = useMemo(() => {
     if (!data) return "";
@@ -646,7 +648,7 @@ export default function DashboardSummaryPage({
         <div className="mt-3 flex flex-wrap items-start gap-3">
           {(["annual", "quarterly"] as const).map((kind) => {
             const row = filings?.[kind];
-            const sourceHref = `/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`;
+            const sourceHref = api(`/api/dashboard/${encodeURIComponent(upper)}/filings/${kind}/source`);
             const hasSource = Boolean(row?.available && String(row?.source_url || "").trim());
             const sourceLabel = String(row?.source || "").trim();
             const formLabel = cleanFilingFormLabel(sourceLabel, String(row?.form_type || ""));

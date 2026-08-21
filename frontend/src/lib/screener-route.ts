@@ -10,6 +10,7 @@ import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-rep
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import { computeTickerSummaryAggregation, type SummarySourceReport } from "@/lib/ticker-summary-aggregate";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 const CACHE_VERSION = 5;
 
@@ -200,12 +201,12 @@ function putExactTarget(map: Map<string, TargetSummary>, ticker: unknown, summar
   }
 }
 
-async function buildTargetData(): Promise<TargetData> {
+async function buildTargetData(workspace: Workspace): Promise<TargetData> {
   const byTicker = new Map<string, SummarySourceReport[]>();
   const merged = new Map<string, SummarySourceReport>();
 
   try {
-    const dbRows = await listAllDashboardsForHitRate();
+    const dbRows = await listAllDashboardsForHitRate(workspace);
     for (const row of dbRows) {
       const ticker = String(row.ticker || "").trim().toUpperCase();
       const payload = row.dashboard as DashboardPayload;
@@ -225,8 +226,8 @@ async function buildTargetData(): Promise<TargetData> {
     console.warn("[screeners] DB target read failed:", err);
   }
 
-  if (byTicker.size === 0) {
-    const deletedFilter = await getDeletedReportFilter();
+  if (workspace === "analysis" && byTicker.size === 0) {
+    const deletedFilter = await getDeletedReportFilter(workspace);
     for (const entry of listDashboardReports()) {
       const ticker = String(entry.ticker || "").trim().toUpperCase();
       if (!ticker) continue;
@@ -318,8 +319,13 @@ async function enrichWithTargets(payload: Record<string, unknown>, universe: Scr
 
 export async function handleScreenerRequest(req: Request, universe: ScreenerUniverse) {
   const url = new URL(req.url);
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  if (workspace === "nasdaq100" && universe !== "nasdaq100") {
+    return NextResponse.json({ error: "Screener not available in this workspace." }, { status: 404 });
+  }
   const refresh = ["1", "true", "yes"].includes(String(url.searchParams.get("refresh") || "").toLowerCase());
-  const targetData = await withTimeout(buildTargetData(), 10_000, emptyTargetData());
+  const targetData = await withTimeout(buildTargetData(workspace), 10_000, emptyTargetData());
   let forceRefresh = false;
   if (!refresh) {
     const cached = (await readLastGoodCache(universe)) || (await readBootstrapSeed(universe));

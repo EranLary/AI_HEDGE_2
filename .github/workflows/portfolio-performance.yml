@@ -79,7 +79,7 @@ jobs:
             echo "::error::track must be paper or backtest"
             exit 1
           fi
-          COMMAND="cd /app/frontend && npm run portfolio:refresh -- --track $TRACK"
+          COMMAND="cd /app/frontend && npm run portfolio:refresh -- --workspace analysis --track $TRACK"
           if [ -n "${INPUT_THROUGH:-}" ]; then
             if ! [[ "$INPUT_THROUGH" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
               echo "::error::through must use YYYY-MM-DD"
@@ -117,4 +117,4 @@ jobs:
         run: >-
           flyctl ssh console --app "$FLY_APP" --command
           "sh -lc 'cd /app/frontend && npm run portfolio:refresh --
-          --track backtest --start-cutoff 2026-04-30'"
+          --workspace analysis --track backtest --start-cutoff 2026-04-30'"

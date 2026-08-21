@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { workspacePath, type Workspace } from "@/lib/workspace";
 
 export type ReportsTabKey = "mine" | "community";
 
@@ -17,10 +18,12 @@ export function ReportsTabs({
   active,
   signedIn,
   initialQuery,
+  workspace,
 }: {
   active: ReportsTabKey;
   signedIn: boolean;
   initialQuery: string;
+  workspace: Workspace;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -34,13 +37,15 @@ export function ReportsTabs({
     if (normalized === currentQuery) return;
 
     const params = new URLSearchParams(searchString);
+    params.delete("workspace");
     if (normalized) params.set("q", normalized);
     else params.delete("q");
     const qs = params.toString();
     startTransition(() => {
-      router.replace(qs ? `/reports?${qs}` : "/reports", { scroll: false });
+      const base = workspacePath(workspace, "/reports");
+      router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
     });
-  }, [currentQuery, router, searchString]);
+  }, [currentQuery, router, searchString, workspace]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -64,6 +69,7 @@ export function ReportsTabs({
       <nav className="flex w-full rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-1 sm:w-auto">
         {TAB_ORDER.map((t) => {
           const params = new URLSearchParams(searchString);
+          params.delete("workspace");
           params.set("tab", t.key);
           const isActive = t.key === active;
           const disabled = t.key === "mine" && !signedIn;
@@ -81,7 +87,7 @@ export function ReportsTabs({
           return (
             <Link
               key={t.key}
-              href={`/reports?${params.toString()}`}
+              href={`${workspacePath(workspace, "/reports")}?${params.toString()}`}
               scroll={false}
               className={`flex-1 rounded-lg px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] transition sm:flex-none ${
                 isActive

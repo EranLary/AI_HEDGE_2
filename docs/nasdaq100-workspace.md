@@ -65,7 +65,7 @@ To provision or repair only the worker without deploying the production site,
 run the `Deploy to Fly` workflow manually with target `nasdaq-worker`. Normal
 pushes to `main` and manual runs with target `all` retain the full deployment
 behavior. The worker deployment verifies the configured S3 credentials against
-the bucket before updating the Fly app.
+the bucket with a temporary write/delete probe before updating the Fly app.
 
 If `NASDAQ_WORKER_URL` is absent, the API preserves a one-worker local fallback
 for development and emergency operation. Do not use that fallback for the full

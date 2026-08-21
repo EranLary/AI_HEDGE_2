@@ -228,8 +228,21 @@ jobs:
               aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
               region_name="auto",
           )
-          client.head_bucket(Bucket=os.environ["R2_BUCKET"])
-          print("R2 bucket credentials verified.")
+          bucket = os.environ["R2_BUCKET"]
+          key = f"_health/deploy-{os.environ['GITHUB_RUN_ID']}.txt"
+          uploaded = False
+          try:
+              client.put_object(
+                  Bucket=bucket,
+                  Key=key,
+                  Body=b"nasdaq-r2-ready\n",
+                  ContentType="text/plain",
+              )
+              uploaded = True
+          finally:
+              if uploaded:
+                  client.delete_object(Bucket=bucket, Key=key)
+          print("R2 bucket write/delete credentials verified.")
           PY
 
       - name: Configure worker secrets

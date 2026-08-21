@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type PortfolioTrack = "paper" | "backtest";
 type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
@@ -67,11 +68,6 @@ function returnTone(value: number | null): string {
   return value > 0 ? "text-[color:var(--success)]" : "text-[color:var(--danger)]";
 }
 
-function rowHref(row: PortfolioReturnRow): string {
-  if (row.lens_type === "overall") return "/discovery?lens_type=overall";
-  return `/discovery?lens_type=${row.lens_type}&lens_key=${encodeURIComponent(row.lens_key || row.label)}`;
-}
-
 function statusLabel(row: PortfolioReturnRow): string | null {
   if (row.status === "insufficient_history") return "Full period unavailable";
   if (row.status === "no_positions") return "No positive positions";
@@ -90,7 +86,11 @@ function sortRowsByReturn(rows: PortfolioReturnRow[]): PortfolioReturnRow[] {
   });
 }
 
-function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow[] }) {
+function ReturnsTable({ title, rows, benchmarkName }: { title: string; rows: PortfolioReturnRow[]; benchmarkName: string }) {
+  const { href } = useWorkspace();
+  const rowHref = (row: PortfolioReturnRow): string => row.lens_type === "overall"
+    ? href("/discovery?lens_type=overall")
+    : href(`/discovery?lens_type=${row.lens_type}&lens_key=${encodeURIComponent(row.lens_key || row.label)}`);
   const sortedRows = sortRowsByReturn(rows);
   return (
     <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
@@ -108,7 +108,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
               <p className={`text-xl font-bold tabular-nums ${returnTone(row.return_pct)}`}>{formatPercent(row.return_pct)}</p>
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-              <div><dt className="text-[color:var(--text-muted)]">S&amp;P 500 TR</dt><dd className="mt-1 tabular-nums text-[color:var(--text-primary)]">{formatPercent(row.benchmark_return_pct)}</dd></div>
+              <div><dt className="text-[color:var(--text-muted)]">{benchmarkName}</dt><dd className="mt-1 tabular-nums text-[color:var(--text-primary)]">{formatPercent(row.benchmark_return_pct)}</dd></div>
               <div><dt className="text-[color:var(--text-muted)]">Excess</dt><dd className={`mt-1 tabular-nums ${returnTone(row.excess_return_pct)}`}>{formatPercent(row.excess_return_pct)}</dd></div>
               <div><dt className="text-[color:var(--text-muted)]">Start</dt><dd className="mt-1 text-[color:var(--text-primary)]">{formatDate(row.period_start)}</dd></div>
             </dl>
@@ -121,7 +121,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
             <tr className="border-b border-[color:var(--border-subtle)]">
               <th className="px-3 py-2 text-left font-medium">Portfolio</th>
               <th className="px-3 py-2 text-right font-medium">Portfolio return</th>
-              <th className="px-3 py-2 text-right font-medium">S&amp;P 500 TR</th>
+              <th className="px-3 py-2 text-right font-medium">{benchmarkName}</th>
               <th className="px-3 py-2 text-right font-medium">Excess</th>
               <th className="px-3 py-2 text-right font-medium">Latest holdings</th>
               <th className="px-3 py-2 text-right font-medium">Start</th>
@@ -150,6 +150,7 @@ function ReturnsTable({ title, rows }: { title: string; rows: PortfolioReturnRow
 }
 
 export function PortfolioReturnsSection() {
+  const { workspace, api } = useWorkspace();
   const [track, setTrack] = useState<PortfolioTrack>("paper");
   const [period, setPeriod] = useState<PortfolioPeriod>("all");
   const [data, setData] = useState<PortfolioPerformancePayload | null>(null);
@@ -160,7 +161,7 @@ export function PortfolioReturnsSection() {
     async function load() {
       setLoading(true);
       try {
-        const response = await fetch(`/api/portfolio-performance?track=${track}&period=${period}`, { cache: "no-store" });
+        const response = await fetch(api(`/api/portfolio-performance?track=${track}&period=${period}`), { cache: "no-store" });
         const payload = (await response.json()) as PortfolioPerformancePayload;
         if (!cancelled) setData(payload);
       } catch {
@@ -171,7 +172,11 @@ export function PortfolioReturnsSection() {
     }
     load();
     return () => { cancelled = true; };
-  }, [period, track]);
+  }, [api, period, track, workspace]);
+
+  const benchmarkName = data?.methodology.benchmark_name || (workspace === "nasdaq100"
+    ? "Invesco QQQ - total-return proxy"
+    : "S&P 500 Total Return");
 
   return (
     <section className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-overlay)] p-4 sm:p-5">
@@ -181,7 +186,7 @@ export function PortfolioReturnsSection() {
             <h2 className="font-display text-xl text-[color:var(--text-primary)]">Portfolio Returns</h2>
             <span className="rounded-full border border-[color:var(--warning)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--warning)]">Public Beta</span>
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Monthly Top 20 positive-score portfolios, equal weighted and measured in USD against the full S&amp;P 500 Total Return Index.</p>
+          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Monthly Top 20 positive-score portfolios, equal weighted and measured in USD against {benchmarkName}.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Portfolio track">
@@ -208,8 +213,8 @@ export function PortfolioReturnsSection() {
         </div>
       ) : (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
-          <ReturnsTable title="Models" rows={data.by_model} />
-          <ReturnsTable title="Valuators" rows={data.by_valuator} />
+          <ReturnsTable title="Models" rows={data.by_model} benchmarkName={benchmarkName} />
+          <ReturnsTable title="Valuators" rows={data.by_valuator} benchmarkName={benchmarkName} />
         </div>
       )}
 
@@ -217,7 +222,7 @@ export function PortfolioReturnsSection() {
         {track === "paper"
           ? "Paper records each portfolio from the day it is created, and its holdings are never rewritten later. "
           : "Backtest reconstructs what each portfolio would have held at earlier month-ends, using only information available at the time. "}
-        Benchmark: every portfolio is compared with the full S&amp;P 500 Total Return Index, including reinvested dividends. Portfolio selection: only stocks we analyzed during the previous 90 days can enter our ranking. That limitation affects what we can select for our portfolios; it does not narrow the S&amp;P 500 benchmark. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
+        Benchmark: every portfolio is compared with {benchmarkName}. {workspace === "nasdaq100" ? "QQQ adjusted close is used as an investable total-return proxy; it is not presented as the official XNDX index series. Only reports from active Nasdaq 100 releases can enter the ranking. " : "The Analysis benchmark is the full S&P 500 Total Return Index, including reinvested dividends. Only stocks analyzed during the previous 90 days can enter the ranking; that does not narrow the benchmark. "}Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices and FX come from yfinance; missing data is shown as unavailable.
       </p>
     </section>
   );

@@ -7,6 +7,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { CurrencyContext } from "@/components/hedge-dashboard";
 import type { ReportListItem } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 import { PersonaCard, type PersonaCardData } from "./persona-card";
 import { getPersonaTheme, INVESTORS_ORDERED } from "./persona-themes";
@@ -169,6 +170,7 @@ export function PersonaGallery({
   showReportSelector?: boolean;
   canUseChat: boolean;
 }) {
+  const { workspace, api } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [chatByScope, setChatByScope] = useState<Record<string, PersonaChatState>>({});
@@ -273,8 +275,8 @@ export function PersonaGallery({
   );
 
   const chatApiPath = useMemo(
-    () => `/api/dashboard/${encodeURIComponent(ticker)}/dream-team/chat`,
-    [ticker],
+    () => api(`/api/dashboard/${encodeURIComponent(ticker)}/dream-team/chat`),
+    [api, ticker],
   );
 
   const fetchFilings = useCallback(
@@ -294,6 +296,7 @@ export function PersonaGallery({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "fetch_filings",
+            workspace,
             report_id: currentReportId,
             persona: active.persona,
             include_annual: args.annual,
@@ -340,7 +343,7 @@ export function PersonaGallery({
         }));
       }
     },
-    [active.persona, canUseChat, chatApiPath, currentReportId, setActiveChat],
+    [active.persona, canUseChat, chatApiPath, currentReportId, setActiveChat, workspace],
   );
 
   const sendMessage = useCallback(async (forcedUserMessage?: string) => {
@@ -395,6 +398,7 @@ export function PersonaGallery({
             signal: abortController.signal,
             body: JSON.stringify({
               action: "chat",
+              workspace,
               report_id: currentReportId,
               persona: active.persona,
               messages: messagesForRequest.map((row) => ({
@@ -511,6 +515,7 @@ export function PersonaGallery({
     chatApiPath,
     currentReportId,
     setActiveChat,
+    workspace,
   ]);
 
   const stopThinking = useCallback((sendAfterStop: boolean) => {

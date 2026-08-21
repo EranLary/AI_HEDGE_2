@@ -23,6 +23,7 @@ from .dashboard import (
     write_dashboard_payload,
 )
 from .io import get_artifact_store
+from .workspaces import normalize_workspace_release
 
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name, "").strip()
@@ -1384,10 +1385,13 @@ def run_ticker_valuation(
     valuation_blocks_workers: int = DEFAULT_VALUATION_BLOCK_WORKERS,
     progress_file: Optional[str] = None,
     run_source: str = "site",
+    workspace: str = "analysis",
+    release_id: str | None = None,
 ) -> Dict[str, object]:
     """Public entry - bookends the implementation with obs lifecycle."""
     from . import obs as _obs
 
+    workspace, release_id = normalize_workspace_release(workspace, release_id)
     _obs.install()
     ticker_clean = ticker.upper().strip()
     obs_run_id = _obs.db.insert_run(ticker=ticker_clean, source=run_source)
@@ -1407,6 +1411,8 @@ def run_ticker_valuation(
             valuation_blocks_workers=valuation_blocks_workers,
             progress_file=progress_file,
             run_source=run_source,
+            workspace=workspace,
+            release_id=release_id,
         )
     except Exception as exc:
         obs_status = "error"
@@ -1436,6 +1442,8 @@ def _run_ticker_valuation_impl(
     valuation_blocks_workers: int = DEFAULT_VALUATION_BLOCK_WORKERS,
     progress_file: Optional[str] = None,
     run_source: str = "site",
+    workspace: str = "analysis",
+    release_id: str | None = None,
 ) -> Dict[str, object]:
     """
     Runs the notebook-equivalent valuation flow for one ticker and saves artifacts.
@@ -2024,6 +2032,8 @@ def _run_ticker_valuation_impl(
                 "financials_json": financials_json,
             },
         )
+        dashboard_payload["workspace"] = workspace
+        dashboard_payload["release_id"] = release_id
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
         try:
             dashboard_signal_snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)
@@ -2135,7 +2145,8 @@ def _run_ticker_valuation_impl(
     for kind, local_path in artifact_local_paths.items():
         if local_path is None or not local_path.exists():
             continue
-        r2_key = f"reports/{ticker}/{generated_at_iso}/{local_path.name}"
+        release_segment = release_id or "direct"
+        r2_key = f"reports/{workspace}/{release_segment}/{ticker}/{generated_at_iso}/{local_path.name}"
         collected_keys[kind] = store.put(local_path, key=r2_key)
     r2_keys: Optional[Dict[str, str]] = collected_keys if store.is_remote else None
 
@@ -2147,6 +2158,8 @@ def _run_ticker_valuation_impl(
             max_attempts=3,
             retry_backoff_seconds=1.5,
             r2_keys=r2_keys,
+            workspace=workspace,
+            release_id=release_id,
         )
         if _db_err:
             print(f"[runner] DB write failed: {_db_err}", file=sys.stderr)

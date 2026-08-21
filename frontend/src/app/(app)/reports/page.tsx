@@ -10,6 +10,7 @@ import {
   CommunityList,
 } from "@/components/reports/community-list";
 import { ReportsTabs, type ReportsTabKey } from "@/components/reports/reports-tabs";
+import { parseWorkspace, type Workspace } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,10 @@ function filterByQuery(rows: DbReportSummary[], query: string): DbReportSummary[
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; workspace?: string }>;
 }) {
   const params = await searchParams;
+  const workspace = parseWorkspace(params.workspace);
   const session = await auth();
   const userId = session?.user?.id || null;
   const signedIn = Boolean(userId);
@@ -53,12 +55,12 @@ export default async function ReportsPage({
         </p>
       </header>
 
-      <ReportsTabs active={tab} signedIn={signedIn} initialQuery={query} />
+      <ReportsTabs active={tab} signedIn={signedIn} initialQuery={query} workspace={workspace} />
 
       {tab === "community" ? (
-        <CommunityTabContent query={query} signedIn={signedIn} />
+        <CommunityTabContent query={query} signedIn={signedIn} workspace={workspace} />
       ) : (
-        <MineTabContent userId={userId} signedIn={signedIn} query={query} />
+        <MineTabContent userId={userId} signedIn={signedIn} query={query} workspace={workspace} />
       )}
     </div>
   );
@@ -67,9 +69,11 @@ export default async function ReportsPage({
 async function CommunityTabContent({
   query,
   signedIn,
+  workspace,
 }: {
   query: string;
   signedIn: boolean;
+  workspace: Workspace;
 }) {
   let rows: DbReportSummary[] = [];
   let hasMore = false;
@@ -78,6 +82,7 @@ async function CommunityTabContent({
       query,
       limit: COMMUNITY_PAGE_SIZE,
       offset: 0,
+      workspace,
     });
     rows = page.rows;
     hasMore = page.hasMore;
@@ -86,7 +91,7 @@ async function CommunityTabContent({
   }
 
   if (!rows.length) {
-    return <EmptyState tab="community" signedIn={signedIn} hasQuery={Boolean(query)} />;
+    return <EmptyState tab="community" signedIn={signedIn} hasQuery={Boolean(query)} workspace={workspace} />;
   }
 
   return (
@@ -95,6 +100,7 @@ async function CommunityTabContent({
       initialRows={rows}
       initialHasMore={hasMore}
       query={query}
+      workspace={workspace}
     />
   );
 }
@@ -103,21 +109,23 @@ async function MineTabContent({
   userId,
   signedIn,
   query,
+  workspace,
 }: {
   userId: string | null;
   signedIn: boolean;
   query: string;
+  workspace: Workspace;
 }) {
   let rows: DbReportSummary[] = [];
   try {
-    rows = userId ? await listUserReports(userId) : [];
+    rows = userId ? await listUserReports(userId, workspace) : [];
   } catch (err) {
     console.warn("[reports] DB read failed:", err);
   }
   const filtered = filterByQuery(rows, query);
 
   if (!filtered.length) {
-    return <EmptyState tab="mine" signedIn={signedIn} hasQuery={Boolean(query)} />;
+    return <EmptyState tab="mine" signedIn={signedIn} hasQuery={Boolean(query)} workspace={workspace} />;
   }
 
   return (
@@ -135,10 +143,12 @@ function EmptyState({
   tab,
   signedIn,
   hasQuery,
+  workspace = "analysis",
 }: {
   tab: ReportsTabKey;
   signedIn: boolean;
   hasQuery: boolean;
+  workspace?: Workspace;
 }) {
   if (hasQuery) {
     return (
@@ -163,17 +173,32 @@ function EmptyState({
     }
     return (
       <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
-        <p className="text-sm text-zinc-300">You haven&apos;t analyzed any tickers yet.</p>
-        <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
-          Use <span className="text-emerald-200">+ New Analysis</span> in the sidebar to start.
+        <p className="text-sm text-zinc-300">
+          {workspace === "nasdaq100"
+            ? "No Nasdaq 100 reports are assigned to your account."
+            : "You haven't analyzed any tickers yet."}
         </p>
+        {workspace === "analysis" ? (
+          <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
+            Use <span className="text-emerald-200">+ New Analysis</span> in the sidebar to start.
+          </p>
+        ) : null}
       </div>
     );
   }
   return (
     <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
-      <p className="text-sm text-zinc-300">No public reports yet.</p>
-      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
+      <p className="text-sm text-zinc-300">
+        {workspace === "nasdaq100"
+          ? "The first Nasdaq 100 release has not been activated yet."
+          : "No public reports yet."}
+      </p>
+      {workspace === "nasdaq100" ? (
+        <p className="mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
+          Reports will appear together when an operator activates a completed release.
+        </p>
+      ) : null}
+      <p className={`${workspace === "nasdaq100" ? "hidden " : ""}mt-2 text-xs uppercase tracking-[0.16em] text-zinc-500`}>
         Run an analysis from the sidebar — your reports default to public.
       </p>
     </div>

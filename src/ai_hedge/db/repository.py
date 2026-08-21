@@ -10,11 +10,14 @@ from psycopg.types.json import Jsonb
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 _DROP_SQL = """
+DROP TRIGGER IF EXISTS reports_validate_release ON reports;
 DROP TRIGGER IF EXISTS reports_after_change ON reports;
 DROP FUNCTION IF EXISTS trg_reports_after_change();
 DROP TABLE IF EXISTS report_artifacts;
 DROP TABLE IF EXISTS reports;
+DROP TABLE IF EXISTS report_releases;
 DROP TABLE IF EXISTS tickers;
+DROP FUNCTION IF EXISTS validate_report_release_membership();
 """
 
 
@@ -46,20 +49,28 @@ INSERT INTO reports (
     ticker, user_id, generated_at, dashboard_version,
     company_name, current_price, market_cap, currency,
     recommendation, mean_target_price,
-    visibility, source, source_run_id, origin_path
+    visibility, source, source_run_id, origin_path, workspace, release_id
 ) VALUES (
     %(ticker)s, %(user_id)s, %(generated_at)s, %(dashboard_version)s,
     %(company_name)s, %(current_price)s, %(market_cap)s, %(currency)s,
     %(recommendation)s, %(mean_target_price)s,
-    %(visibility)s, %(source)s, %(source_run_id)s, %(origin_path)s
+    %(visibility)s, %(source)s, %(source_run_id)s, %(origin_path)s, %(workspace)s, %(release_id)s
 )
-ON CONFLICT ((coalesce(user_id::text, '')), ticker, generated_at) DO NOTHING
+ON CONFLICT (
+    (coalesce(user_id::text, '')),
+    workspace,
+    (coalesce(release_id::text, '')),
+    ticker,
+    generated_at
+) DO NOTHING
 RETURNING id;
 """
 
 _SELECT_EXISTING_REPORT_ID_SQL = """
 SELECT id FROM reports
  WHERE coalesce(user_id::text, '') = coalesce(%(user_id)s::text, '')
+   AND workspace = %(workspace)s
+   AND coalesce(release_id::text, '') = coalesce(%(release_id)s::text, '')
    AND ticker = %(ticker)s
    AND generated_at = %(generated_at)s
  LIMIT 1;
@@ -101,6 +112,8 @@ def insert_report(
         if result is None:
             cur.execute(_SELECT_EXISTING_REPORT_ID_SQL, {
                 "user_id": report_row["user_id"],
+                "workspace": report_row["workspace"],
+                "release_id": report_row["release_id"],
                 "ticker": report_row["ticker"],
                 "generated_at": report_row["generated_at"],
             })
@@ -118,7 +131,7 @@ def insert_report(
 
 
 def get_latest_by_ticker(
-    conn: psycopg.Connection, ticker: str
+    conn: psycopg.Connection, ticker: str, workspace: str = "analysis"
 ) -> dict | None:
     sql = """
     SELECT r.id, r.ticker, r.generated_at, r.dashboard_version,
@@ -129,12 +142,14 @@ def get_latest_by_ticker(
            a.dashboard, a.analysis_md, a.prices_explain_md, a.analysis_md_source
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
-     WHERE r.ticker = %s AND r.deleted_at IS NULL
+      LEFT JOIN report_releases rr ON rr.id = r.release_id
+     WHERE r.ticker = %s AND r.workspace = %s AND r.deleted_at IS NULL
+       AND (r.workspace = 'analysis' OR rr.status = 'active')
      ORDER BY r.generated_at DESC
      LIMIT 1;
     """
     with conn.cursor() as cur:
-        cur.execute(sql, (ticker,))
+        cur.execute(sql, (ticker, workspace))
         row = cur.fetchone()
         if row is None:
             return None

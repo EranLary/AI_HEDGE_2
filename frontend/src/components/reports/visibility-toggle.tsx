@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock, LockOpen } from "lucide-react";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type Visibility = "public" | "private" | "unlisted";
 
@@ -12,6 +13,7 @@ export function VisibilityToggle({
   reportId: string;
   variant?: "badge" | "icon";
 }) {
+  const { workspace, api } = useWorkspace();
   const [visibility, setVisibility] = useState<Visibility | null>(null);
   const [ownsThis, setOwnsThis] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -19,7 +21,7 @@ export function VisibilityToggle({
   useEffect(() => {
     if (!reportId) return;
     let cancelled = false;
-    fetch(`/api/reports/${encodeURIComponent(reportId)}/visibility`, { cache: "no-store" })
+    fetch(api(`/api/reports/${encodeURIComponent(reportId)}/visibility`), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled || !j) return;
@@ -30,7 +32,7 @@ export function VisibilityToggle({
     return () => {
       cancelled = true;
     };
-  }, [reportId]);
+  }, [api, reportId, workspace]);
 
   if (!ownsThis || !visibility) return null;
 
@@ -42,7 +44,7 @@ export function VisibilityToggle({
     event?.stopPropagation();
     setBusy(true);
     try {
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}/visibility`, {
+      const res = await fetch(api(`/api/reports/${encodeURIComponent(reportId)}/visibility`), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ visibility: next }),

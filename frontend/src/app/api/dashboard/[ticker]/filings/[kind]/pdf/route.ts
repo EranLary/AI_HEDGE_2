@@ -5,24 +5,31 @@ import { NextResponse } from "next/server";
 
 import { buildFilingPdf } from "@/lib/filings-engine";
 import { TICKER_RE } from "@/lib/site-runner";
+import { fetchLatestReport } from "@/lib/reports-db";
+import { parseApiWorkspace } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ ticker: string; kind: string }> },
 ) {
   const { ticker, kind } = await context.params;
   const tk = String(ticker || "").trim().toUpperCase();
   const filingKind = String(kind || "").trim().toLowerCase();
+  const workspace = parseApiWorkspace(new URL(req.url).searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
 
   if (!TICKER_RE.test(tk)) {
     return NextResponse.json({ error: "Invalid ticker format." }, { status: 400 });
   }
   if (filingKind !== "annual" && filingKind !== "quarterly") {
     return NextResponse.json({ error: "Invalid filing kind." }, { status: 400 });
+  }
+  if (!(await fetchLatestReport(tk, workspace))) {
+    return NextResponse.json({ error: "Report not found in this workspace." }, { status: 404 });
   }
 
   let builtPath = "";

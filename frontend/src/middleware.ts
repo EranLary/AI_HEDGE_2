@@ -1,12 +1,41 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { auth } from "@/auth";
 import { shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 
+const LEGACY_APP_PREFIXES = ["/reports", "/compare", "/screeners", "/discovery", "/hit-rate", "/dashboard"];
+
+function workspaceRouting(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const match = pathname.match(/^\/(analysis|nasdaq100)(\/.*)?$/);
+  if (match) {
+    const workspace = match[1];
+    const innerPath = match[2] && match[2] !== "/" ? match[2] : "/reports";
+    if (workspace === "nasdaq100" && (innerPath === "/compare" || innerPath.startsWith("/compare/"))) {
+      const notFoundUrl = req.nextUrl.clone();
+      notFoundUrl.pathname = "/workspace-not-found";
+      notFoundUrl.searchParams.set("workspace", workspace);
+      return NextResponse.rewrite(notFoundUrl);
+    }
+    const rewriteUrl = req.nextUrl.clone();
+    rewriteUrl.pathname = innerPath;
+    rewriteUrl.searchParams.set("workspace", workspace);
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/analysis/reports", req.url));
+  }
+  if (LEGACY_APP_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+    return NextResponse.redirect(new URL(`/analysis${pathname}${req.nextUrl.search}`, req.url));
+  }
+  return NextResponse.next();
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   if (shouldBypassAuthForHostname(req.nextUrl.hostname)) {
-    return NextResponse.next();
+    return workspaceRouting(req);
   }
 
   const isPublic =
@@ -14,7 +43,7 @@ export default auth((req) => {
     pathname.startsWith("/api/auth/");
 
   if (isPublic) return NextResponse.next();
-  if (req.auth) return NextResponse.next();
+  if (req.auth) return workspaceRouting(req);
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

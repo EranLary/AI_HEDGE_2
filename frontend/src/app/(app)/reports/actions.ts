@@ -5,6 +5,7 @@ import {
   listCommunityReportsPaged,
   type DbReportSummary,
 } from "@/lib/reports-db";
+import type { Workspace } from "@/lib/workspace";
 
 export type LoadMoreCommunityResult = {
   rows: DbReportSummary[];
@@ -15,6 +16,7 @@ export async function loadMoreCommunity(input: {
   offset: number;
   limit: number;
   query: string;
+  workspace: Workspace;
 }): Promise<LoadMoreCommunityResult> {
   await auth();
   try {
@@ -22,6 +24,7 @@ export async function loadMoreCommunity(input: {
       query: input.query,
       limit: input.limit,
       offset: input.offset,
+      workspace: input.workspace,
     });
   } catch (err) {
     console.warn("[reports] loadMoreCommunity failed:", err);

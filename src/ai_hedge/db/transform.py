@@ -136,6 +136,8 @@ def ticker_dir_to_row(
     ticker_dir: Path,
     *,
     source: str,
+    workspace: str = "analysis",
+    release_id: str | None = None,
     source_root: Path | None = None,
     origin_root: str | None = None,
 ) -> dict | None:
@@ -159,6 +161,8 @@ def ticker_dir_to_row(
     except (OSError, json.JSONDecodeError):
         return None
     dashboard = _json_safe(dashboard)
+    dashboard["workspace"] = workspace
+    dashboard["release_id"] = release_id
 
     ticker = dashboard.get("ticker") or ticker_dir.name
     if not ticker:
@@ -210,6 +214,8 @@ def ticker_dir_to_row(
         "source": source,
         "source_run_id": _infer_run_id(ticker_dir),
         "origin_path": origin_path,
+        "workspace": workspace,
+        "release_id": release_id,
     }
 
     artifact_row = {

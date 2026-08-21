@@ -7,6 +7,7 @@ import {
   computePortfolioNavSeries,
   firstBenchmarkDateAfter,
   firstExecutionDateForCandidates,
+  portfolioWorkspaceConfig,
   summarizePortfolioPeriod,
   type MarketPricePoint,
   type PortfolioSnapshotDefinition,
@@ -70,11 +71,14 @@ test("snapshot construction selects at most 20 positive names with equal 1/N wei
 function snapshot(args: { id: string; executionDate: string; ticker: string; entryPrice: number }): PortfolioSnapshotDefinition {
   return {
     id: args.id,
+    workspace: "analysis",
     track: "backtest",
     lens: { type: "overall", key: null, label: "Overall" },
     cutoffAt: `${args.executionDate}T00:00:00Z`,
     executionDate: args.executionDate,
     methodologyVersion: "test",
+    benchmarkSymbol: "^SP500TR",
+    benchmarkName: "S&P 500 Total Return",
     candidateCount: 1,
     status: "ready",
     holdings: [{
@@ -89,6 +93,16 @@ function snapshot(args: { id: string; executionDate: string; ticker: string; ent
     }],
   };
 }
+
+test("workspace config keeps Analysis on SP500TR and Nasdaq 100 on the QQQ adjusted-close proxy", () => {
+  const analysis = portfolioWorkspaceConfig("analysis");
+  const nasdaq = portfolioWorkspaceConfig("nasdaq100");
+  assert.equal(analysis.benchmarkSymbol, "^SP500TR");
+  assert.equal(analysis.benchmarkName, "S&P 500 Total Return");
+  assert.equal(nasdaq.benchmarkSymbol, "QQQ");
+  assert.equal(nasdaq.benchmarkName, "Invesco QQQ — total-return proxy");
+  assert.match(nasdaq.universe, /active releases/i);
+});
 
 test("NAV starts flat at the execution close and rebalances only on the next snapshot date", () => {
   const benchmark = [

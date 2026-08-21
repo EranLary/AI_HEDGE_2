@@ -40,7 +40,7 @@ export function ActiveRunsPanel({ collapsed = false }: { collapsed?: boolean }) 
               <div className="rounded-md px-2 py-1 text-xs text-emerald-50 hover:bg-emerald-500/12">
                 <div className="flex items-center justify-between gap-2">
                   <Link
-                    href={`/dashboard/${encodeURIComponent(run.ticker)}/summary`}
+                    href={`/analysis/dashboard/${encodeURIComponent(run.ticker)}/summary`}
                     className="font-semibold hover:underline"
                   >
                     {run.ticker}

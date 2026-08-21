@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 
 import type { DashboardMethodTab, DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useWorkspace } from "@/components/shell/workspace-context";
 import { canonicalModelName } from "@/lib/method-display";
 import {
   tradingAgentsDecisionTone,
@@ -1053,6 +1054,7 @@ export function HedgeDashboard({
   onReportChange,
   postHeaderSlot,
 }: HedgeDashboardProps = {}) {
+  const { workspace, api, href } = useWorkspace();
   const [reports, setReports] = useState<ReportListItem[]>([]);
   const [tickers, setTickers] = useState<string[]>([]);
   const [selectedTicker, setSelectedTicker] = useState(() =>
@@ -1091,8 +1093,8 @@ export function HedgeDashboard({
         ? String(new URLSearchParams(window.location.search).get("report") || "").trim()
         : "");
     Promise.all([
-      fetch("/api/reports", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ reports: [] })),
-      fetch("/api/tickers", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ tickers: [] })),
+      fetch(api("/api/reports"), { cache: "no-store" }).then((r) => r.json()).catch(() => ({ reports: [] })),
+      fetch(api("/api/tickers"), { cache: "no-store" }).then((r) => r.json()).catch(() => ({ tickers: [] })),
     ])
       .then(([reportsJson, tickersJson]) => {
         const reportRows = Array.isArray(reportsJson?.reports) ? (reportsJson.reports as ReportListItem[]) : [];
@@ -1191,7 +1193,7 @@ export function HedgeDashboard({
     const url = currentReportId
       ? `/api/dashboard/${selectedTicker}?report=${encodeURIComponent(currentReportId)}`
       : `/api/dashboard/${selectedTicker}`;
-    fetch(url, { cache: "no-store" })
+    fetch(api(url), { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
@@ -1205,7 +1207,7 @@ export function HedgeDashboard({
       })
       .catch(() => setError(`Failed to load dashboard for ${selectedTicker}.`))
       .finally(() => setLoading(false));
-  }, [selectedTicker, currentReportId]);
+  }, [api, currentReportId, selectedTicker, workspace]);
 
   useEffect(() => {
     if (!selectedTicker) return;
@@ -1761,7 +1763,7 @@ export function HedgeDashboard({
               <Link href="/" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
                 New Run
               </Link>
-              <Link href="/discovery" className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
+              <Link href={href("/discovery")} className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.16em]">
                 Market Discovery
               </Link>
               <ThemeToggle />

@@ -1,5 +1,6 @@
 import { DashboardError } from "@/components/dashboard-chrome";
 import { loadTickerData } from "@/lib/dashboard-server";
+import { parseWorkspace } from "@/lib/workspace";
 
 import { SecQaClient } from "./sec-qa-client";
 
@@ -13,10 +14,11 @@ export default async function DashboardSecQaPage({
   const { ticker } = await params;
   const search = (await searchParams) ?? {};
   const reportId = typeof search.report === "string" ? search.report : undefined;
+  const workspace = parseWorkspace(search.workspace);
 
   let resolved;
   try {
-    resolved = await loadTickerData(ticker, reportId);
+    resolved = await loadTickerData(ticker, reportId, workspace);
   } catch (err) {
     const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
     return <DashboardError error={(err as Error)?.message || "Failed to load dashboard"} ticker={upper} />;

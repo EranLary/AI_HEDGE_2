@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { Gem, Radar, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type DiscoveryLensType = "overall" | "model" | "valuator";
 
@@ -66,6 +67,7 @@ function SectionCard({
   accent: string;
   metricLabel: "return" | "disagreement" | "allocation" | "score";
 }) {
+  const { href } = useWorkspace();
   const [topN, setTopN] = useState<10 | 20>(10);
   const shownRows = rows.slice(0, topN);
   const canShow20 = rows.length > 10;
@@ -106,7 +108,7 @@ function SectionCard({
                   <p className="text-xs text-zinc-500">{row.company_name}</p>
                 </div>
                 <Link
-                  href={`/dashboard/${encodeURIComponent(row.ticker)}/summary`}
+                  href={href(`/dashboard/${encodeURIComponent(row.ticker)}/summary`)}
                   className="rounded-md border border-white/15 px-2 py-1 text-xs text-zinc-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/10"
                 >
                   Open
@@ -154,6 +156,7 @@ function SectionCard({
 }
 
 export default function DiscoveryPage() {
+  const { workspace, api } = useWorkspace();
   const [data, setData] = useState<DiscoveryPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [lensType, setLensType] = useState<DiscoveryLensType>("overall");
@@ -191,7 +194,7 @@ export default function DiscoveryPage() {
         if (lensType !== "overall" && lensKey.trim()) {
           params.set("lens_key", lensKey.trim());
         }
-        const res = await fetch(`/api/discovery?${params.toString()}`, { cache: "no-store" });
+        const res = await fetch(api(`/api/discovery?${params.toString()}`), { cache: "no-store" });
         const json = (await res.json()) as DiscoveryPayload;
         if (!cancelled) {
           setData(json);
@@ -206,7 +209,7 @@ export default function DiscoveryPage() {
     return () => {
       cancelled = true;
     };
-  }, [lensType, lensKey]);
+  }, [api, lensType, lensKey, workspace]);
 
   const modelOptions = data?.lens_options.models || [];
   const valuatorOptions = data?.lens_options.valuators || [];
@@ -295,6 +298,11 @@ export default function DiscoveryPage() {
             <p className="mb-4 text-sm text-zinc-400">
               Scanned {data.count} tickers for this lens. Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
             </p>
+            {workspace === "nasdaq100" && data.count === 0 ? (
+              <div className="mb-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4 text-sm text-[color:var(--text-muted)]">
+                Nasdaq 100 Discovery will appear after the first release is activated.
+              </div>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <SectionCard
                 title="Top Scores"

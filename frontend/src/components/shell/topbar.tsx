@@ -2,13 +2,15 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
 import { useTickerContext } from "@/components/shell/ticker-context";
 import type { ReportListItem } from "@/lib/dashboard-types";
+import { useWorkspace } from "@/components/shell/workspace-context";
+import { WORKSPACES, WORKSPACE_CONFIG, workspacePath, type Workspace } from "@/lib/workspace";
 
 type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
 
@@ -33,6 +35,15 @@ type TopbarProps = {
 
 export function Topbar({ onMobileMenu }: TopbarProps) {
   const { activeTicker, activeSection } = useTickerContext();
+  const { workspace } = useWorkspace();
+  const pathname = usePathname() || `/${workspace}/reports`;
+
+  const switchHref = (target: Workspace): string => {
+    if (target === workspace) return pathname;
+    const inner = pathname.replace(/^\/(?:analysis|nasdaq100)/, "") || "/reports";
+    if (inner.startsWith("/dashboard") || inner.startsWith("/compare")) return workspacePath(target, "/reports");
+    return workspacePath(target, inner);
+  };
 
   return (
     <header className="hib-topbar sticky top-0 z-30 flex items-center gap-3 px-3 py-2 sm:px-6">
@@ -47,20 +58,32 @@ export function Topbar({ onMobileMenu }: TopbarProps) {
             <Menu size={16} />
           </button>
         ) : null}
+        <nav aria-label="Workspace" className="flex rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-0.5">
+          {WORKSPACES.map((item) => (
+            <Link
+              key={item}
+              href={switchHref(item)}
+              aria-current={workspace === item ? "page" : undefined}
+              className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition sm:px-2.5 sm:text-[11px] ${
+                workspace === item
+                  ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                  : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+              }`}
+            >
+              {WORKSPACE_CONFIG[item].label}
+            </Link>
+          ))}
+        </nav>
         {activeTicker ? (
-          <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" score={null} />}>
-            <TickerBadgeWithReport activeTicker={activeTicker} />
+          <Suspense fallback={<TickerBadge activeTicker={activeTicker} suffix="" score={null} workspace={workspace} />}>
+            <TickerBadgeWithReport activeTicker={activeTicker} workspace={workspace} />
           </Suspense>
-        ) : (
-          <Link href="/" className="hib-breadcrumb text-xs uppercase tracking-[0.14em] hover:text-zinc-100">
-            Home
-          </Link>
-        )}
+        ) : null}
       </div>
 
       {activeTicker ? (
         <Suspense fallback={<div className="min-w-0 flex-1" />}>
-          <SectionPills activeTicker={activeTicker} activeSection={activeSection} />
+          <SectionPills activeTicker={activeTicker} activeSection={activeSection} workspace={workspace} />
         </Suspense>
       ) : (
         <div className="min-w-0 flex-1" />
@@ -85,10 +108,10 @@ function scoreBadgeClass(value?: number | null): string {
   return "border-white/15 bg-white/5 text-zinc-100";
 }
 
-function TickerBadge({ activeTicker, suffix, score }: { activeTicker: string; suffix: string; score?: number | null }) {
+function TickerBadge({ activeTicker, suffix, score, workspace = "analysis" }: { activeTicker: string; suffix: string; score?: number | null; workspace?: Workspace }) {
   return (
     <Link
-      href={`/dashboard/${encodeURIComponent(activeTicker)}/summary${suffix}`}
+      href={`${workspacePath(workspace, `/dashboard/${encodeURIComponent(activeTicker)}/summary`)}${suffix}`}
       className={`hib-breadcrumb inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ring-1 ring-sky-300/70 ring-offset-1 ring-offset-zinc-950 ${scoreBadgeClass(score)}`}
     >
       <strong>{activeTicker}</strong>
@@ -96,7 +119,7 @@ function TickerBadge({ activeTicker, suffix, score }: { activeTicker: string; su
   );
 }
 
-function TickerBadgeWithReport({ activeTicker }: { activeTicker: string }) {
+function TickerBadgeWithReport({ activeTicker, workspace }: { activeTicker: string; workspace: Workspace }) {
   const search = useSearchParams();
   const reportParam = search?.get("report");
   const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
@@ -104,7 +127,7 @@ function TickerBadgeWithReport({ activeTicker }: { activeTicker: string }) {
 
   useEffect(() => {
     let canceled = false;
-    fetch("/api/reports", { cache: "no-store" })
+    fetch(`/api/reports?workspace=${workspace}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { reports: [] }))
       .then((json) => {
         if (canceled) return;
@@ -116,21 +139,23 @@ function TickerBadgeWithReport({ activeTicker }: { activeTicker: string }) {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [workspace]);
 
   const tickerReports = reports.filter((r) => String(r.ticker || "").toUpperCase() === activeTicker.toUpperCase());
   const current = reportParam
     ? tickerReports.find((r) => r.report_id === reportParam)
     : tickerReports[0];
-  return <TickerBadge activeTicker={activeTicker} suffix={suffix} score={current?.score} />;
+  return <TickerBadge activeTicker={activeTicker} suffix={suffix} score={current?.score} workspace={workspace} />;
 }
 
 function SectionPills({
   activeTicker,
   activeSection,
+  workspace,
 }: {
   activeTicker: string;
   activeSection: string | null;
+  workspace: Workspace;
 }) {
   const search = useSearchParams();
   const reportParam = search?.get("report");
@@ -141,7 +166,7 @@ function SectionPills({
       <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:gap-2">
         {SECTIONS.map((s) => {
           const active = activeSection === s.slug;
-          const href = `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}${suffix}`;
+          const href = `${workspacePath(workspace, `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}`)}${suffix}`;
           const Icon = s.icon;
           return (
             <Link

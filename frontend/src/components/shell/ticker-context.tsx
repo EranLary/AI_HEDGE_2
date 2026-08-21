@@ -10,7 +10,7 @@ type TickerContextValue = {
 
 const TickerContext = createContext<TickerContextValue>({ activeTicker: null, activeSection: null });
 
-const DASHBOARD_MATCH = /^\/dashboard\/([^/]+)(?:\/([^/]+))?/;
+const DASHBOARD_MATCH = /^\/(?:analysis|nasdaq100)\/dashboard\/([^/]+)(?:\/([^/]+))?/;
 
 export function TickerProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname() || "/";

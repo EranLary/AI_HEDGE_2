@@ -3,9 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 export function DeleteReportButton({ reportId }: { reportId: string }) {
   const router = useRouter();
+  const { api } = useWorkspace();
   const [busy, setBusy] = useState(false);
 
   async function deleteReport(event: React.MouseEvent<HTMLButtonElement>) {
@@ -17,7 +19,7 @@ export function DeleteReportButton({ reportId }: { reportId: string }) {
 
     setBusy(true);
     try {
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`, {
+      const res = await fetch(api(`/api/reports/${encodeURIComponent(reportId)}`), {
         method: "DELETE",
         cache: "no-store",
       });

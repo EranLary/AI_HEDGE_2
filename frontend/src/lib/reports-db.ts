@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db";
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
+import type { Workspace } from "@/lib/workspace";
 
 export type ReportVisibility = "public" | "private" | "unlisted";
 
@@ -20,6 +21,8 @@ export interface DbReportSummary {
   source: string;
   source_run_id: string | null;
   visibility: ReportVisibility;
+  workspace: Workspace;
+  release_id: string | null;
 }
 
 export interface DbReportFull extends DbReportSummary {
@@ -46,7 +49,7 @@ export interface DeletedReportRef {
   source_run_id: string | null;
 }
 
-export async function fetchLatestReport(ticker: string): Promise<DbReportFull | null> {
+export async function fetchLatestReport(ticker: string, workspace: Workspace = "analysis"): Promise<DbReportFull | null> {
   if (isExcludedTicker(ticker)) return null;
   const sql = getSql();
   if (!sql) return null;
@@ -72,7 +75,7 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
            r.source, r.source_run_id,
-           r.visibility,
+           r.visibility, r.workspace, r.release_id::text AS release_id,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -80,7 +83,10 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
            a.r2_keys
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.ticker = ${ticker.toUpperCase()}
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
        AND r.deleted_at IS NULL
      ORDER BY r.generated_at DESC
      LIMIT 1
@@ -88,7 +94,7 @@ export async function fetchLatestReport(ticker: string): Promise<DbReportFull | 
   return rows[0] || null;
 }
 
-export async function fetchReportById(id: string): Promise<DbReportFull | null> {
+export async function fetchReportById(id: string, workspace: Workspace = "analysis"): Promise<DbReportFull | null> {
   const sql = getSql();
   if (!sql) return null;
   const rows = (await sql`
@@ -113,7 +119,7 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
            r.source, r.source_run_id,
-           r.visibility,
+           r.visibility, r.workspace, r.release_id::text AS release_id,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -121,7 +127,10 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
            a.r2_keys
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.id = ${id}::uuid
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
        AND r.deleted_at IS NULL
      LIMIT 1
   `) as unknown as DbReportFull[];
@@ -129,23 +138,36 @@ export async function fetchReportById(id: string): Promise<DbReportFull | null> 
   return row && !isExcludedTicker(row.ticker) ? row : null;
 }
 
-export async function listAllTickerSymbols(): Promise<string[]> {
+export async function listAllTickerSymbols(workspace: Workspace = "analysis"): Promise<string[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT symbol FROM tickers ORDER BY symbol;
+    SELECT DISTINCT r.ticker AS symbol
+      FROM reports r
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
+     WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
+     ORDER BY symbol;
   `) as unknown as { symbol: string }[];
   return filterExcludedTickers(rows.map((r) => r.symbol));
 }
 
-export async function listTickers(): Promise<DbTickerRow[]> {
+export async function listTickers(workspace: Workspace = "analysis"): Promise<DbTickerRow[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT symbol, company_name, exchange, currency, report_count,
-           last_analyzed_at::text AS last_analyzed_at
-      FROM tickers
-     ORDER BY report_count DESC, symbol;
+    SELECT t.symbol, t.company_name, t.exchange, t.currency,
+           count(r.id)::int AS report_count,
+           max(r.generated_at)::text AS last_analyzed_at
+      FROM tickers t
+      JOIN reports r ON r.ticker = t.symbol
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
+     WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
+     GROUP BY t.symbol, t.company_name, t.exchange, t.currency
+     ORDER BY report_count DESC, t.symbol;
   `) as unknown as DbTickerRow[];
   return filterExcludedTickers(rows, (row) => row.symbol);
 }
@@ -154,7 +176,7 @@ export async function listTickers(): Promise<DbTickerRow[]> {
  * Latest report per ticker — slim metadata, no JSON payload, no markdown.
  * The right query for any list page (homepage, discovery, recent reports).
  */
-export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
+export async function listLatestReportsPerTicker(workspace: Workspace = "analysis"): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -177,10 +199,13 @@ export async function listLatestReportsPerTicker(): Promise<DbReportSummary[]> {
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
            r.source, r.source_run_id,
-           r.visibility
+           r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
       LEFT JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -199,6 +224,7 @@ export async function attributeReportToUser(opts: {
      WHERE ticker = ${opts.ticker}
        AND source = 'site'
        AND source_run_id = ${opts.jobId}
+       AND workspace = 'analysis'
        AND user_id IS NULL
      RETURNING id;
   `) as Array<{ id: string }>;
@@ -215,9 +241,9 @@ function siteRunIdFromPathLike(value: string): string | null {
   return match?.[1] ? String(match[1]).trim() : null;
 }
 
-async function deletedReportPredicate(): Promise<DeletedReportPredicate> {
+async function deletedReportPredicate(workspace: Workspace): Promise<DeletedReportPredicate> {
   try {
-    const refs = await listDeletedReportRefs();
+    const refs = await listDeletedReportRefs(workspace);
     const ids = new Set<string>();
     const runKeys = new Set<string>();
     for (const ref of refs) {
@@ -235,12 +261,18 @@ async function deletedReportPredicate(): Promise<DeletedReportPredicate> {
   }
 }
 
-function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedReportPredicate = () => false): DbReportSummary[] {
+function fallbackCommunityReportsFromOutputs(
+  workspace: Workspace,
+  query?: string,
+  isDeleted: DeletedReportPredicate = () => false,
+): DbReportSummary[] {
+  if (workspace === "nasdaq100") return [];
   const q = String(query || "").trim().toLowerCase();
   const rows: DbReportSummary[] = [];
   for (const entry of listDashboardReports()) {
     const dashboard = readJson<DashboardPayload>(entry.path);
     if (!dashboard) continue;
+    if (dashboard.workspace === "nasdaq100") continue;
     const ticker = String(dashboard.ticker || entry.ticker || "").toUpperCase();
     if (!ticker) continue;
     if (isDeleted(entry.report_id, ticker, siteRunIdFromPathLike(entry.path))) continue;
@@ -291,6 +323,8 @@ function fallbackCommunityReportsFromOutputs(query?: string, isDeleted: DeletedR
       source: "site",
       source_run_id: null,
       visibility: "public",
+      workspace: "analysis",
+      release_id: null,
     });
   }
   rows.sort((a, b) => Date.parse(String(b.generated_at || "")) - Date.parse(String(a.generated_at || "")));
@@ -301,11 +335,13 @@ export async function findReportIdBySourceRunId(opts: {
   jobId: string;
   ticker?: string;
   source?: string;
+  workspace?: Workspace;
 }): Promise<string | null> {
   const sql = getSql();
   if (!sql) return null;
   const source = String(opts.source || "site");
   const ticker = String(opts.ticker || "").trim().toUpperCase();
+  const workspace = opts.workspace || "analysis";
   if (isExcludedTicker(ticker)) return null;
   const rows = ticker
     ? ((await sql`
@@ -314,6 +350,7 @@ export async function findReportIdBySourceRunId(opts: {
          WHERE source = ${source}
            AND source_run_id = ${opts.jobId}
            AND ticker = ${ticker}
+           AND workspace = ${workspace}
            AND deleted_at IS NULL
          ORDER BY generated_at DESC
          LIMIT 1;
@@ -323,6 +360,7 @@ export async function findReportIdBySourceRunId(opts: {
           FROM reports
          WHERE source = ${source}
            AND source_run_id = ${opts.jobId}
+           AND workspace = ${workspace}
            AND deleted_at IS NULL
          ORDER BY generated_at DESC
          LIMIT 1;
@@ -331,7 +369,7 @@ export async function findReportIdBySourceRunId(opts: {
 }
 
 /** Every report row, ordered by generated_at desc — for the /api/reports list. */
-export async function listAllReports(): Promise<DbReportSummary[]> {
+export async function listAllReports(workspace: Workspace = "analysis"): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -353,17 +391,20 @@ export async function listAllReports(): Promise<DbReportSummary[]> {
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
            r.source, r.source_run_id,
-           r.visibility
+           r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
       LEFT JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /** Reports owned by a specific user, regardless of visibility. */
-export async function listUserReports(userId: string): Promise<DbReportSummary[]> {
+export async function listUserReports(userId: string, workspace: Workspace = "analysis"): Promise<DbReportSummary[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -385,20 +426,23 @@ export async function listUserReports(userId: string): Promise<DbReportSummary[]
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
            r.source, r.source_run_id,
-           r.visibility
+           r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
       LEFT JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.user_id = ${userId}::uuid
        AND r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
   return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
 /** Public reports authored by anyone. */
-export async function listCommunityReports(): Promise<DbReportSummary[]> {
+export async function listCommunityReports(workspace: Workspace = "analysis"): Promise<DbReportSummary[]> {
   const sql = getSql();
-  if (!sql) return fallbackCommunityReportsFromOutputs();
+  if (!sql) return fallbackCommunityReportsFromOutputs(workspace);
   try {
     const rows = ((await sql`
         SELECT r.id::text AS id, r.ticker, r.generated_at,
@@ -419,16 +463,19 @@ export async function listCommunityReports(): Promise<DbReportSummary[]> {
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
                r.source, r.source_run_id,
-               r.visibility
+               r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
           LEFT JOIN report_artifacts a ON a.report_id = r.id
+          LEFT JOIN report_releases rel ON rel.id = r.release_id
          WHERE r.visibility = 'public'
            AND r.deleted_at IS NULL
+           AND r.workspace = ${workspace}
+           AND (${workspace} = 'analysis' OR rel.status = 'active')
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
     return filterExcludedTickers(rows, (row) => row.ticker);
   } catch {
-    return fallbackCommunityReportsFromOutputs(undefined, await deletedReportPredicate());
+    return fallbackCommunityReportsFromOutputs(workspace, undefined, await deletedReportPredicate(workspace));
   }
 }
 
@@ -445,14 +492,16 @@ export async function listCommunityReportsPaged(opts: {
   query?: string;
   limit: number;
   offset: number;
+  workspace?: Workspace;
 }): Promise<PagedCommunityReports> {
   const rawLimit = Number(opts.limit);
   const rawOffset = Number(opts.offset);
   const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 16));
   const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0);
+  const workspace = opts.workspace || "analysis";
   const sql = getSql();
   if (!sql) {
-    const all = fallbackCommunityReportsFromOutputs(opts.query);
+    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query);
     const pageRows = all.slice(offset, offset + limit + 1);
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
@@ -481,11 +530,14 @@ export async function listCommunityReportsPaged(opts: {
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
                r.source, r.source_run_id,
-               r.visibility
+               r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
           LEFT JOIN report_artifacts a ON a.report_id = r.id
+          LEFT JOIN report_releases rel ON rel.id = r.release_id
          WHERE r.visibility = 'public'
            AND r.deleted_at IS NULL
+           AND r.workspace = ${workspace}
+           AND (${workspace} = 'analysis' OR rel.status = 'active')
            AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
          ORDER BY r.generated_at DESC
          LIMIT ${fetchN}
@@ -496,7 +548,7 @@ export async function listCommunityReportsPaged(opts: {
     const hasMore = filteredRows.length > limit;
     return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
   } catch {
-    const all = fallbackCommunityReportsFromOutputs(opts.query, await deletedReportPredicate());
+    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query, await deletedReportPredicate(workspace));
     const pageRows = all.slice(offset, offset + limit + 1);
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
@@ -508,6 +560,7 @@ export async function setReportVisibility(opts: {
   reportId: string;
   userId: string;
   visibility: ReportVisibility;
+  workspace?: Workspace;
 }): Promise<boolean> {
   const sql = getSql();
   if (!sql) return false;
@@ -516,6 +569,7 @@ export async function setReportVisibility(opts: {
        SET visibility = ${opts.visibility}
      WHERE id = ${opts.reportId}::uuid
        AND user_id = ${opts.userId}::uuid
+       AND workspace = ${opts.workspace || "analysis"}
        AND deleted_at IS NULL
      RETURNING id;
   `) as Array<{ id: string }>;
@@ -526,6 +580,7 @@ export async function setReportVisibility(opts: {
 export async function deleteUserReport(opts: {
   reportId: string;
   userId: string;
+  workspace?: Workspace;
 }): Promise<boolean> {
   const sql = getSql();
   if (!sql) return false;
@@ -534,26 +589,14 @@ export async function deleteUserReport(opts: {
        SET deleted_at = now()
      WHERE id = ${opts.reportId}::uuid
        AND user_id = ${opts.userId}::uuid
+       AND workspace = ${opts.workspace || "analysis"}
        AND deleted_at IS NULL
      RETURNING id;
   `) as Array<{ id: string }>;
   return rows.length > 0;
 }
 
-export async function listDeletedReportRefs(): Promise<DeletedReportRef[]> {
-  const sql = getSql();
-  if (!sql) return [];
-  const rows = (await sql`
-    SELECT id::text AS id,
-           ticker,
-           source_run_id
-      FROM reports
-     WHERE deleted_at IS NOT NULL;
-  `) as unknown as DeletedReportRef[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
-}
-
-export async function listDeletedReportRefsForTicker(ticker: string): Promise<DeletedReportRef[]> {
+export async function listDeletedReportRefs(workspace: Workspace = "analysis"): Promise<DeletedReportRef[]> {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
@@ -562,7 +605,25 @@ export async function listDeletedReportRefsForTicker(ticker: string): Promise<De
            source_run_id
       FROM reports
      WHERE deleted_at IS NOT NULL
-       AND ticker = ${String(ticker || "").toUpperCase()};
+       AND workspace = ${workspace};
+  `) as unknown as DeletedReportRef[];
+  return filterExcludedTickers(rows, (row) => row.ticker);
+}
+
+export async function listDeletedReportRefsForTicker(
+  ticker: string,
+  workspace: Workspace = "analysis",
+): Promise<DeletedReportRef[]> {
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT id::text AS id,
+           ticker,
+           source_run_id
+      FROM reports
+     WHERE deleted_at IS NOT NULL
+       AND ticker = ${String(ticker || "").toUpperCase()}
+       AND workspace = ${workspace};
   `) as unknown as DeletedReportRef[];
   return filterExcludedTickers(rows, (row) => row.ticker);
 }
@@ -572,7 +633,7 @@ export async function listDeletedReportRefsForTicker(ticker: string): Promise<De
  * the existing discovery route reads consensus.cv / lmil from it. Could be
  * denormalized later if this becomes a hot path.
  */
-export async function listDashboardsForDiscovery(): Promise<
+export async function listDashboardsForDiscovery(workspace: Workspace = "analysis"): Promise<
   { ticker: string; generated_at: string; dashboard: unknown }[]
 > {
   const sql = getSql();
@@ -582,7 +643,10 @@ export async function listDashboardsForDiscovery(): Promise<
            r.ticker, r.generated_at, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown }[];
   return filterExcludedTickers(rows, (row) => row.ticker);
@@ -592,22 +656,27 @@ export async function listDashboardsForDiscovery(): Promise<
  * Full historical dashboard payloads (no DISTINCT) for site-level analytics
  * pages like Hit Rate.
  */
-export async function listAllDashboardsForHitRate(): Promise<
-  { id: string; ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
+export async function listAllDashboardsForHitRate(workspace: Workspace = "analysis"): Promise<
+  { id: string; ticker: string; generated_at: string; available_at: string; dashboard: unknown; source_run_id: string | null }[]
 > {
   const sql = getSql();
   if (!sql) return [];
   const rows = (await sql`
-    SELECT r.id::text AS id, r.ticker, r.generated_at, r.source_run_id, a.dashboard
+    SELECT r.id::text AS id, r.ticker, r.generated_at,
+           CASE WHEN r.workspace = 'nasdaq100' THEN rel.activated_at ELSE r.created_at END AS available_at,
+           r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.generated_at DESC;
-  `) as unknown as { id: string; ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
+  `) as unknown as { id: string; ticker: string; generated_at: string; available_at: string; dashboard: unknown; source_run_id: string | null }[];
   return filterExcludedTickers(rows, (row) => row.ticker);
 }
 
-export async function listDashboardsForTicker(ticker: string): Promise<
+export async function listDashboardsForTicker(ticker: string, workspace: Workspace = "analysis"): Promise<
   { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[]
 > {
   const sql = getSql();
@@ -616,8 +685,11 @@ export async function listDashboardsForTicker(ticker: string): Promise<
     SELECT r.ticker, r.generated_at, r.source_run_id, a.dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
        AND r.ticker = ${String(ticker || "").toUpperCase()}
+       AND r.workspace = ${workspace}
+       AND (${workspace} = 'analysis' OR rel.status = 'active')
      ORDER BY r.generated_at DESC;
   `) as unknown as { ticker: string; generated_at: string; dashboard: unknown; source_run_id: string | null }[];
   return filterExcludedTickers(rows, (row) => row.ticker);

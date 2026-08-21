@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { yahooChartHistory } from "@/lib/yahoo-lookup";
+import { parseApiWorkspace } from "@/lib/workspace";
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,16}$/;
 const MAX_TICKERS = 10;
@@ -103,6 +104,11 @@ function runFundamentalsScript(
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  if (workspace === "nasdaq100") {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
   const tickers = normalizeTickers(url.searchParams.get("tickers"));
   const includeFinancials = ["1", "true", "yes"].includes(
     String(url.searchParams.get("financials") || "").toLowerCase(),

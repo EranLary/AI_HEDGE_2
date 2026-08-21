@@ -17,6 +17,7 @@ import {
 import { TickerSearch } from "@/components/shell/ticker-search";
 import type { TickerEntry } from "@/lib/ticker-catalog";
 import { useThemeTokens } from "@/lib/theme-tokens";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 const MAX_TICKERS = 10;
 
@@ -216,6 +217,7 @@ function ChartTooltip({
 }
 
 export default function ComparePage() {
+  const { api } = useWorkspace();
   const tokens = useThemeTokens(CHART_TOKENS);
   const [selected, setSelected] = useState<TickerEntry | null>(null);
   const [tickers, setTickers] = useState<string[]>(["AAPL", "MSFT", "GOOGL"]);
@@ -251,7 +253,7 @@ export default function ComparePage() {
         financials: "1",
         financial_period: financialDownloadPeriod,
       });
-      const res = await fetch(`/api/compare?${qs.toString()}`, { cache: "no-store" });
+      const res = await fetch(api(`/api/compare?${qs.toString()}`), { cache: "no-store" });
       if (!res.ok) throw new Error(`Financials export failed (${res.status})`);
       const payload = (await res.json()) as ComparePayload;
       const financials = payload.financials || {
@@ -295,7 +297,7 @@ export default function ComparePage() {
       setDownloadStatus(null);
     });
     const qs = new URLSearchParams({ tickers: tickers.join(",") });
-    fetch(`/api/compare?${qs.toString()}`, { cache: "no-store", signal: controller.signal })
+    fetch(api(`/api/compare?${qs.toString()}`), { cache: "no-store", signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Compare lookup failed (${res.status})`);
         return (await res.json()) as ComparePayload;
@@ -311,7 +313,7 @@ export default function ComparePage() {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [tickers]);
+  }, [api, tickers]);
 
   const comparison = useMemo(() => {
     const series = (data?.series || [])

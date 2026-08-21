@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getDashboardPayload } from "@/lib/dashboard-server";
+import { parseApiWorkspace } from "@/lib/workspace";
 
 export async function GET(
   req: Request,
@@ -13,5 +14,11 @@ export async function GET(
   }
   const url = new URL(req.url);
   const requestedReportId = String(url.searchParams.get("report") || "").trim();
-  return NextResponse.json(await getDashboardPayload(ticker, requestedReportId));
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  const payload = await getDashboardPayload(ticker, requestedReportId, workspace);
+  if (requestedReportId && !payload.report_id) {
+    return NextResponse.json({ error: "Report not found in this workspace." }, { status: 404 });
+  }
+  return NextResponse.json(payload);
 }

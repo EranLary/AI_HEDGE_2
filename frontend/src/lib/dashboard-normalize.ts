@@ -376,9 +376,10 @@ export function normalizePayload(
     report_mtime: reportMeta?.reportMtime || payload.report_mtime,
   };
 
-  const reportQuery = merged.report_id
-    ? `?report_id=${encodeURIComponent(String(merged.report_id))}`
-    : "";
+  const workspace = merged.workspace === "nasdaq100" ? "nasdaq100" : "analysis";
+  const artifactParams = new URLSearchParams({ workspace });
+  if (merged.report_id) artifactParams.set("report_id", String(merged.report_id));
+  const reportQuery = `?${artifactParams.toString()}`;
 
   merged.downloads = {
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf${reportQuery}`,

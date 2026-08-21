@@ -3,6 +3,7 @@ import {
   type DiscoveryLensSelection,
   type ScoredDiscoveryCandidate,
 } from "@/lib/discovery-engine";
+import type { Workspace } from "@/lib/workspace";
 
 export const PORTFOLIO_METHODOLOGY_VERSION = "top20-positive-equal-v1";
 export const PORTFOLIO_BENCHMARK_SYMBOL = "^SP500TR";
@@ -12,6 +13,20 @@ export const MAX_MARKET_DATA_AGE_DAYS = 5;
 export type PortfolioTrack = "backtest" | "paper";
 export type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
 export type PortfolioDataStatus = "ok" | "no_positions" | "stale_market_data";
+
+export function portfolioWorkspaceConfig(workspace: Workspace) {
+  return workspace === "nasdaq100"
+    ? {
+        benchmarkSymbol: "QQQ",
+        benchmarkName: "Invesco QQQ — total-return proxy",
+        universe: "Nasdaq 100 reports from active releases in the trailing 90 days",
+      }
+    : {
+        benchmarkSymbol: PORTFOLIO_BENCHMARK_SYMBOL,
+        benchmarkName: "S&P 500 Total Return",
+        universe: "Analyzed tickers with a report available in the trailing 90 days",
+      };
+}
 
 export type MarketPricePoint = {
   symbol: string;
@@ -35,11 +50,14 @@ export type PortfolioHoldingDefinition = {
 
 export type PortfolioSnapshotDefinition = {
   id: string;
+  workspace: Workspace;
   track: PortfolioTrack;
   lens: DiscoveryLensSelection;
   cutoffAt: string;
   executionDate: string;
   methodologyVersion: string;
+  benchmarkSymbol: string;
+  benchmarkName: string;
   candidateCount: number;
   status: "ready" | "no_positions";
   holdings: PortfolioHoldingDefinition[];

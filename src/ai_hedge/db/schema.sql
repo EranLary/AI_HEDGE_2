@@ -23,7 +23,23 @@ CREATE TABLE IF NOT EXISTS tickers (
     is_supported      boolean NOT NULL DEFAULT true
 );
 
--- 2. Slim "discoverable" report row -- what list pages query.
+-- 2. Atomic report releases. Analysis reports are immediately available;
+-- Nasdaq-100 reports become visible together when their release is activated.
+CREATE TABLE IF NOT EXISTS report_releases (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace     text NOT NULL CHECK (workspace IN ('analysis', 'nasdaq100')),
+    release_key   text NOT NULL,
+    status        text NOT NULL DEFAULT 'staged' CHECK (status IN ('staged', 'active')),
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    activated_at  timestamptz,
+    UNIQUE (workspace, release_key),
+    CHECK (
+        (status = 'staged' AND activated_at IS NULL)
+        OR (status = 'active' AND activated_at IS NOT NULL)
+    )
+);
+
+-- 3. Slim "discoverable" report row -- what list pages query.
 CREATE TABLE IF NOT EXISTS reports (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     ticker              text NOT NULL REFERENCES tickers(symbol),
@@ -44,11 +60,18 @@ CREATE TABLE IF NOT EXISTS reports (
     source              text NOT NULL,                 -- fly_backfill | cli | site
     source_run_id       text,
     origin_path         text,
+    workspace           text NOT NULL DEFAULT 'analysis'
+                        CHECK (workspace IN ('analysis', 'nasdaq100')),
+    release_id          uuid REFERENCES report_releases(id),
 
     deleted_at          timestamptz,                   -- soft delete
     superseded_by_id    uuid REFERENCES reports(id),
 
-    created_at          timestamptz NOT NULL DEFAULT now()
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    CHECK (
+        (workspace = 'analysis' AND release_id IS NULL)
+        OR (workspace = 'nasdaq100' AND release_id IS NOT NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS reports_ticker_generated_idx
@@ -60,10 +83,53 @@ CREATE INDEX IF NOT EXISTS reports_recent_public_idx
 
 -- Dedup per (user, ticker, generated_at). NULL user_id is a single bucket
 -- so two backfill rows for the same (ticker, generated_at) collide.
-CREATE UNIQUE INDEX IF NOT EXISTS reports_dedup_idx
-    ON reports ((coalesce(user_id::text, '')), ticker, generated_at);
+CREATE UNIQUE INDEX IF NOT EXISTS reports_workspace_dedup_idx
+    ON reports (
+        (coalesce(user_id::text, '')),
+        workspace,
+        (coalesce(release_id::text, '')),
+        ticker,
+        generated_at
+    );
 
--- 3. Heavy content -- fetched only when a user opens a report.
+CREATE OR REPLACE FUNCTION validate_report_release_membership()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    release_workspace text;
+    release_status text;
+BEGIN
+    IF NEW.workspace = 'analysis' THEN
+        IF NEW.release_id IS NOT NULL THEN
+            RAISE EXCEPTION 'analysis reports cannot belong to a release';
+        END IF;
+        RETURN NEW;
+    END IF;
+    SELECT workspace, status INTO release_workspace, release_status
+      FROM report_releases WHERE id = NEW.release_id
+      FOR UPDATE;
+    IF NOT FOUND OR release_workspace <> NEW.workspace THEN
+        RAISE EXCEPTION 'report release does not match workspace';
+    END IF;
+    IF TG_OP = 'INSERT' AND release_status <> 'staged' THEN
+        RAISE EXCEPTION 'cannot add reports to an active release';
+    END IF;
+    IF TG_OP = 'UPDATE'
+       AND (NEW.workspace IS DISTINCT FROM OLD.workspace OR NEW.release_id IS DISTINCT FROM OLD.release_id)
+       AND release_status <> 'staged' THEN
+        RAISE EXCEPTION 'cannot move reports into an active release';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS reports_validate_release ON reports;
+CREATE TRIGGER reports_validate_release
+BEFORE INSERT OR UPDATE ON reports
+FOR EACH ROW EXECUTE FUNCTION validate_report_release_membership();
+
+-- 4. Heavy content -- fetched only when a user opens a report.
 CREATE TABLE IF NOT EXISTS report_artifacts (
     report_id           uuid PRIMARY KEY REFERENCES reports(id) ON DELETE CASCADE,
     dashboard           jsonb NOT NULL,

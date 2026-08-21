@@ -1062,7 +1062,13 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
         return result
 
 
-def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") -> Dict[str, object]:
+def run_full_analysis(
+    ticker: str,
+    output_dir: str,
+    run_source: str = "site",
+    workspace: str = "analysis",
+    release_id: str | None = None,
+) -> Dict[str, object]:
     """
     Run full analysis pipeline and return a stable result payload without raising.
 
@@ -1111,6 +1117,8 @@ def run_full_analysis(ticker: str, output_dir: str, run_source: str = "site") ->
                 show_plots=False,
                 progress_file=str(out_dir / "_progress.log"),
                 run_source=run_source,
+                workspace=workspace,
+                release_id=release_id,
             )
         finally:
             os.chdir(prev_cwd)

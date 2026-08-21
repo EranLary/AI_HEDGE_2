@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { submitNewRun } from "@/lib/run-submission";
 import { subscribeRunCompletion } from "@/components/shell/active-runs-store";
+import { useWorkspace } from "@/components/shell/workspace-context";
 
 type ScreenerRow = {
   rank: number;
@@ -241,7 +242,13 @@ function SortHeader({
 }
 
 export default function ScreenersPage() {
-  const [activeScreener, setActiveScreener] = useState<(typeof SCREENERS)[number]["key"]>("sp500");
+  const { workspace, api } = useWorkspace();
+  const availableScreeners = workspace === "nasdaq100"
+    ? SCREENERS.filter((item) => item.key === "nasdaq100")
+    : SCREENERS;
+  const [activeScreener, setActiveScreener] = useState<(typeof SCREENERS)[number]["key"]>(
+    workspace === "nasdaq100" ? "nasdaq100" : "sp500",
+  );
   const [payload, setPayload] = useState<ScreenerPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -255,11 +262,12 @@ export default function ScreenersPage() {
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [runNotice, setRunNotice] = useState("");
 
-  const active = SCREENERS.find((item) => item.key === activeScreener) || SCREENERS[0];
+  const selectedScreener = workspace === "nasdaq100" ? "nasdaq100" : activeScreener;
+  const active = availableScreeners.find((item) => item.key === selectedScreener) || availableScreeners[0];
 
   async function fetchScreener(refresh = false): Promise<ScreenerPayload> {
     const params = refresh ? "?refresh=1" : "";
-    const res = await fetch(`${active.api}${params}`, { cache: "no-store" });
+    const res = await fetch(api(`${active.api}${params}`), { cache: "no-store" });
     const json = (await res.json()) as ScreenerPayload;
     if (!res.ok || json.status !== "success") {
       throw new Error(json.error || `Screener failed (${res.status})`);
@@ -305,9 +313,10 @@ export default function ScreenersPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeScreener]);
+  }, [selectedScreener, workspace]);
 
   useEffect(() => {
+    if (workspace === "nasdaq100") return undefined;
     return subscribeRunCompletion((event) => {
       if (event.status !== "completed") return;
       setRunNotice(`${event.ticker} analysis completed. Refreshing screener targets...`);
@@ -322,7 +331,7 @@ export default function ScreenersPage() {
         });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [workspace]);
 
   const rows = useMemo(() => payload?.rows || [], [payload?.rows]);
   const sectors = useMemo<FilterOption[]>(() => {
@@ -438,7 +447,7 @@ export default function ScreenersPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {SCREENERS.map((item) => (
+            {availableScreeners.map((item) => (
               <button
                 key={item.key}
                 type="button"
@@ -451,7 +460,7 @@ export default function ScreenersPage() {
                   setActiveScreener(item.key);
                 }}
                 className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                  activeScreener === item.key
+                  selectedScreener === item.key
                     ? "hib-tab-active border-emerald-400/60 bg-emerald-500/20"
                     : "hib-tab-inactive border-white/15 bg-white/5 hover:border-emerald-400/50"
                 }`}
@@ -549,7 +558,7 @@ export default function ScreenersPage() {
             </button>
             <button
               type="button"
-              onClick={() => downloadCsv(sortedRows, `${activeScreener}-screener.csv`, positionByRow)}
+              onClick={() => downloadCsv(sortedRows, `${selectedScreener}-screener.csv`, positionByRow)}
               disabled={!sortedRows.length}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
@@ -675,17 +684,21 @@ export default function ScreenersPage() {
                       </td>
                       <td className="hib-market-table-cell font-mono text-xs text-[color:var(--text-muted)]">#{row.rank}</td>
                       <td className="hib-market-table-cell">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRunNotice("");
-                            setAnalysisRow(row);
-                          }}
-                          className="inline-flex rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-[color:var(--accent)] transition hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:text-emerald-100"
-                          title={`Start analysis for ${analysisTicker(row)}`}
-                        >
-                          {row.ticker}
-                        </button>
+                        {workspace === "analysis" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRunNotice("");
+                              setAnalysisRow(row);
+                            }}
+                            className="inline-flex rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-[color:var(--accent)] transition hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:text-emerald-100"
+                            title={`Start analysis for ${analysisTicker(row)}`}
+                          >
+                            {row.ticker}
+                          </button>
+                        ) : (
+                          <span className="font-mono text-xs font-semibold text-[color:var(--accent)]">{row.ticker}</span>
+                        )}
                       </td>
                       <td className="hib-market-table-cell">
                         <p className="font-semibold text-[color:var(--text-primary)]">{row.company_name}</p>
@@ -729,7 +742,7 @@ export default function ScreenersPage() {
           </div>
         )}
       </section>
-      {analysisRow ? (
+      {workspace === "analysis" && analysisRow ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
           <div className="hib-modal-surface w-full max-w-md rounded-2xl border border-white/15 bg-zinc-950 p-5 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Start analysis</p>

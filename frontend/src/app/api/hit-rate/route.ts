@@ -7,6 +7,7 @@ import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-rep
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
+import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 type LoadedDashboard = {
   ticker: string;
@@ -18,13 +19,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
+async function loadHistoricalDashboards(workspace: Workspace): Promise<LoadedDashboard[]> {
   const merged = new Map<string, LoadedDashboard>();
-  const deletedFilter = await getDeletedReportFilter();
+  const deletedFilter = await getDeletedReportFilter(workspace);
   const dbEnabled = isDbEnabled();
 
   try {
-    const dbRows = await listAllDashboardsForHitRate();
+    const dbRows = await listAllDashboardsForHitRate(workspace);
     for (const r of dbRows) {
       const row = {
         ticker: String(r.ticker || "").toUpperCase(),
@@ -44,6 +45,8 @@ async function loadHistoricalDashboards(): Promise<LoadedDashboard[]> {
   } catch (err) {
     console.warn("[hit-rate] DB read failed:", err);
   }
+
+  if (workspace === "nasdaq100") return [];
 
   for (const entry of listDashboardReports()) {
     const payload = readJson<DashboardPayload>(entry.path);
@@ -74,7 +77,9 @@ function parseMode(value: string | null): HitRateMode {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const mode = parseMode(url.searchParams.get("mode"));
-  const reports = await loadHistoricalDashboards();
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  const reports = await loadHistoricalDashboards(workspace);
   const uniqueTickers = Array.from(new Set(reports.map((r) => r.ticker).filter(Boolean)));
   const livePriceByTicker = new Map<string, number | null>(
     Object.entries(await getLiveCurrentPricesBatch(uniqueTickers)),
@@ -84,6 +89,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     generated_at: new Date().toISOString(),
     mode,
+    workspace,
     coverage: aggregation.coverage,
     overview: aggregation.overview,
     by_model: aggregation.by_model,

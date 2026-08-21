@@ -9,6 +9,7 @@ import { TickerProvider } from "@/components/shell/ticker-context";
 import { ToastProvider } from "@/components/shell/toast";
 import { NewRunProvider } from "@/components/shell/new-run-context";
 import { NewRunModal } from "@/components/shell/new-run-modal";
+import { NasdaqRunProvider } from "@/components/shell/nasdaq-run-context";
 import { useWorkspace, WorkspaceProvider } from "@/components/shell/workspace-context";
 import type { Workspace } from "@/lib/workspace";
 
@@ -57,6 +58,7 @@ export function AppShell({ children, initialWorkspace }: { children: ReactNode; 
     <WorkspaceProvider initialWorkspace={initialWorkspace}>
     <TickerProvider>
       <ToastProvider>
+        <NasdaqRunProvider>
         <NewRunProvider>
         <div className="flex min-h-screen">
           {/* Desktop sidebar */}
@@ -96,6 +98,7 @@ export function AppShell({ children, initialWorkspace }: { children: ReactNode; 
         </div>
         <NewRunModal />
         </NewRunProvider>
+        </NasdaqRunProvider>
       </ToastProvider>
     </TickerProvider>
     </WorkspaceProvider>

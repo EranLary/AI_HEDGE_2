@@ -49,7 +49,7 @@ const MODE_OPTIONS: Array<{ mode: RunMode; title: string; description: string }>
   },
   {
     mode: "missing_week",
-    title: "Run stocks not run in 7 days",
+    title: "Run stocks not analyzed in the last 7 days",
     description: "Skip every Nasdaq 100 stock with a completed report in the last seven days.",
   },
 ];

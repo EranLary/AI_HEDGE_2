@@ -70,7 +70,7 @@ function fmtHitRate(value: number | null): string {
 }
 
 function metricSummary(metric: MetricCounts): string {
-  return `H ${metric.hits} | M ${metric.misses} | - ${metric.neutral} | N ${metric.considered}`;
+  return `${metric.hits} hits, ${metric.misses} misses, ${metric.neutral} neutral, ${metric.considered} evaluated`;
 }
 
 function CountBadge({
@@ -81,9 +81,9 @@ function CountBadge({
   value: number;
 }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 tabular-nums">
-      <span className="text-[10px] uppercase tracking-[0.08em] text-zinc-500">{label}</span>
-      <span className="font-mono text-[11px] font-semibold text-zinc-200">{value}</span>
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-1.5 py-0.5 tabular-nums">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{label}</span>
+      <span className="font-mono text-[11px] font-semibold text-[color:var(--text-primary)]">{value}</span>
     </span>
   );
 }
@@ -91,11 +91,66 @@ function CountBadge({
 function CountsPills({ metric }: { metric: MetricCounts }) {
   return (
     <div className="inline-flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
-      <CountBadge label="H" value={metric.hits} />
-      <CountBadge label="M" value={metric.misses} />
-      <CountBadge label="-" value={metric.neutral} />
-      <CountBadge label="N" value={metric.considered} />
+      <CountBadge label="Hit" value={metric.hits} />
+      <CountBadge label="Miss" value={metric.misses} />
+      <CountBadge label="Neut" value={metric.neutral} />
+      <CountBadge label="Eval" value={metric.considered} />
     </div>
+  );
+}
+
+function RateBreakdown({
+  label,
+  metric,
+}: {
+  label: string;
+  metric: MetricCounts;
+}) {
+  return (
+    <div className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)]">{label}</p>
+        <p className="text-lg font-bold tabular-nums text-[color:var(--success)]">{fmtHitRate(metric.hit_rate_pct)}</p>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-[color:var(--text-muted)]">Hits</dt>
+          <dd className="font-semibold tabular-nums text-[color:var(--text-primary)]">{metric.hits}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-[color:var(--text-muted)]">Misses</dt>
+          <dd className="font-semibold tabular-nums text-[color:var(--text-primary)]">{metric.misses}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-[color:var(--text-muted)]">Evaluated</dt>
+          <dd className="font-semibold tabular-nums text-[color:var(--text-primary)]">{metric.considered}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-[color:var(--text-muted)]">Neutral</dt>
+          <dd className="font-semibold tabular-nums text-[color:var(--text-primary)]">{metric.neutral}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function MobileCounts({ metric }: { metric: MetricCounts }) {
+  const counts = [
+    ["Hits", metric.hits],
+    ["Misses", metric.misses],
+    ["Evaluated", metric.considered],
+    ["Neutral", metric.neutral],
+  ] as const;
+
+  return (
+    <dl className="mt-3 grid grid-cols-2 gap-2">
+      {counts.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between gap-2 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-3 py-2 text-xs">
+          <dt className="text-[color:var(--text-muted)]">{label}</dt>
+          <dd className="font-semibold tabular-nums text-[color:var(--text-primary)]">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -107,10 +162,10 @@ function OverviewCard({
   metric: MetricCounts;
 }) {
   return (
-    <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{title}</p>
-      <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtHitRate(metric.hit_rate_pct)}</p>
-      <p className="mt-2 text-xs text-zinc-400">{metricSummary(metric)}</p>
+    <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--text-secondary)]">{title}</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums text-[color:var(--success)]">{fmtHitRate(metric.hit_rate_pct)}</p>
+      <p className="mt-2 text-xs leading-relaxed text-[color:var(--text-muted)]">{metricSummary(metric)}</p>
     </article>
   );
 }
@@ -136,36 +191,43 @@ function HitRateTable({
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
-      <div className="space-y-2 sm:hidden">
+    <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h3>
+      <div className="space-y-2 md:hidden">
         {rows.map((row) => (
-          <article key={`${row.key}-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            {discoveryHrefForRow(row) ? (
-              <Link
-                href={discoveryHrefForRow(row) || "#"}
-                className="hib-hitrate-link text-[11px] uppercase tracking-[0.12em] underline-offset-2 hover:underline"
-              >
-                {row.label}
-              </Link>
-            ) : (
-              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-300">{row.label}</span>
-            )}
-            <p className="mt-1 text-xl font-bold text-zinc-100">Combined {fmtHitRate(row.combined.hit_rate_pct)}</p>
-            <div className="mt-1 flex items-center justify-between text-sm">
-              <span className="text-zinc-300">Targets {fmtHitRate(row.targets.hit_rate_pct)}</span>
-              <span className="text-zinc-300">Alloc {fmtHitRate(row.allocations.hit_rate_pct)}</span>
+          <article key={`${row.key}-mobile`} className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                {discoveryHrefForRow(row) ? (
+                  <Link
+                    href={discoveryHrefForRow(row) || "#"}
+                    className="text-base font-bold leading-tight text-[color:var(--accent)] underline-offset-2 hover:text-[color:var(--accent-hover)] hover:underline"
+                  >
+                    {row.label}
+                  </Link>
+                ) : (
+                  <span className="text-base font-bold leading-tight text-[color:var(--text-primary)]">{row.label}</span>
+                )}
+                <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
+                  {row.combined.hits} hits from {row.combined.considered} evaluated
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Combined</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-[color:var(--success)]">{fmtHitRate(row.combined.hit_rate_pct)}</p>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
-              <CountsPills metric={row.combined} />
+            <div className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+              <RateBreakdown label="Targets" metric={row.targets} />
+              <RateBreakdown label="Allocations" metric={row.allocations} />
             </div>
           </article>
         ))}
-        {!rows.length ? <p className="text-sm text-zinc-500">No rows available.</p> : null}
+        {!rows.length ? <p className="text-sm text-[color:var(--text-muted)]">No rows available.</p> : null}
       </div>
-      <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-        <table className="hidden w-full min-w-[1080px] text-sm sm:table">
-          <thead className="border-b border-white/10 text-zinc-400">
+      <div className="hidden overflow-auto rounded-lg border border-[color:var(--border-subtle)] md:block">
+        <table className="w-full min-w-[1260px] text-sm">
+          <thead className="border-b border-[color:var(--border-subtle)] bg-[color:var(--surface)] text-[color:var(--text-muted)]">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
               <th className="px-3 py-2 text-right font-medium">Targets %</th>
@@ -178,12 +240,12 @@ function HitRateTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key} className="border-b border-white/5 last:border-b-0">
-                <td className="px-3 py-2 font-medium text-zinc-200">
+              <tr key={row.key} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
+                <td className="px-3 py-2 font-semibold text-[color:var(--text-primary)]">
                   {discoveryHrefForRow(row) ? (
                     <Link
                       href={discoveryHrefForRow(row) || "#"}
-                      className="hib-hitrate-link underline-offset-2 hover:underline"
+                      className="font-semibold text-[color:var(--accent)] underline-offset-2 hover:text-[color:var(--accent-hover)] hover:underline"
                     >
                       {row.label}
                     </Link>
@@ -191,23 +253,23 @@ function HitRateTable({
                     <span>{row.label}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.targets.hit_rate_pct)}</td>
-                <td className="px-3 py-2 text-right text-zinc-100">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
-                <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.combined.hit_rate_pct)}</td>
-                <td className="px-3 py-2 text-right text-zinc-400">
+                <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{fmtHitRate(row.targets.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{fmtHitRate(row.allocations.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-[color:var(--success)]">{fmtHitRate(row.combined.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right text-[color:var(--text-muted)]">
                   <CountsPills metric={row.targets} />
                 </td>
-                <td className="px-3 py-2 text-right text-zinc-400">
+                <td className="px-3 py-2 text-right text-[color:var(--text-muted)]">
                   <CountsPills metric={row.allocations} />
                 </td>
-                <td className="px-3 py-2 text-right text-zinc-400">
+                <td className="px-3 py-2 text-right text-[color:var(--text-muted)]">
                   <CountsPills metric={row.combined} />
                 </td>
               </tr>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={7} className="px-3 py-3 text-zinc-500">
+                <td colSpan={7} className="px-3 py-3 text-[color:var(--text-muted)]">
                   No rows available.
                 </td>
               </tr>
@@ -227,23 +289,26 @@ function SignalHitRateTable({
   rows: HitRateRow[];
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <h2 className="mb-3 text-sm uppercase tracking-[0.16em] text-zinc-300">{title}</h2>
-      <div className="space-y-2 sm:hidden">
+    <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h3>
+      <div className="space-y-2 md:hidden">
         {rows.map((row) => (
-          <article key={`${row.key}-signal-mobile`} className="rounded-xl border border-white/10 bg-black/30 p-3">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-300">{row.label}</span>
-            <p className="mt-1 text-xl font-bold text-zinc-100">Signal {fmtHitRate(row.signals.hit_rate_pct)}</p>
-            <div className="mt-2 grid grid-cols-1 gap-1 text-[11px]">
-              <CountsPills metric={row.signals} />
+          <article key={`${row.key}-signal-mobile`} className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-base font-bold leading-tight text-[color:var(--text-primary)]">{row.label}</span>
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Signal hit rate</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-[color:var(--success)]">{fmtHitRate(row.signals.hit_rate_pct)}</p>
+              </div>
             </div>
+            <MobileCounts metric={row.signals} />
           </article>
         ))}
-        {!rows.length ? <p className="text-sm text-zinc-500">No signal rows available.</p> : null}
+        {!rows.length ? <p className="text-sm text-[color:var(--text-muted)]">No signal rows available.</p> : null}
       </div>
-      <div className="overflow-auto rounded-xl border border-white/10 bg-black/25">
-        <table className="hidden w-full min-w-[520px] text-sm sm:table">
-          <thead className="border-b border-white/10 text-zinc-400">
+      <div className="hidden overflow-auto rounded-lg border border-[color:var(--border-subtle)] md:block">
+        <table className="w-full min-w-[620px] text-sm">
+          <thead className="border-b border-[color:var(--border-subtle)] bg-[color:var(--surface)] text-[color:var(--text-muted)]">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Name</th>
               <th className="px-3 py-2 text-right font-medium">Signal %</th>
@@ -252,17 +317,17 @@ function SignalHitRateTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key} className="border-b border-white/5 last:border-b-0">
-                <td className="px-3 py-2 font-medium text-zinc-200">{row.label}</td>
-                <td className="px-3 py-2 text-right font-semibold text-zinc-100">{fmtHitRate(row.signals.hit_rate_pct)}</td>
-                <td className="px-3 py-2 text-right text-zinc-400">
+              <tr key={row.key} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
+                <td className="px-3 py-2 font-semibold text-[color:var(--text-primary)]">{row.label}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-[color:var(--success)]">{fmtHitRate(row.signals.hit_rate_pct)}</td>
+                <td className="px-3 py-2 text-right text-[color:var(--text-muted)]">
                   <CountsPills metric={row.signals} />
                 </td>
               </tr>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={3} className="px-3 py-3 text-zinc-500">
+                <td colSpan={3} className="px-3 py-3 text-[color:var(--text-muted)]">
                   No signal rows available.
                 </td>
               </tr>
@@ -346,14 +411,14 @@ export default function HitRatePage() {
             <p className="mt-1 text-sm text-[color:var(--text-muted)]">Accuracy across all historical reports.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
+            <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Hit rate mode">
               <button
                 type="button"
                 onClick={() => setMode("all")}
                 className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
                   mode === "all"
-                    ? "bg-emerald-500/20 text-emerald-100"
-                    : "text-zinc-300 hover:text-zinc-100"
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
                 }`}
               >
                 All
@@ -363,8 +428,8 @@ export default function HitRatePage() {
                 onClick={() => setMode("positive_only")}
                 className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
                   mode === "positive_only"
-                    ? "bg-emerald-500/20 text-emerald-100"
-                    : "text-zinc-300 hover:text-zinc-100"
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
                 }`}
               >
                 Positive Only
@@ -374,7 +439,7 @@ export default function HitRatePage() {
               type="button"
               onClick={() => setRefreshToken((v) => v + 1)}
               disabled={loading}
-              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
+              className="rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--text-primary)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)]"
             >
               {loading ? "Refreshing..." : "Refresh Hit Rate"}
             </button>
@@ -385,12 +450,12 @@ export default function HitRatePage() {
       {loading || !data ? (
         <div className="grid gap-4 md:grid-cols-3">
           {Array.from({ length: 6 }).map((_, idx) => (
-            <div key={idx} className="h-32 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+            <div key={idx} className="h-32 animate-pulse rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)]" />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[color:var(--text-muted)]">
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
 

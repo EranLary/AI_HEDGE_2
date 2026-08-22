@@ -46,6 +46,12 @@ function asHoldings(value: unknown): TradingHolding[] {
   }).filter((item) => item.ticker && Number.isFinite(item.rank));
 }
 
+export function tradingExecutionIdentity(execId: string): { familyId: string; revision: number } {
+  const match = execId.match(/^(.*)\.([0-9]+)$/);
+  if (!match) return { familyId: execId, revision: 0 };
+  return { familyId: match[1], revision: Number.parseInt(match[2], 10) };
+}
+
 export async function createTradingPairing(args: {
   userId: string;
   mode: BrokerMode;
@@ -61,6 +67,8 @@ export async function createTradingPairing(args: {
                status = 'awaiting_pairing',
                gateway_connected = false,
                gateway_authenticated = false,
+               executor_lease_owner = NULL,
+               executor_lease_expires_at = NULL,
                last_error = '',
                updated_at = now()
          WHERE id = ${args.connectionId}::uuid
@@ -125,6 +133,8 @@ export async function consumeTradingPairing(args: {
            device_secret_hash = ${args.deviceSecretHash},
            executor_version = ${args.executorVersion},
            status = 'disconnected',
+           executor_lease_owner = NULL,
+           executor_lease_expires_at = NULL,
            paired_at = now(),
            updated_at = now()
      WHERE id = ${connectionId}::uuid;
@@ -181,27 +191,42 @@ export async function registerExecutorNonce(connectionId: string, nonce: string)
 
 export async function updateTradingHeartbeat(args: {
   connectionId: string;
+  executorInstanceId: string;
   gatewayConnected: boolean;
   gatewayAuthenticated: boolean;
   executorVersion: string;
   accountType?: string;
   error?: string;
-}): Promise<void> {
+  leaseOnly?: boolean;
+}): Promise<boolean> {
   const sql = requireSql();
   const status = args.gatewayConnected && args.gatewayAuthenticated ? "ready" : args.error ? "error" : "disconnected";
-  await sql`
+  const rows = (await sql`
     UPDATE trading_connections
-       SET gateway_connected = ${args.gatewayConnected},
-           gateway_authenticated = ${args.gatewayAuthenticated},
+       SET gateway_connected = CASE WHEN ${args.leaseOnly === true} THEN gateway_connected ELSE ${args.gatewayConnected} END,
+           gateway_authenticated = CASE WHEN ${args.leaseOnly === true} THEN gateway_authenticated ELSE ${args.gatewayAuthenticated} END,
            executor_version = ${args.executorVersion},
-           account_type = ${String(args.accountType || "UNKNOWN").slice(0, 100)},
-           status = CASE WHEN status = 'paused' THEN 'paused' ELSE ${status} END,
+           account_type = CASE WHEN ${args.leaseOnly === true} THEN account_type ELSE ${String(args.accountType || "UNKNOWN").slice(0, 100)} END,
+           status = CASE
+             WHEN status = 'paused' OR ${args.leaseOnly === true} THEN status
+             ELSE ${status}
+           END,
            last_heartbeat_at = now(),
-           last_error = ${args.error || ""},
+           last_error = CASE WHEN ${args.leaseOnly === true} THEN last_error ELSE ${args.error || ""} END,
+           executor_lease_owner = ${args.executorInstanceId},
+           executor_lease_expires_at = now() + interval '6 hours',
            updated_at = now()
-     WHERE id = ${args.connectionId}::uuid
-       AND status <> 'revoked';
-  `;
+      WHERE id = ${args.connectionId}::uuid
+        AND status <> 'revoked'
+        AND (
+          executor_lease_owner IS NULL
+          OR executor_lease_owner = ${args.executorInstanceId}
+          OR executor_lease_expires_at IS NULL
+          OR executor_lease_expires_at <= now()
+        )
+    RETURNING id::text AS id;
+  `) as Array<{ id: string }>;
+  return rows.length === 1;
 }
 
 export async function listTradingPortfolios(workspace: Workspace): Promise<TradingPortfolioOption[]> {
@@ -315,6 +340,23 @@ export async function loadTradingDashboard(args: {
       SELECT l.id::text AS id, l.connection_id::text AS connection_id, l.workspace,
              l.lens_type, l.lens_key, l.methodology_version,
              l.budget_usd::float8 AS budget_usd,
+             (
+               l.cash_seed_usd + COALESCE((
+                 SELECT SUM(
+                   CASE WHEN effective.side = 'SELL' THEN effective.quantity * effective.price
+                        ELSE -(effective.quantity * effective.price) END
+                   - effective.commission
+                 )
+                   FROM (
+                     SELECT DISTINCT ON (f.connection_id, f.exec_family_id) f.*
+                       FROM trading_fills f
+                      ORDER BY f.connection_id, f.exec_family_id, f.exec_revision DESC, f.updated_at DESC
+                   ) effective
+                   JOIN trading_orders owned_order ON owned_order.id = effective.order_id
+                   JOIN trading_rebalance_plans owned_plan ON owned_plan.id = owned_order.rebalance_plan_id
+                  WHERE owned_plan.strategy_link_id = l.id
+               ), 0)
+             )::float8 AS cash_balance_usd,
              l.reserve_fraction::float8 AS reserve_fraction,
              l.status, l.latest_snapshot_id::text AS latest_snapshot_id,
              l.last_error, l.armed_at::text AS armed_at
@@ -370,10 +412,16 @@ export async function loadTradingDashboard(args: {
        LIMIT 50;
     `,
     sql`
-      SELECT f.exec_id, f.symbol, f.side, f.quantity::float8 AS quantity,
-             f.price::float8 AS price, f.commission::float8 AS commission,
-             f.commission_currency, f.executed_at::text AS executed_at
-        FROM trading_fills f
+      SELECT f.exec_id, f.exec_revision AS correction_revision, f.symbol, f.side,
+             f.quantity::float8 AS quantity, f.price::float8 AS price,
+             f.commission::float8 AS commission, f.commission_currency,
+             f.executed_at::text AS executed_at
+        FROM (
+          SELECT DISTINCT ON (source.connection_id, source.exec_family_id) source.*
+            FROM trading_fills source
+           ORDER BY source.connection_id, source.exec_family_id,
+                    source.exec_revision DESC, source.updated_at DESC
+        ) f
         JOIN trading_connections c ON c.id = f.connection_id
        WHERE c.user_id = ${args.userId}::uuid
        ORDER BY f.executed_at DESC
@@ -404,6 +452,7 @@ export async function loadTradingDashboard(args: {
     lens_key: String(strategyRow.lens_key),
     methodology_version: String(strategyRow.methodology_version),
     budget_usd: Number(strategyRow.budget_usd),
+    cash_balance_usd: Number(strategyRow.cash_balance_usd),
     reserve_fraction: Number(strategyRow.reserve_fraction),
     status: strategyRow.status as TradingStrategyView["status"],
     latest_snapshot_id: strategyRow.latest_snapshot_id ? String(strategyRow.latest_snapshot_id) : null,
@@ -450,6 +499,7 @@ export async function loadTradingDashboard(args: {
   }));
   const fills = (fillRows as Array<Record<string, unknown>>).map((row): TradingFillView => ({
     exec_id: String(row.exec_id),
+    correction_revision: Number(row.correction_revision || 0),
     symbol: String(row.symbol),
     side: row.side as "BUY" | "SELL",
     quantity: Number(row.quantity),
@@ -522,10 +572,10 @@ export async function configureTradingStrategy(args: {
   const rows = (await sql`
     INSERT INTO trading_strategy_links (
       connection_id, workspace, lens_type, lens_key, methodology_version,
-      budget_usd, status, latest_snapshot_id, last_error, armed_at
+      budget_usd, cash_seed_usd, status, latest_snapshot_id, last_error, armed_at
     ) VALUES (
       ${args.connectionId}::uuid, ${args.workspace}, ${args.lensType}, ${args.lensKey},
-      ${args.methodologyVersion}, ${args.budgetUsd}, ${status}, ${selected.latest_snapshot_id}::uuid,
+      ${args.methodologyVersion}, ${args.budgetUsd}, ${args.budgetUsd}, ${status}, ${selected.latest_snapshot_id}::uuid,
       ${status === "blocked" ? reason : ""},
       CASE WHEN ${status} = 'armed' THEN now() ELSE NULL END
     )
@@ -534,6 +584,8 @@ export async function configureTradingStrategy(args: {
       lens_type = EXCLUDED.lens_type,
       lens_key = EXCLUDED.lens_key,
       methodology_version = EXCLUDED.methodology_version,
+      cash_seed_usd = trading_strategy_links.cash_seed_usd
+        + (EXCLUDED.budget_usd - trading_strategy_links.budget_usd),
       budget_usd = EXCLUDED.budget_usd,
       status = EXCLUDED.status,
       latest_snapshot_id = EXCLUDED.latest_snapshot_id,
@@ -720,12 +772,16 @@ async function insertRebalancePlan(args: {
   const sql = requireSql();
   await sql`
     INSERT INTO trading_rebalance_plans (strategy_link_id, snapshot_id, target_holdings, not_before)
-    VALUES (
+    SELECT
       ${args.linkId}::uuid,
       ${args.snapshotId}::uuid,
       ${JSON.stringify(args.holdings)}::jsonb,
-      ((timezone('America/New_York', now())::date + 1) + time '10:00') AT TIME ZONE 'America/New_York'
-    )
+      GREATEST(
+        (s.execution_date + time '10:00') AT TIME ZONE 'America/New_York',
+        ((timezone('America/New_York', now())::date + 1) + time '10:00') AT TIME ZONE 'America/New_York'
+      )
+      FROM portfolio_snapshots s
+     WHERE s.id = ${args.snapshotId}::uuid
     ON CONFLICT (strategy_link_id, snapshot_id) DO UPDATE SET
       status = 'queued',
       target_holdings = EXCLUDED.target_holdings,
@@ -927,7 +983,10 @@ export async function enqueueArmedStrategiesForSnapshots(snapshotIds: string[]):
   return rows.length;
 }
 
-export async function loadExecutorCommands(connectionId: string): Promise<Array<Record<string, unknown>>> {
+export async function loadExecutorCommands(
+  connectionId: string,
+  executorInstanceId: string,
+): Promise<Array<Record<string, unknown>>> {
   const sql = requireSql();
   const rows = (await sql`
     SELECT p.id::text AS plan_id,
@@ -941,6 +1000,23 @@ export async function loadExecutorCommands(connectionId: string): Promise<Array<
            l.lens_type,
            l.lens_key,
            l.budget_usd::float8 AS budget_usd,
+           (
+              l.cash_seed_usd + COALESCE((
+                SELECT SUM(
+                  CASE WHEN effective.side = 'SELL' THEN effective.quantity * effective.price
+                       ELSE -(effective.quantity * effective.price) END
+                  - effective.commission
+                )
+                  FROM (
+                    SELECT DISTINCT ON (f.connection_id, f.exec_family_id) f.*
+                      FROM trading_fills f
+                     ORDER BY f.connection_id, f.exec_family_id, f.exec_revision DESC, f.updated_at DESC
+                  ) effective
+                  JOIN trading_orders owned_order ON owned_order.id = effective.order_id
+                  JOIN trading_rebalance_plans owned_plan ON owned_plan.id = owned_order.rebalance_plan_id
+                 WHERE owned_plan.strategy_link_id = l.id
+              ), 0)
+           )::float8 AS strategy_cash_usd,
            l.reserve_fraction::float8 AS reserve_fraction,
            c.mode,
            c.account_masked,
@@ -974,6 +1050,8 @@ export async function loadExecutorCommands(connectionId: string): Promise<Array<
       JOIN portfolio_snapshot_trade_eligibility e ON e.snapshot_id = p.snapshot_id
       LEFT JOIN trading_strategy_positions pos ON pos.strategy_link_id = l.id
      WHERE c.id = ${connectionId}::uuid
+        AND c.executor_lease_owner = ${executorInstanceId}
+        AND c.executor_lease_expires_at > now()
        AND (
           (c.status = 'ready' AND e.eligible AND p.status IN ('queued', 'preflight', 'awaiting_market', 'awaiting_settlement', 'selling', 'buying', 'partial'))
          OR p.status = 'cancel_requested'
@@ -994,6 +1072,24 @@ export async function loadExecutorCommands(connectionId: string): Promise<Array<
   return rows;
 }
 
+export async function loadExecutorCancellationIds(
+  connectionId: string,
+  executorInstanceId: string,
+): Promise<string[]> {
+  const sql = requireSql();
+  const rows = (await sql`
+    SELECT p.id::text AS id
+      FROM trading_rebalance_plans p
+      JOIN trading_strategy_links l ON l.id = p.strategy_link_id
+      JOIN trading_connections c ON c.id = l.connection_id
+     WHERE c.id = ${connectionId}::uuid
+       AND c.executor_lease_owner = ${executorInstanceId}
+       AND c.executor_lease_expires_at > now()
+       AND p.status = 'cancel_requested';
+  `) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
+}
+
 export async function updateRebalanceStatus(args: {
   connectionId: string;
   planId: string;
@@ -1010,7 +1106,7 @@ export async function updateRebalanceStatus(args: {
              ELSE command_revision
            END,
            not_before = CASE
-             WHEN ${args.status} IN ('partial', 'awaiting_settlement') AND p.status <> ${args.status}
+             WHEN ${args.status} IN ('partial', 'awaiting_settlement', 'awaiting_market') AND p.status <> ${args.status}
                THEN (
                  timezone('America/New_York', now())::date
                  + CASE extract(isodow FROM timezone('America/New_York', now()))::int
@@ -1038,10 +1134,10 @@ export async function updateRebalanceStatus(args: {
          OR (p.status = 'queued' AND ${args.status} IN ('preflight', 'awaiting_market', 'blocked'))
          OR (p.status = 'awaiting_market' AND ${args.status} IN ('preflight', 'blocked'))
          OR (p.status = 'awaiting_settlement' AND ${args.status} IN ('awaiting_settlement', 'preflight', 'buying', 'blocked'))
-         OR (p.status = 'preflight' AND ${args.status} IN ('awaiting_settlement', 'selling', 'buying', 'completed', 'partial', 'blocked'))
-         OR (p.status = 'selling' AND ${args.status} IN ('preflight', 'awaiting_settlement', 'buying', 'completed', 'partial', 'blocked'))
-         OR (p.status = 'buying' AND ${args.status} IN ('preflight', 'completed', 'partial', 'blocked'))
-         OR (p.status = 'partial' AND ${args.status} IN ('preflight', 'selling', 'buying', 'completed', 'blocked'))
+         OR (p.status = 'preflight' AND ${args.status} IN ('awaiting_market', 'awaiting_settlement', 'selling', 'buying', 'completed', 'partial', 'blocked'))
+         OR (p.status = 'selling' AND ${args.status} IN ('preflight', 'awaiting_market', 'awaiting_settlement', 'buying', 'completed', 'partial', 'blocked'))
+         OR (p.status = 'buying' AND ${args.status} IN ('preflight', 'awaiting_market', 'completed', 'partial', 'blocked'))
+         OR (p.status = 'partial' AND ${args.status} IN ('awaiting_market', 'preflight', 'selling', 'buying', 'completed', 'blocked'))
          OR (p.status = 'cancel_requested' AND ${args.status} = 'cancelled')
        )
     RETURNING p.id::text AS id;
@@ -1179,6 +1275,7 @@ export async function upsertTradingOrder(args: {
 export async function insertTradingFill(args: {
   connectionId: string;
   orderId?: string | null;
+  clientOrderKey?: string | null;
   execId: string;
   symbol: string;
   side: "BUY" | "SELL";
@@ -1190,24 +1287,34 @@ export async function insertTradingFill(args: {
   rawExecution?: Record<string, unknown>;
 }): Promise<boolean> {
   const sql = requireSql();
+  const identity = tradingExecutionIdentity(args.execId);
   const rows = (await sql`
+    WITH resolved_order AS (
+      SELECT owned_order.id
+        FROM trading_orders owned_order
+        JOIN trading_rebalance_plans owned_plan ON owned_plan.id = owned_order.rebalance_plan_id
+        JOIN trading_strategy_links owned_link ON owned_link.id = owned_plan.strategy_link_id
+       WHERE owned_link.connection_id = ${args.connectionId}::uuid
+         AND (
+           (${args.orderId || null}::uuid IS NOT NULL AND owned_order.id = ${args.orderId || null}::uuid)
+           OR (
+             ${args.orderId || null}::uuid IS NULL
+             AND ${args.clientOrderKey || ""} <> ''
+             AND owned_order.client_order_key = ${args.clientOrderKey || ""}
+           )
+         )
+       LIMIT 1
+    )
     INSERT INTO trading_fills (
-      order_id, connection_id, exec_id, symbol, side, quantity, price,
+      order_id, connection_id, exec_id, exec_family_id, exec_revision, symbol, side, quantity, price,
       commission, commission_currency, executed_at, raw_execution
     )
-    SELECT ${args.orderId || null}::uuid, ${args.connectionId}::uuid, ${args.execId},
+    SELECT resolved_order.id,
+           ${args.connectionId}::uuid, ${args.execId}, ${identity.familyId}, ${identity.revision},
            ${args.symbol.toUpperCase()}, ${args.side}, ${args.quantity}, ${args.price},
            ${args.commission || 0}, ${args.commissionCurrency || "USD"},
            ${args.executedAt}::timestamptz, ${JSON.stringify(args.rawExecution || {})}::jsonb
-     WHERE ${args.orderId || null}::uuid IS NULL
-        OR EXISTS (
-          SELECT 1
-            FROM trading_orders owned_order
-            JOIN trading_rebalance_plans owned_plan ON owned_plan.id = owned_order.rebalance_plan_id
-            JOIN trading_strategy_links owned_link ON owned_link.id = owned_plan.strategy_link_id
-           WHERE owned_order.id = ${args.orderId || null}::uuid
-             AND owned_link.connection_id = ${args.connectionId}::uuid
-        )
+      FROM resolved_order
     ON CONFLICT (exec_id) DO UPDATE SET
       order_id = COALESCE(EXCLUDED.order_id, trading_fills.order_id),
       commission = EXCLUDED.commission,
@@ -1219,13 +1326,15 @@ export async function insertTradingFill(args: {
   `) as Array<{ id: string; inserted: boolean }>;
   const accepted = rows.length === 1;
   const inserted = rows[0]?.inserted === true;
-  if (accepted && args.orderId) {
+  if (accepted) {
     const linkRows = (await sql`
       SELECT l.id::text AS id
-        FROM trading_orders o
+        FROM trading_fills f
+        JOIN trading_orders o ON o.id = f.order_id
         JOIN trading_rebalance_plans p ON p.id = o.rebalance_plan_id
         JOIN trading_strategy_links l ON l.id = p.strategy_link_id
-       WHERE o.id = ${args.orderId}::uuid
+       WHERE f.connection_id = ${args.connectionId}::uuid
+         AND f.exec_id = ${args.execId}
          AND l.connection_id = ${args.connectionId}::uuid
        LIMIT 1;
     `) as Array<{ id: string }>;
@@ -1235,14 +1344,19 @@ export async function insertTradingFill(args: {
         tx`DELETE FROM trading_strategy_positions WHERE strategy_link_id = ${linkId}::uuid;`,
         tx`
           INSERT INTO trading_strategy_positions (strategy_link_id, symbol, quantity)
-          SELECT ${linkId}::uuid, f.symbol,
-                 SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) AS quantity
-            FROM trading_fills f
-            JOIN trading_orders o ON o.id = f.order_id
+          SELECT ${linkId}::uuid, effective.symbol,
+                 SUM(CASE WHEN effective.side = 'BUY' THEN effective.quantity ELSE -effective.quantity END) AS quantity
+            FROM (
+              SELECT DISTINCT ON (source.connection_id, source.exec_family_id) source.*
+                FROM trading_fills source
+               ORDER BY source.connection_id, source.exec_family_id,
+                        source.exec_revision DESC, source.updated_at DESC
+            ) effective
+            JOIN trading_orders o ON o.id = effective.order_id
             JOIN trading_rebalance_plans p ON p.id = o.rebalance_plan_id
            WHERE p.strategy_link_id = ${linkId}::uuid
-           GROUP BY f.symbol
-          HAVING SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) > 0;
+           GROUP BY effective.symbol
+          HAVING SUM(CASE WHEN effective.side = 'BUY' THEN effective.quantity ELSE -effective.quantity END) > 0;
         `,
       ]);
     }
@@ -1254,6 +1368,7 @@ export async function insertTradingFill(args: {
       action: "fill_reported",
       payload: {
         order_id: args.orderId || null,
+        client_order_key: args.clientOrderKey || null,
         exec_id: args.execId,
         symbol: args.symbol,
         side: args.side,
@@ -1263,42 +1378,6 @@ export async function insertTradingFill(args: {
     });
   }
   return accepted;
-}
-
-export async function replaceTradingStrategyPositions(args: {
-  connectionId: string;
-  strategyLinkId: string;
-  positions: Array<{
-    symbol: string;
-    conid?: number | null;
-    quantity: number;
-    averageCostUsd?: number | null;
-  }>;
-}): Promise<boolean> {
-  const sql = requireSql();
-  const ownedRows = (await sql`
-    SELECT l.id::text AS id
-      FROM trading_strategy_links l
-     WHERE l.id = ${args.strategyLinkId}::uuid
-       AND l.connection_id = ${args.connectionId}::uuid
-     LIMIT 1;
-  `) as Array<{ id: string }>;
-  if (!ownedRows.length) return false;
-  const positions = args.positions.filter((position) => (
-    position.symbol && Number.isFinite(position.quantity) && position.quantity >= 0
-  ));
-  await sql.transaction((tx) => [
-    tx`DELETE FROM trading_strategy_positions WHERE strategy_link_id = ${args.strategyLinkId}::uuid;`,
-    ...positions.map((position) => tx`
-      INSERT INTO trading_strategy_positions (
-        strategy_link_id, symbol, conid, quantity, average_cost_usd
-      ) VALUES (
-        ${args.strategyLinkId}::uuid, ${position.symbol.toUpperCase()},
-        ${position.conid ?? null}, ${position.quantity}, ${position.averageCostUsd ?? null}
-      );
-    `),
-  ]);
-  return true;
 }
 
 export async function recordTradingEvent(args: {

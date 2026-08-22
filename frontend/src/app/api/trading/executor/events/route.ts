@@ -4,7 +4,6 @@ import { sendTradingTelegramAlert } from "@/lib/trading-alerts";
 import {
   insertTradingFill,
   recordTradingEvent,
-  replaceTradingStrategyPositions,
   updateRebalanceStatus,
   upsertTradingInstrument,
   upsertTradingOrder,
@@ -23,6 +22,7 @@ const ORDER_STATUSES = new Set([
   "planned", "what_if", "submitted", "partially_filled", "filled",
   "cancel_pending", "cancelled", "rejected", "error",
 ]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function finite(value: unknown): number | null {
   const parsed = Number(value);
@@ -38,10 +38,13 @@ export async function POST(request: Request) {
     let responsePayload: Record<string, unknown> = {};
     if (action === "plan_status") {
       const status = String(body.status || "") as RebalanceStatus;
-      if (!PLAN_STATUSES.has(status)) return NextResponse.json({ error: "Invalid plan status." }, { status: 400 });
+      const planId = String(body.plan_id || "");
+      if (!PLAN_STATUSES.has(status) || !UUID_RE.test(planId)) {
+        return NextResponse.json({ error: "Invalid plan status." }, { status: 400 });
+      }
       accepted = await updateRebalanceStatus({
         connectionId,
-        planId: String(body.plan_id || ""),
+        planId,
         status,
         error: String(body.error || "").slice(0, 2_000),
         preflight: (body.preflight || {}) as Record<string, unknown>,
@@ -66,12 +69,13 @@ export async function POST(request: Request) {
       const quantity = finite(body.requested_quantity);
       const clientOrderKey = String(body.client_order_key || "");
       const symbol = String(body.symbol || "");
+      const planId = String(body.plan_id || "");
       if ((side !== "BUY" && side !== "SELL") || !ORDER_STATUSES.has(status) || !quantity || quantity <= 0
-        || !clientOrderKey || clientOrderKey.length > 300 || !symbol || symbol.length > 30) {
+        || !clientOrderKey || clientOrderKey.length > 300 || !symbol || symbol.length > 30 || !UUID_RE.test(planId)) {
         return NextResponse.json({ error: "Invalid order event." }, { status: 400 });
       }
       const orderId = await upsertTradingOrder({
-        connectionId, planId: String(body.plan_id || ""), clientOrderKey,
+        connectionId, planId, clientOrderKey,
         symbol, conid: finite(body.conid), side,
         requestedQuantity: quantity, limitPrice: finite(body.limit_price), ibOrderId: finite(body.ib_order_id),
         ibPermId: finite(body.ib_perm_id), status, filledQuantity: finite(body.filled_quantity) || 0,
@@ -87,12 +91,15 @@ export async function POST(request: Request) {
       const price = finite(body.price);
       const execId = String(body.exec_id || "");
       const symbol = String(body.symbol || "");
+      const orderId = body.order_id ? String(body.order_id) : "";
+      const clientOrderKey = String(body.client_order_key || "");
       if ((side !== "BUY" && side !== "SELL") || !quantity || quantity <= 0 || !price || price <= 0
-        || !execId || execId.length > 300 || !symbol || symbol.length > 30) {
+        || !execId || execId.length > 300 || !symbol || symbol.length > 30
+        || (orderId ? !UUID_RE.test(orderId) : !clientOrderKey || clientOrderKey.length > 300)) {
         return NextResponse.json({ error: "Invalid fill event." }, { status: 400 });
       }
       accepted = await insertTradingFill({
-        connectionId, orderId: body.order_id ? String(body.order_id) : null,
+        connectionId, orderId: orderId || null, clientOrderKey: clientOrderKey || null,
         execId, symbol, side,
         quantity, price, commission: finite(body.commission) || 0,
         commissionCurrency: String(body.commission_currency || "USD"),
@@ -100,18 +107,9 @@ export async function POST(request: Request) {
         rawExecution: (body.raw_execution || {}) as Record<string, unknown>,
       });
     } else if (action === "positions") {
-      const positions = Array.isArray(body.positions) ? body.positions : [];
-      accepted = await replaceTradingStrategyPositions({
-        connectionId,
-        strategyLinkId: String(body.strategy_link_id || ""),
-        positions: positions.map((value) => {
-          const row = (value || {}) as Record<string, unknown>;
-          return {
-            symbol: String(row.symbol || ""), conid: finite(row.conid), quantity: finite(row.quantity) ?? -1,
-            averageCostUsd: finite(row.average_cost_usd),
-          };
-        }),
-      });
+      return NextResponse.json({
+        error: "Broker positions cannot mutate strategy ownership; ownership is derived from system fills.",
+      }, { status: 400 });
     } else if (action === "event") {
       const severity = String(body.severity || "info") as "info" | "warning" | "critical";
       if (!new Set(["info", "warning", "critical"]).has(severity)) {
@@ -120,11 +118,12 @@ export async function POST(request: Request) {
       const eventId = String(body.event_id || "");
       const message = String(body.message || "").slice(0, 2_000);
       if (!eventId || eventId.length > 300) return NextResponse.json({ error: "Invalid event id." }, { status: 400 });
-      accepted = await recordTradingEvent({
+      const inserted = await recordTradingEvent({
         connectionId, eventId, eventType: String(body.event_type || "executor"), severity, message,
         payload: (body.payload || {}) as Record<string, unknown>,
       });
-      if (accepted && severity !== "info") {
+      accepted = true;
+      if (inserted && severity !== "info") {
         await sendTradingTelegramAlert({ connectionId, eventId, severity, message });
       }
     } else {

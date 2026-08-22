@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from trading_executor.engine import BrokerSnapshot, ExecutionEngine, ExecutionFill, ExecutionResult
+from trading_executor.engine import BrokerOrder, BrokerSnapshot, ExecutionEngine, ExecutionFill, ExecutionResult
 from trading_executor.policy import Instrument, OrderIntent, Position, Quote
 
 
@@ -26,11 +26,13 @@ class FakeBroker:
         self.cancelled: list[str] = []
         self.settled_cash = Decimal("1000")
         self.account_type = "INDIVIDUAL"
+        self.open_orders: tuple[BrokerOrder, ...] = ()
 
     def reconcile(self) -> BrokerSnapshot:
         return BrokerSnapshot(
             account_id="DU12345", positions=list(self.positions), settled_cash_usd=self.settled_cash,
             account_type=self.account_type,
+            open_orders=self.open_orders,
         )
 
     def resolve_instruments(self, symbols: list[str]) -> dict[str, Instrument]:
@@ -169,15 +171,35 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.broker.phases, [])
         self.assertEqual(self.reporter.statuses[-1], "blocked")
 
-    def test_partial_sell_prevents_buys_and_updates_ownership(self) -> None:
+    def test_partial_sell_prevents_buys_without_claiming_broker_positions(self) -> None:
         self.broker.partial_side = "SELL"
         self.engine.handle(command(), now=self.now)
         self.assertEqual(self.broker.phases, ["SELL"])
         self.assertEqual(self.reporter.statuses[-1], "partial")
-        self.assertTrue(self.reporter.position_updates)
+        self.assertEqual(self.reporter.position_updates, [])
+
+    def test_strategy_sizing_cannot_use_unrelated_account_cash(self) -> None:
+        self.broker.positions = []
+        isolated = command()
+        isolated["owned_positions"] = []
+        isolated["strategy_cash_usd"] = 500
+        self.engine.handle(isolated, now=self.now)
+        self.assertEqual(self.reporter.statuses[-1], "completed")
+        self.assertEqual(self.reporter.preflights[-1]["capital_base_usd"], "500")
+        self.assertEqual(self.reporter.orders[0].requested_quantity, Decimal("4"))
 
     def test_stale_quote_blocks_all_orders(self) -> None:
         self.broker.quotes["MSFT"] = Quote("MSFT", Decimal("99"), Decimal("100"), 30)
+        self.engine.handle(command(), now=self.now)
+        self.assertEqual(self.broker.phases, [])
+        self.assertEqual(self.reporter.statuses[-1], "blocked")
+
+    def test_manual_open_order_overlap_blocks_before_system_orders(self) -> None:
+        self.broker.open_orders = (BrokerOrder(
+            client_order_key="", symbol="MSFT", side="BUY",
+            requested_quantity=Decimal("1"), filled_quantity=Decimal("0"),
+            status="submitted", limit_price=Decimal("100"),
+        ),)
         self.engine.handle(command(), now=self.now)
         self.assertEqual(self.broker.phases, [])
         self.assertEqual(self.reporter.statuses[-1], "blocked")

@@ -118,7 +118,6 @@ class Reporter(Protocol):
     def plan_status(self, plan_id: str, status: str, *, error: str = "", preflight: dict[str, Any] | None = None) -> None: ...
     def order(self, plan_id: str, result: ExecutionResult) -> str | None: ...
     def fill(self, order_id: str | None, result: ExecutionResult, fill: ExecutionFill) -> None: ...
-    def positions(self, strategy_link_id: str, positions: list[Position]) -> None: ...
     def instrument(self, instrument: Instrument) -> None: ...
     def alert(self, event_type: str, severity: str, message: str, payload: dict[str, Any] | None = None) -> None: ...
 
@@ -166,6 +165,14 @@ def _event_id(plan_id: str, kind: str, message: str) -> str:
     return f"{plan_id}:{kind}:{digest}"
 
 
+class MarketUnavailableError(RuntimeError):
+    pass
+
+
+class ExecutionCancelledError(RuntimeError):
+    pass
+
+
 class ExecutionEngine:
     def __init__(self, broker: Broker, reporter: Reporter, *, account_id: str, execution_enabled: bool) -> None:
         self.broker = broker
@@ -191,6 +198,13 @@ class ExecutionEngine:
             return
         try:
             self._execute(command, now=now)
+        except ExecutionCancelledError:
+            self.broker.cancel_plan_orders(plan_id)
+            self.reporter.plan_status(plan_id, "cancelled", error="Execution stopped by the remote kill switch.")
+        except MarketUnavailableError as error:
+            message = str(error)
+            self.reporter.plan_status(plan_id, "awaiting_market", error=message)
+            self.reporter.alert("awaiting_market", "warning", message, {"plan_id": plan_id})
         except Exception as error:
             message = str(error)
             preflight = error.preflight if isinstance(error, InsufficientTargetCoverageError) else None
@@ -198,13 +212,12 @@ class ExecutionEngine:
             event_type = "rebalance_blocked"
             if "settled cash" in message:
                 event_type = "balance_anomaly"
-            elif "manual position" in message:
+            elif "manual position" in message or "manual open order" in message:
                 event_type = "manual_position_conflict"
             self.reporter.alert(event_type, "critical", message, {"plan_id": plan_id})
 
     def _execute(self, command: dict[str, Any], *, now: datetime) -> None:
         plan_id = str(command["plan_id"])
-        strategy_link_id = str(command["strategy_link_id"])
         if str(command.get("mode")) != "paper":
             raise ValueError("executor refuses non-Paper commands")
         targets = [
@@ -225,21 +238,37 @@ class ExecutionEngine:
         if conflicts:
             raise ValueError(f"manual position overlap or drift: {', '.join(conflicts)}")
         symbols = sorted(set(target_symbols) | {position.symbol for position in owned_positions})
+        manual_open_orders = sorted({
+            order.symbol for order in snapshot.open_orders
+            if order.symbol in symbols and not order.client_order_key.startswith("hib:")
+        })
+        if manual_open_orders:
+            raise ValueError(f"manual open order overlap: {', '.join(manual_open_orders)}")
         instruments = self.broker.resolve_instruments(symbols)
         closed = [symbol for symbol, instrument in instruments.items() if not instrument_session_is_open(instrument, now)]
         if closed:
-            raise ValueError(f"regular trading session is closed or ambiguous: {', '.join(sorted(closed))}")
+            raise MarketUnavailableError(
+                f"regular trading session is closed or ambiguous: {', '.join(sorted(closed))}"
+            )
         quotes = self.broker.fresh_quotes(symbols)
         for instrument in instruments.values():
             self.reporter.instrument(instrument)
+        configured_budget = _decimal(command["budget_usd"])
+        strategy_cash = max(Decimal("0"), _decimal(command.get("strategy_cash_usd", configured_budget)))
+        owned_market_value = sum(
+            (position.quantity * quotes[position.symbol].bid for position in owned_positions),
+            Decimal("0"),
+        )
+        strategy_equity = strategy_cash + owned_market_value
+        capital_base = min(configured_budget, max(Decimal("0"), strategy_equity))
         coverage = calculate_sizing_coverage(
-            budget_usd=_decimal(command["budget_usd"]), targets=targets,
+            budget_usd=capital_base, targets=targets,
             quotes=quotes, instruments=instruments,
         )
         if not coverage.complete:
             raise InsufficientTargetCoverageError(coverage)
         sells, buys = build_order_intents(
-            budget_usd=_decimal(command["budget_usd"]),
+            budget_usd=capital_base,
             targets=targets,
             owned_positions=owned_positions,
             quotes=quotes,
@@ -251,8 +280,9 @@ class ExecutionEngine:
             str(order.get("side")) == "SELL" and _decimal(order.get("filled_quantity", 0)) > 0
             for order in command.get("existing_orders", [])
         )
-        cash_shortfall = max(Decimal("0"), buy_cost - snapshot.settled_cash_usd)
-        what_if_intents = sells if sells and cash_shortfall > 0 else sells + buys
+        broker_cash_shortfall = max(Decimal("0"), buy_cost - snapshot.settled_cash_usd)
+        strategy_cash_shortfall = max(Decimal("0"), buy_cost - strategy_cash)
+        what_if_intents = sells if sells and (broker_cash_shortfall > 0 or strategy_cash_shortfall > 0) else sells + buys
         what_if_errors = self.broker.what_if(what_if_intents)
         if what_if_errors:
             raise ValueError("IBKR WhatIf failed: " + "; ".join(what_if_errors))
@@ -270,9 +300,13 @@ class ExecutionEngine:
             "sell_count": len(sells),
             "buy_count": len(buys),
             "settled_cash_usd": str(snapshot.settled_cash_usd),
+            "strategy_cash_usd": str(strategy_cash),
+            "strategy_equity_usd": str(strategy_equity),
+            "capital_base_usd": str(capital_base),
             "estimated_sell_proceeds_usd": str(sell_proceeds),
             "estimated_buy_cost_usd": str(buy_cost),
-            "settled_cash_shortfall_usd": str(cash_shortfall),
+            "settled_cash_shortfall_usd": str(broker_cash_shortfall),
+            "strategy_cash_shortfall_usd": str(strategy_cash_shortfall),
             "same_day_sale_proceeds_counted": False,
             "what_if": "sell_phase_passed_buy_phase_deferred" if what_if_intents == sells and buys else "passed",
         }
@@ -285,15 +319,29 @@ class ExecutionEngine:
             sell_results = self.broker.execute_phase(plan_id, sells, revision=revision, max_attempts=3)
             self._report_results(plan_id, sell_results)
             if not self._phase_completed(sells, sell_results):
-                self._sync_owned(strategy_link_id, target_symbols, owned_positions)
                 self.reporter.plan_status(plan_id, "partial", error="Sell phase did not fully complete; buys were not submitted.")
                 self.reporter.alert("partial_rebalance", "warning", "Sell phase is partial; buys were not submitted.", {"plan_id": plan_id})
                 return
-            self._sync_owned(strategy_link_id, target_symbols, owned_positions)
+            strategy_cash += sum(
+                (
+                    fill.quantity * fill.price - fill.commission
+                    for result in sell_results
+                    for fill in result.fills
+                ),
+                Decimal("0"),
+            )
             snapshot = self.broker.reconcile()
             preflight["settled_cash_after_sells_usd"] = str(snapshot.settled_cash_usd)
-            cash_shortfall = max(Decimal("0"), buy_cost - snapshot.settled_cash_usd)
-            preflight["settled_cash_shortfall_usd"] = str(cash_shortfall)
+            preflight["strategy_cash_after_sells_usd"] = str(strategy_cash)
+            broker_cash_shortfall = max(Decimal("0"), buy_cost - snapshot.settled_cash_usd)
+            strategy_cash_shortfall = max(Decimal("0"), buy_cost - strategy_cash)
+            preflight["settled_cash_shortfall_usd"] = str(broker_cash_shortfall)
+            preflight["strategy_cash_shortfall_usd"] = str(strategy_cash_shortfall)
+        if buys and buy_cost > strategy_cash:
+            raise ValueError(
+                f"strategy-owned cash is insufficient for purchases: required ${buy_cost}, "
+                f"available ${strategy_cash}; unrelated account cash cannot top up this strategy"
+            )
         if buys and buy_cost > snapshot.settled_cash_usd:
             if sells or has_prior_system_sells or str(command.get("status")) == "awaiting_settlement":
                 message = (
@@ -316,18 +364,10 @@ class ExecutionEngine:
             buy_results = self.broker.execute_phase(plan_id, buys, revision=revision, max_attempts=3)
             self._report_results(plan_id, buy_results)
             if not self._phase_completed(buys, buy_results):
-                self._sync_owned(strategy_link_id, target_symbols, owned_positions)
                 self.reporter.plan_status(plan_id, "partial", error="Buy phase partially filled; remaining quantities will retry next session.")
                 self.reporter.alert("partial_rebalance", "warning", "Buy phase is partial; remaining quantity will retry next session.", {"plan_id": plan_id})
                 return
-        self._sync_owned(strategy_link_id, target_symbols, owned_positions)
         self.reporter.plan_status(plan_id, "completed", preflight=preflight)
-
-    def _sync_owned(self, strategy_link_id: str, target_symbols: list[str], owned_positions: list[Position]) -> None:
-        final_snapshot = self.broker.reconcile()
-        relevant = set(target_symbols) | {item.symbol for item in owned_positions}
-        final_owned = [position for position in final_snapshot.positions if position.symbol in relevant]
-        self.reporter.positions(strategy_link_id, final_owned)
 
     def _report_results(self, plan_id: str, results: list[ExecutionResult]) -> None:
         for result in results:

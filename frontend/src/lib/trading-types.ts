@@ -74,6 +74,7 @@ export type TradingStrategyView = {
   lens_key: string;
   methodology_version: string;
   budget_usd: number;
+  cash_balance_usd: number;
   reserve_fraction: number;
   status: TradingLinkStatus;
   latest_snapshot_id: string | null;
@@ -125,6 +126,7 @@ export type TradingOrderView = {
 
 export type TradingFillView = {
   exec_id: string;
+  correction_revision: number;
   symbol: string;
   side: "BUY" | "SELL";
   quantity: number;

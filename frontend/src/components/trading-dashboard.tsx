@@ -279,6 +279,7 @@ export function TradingDashboard() {
           <label className="mt-3 block text-xs font-medium text-[color:var(--text-secondary)]" htmlFor="trading-budget">Fixed USD budget</label>
           <input id="trading-budget" type="number" min="100" step="100" value={budget} onChange={(event) => { setBudget(event.target.value); setPreview(null); }} className="mt-1 w-full rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--text-primary)]" />
           <p className="mt-2 text-xs text-[color:var(--text-muted)]">Up to 98% invested; 2% remains for fees and price movement. The executor requires full N/N target coverage and never borrows on margin or counts unsettled sale proceeds.</p>
+          {data?.strategy ? <p className="mt-2 text-xs text-[color:var(--text-muted)]">Strategy-owned cash ledger: <span className="font-semibold text-[color:var(--text-primary)]">${data.strategy.cash_balance_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>. Other account cash is excluded from sizing.</p> : null}
           {selectedPortfolio ? (
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div><dt className="text-[color:var(--text-muted)]">Snapshot</dt><dd className="mt-1 font-mono text-[color:var(--text-primary)]">{selectedPortfolio.latest_snapshot_id.slice(0, 8)}</dd></div>

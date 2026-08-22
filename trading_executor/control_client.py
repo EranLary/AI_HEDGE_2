@@ -7,6 +7,7 @@ import secrets
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from typing import Any
 
 
@@ -17,6 +18,9 @@ class ControlPlaneError(RuntimeError):
 class ControlClient:
     def __init__(self, base_url: str, connection_id: str = "", device_secret: str = "") -> None:
         self.base_url = base_url.rstrip("/")
+        parsed = urlparse(self.base_url)
+        if parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("the trading control plane must use HTTPS (HTTP is allowed only for localhost tests)")
         self.connection_id = connection_id
         self.device_secret = device_secret
 

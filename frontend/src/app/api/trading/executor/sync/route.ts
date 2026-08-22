@@ -19,6 +19,7 @@ type SyncBody = {
   executor_version?: string;
   gateway_connected?: boolean;
   gateway_authenticated?: boolean;
+  account_type?: string;
   error?: string;
 };
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       gatewayConnected: body.gateway_connected === true,
       gatewayAuthenticated: body.gateway_authenticated === true,
       executorVersion: String(body.executor_version || "unknown").slice(0, 100),
+      accountType: String(body.account_type || "UNKNOWN").slice(0, 100),
       error: String(body.error || "").slice(0, 2_000),
     });
     if (!body.gateway_connected || !body.gateway_authenticated) {

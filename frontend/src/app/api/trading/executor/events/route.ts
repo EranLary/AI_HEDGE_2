@@ -16,7 +16,7 @@ import type { RebalanceStatus } from "@/lib/trading-types";
 export const runtime = "nodejs";
 
 const PLAN_STATUSES = new Set<RebalanceStatus>([
-  "queued", "preflight", "awaiting_market", "selling", "buying", "completed",
+  "queued", "preflight", "awaiting_market", "awaiting_settlement", "selling", "buying", "completed",
   "partial", "blocked", "cancel_requested", "cancelled",
 ]);
 const ORDER_STATUSES = new Set([

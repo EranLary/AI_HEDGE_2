@@ -16,6 +16,7 @@ export type RebalanceStatus =
   | "queued"
   | "preflight"
   | "awaiting_market"
+  | "awaiting_settlement"
   | "selling"
   | "buying"
   | "completed"
@@ -58,6 +59,7 @@ export type TradingConnectionView = {
   status: TradingConnectionStatus;
   gateway_connected: boolean;
   gateway_authenticated: boolean;
+  account_type: string;
   executor_version: string;
   last_heartbeat_at: string | null;
   last_error: string;
@@ -85,6 +87,7 @@ export type TradingPlanView = {
   snapshot_id: string;
   status: RebalanceStatus;
   target_holdings: TradingHolding[];
+  preflight: Record<string, unknown>;
   not_before: string | null;
   error: string;
   created_at: string;

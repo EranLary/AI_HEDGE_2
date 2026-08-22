@@ -55,6 +55,39 @@ class OrderIntent:
     min_tick: Decimal
 
 
+@dataclass(frozen=True)
+class SizingCoverage:
+    target_count: int
+    covered_target_count: int
+    minimum_budget_usd: Decimal
+    uncovered_symbols: tuple[str, ...]
+    desired_quantities: dict[str, Decimal]
+
+    @property
+    def complete(self) -> bool:
+        return self.target_count > 0 and self.covered_target_count == self.target_count
+
+
+class InsufficientTargetCoverageError(ValueError):
+    def __init__(self, coverage: SizingCoverage) -> None:
+        self.coverage = coverage
+        symbols = ", ".join(coverage.uncovered_symbols)
+        super().__init__(
+            f"budget cannot buy a tradable quantity for all {coverage.target_count} targets; "
+            f"minimum estimated budget is ${coverage.minimum_budget_usd} (uncovered: {symbols})"
+        )
+
+    @property
+    def preflight(self) -> dict[str, object]:
+        return {
+            "target_count": self.coverage.target_count,
+            "covered_target_count": self.coverage.covered_target_count,
+            "target_coverage": f"{self.coverage.covered_target_count}/{self.coverage.target_count}",
+            "minimum_budget_usd": str(self.coverage.minimum_budget_usd),
+            "uncovered_symbols": list(self.coverage.uncovered_symbols),
+        }
+
+
 def investable_budget(budget_usd: Decimal) -> Decimal:
     if budget_usd <= 0:
         raise ValueError("budget must be positive")
@@ -66,6 +99,13 @@ def round_quantity(quantity: Decimal, increment: Decimal, fractional: bool) -> D
     if effective_increment <= 0:
         raise ValueError("size increment must be positive")
     return (quantity / effective_increment).to_integral_value(rounding=ROUND_FLOOR) * effective_increment
+
+
+def minimum_tradable_quantity(instrument: Instrument) -> Decimal:
+    increment = instrument.size_increment if instrument.supports_fractional else max(Decimal("1"), instrument.size_increment)
+    if increment <= 0 or instrument.min_size <= 0:
+        raise ValueError(f"invalid size rules for {instrument.symbol}")
+    return (max(increment, instrument.min_size) / increment).to_integral_value(rounding=ROUND_CEILING) * increment
 
 
 def marketable_limit(side: str, quote: Quote, min_tick: Decimal, cushion_bps: Decimal = Decimal("10")) -> Decimal:
@@ -98,23 +138,27 @@ def validate_position_ownership(
     return conflicts
 
 
-def build_order_intents(
+def calculate_sizing_coverage(
     *,
     budget_usd: Decimal,
     targets: Iterable[Target],
-    owned_positions: Iterable[Position],
     quotes: dict[str, Quote],
     instruments: dict[str, Instrument],
-) -> tuple[list[OrderIntent], list[OrderIntent]]:
+) -> SizingCoverage:
     budget = investable_budget(budget_usd)
-    owned = {position.symbol.upper(): position.quantity for position in owned_positions}
     target_list = list(targets)
-    weight_total = sum((target.weight for target in target_list), Decimal("0"))
     if not target_list:
         raise ValueError("empty targets require explicit liquidation approval")
-    if weight_total > Decimal("1.000001") or weight_total <= 0:
+    symbols = [target.symbol.upper() for target in target_list]
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("duplicate target symbols are not allowed")
+    weight_total = sum((target.weight for target in target_list), Decimal("0"))
+    if any(target.weight <= 0 for target in target_list) or weight_total > Decimal("1.000001") or weight_total <= 0:
         raise ValueError("invalid target weights")
+
     desired: dict[str, Decimal] = {}
+    minimum_investable = Decimal("0")
+    uncovered: list[str] = []
     for target in target_list:
         symbol = target.symbol.upper()
         instrument = instruments.get(symbol)
@@ -124,8 +168,45 @@ def build_order_intents(
         if not quote:
             raise ValueError(f"quote is unavailable: {symbol}")
         buy_limit = marketable_limit("BUY", quote, instrument.min_tick)
+        minimum_quantity = minimum_tradable_quantity(instrument)
+        minimum_investable = max(minimum_investable, buy_limit * minimum_quantity / target.weight)
         raw_quantity = budget * target.weight / buy_limit
-        desired[symbol] = round_quantity(raw_quantity, instrument.size_increment, instrument.supports_fractional)
+        quantity = round_quantity(raw_quantity, instrument.size_increment, instrument.supports_fractional)
+        if quantity < minimum_quantity:
+            quantity = Decimal("0")
+            uncovered.append(symbol)
+        desired[symbol] = quantity
+
+    minimum_budget = (minimum_investable / (Decimal("1") - RESERVE_FRACTION)).quantize(
+        Decimal("0.01"), rounding=ROUND_CEILING,
+    )
+    while investable_budget(minimum_budget) < minimum_investable:
+        minimum_budget += Decimal("0.01")
+    return SizingCoverage(
+        target_count=len(target_list),
+        covered_target_count=len(target_list) - len(uncovered),
+        minimum_budget_usd=minimum_budget,
+        uncovered_symbols=tuple(sorted(uncovered)),
+        desired_quantities=desired,
+    )
+
+
+def build_order_intents(
+    *,
+    budget_usd: Decimal,
+    targets: Iterable[Target],
+    owned_positions: Iterable[Position],
+    quotes: dict[str, Quote],
+    instruments: dict[str, Instrument],
+) -> tuple[list[OrderIntent], list[OrderIntent]]:
+    owned = {position.symbol.upper(): position.quantity for position in owned_positions}
+    target_list = list(targets)
+    coverage = calculate_sizing_coverage(
+        budget_usd=budget_usd, targets=target_list, quotes=quotes, instruments=instruments,
+    )
+    if not coverage.complete:
+        raise InsufficientTargetCoverageError(coverage)
+    desired = coverage.desired_quantities
 
     sells: list[OrderIntent] = []
     buys: list[OrderIntent] = []

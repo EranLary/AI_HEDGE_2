@@ -35,34 +35,39 @@ all mutations and executor endpoints to return disabled.
 
 ## Snapshot and execution lifecycle
 
-1. The existing daily Portfolio Refresh updates NAV. It creates a new Paper Top
-   20 snapshot only for the monthly cutoff policy.
+1. The existing daily Portfolio Refresh updates NAV. It creates a new Paper
+   snapshot of up to 20 positive-score names only for the monthly cutoff policy;
+   fewer names are a valid methodology result.
 2. The refresh writes eligibility separately so the frozen snapshot and
    holdings are never rewritten. Backtests, Analysis, empty targets, and any run
    with provider warnings are ineligible.
 3. For an armed Nasdaq-100 strategy, a unique plan is enqueued for the new
    snapshot. Re-running the refresh cannot create a duplicate plan.
-4. The executor reconciles the account, positions, open orders, and executions,
-   then pulls commands. It acts only Monday-Friday between 10:00 and 15:30 New
-   York time.
+4. The executor reconciles the account, positions, open orders, and individual
+   `ExecId` fills, reports recovered broker state, and only then pulls commands.
+   It acts only Monday-Friday between 10:00 and 15:30 New York time.
 5. It resolves unique USD stock contracts, fetches fresh NBBO, checks manual
-   overlap and settled cash, sizes at 98% of the fixed budget, and submits WhatIf
-   for the complete sell-and-buy set. One failure blocks every order.
-6. Sells execute first. Buys start only after every sell completes. Partial work
-   is persisted and retried next session without reusing the same command
-   revision.
+   overlap and settled cash, and sizes at 98% of the fixed budget. Every one of
+   the snapshot's N targets must receive a tradable quantity (`N/N`), regardless
+   of whether N is 20 or smaller; otherwise the complete plan is blocked.
+6. Every submitted phase passes WhatIf. Sells execute first. Buys start only
+   after every sell completes and IBKR reports enough settled USD cash. Sale
+   proceeds from the same day and margin buying power are not counted. A plan
+   can wait until a later session in `awaiting_settlement`.
 7. Paper research performance remains on Portfolio Returns. Actual orders,
    fills, fees, lag, and strategy-owned quantities remain on Trading.
 
 ## Activation checklist
 
-- Apply migration `011_ibkr_paper_trading.sql` and confirm every new table and
+- Apply migrations `011_ibkr_paper_trading.sql` and
+  `012_ibkr_trading_hardening.sql`, then confirm every new table, status, and
   unique constraint exists.
 - Configure production secrets and confirm the monitor workflow receives HTTP
   200.
 - Use a dedicated IBKR Paper username where account policy permits it.
 - Pair the VM, verify heartbeat, and first run with local execution disabled.
-- Verify contract resolution and fresh NBBO for all 20 target symbols.
+- Verify contract resolution, fresh NBBO, and full `N/N` coverage for every
+  target symbol in the selected snapshot.
 - Verify WhatIf and a low-budget Paper order cycle with Telegram alerts.
 - Complete one full monthly Paper rebalance, including sells, buys, a forced
   partial/retry, duplicate execution callback, and executor restart.

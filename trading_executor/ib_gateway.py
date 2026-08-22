@@ -3,8 +3,10 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import replace
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 try:
     from ibapi.client import EClient
@@ -18,7 +20,7 @@ except ImportError as error:  # pragma: no cover - depends on the official IBKR 
         "Do not use an unversioned third-party PyPI copy."
     ) from error
 
-from .engine import BrokerSnapshot, ExecutionResult
+from .engine import BrokerExecution, BrokerOrder, BrokerSnapshot, ExecutionFill, ExecutionResult
 from .policy import Instrument, OrderIntent, Position, Quote, marketable_limit
 
 
@@ -37,10 +39,11 @@ class IbGateway(EWrapper, EClient):
         self._managed_accounts: list[str] = []
         self._positions: list[Position] = []
         self._settled_cash = Decimal("0")
+        self._account_type = "UNKNOWN"
         self._open_orders: dict[int, dict[str, Any]] = {}
         self._executions: dict[str, dict[str, Any]] = {}
         self._order_status: dict[int, dict[str, Any]] = {}
-        self._commissions: dict[str, Decimal] = {}
+        self._commissions: dict[str, dict[str, Any]] = {}
         self._contracts: dict[int, list[Any]] = {}
         self._quotes: dict[int, dict[str, Any]] = {}
         self._what_if: dict[int, Any] = {}
@@ -53,6 +56,9 @@ class IbGateway(EWrapper, EClient):
     def connect_and_start(self, timeout: float = 15) -> None:
         if self.isConnected():
             return
+        self._events["ready"].clear()
+        self._managed_accounts = []
+        self._next_order_id = None
         self.connect(self.host, self.port, self.client_id)
         self._thread = threading.Thread(target=self.run, name="ibapi-network", daemon=True)
         self._thread.start()
@@ -123,7 +129,10 @@ class IbGateway(EWrapper, EClient):
         self._executions[str(execution.execId)] = {
             "req_id": reqId, "order_id": int(execution.orderId), "perm_id": int(execution.permId),
             "ref": str(getattr(execution, "orderRef", "") or ""), "symbol": str(contract.symbol).upper(),
+            "conid": int(getattr(contract, "conId", 0) or 0) or None,
+            "side": self._normalize_side(str(getattr(execution, "side", "") or "")),
             "shares": Decimal(str(execution.shares)), "price": Decimal(str(execution.price)),
+            "time": self._execution_time(str(getattr(execution, "time", "") or "")),
         }
 
     def execDetailsEnd(self, reqId: int) -> None:  # noqa: N802
@@ -133,11 +142,18 @@ class IbGateway(EWrapper, EClient):
         self._events["executions"].set()
 
     def commissionReport(self, commissionReport: Any) -> None:  # noqa: N802
-        self._commissions[str(commissionReport.execId)] = Decimal(str(commissionReport.commission))
+        self._commissions[str(commissionReport.execId)] = {
+            "commission": Decimal(str(commissionReport.commission)),
+            "currency": str(getattr(commissionReport, "currency", "USD") or "USD"),
+        }
 
     def accountSummary(self, reqId: int, account: str, tag: str, value: str, currency: str) -> None:  # noqa: N802
-        if account.upper() == self.expected_account and tag == "SettledCash" and currency == "USD":
+        if account.upper() != self.expected_account:
+            return
+        if tag == "SettledCash" and currency == "USD":
             self._settled_cash = Decimal(value)
+        elif tag == "AccountType":
+            self._account_type = value.strip().upper() or "UNKNOWN"
 
     def accountSummaryEnd(self, reqId: int) -> None:  # noqa: N802
         event = self._request_events.get(reqId)
@@ -180,23 +196,31 @@ class IbGateway(EWrapper, EClient):
         self._open_orders = {}
         self._executions = {}
         self._settled_cash = Decimal("0")
+        self._account_type = "UNKNOWN"
         execution_request = self._new_request()
         account_request = self._new_request()
         self.reqPositions()
         self.reqOpenOrders()
         self.reqExecutions(execution_request, ExecutionFilter())
-        self.reqAccountSummary(account_request, "All", "SettledCash")
+        self.reqAccountSummary(account_request, "All", "SettledCash,AccountType")
         self._wait(self._events["positions"], 15, "positions reconciliation")
         self._wait(self._events["orders"], 15, "open-order reconciliation")
         self._wait(self._events["executions"], 15, "execution reconciliation")
         self._wait(self._events["account"], 15, "account reconciliation")
         self.cancelAccountSummary(account_request)
+        open_orders = tuple(self._broker_order(order_id, details) for order_id, details in self._open_orders.items())
+        executions = tuple(
+            self._broker_execution(exec_id, details)
+            for exec_id, details in self._executions.items()
+            if details.get("ref") and details.get("side") in {"BUY", "SELL"}
+        )
         return BrokerSnapshot(
             account_id=self.expected_account,
             positions=list(self._positions),
             settled_cash_usd=self._settled_cash,
-            open_order_refs={str(item["ref"]) for item in self._open_orders.values() if item["ref"]},
-            execution_refs={str(item["ref"]) for item in self._executions.values() if item["ref"]},
+            account_type=self._account_type,
+            open_orders=open_orders,
+            executions=executions,
         )
 
     def resolve_instruments(self, symbols: list[str]) -> dict[str, Instrument]:
@@ -265,12 +289,14 @@ class IbGateway(EWrapper, EClient):
         return failures
 
     def execute_phase(self, plan_id: str, intents: list[OrderIntent], *, revision: int, max_attempts: int) -> list[ExecutionResult]:
-        return [self._execute_one(plan_id, intent, revision, max_attempts) for intent in intents]
+        results: list[ExecutionResult] = []
+        for intent in intents:
+            results.extend(self._execute_one(plan_id, intent, revision, max_attempts))
+        return results
 
-    def _execute_one(self, plan_id: str, intent: OrderIntent, revision: int, max_attempts: int) -> ExecutionResult:
+    def _execute_one(self, plan_id: str, intent: OrderIntent, revision: int, max_attempts: int) -> list[ExecutionResult]:
         filled_total = Decimal("0")
-        average_numerator = Decimal("0")
-        last_result: ExecutionResult | None = None
+        results: list[ExecutionResult] = []
         for attempt in range(1, max_attempts + 1):
             remaining = intent.quantity - filled_total
             if remaining <= 0:
@@ -278,7 +304,11 @@ class IbGateway(EWrapper, EClient):
             client_key = f"hib:{plan_id}:{intent.symbol}:{intent.side}:r{revision}:a{attempt}"
             snapshot = self.reconcile()
             if client_key in snapshot.open_order_refs or client_key in snapshot.execution_refs:
-                return ExecutionResult(client_key, intent.symbol, intent.side, intent.quantity, filled_total, "partially_filled", intent.limit_price, error="existing broker order requires reconciliation")
+                recovered = self._result_from_snapshot(snapshot, client_key, intent)
+                if recovered:
+                    results.append(recovered)
+                    filled_total += recovered.filled_quantity
+                break
             current_intent = replace(intent, quantity=remaining)
             if attempt > 1:
                 quote = self.fresh_quotes([intent.symbol])[intent.symbol]
@@ -297,32 +327,37 @@ class IbGateway(EWrapper, EClient):
             average_price = Decimal(str(status.get("average_fill_price", 0)))
             if attempt_filled > 0:
                 filled_total += attempt_filled
-                average_numerator += attempt_filled * average_price
             if filled_total < intent.quantity:
                 self.cancelOrder(order_id, "")
                 time.sleep(1)
             executions = [item for item in self._executions.items() if int(item[1].get("order_id", -1)) == order_id]
-            exec_id = executions[-1][0] if executions else None
-            commission = sum((self._commissions.get(item[0], Decimal("0")) for item in executions), Decimal("0"))
-            final_status = "filled" if filled_total >= intent.quantity else "partially_filled"
+            if executions:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and any(exec_id not in self._commissions for exec_id, _ in executions):
+                    time.sleep(0.05)
+            fills = tuple(self._execution_fill(exec_id, details) for exec_id, details in executions)
+            commission = sum((fill.commission for fill in fills), Decimal("0"))
+            final_status = "filled" if attempt_filled >= remaining else "partially_filled"
             if str(status.get("status")) == "Inactive" or self._errors.get(order_id):
                 final_status = "rejected"
-            last_result = ExecutionResult(
+            results.append(ExecutionResult(
                 client_order_key=client_key, symbol=intent.symbol, side=intent.side,
-                requested_quantity=intent.quantity, filled_quantity=filled_total, status=final_status,
+                requested_quantity=remaining, filled_quantity=attempt_filled, status=final_status,
                 limit_price=current_intent.limit_price,
-                average_fill_price=(average_numerator / filled_total if filled_total else None),
+                average_fill_price=(average_price if attempt_filled else None), conid=intent.conid,
                 ib_order_id=order_id, ib_perm_id=int(status.get("perm_id") or 0) or None,
-                exec_id=exec_id, commission=commission,
+                commission=commission, fills=fills,
                 error="; ".join(self._errors.get(order_id, [])),
-            )
-            if final_status == "filled" or final_status == "rejected":
+            ))
+            if filled_total >= intent.quantity or final_status == "rejected":
                 break
-        return last_result or ExecutionResult(
+        if results:
+            return results
+        return [ExecutionResult(
             f"hib:{plan_id}:{intent.symbol}:{intent.side}:r{revision}:a0",
             intent.symbol, intent.side, intent.quantity, Decimal("0"), "error", intent.limit_price,
-            error="order was not submitted",
-        )
+            conid=intent.conid, error="order was not submitted",
+        )]
 
     def cancel_plan_orders(self, plan_id: str) -> None:
         self.reconcile()
@@ -330,6 +365,109 @@ class IbGateway(EWrapper, EClient):
         for order_id, details in list(self._open_orders.items()):
             if str(details.get("ref", "")).startswith(prefix):
                 self.cancelOrder(order_id, "")
+
+    def _broker_order(self, order_id: int, details: dict[str, Any]) -> BrokerOrder:
+        order = details["order"]
+        contract = details["contract"]
+        state = self._order_status.get(order_id, {})
+        status = self._normalize_order_status(str(state.get("status") or getattr(details["state"], "status", "Submitted")))
+        return BrokerOrder(
+            client_order_key=str(details.get("ref", "")),
+            symbol=str(getattr(contract, "symbol", "")).upper(),
+            side=self._normalize_side(str(getattr(order, "action", ""))),
+            requested_quantity=Decimal(str(getattr(order, "totalQuantity", 0))),
+            filled_quantity=Decimal(str(state.get("filled", 0))),
+            status=status,
+            limit_price=Decimal(str(getattr(order, "lmtPrice", 0))),
+            conid=int(getattr(contract, "conId", 0) or 0) or None,
+            average_fill_price=Decimal(str(state["average_fill_price"])) if state.get("average_fill_price") else None,
+            ib_order_id=order_id,
+            ib_perm_id=int(state.get("perm_id") or getattr(order, "permId", 0) or 0) or None,
+        )
+
+    def _broker_execution(self, exec_id: str, details: dict[str, Any]) -> BrokerExecution:
+        return BrokerExecution(
+            client_order_key=str(details["ref"]), symbol=str(details["symbol"]), side=str(details["side"]),
+            conid=details.get("conid"), ib_order_id=int(details["order_id"]),
+            ib_perm_id=int(details.get("perm_id") or 0) or None,
+            fill=self._execution_fill(exec_id, details),
+        )
+
+    def _execution_fill(self, exec_id: str, details: dict[str, Any]) -> ExecutionFill:
+        commission = self._commissions.get(exec_id, {})
+        return ExecutionFill(
+            exec_id=exec_id,
+            quantity=Decimal(str(details["shares"])),
+            price=Decimal(str(details["price"])),
+            commission=Decimal(str(commission.get("commission", 0))),
+            commission_currency=str(commission.get("currency", "USD")),
+            executed_at=str(details.get("time") or datetime.now(timezone.utc).isoformat()),
+            raw_execution={
+                "ib_order_id": details.get("order_id"), "ib_perm_id": details.get("perm_id"),
+                "order_ref": details.get("ref"), "raw_time": details.get("time"),
+            },
+        )
+
+    def _result_from_snapshot(self, snapshot: BrokerSnapshot, client_key: str, intent: OrderIntent) -> ExecutionResult | None:
+        matching_executions = [item for item in snapshot.executions if item.client_order_key == client_key]
+        matching_orders = [item for item in snapshot.open_orders if item.client_order_key == client_key]
+        if matching_orders:
+            order = matching_orders[0]
+            return ExecutionResult(
+                client_order_key=client_key, symbol=order.symbol, side=order.side,
+                requested_quantity=order.requested_quantity, filled_quantity=order.filled_quantity,
+                status=order.status, limit_price=order.limit_price, conid=order.conid,
+                average_fill_price=order.average_fill_price, ib_order_id=order.ib_order_id,
+                ib_perm_id=order.ib_perm_id,
+                commission=sum((item.fill.commission for item in matching_executions), Decimal("0")),
+                fills=tuple(item.fill for item in matching_executions),
+                error="recovered from IBKR before retry; no duplicate order was submitted",
+            )
+        if matching_executions:
+            filled = sum((item.fill.quantity for item in matching_executions), Decimal("0"))
+            value = sum((item.fill.quantity * item.fill.price for item in matching_executions), Decimal("0"))
+            first = matching_executions[0]
+            return ExecutionResult(
+                client_order_key=client_key, symbol=first.symbol, side=first.side,
+                requested_quantity=filled, filled_quantity=filled, status="filled",
+                limit_price=intent.limit_price, conid=first.conid,
+                average_fill_price=value / filled if filled else None,
+                ib_order_id=first.ib_order_id, ib_perm_id=first.ib_perm_id,
+                commission=sum((item.fill.commission for item in matching_executions), Decimal("0")),
+                fills=tuple(item.fill for item in matching_executions),
+                error="recovered from IBKR before retry; no duplicate order was submitted",
+            )
+        return None
+
+    @staticmethod
+    def _normalize_side(side: str) -> str:
+        return {"BOT": "BUY", "BUY": "BUY", "SLD": "SELL", "SELL": "SELL"}.get(side.upper(), side.upper())
+
+    @staticmethod
+    def _normalize_order_status(status: str) -> str:
+        return {
+            "PRESUBMITTED": "submitted", "SUBMITTED": "submitted", "PENDINGSUBMIT": "submitted",
+            "PENDINGCANCEL": "cancel_pending", "APICANCELLED": "cancelled", "CANCELLED": "cancelled",
+            "FILLED": "filled", "INACTIVE": "rejected",
+        }.get(status.replace(" ", "").upper(), "submitted")
+
+    @staticmethod
+    def _execution_time(value: str) -> str:
+        raw = value.strip()
+        parts = raw.rsplit(" ", 1)
+        if len(parts) == 2 and "/" in parts[1]:
+            try:
+                parsed = datetime.strptime(parts[0], "%Y%m%d %H:%M:%S")
+                return parsed.replace(tzinfo=ZoneInfo(parts[1])).astimezone(timezone.utc).isoformat()
+            except (ValueError, KeyError):
+                pass
+        for pattern in ("%Y%m%d-%H:%M:%S", "%Y%m%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(raw, pattern)
+                return parsed.replace(tzinfo=timezone.utc).isoformat()
+            except ValueError:
+                continue
+        return datetime.now(timezone.utc).isoformat()
 
     def _new_request(self) -> int:
         with self._lock:

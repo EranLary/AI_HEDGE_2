@@ -72,11 +72,20 @@ sends a Telegram alert.
 - Manual overlap in a target or strategy-owned ticker blocks the whole plan.
 - Empty targets never liquidate. Sells complete before buys. Quotes must contain
   a fresh bid and ask, and every order passes IBKR WhatIf before any real order.
+- A snapshot may naturally contain fewer than 20 names, but its own target set
+  must have full `N/N` tradable-quantity coverage. If the fixed budget would
+  round even one target to zero, the whole plan is blocked and reports the
+  estimated minimum budget.
+- Buys are limited to IBKR `SettledCash` in USD. Margin buying power and
+  same-day sale proceeds are never counted; after sells, the plan can wait in
+  `awaiting_settlement` until a later session.
 - Orders are SMART, DAY, regular-hours-only, marketable limits. Unfilled orders
   are cancelled and repriced at most three times; remaining quantity becomes a
   partial plan for the next session.
 - Order references are deterministic by plan, symbol, side, revision, and
-  attempt. Server-side `PermId` and `ExecId` uniqueness protects callback replay.
+  attempt. Each IBKR execution callback is stored separately by `ExecId`, and
+  reconciliation reports broker orders/executions before a new command can be
+  retried. Server-side `PermId` and `ExecId` uniqueness protects callback replay.
 
 Run the broker-independent tests with:
 

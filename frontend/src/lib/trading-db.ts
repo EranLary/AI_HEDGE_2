@@ -184,6 +184,7 @@ export async function updateTradingHeartbeat(args: {
   gatewayConnected: boolean;
   gatewayAuthenticated: boolean;
   executorVersion: string;
+  accountType?: string;
   error?: string;
 }): Promise<void> {
   const sql = requireSql();
@@ -193,6 +194,7 @@ export async function updateTradingHeartbeat(args: {
        SET gateway_connected = ${args.gatewayConnected},
            gateway_authenticated = ${args.gatewayAuthenticated},
            executor_version = ${args.executorVersion},
+           account_type = ${String(args.accountType || "UNKNOWN").slice(0, 100)},
            status = CASE WHEN status = 'paused' THEN 'paused' ELSE ${status} END,
            last_heartbeat_at = now(),
            last_error = ${args.error || ""},
@@ -302,7 +304,7 @@ export async function loadTradingDashboard(args: {
   const [connectionRows, strategyRows, planRows, eventRows, positionRows, orderRows, fillRows, portfolios] = await Promise.all([
     sql`
       SELECT id::text AS id, mode, account_masked, status, gateway_connected,
-             gateway_authenticated, executor_version,
+             gateway_authenticated, executor_version, account_type,
              last_heartbeat_at::text AS last_heartbeat_at, last_error,
              paired_at::text AS paired_at
         FROM trading_connections
@@ -324,7 +326,7 @@ export async function loadTradingDashboard(args: {
     `,
     sql`
       SELECT p.id::text AS id, p.strategy_link_id::text AS strategy_link_id,
-             p.snapshot_id::text AS snapshot_id, p.status, p.target_holdings,
+             p.snapshot_id::text AS snapshot_id, p.status, p.target_holdings, p.preflight,
              p.not_before::text AS not_before, p.error,
              p.created_at::text AS created_at, p.updated_at::text AS updated_at
         FROM trading_rebalance_plans p
@@ -387,6 +389,7 @@ export async function loadTradingDashboard(args: {
     status: row.status as TradingConnectionView["status"],
     gateway_connected: Boolean(row.gateway_connected),
     gateway_authenticated: Boolean(row.gateway_authenticated),
+    account_type: String(row.account_type || "UNKNOWN"),
     executor_version: String(row.executor_version || ""),
     last_heartbeat_at: row.last_heartbeat_at ? new Date(String(row.last_heartbeat_at)).toISOString() : null,
     last_error: String(row.last_error || ""),
@@ -413,6 +416,7 @@ export async function loadTradingDashboard(args: {
     snapshot_id: String(row.snapshot_id),
     status: row.status as RebalanceStatus,
     target_holdings: asHoldings(row.target_holdings),
+    preflight: (row.preflight || {}) as Record<string, unknown>,
     not_before: row.not_before ? new Date(String(row.not_before)).toISOString() : null,
     error: String(row.error || ""),
     created_at: new Date(String(row.created_at)).toISOString(),
@@ -544,7 +548,7 @@ export async function configureTradingStrategy(args: {
        SET status = 'cancel_requested', updated_at = now()
      WHERE strategy_link_id = ${linkId}::uuid
        AND snapshot_id <> ${selected.latest_snapshot_id}::uuid
-       AND status IN ('queued', 'preflight', 'awaiting_market', 'partial');
+       AND status IN ('queued', 'preflight', 'awaiting_market', 'awaiting_settlement', 'partial');
   `;
   if (status === "armed") {
     await insertRebalancePlan({
@@ -764,7 +768,7 @@ export async function pauseTradingStrategy(args: {
         FROM trading_strategy_links l
        WHERE p.strategy_link_id = l.id
          AND l.connection_id = ${args.connectionId}::uuid
-         AND p.status IN ('queued', 'preflight', 'awaiting_market', 'selling', 'buying', 'partial');
+         AND p.status IN ('queued', 'preflight', 'awaiting_market', 'awaiting_settlement', 'selling', 'buying', 'partial');
     `;
   }
   await appendTradingAudit({
@@ -971,7 +975,7 @@ export async function loadExecutorCommands(connectionId: string): Promise<Array<
       LEFT JOIN trading_strategy_positions pos ON pos.strategy_link_id = l.id
      WHERE c.id = ${connectionId}::uuid
        AND (
-         (c.status = 'ready' AND e.eligible AND p.status IN ('queued', 'preflight', 'awaiting_market', 'selling', 'buying', 'partial'))
+          (c.status = 'ready' AND e.eligible AND p.status IN ('queued', 'preflight', 'awaiting_market', 'awaiting_settlement', 'selling', 'buying', 'partial'))
          OR p.status = 'cancel_requested'
        )
        AND (p.not_before IS NULL OR p.not_before <= now())
@@ -1006,12 +1010,23 @@ export async function updateRebalanceStatus(args: {
              ELSE command_revision
            END,
            not_before = CASE
-             WHEN ${args.status} = 'partial' AND p.status <> 'partial'
-               THEN ((timezone('America/New_York', now())::date + 1) + time '10:00') AT TIME ZONE 'America/New_York'
+             WHEN ${args.status} IN ('partial', 'awaiting_settlement') AND p.status <> ${args.status}
+               THEN (
+                 timezone('America/New_York', now())::date
+                 + CASE extract(isodow FROM timezone('America/New_York', now()))::int
+                     WHEN 5 THEN 3
+                     WHEN 6 THEN 2
+                     ELSE 1
+                   END
+                 + time '10:00'
+               ) AT TIME ZONE 'America/New_York'
              ELSE not_before
            END,
            error = ${args.error || ""},
-           preflight = ${JSON.stringify(args.preflight || {})}::jsonb,
+           preflight = CASE
+             WHEN ${JSON.stringify(args.preflight || {})}::jsonb = '{}'::jsonb THEN p.preflight
+             ELSE ${JSON.stringify(args.preflight || {})}::jsonb
+           END,
            completed_at = CASE WHEN ${args.status} IN ('completed', 'cancelled') THEN now() ELSE completed_at END,
            updated_at = now()
       FROM trading_strategy_links l
@@ -1022,9 +1037,10 @@ export async function updateRebalanceStatus(args: {
          p.status = ${args.status}
          OR (p.status = 'queued' AND ${args.status} IN ('preflight', 'awaiting_market', 'blocked'))
          OR (p.status = 'awaiting_market' AND ${args.status} IN ('preflight', 'blocked'))
-         OR (p.status = 'preflight' AND ${args.status} IN ('selling', 'buying', 'completed', 'partial', 'blocked'))
-         OR (p.status = 'selling' AND ${args.status} IN ('buying', 'completed', 'partial', 'blocked'))
-         OR (p.status = 'buying' AND ${args.status} IN ('completed', 'partial', 'blocked'))
+         OR (p.status = 'awaiting_settlement' AND ${args.status} IN ('awaiting_settlement', 'preflight', 'buying', 'blocked'))
+         OR (p.status = 'preflight' AND ${args.status} IN ('awaiting_settlement', 'selling', 'buying', 'completed', 'partial', 'blocked'))
+         OR (p.status = 'selling' AND ${args.status} IN ('preflight', 'awaiting_settlement', 'buying', 'completed', 'partial', 'blocked'))
+         OR (p.status = 'buying' AND ${args.status} IN ('preflight', 'completed', 'partial', 'blocked'))
          OR (p.status = 'partial' AND ${args.status} IN ('preflight', 'selling', 'buying', 'completed', 'blocked'))
          OR (p.status = 'cancel_requested' AND ${args.status} = 'cancelled')
        )
@@ -1138,6 +1154,7 @@ export async function upsertTradingOrder(args: {
       raw_status = EXCLUDED.raw_status,
       updated_at = now(),
       completed_at = CASE WHEN EXCLUDED.status IN ('filled', 'cancelled', 'rejected', 'error') THEN now() ELSE trading_orders.completed_at END
+    WHERE trading_orders.rebalance_plan_id = EXCLUDED.rebalance_plan_id
     RETURNING id::text AS id;
   `) as Array<{ id: string }>;
   const orderId = rows[0]?.id || null;
@@ -1177,16 +1194,59 @@ export async function insertTradingFill(args: {
     INSERT INTO trading_fills (
       order_id, connection_id, exec_id, symbol, side, quantity, price,
       commission, commission_currency, executed_at, raw_execution
-    ) VALUES (
-      ${args.orderId || null}::uuid, ${args.connectionId}::uuid, ${args.execId},
-      ${args.symbol.toUpperCase()}, ${args.side}, ${args.quantity}, ${args.price},
-      ${args.commission || 0}, ${args.commissionCurrency || "USD"},
-      ${args.executedAt}::timestamptz, ${JSON.stringify(args.rawExecution || {})}::jsonb
     )
-    ON CONFLICT (exec_id) DO NOTHING
-    RETURNING id::text AS id;
-  `) as Array<{ id: string }>;
-  const inserted = rows.length === 1;
+    SELECT ${args.orderId || null}::uuid, ${args.connectionId}::uuid, ${args.execId},
+           ${args.symbol.toUpperCase()}, ${args.side}, ${args.quantity}, ${args.price},
+           ${args.commission || 0}, ${args.commissionCurrency || "USD"},
+           ${args.executedAt}::timestamptz, ${JSON.stringify(args.rawExecution || {})}::jsonb
+     WHERE ${args.orderId || null}::uuid IS NULL
+        OR EXISTS (
+          SELECT 1
+            FROM trading_orders owned_order
+            JOIN trading_rebalance_plans owned_plan ON owned_plan.id = owned_order.rebalance_plan_id
+            JOIN trading_strategy_links owned_link ON owned_link.id = owned_plan.strategy_link_id
+           WHERE owned_order.id = ${args.orderId || null}::uuid
+             AND owned_link.connection_id = ${args.connectionId}::uuid
+        )
+    ON CONFLICT (exec_id) DO UPDATE SET
+      order_id = COALESCE(EXCLUDED.order_id, trading_fills.order_id),
+      commission = EXCLUDED.commission,
+      commission_currency = EXCLUDED.commission_currency,
+      raw_execution = trading_fills.raw_execution || EXCLUDED.raw_execution,
+      updated_at = now()
+    WHERE trading_fills.connection_id = EXCLUDED.connection_id
+    RETURNING id::text AS id, (xmax = 0) AS inserted;
+  `) as Array<{ id: string; inserted: boolean }>;
+  const accepted = rows.length === 1;
+  const inserted = rows[0]?.inserted === true;
+  if (accepted && args.orderId) {
+    const linkRows = (await sql`
+      SELECT l.id::text AS id
+        FROM trading_orders o
+        JOIN trading_rebalance_plans p ON p.id = o.rebalance_plan_id
+        JOIN trading_strategy_links l ON l.id = p.strategy_link_id
+       WHERE o.id = ${args.orderId}::uuid
+         AND l.connection_id = ${args.connectionId}::uuid
+       LIMIT 1;
+    `) as Array<{ id: string }>;
+    const linkId = linkRows[0]?.id;
+    if (linkId) {
+      await sql.transaction((tx) => [
+        tx`DELETE FROM trading_strategy_positions WHERE strategy_link_id = ${linkId}::uuid;`,
+        tx`
+          INSERT INTO trading_strategy_positions (strategy_link_id, symbol, quantity)
+          SELECT ${linkId}::uuid, f.symbol,
+                 SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) AS quantity
+            FROM trading_fills f
+            JOIN trading_orders o ON o.id = f.order_id
+            JOIN trading_rebalance_plans p ON p.id = o.rebalance_plan_id
+           WHERE p.strategy_link_id = ${linkId}::uuid
+           GROUP BY f.symbol
+          HAVING SUM(CASE WHEN f.side = 'BUY' THEN f.quantity ELSE -f.quantity END) > 0;
+        `,
+      ]);
+    }
+  }
   if (inserted) {
     await appendTradingAudit({
       connectionId: args.connectionId,
@@ -1202,7 +1262,7 @@ export async function insertTradingFill(args: {
       },
     });
   }
-  return inserted;
+  return accepted;
 }
 
 export async function replaceTradingStrategyPositions(args: {

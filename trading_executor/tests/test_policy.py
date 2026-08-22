@@ -12,6 +12,8 @@ from trading_executor.policy import (
     Quote,
     Target,
     build_order_intents,
+    calculate_sizing_coverage,
+    InsufficientTargetCoverageError,
     investable_budget,
     validate_position_ownership,
 )
@@ -41,6 +43,35 @@ class PolicyTests(unittest.TestCase):
             owned_positions=[], quotes={"AAPL": self.quote}, instruments={"AAPL": fractional},
         )
         self.assertLessEqual(buys[0].quantity * buys[0].limit_price, Decimal("980"))
+
+    def test_natural_portfolio_smaller_than_twenty_requires_its_own_n_over_n_coverage(self) -> None:
+        instruments = {
+            symbol: Instrument(symbol, index, "USD", "NASDAQ", Decimal("0.01"), Decimal("1"), False, True)
+            for index, symbol in enumerate(["AAPL", "MSFT"], start=1)
+        }
+        quotes = {symbol: Quote(symbol, Decimal("99.90"), Decimal("100"), 1) for symbol in instruments}
+        coverage = calculate_sizing_coverage(
+            budget_usd=Decimal("1000"),
+            targets=[Target("AAPL", Decimal("0.5")), Target("MSFT", Decimal("0.5"))],
+            quotes=quotes, instruments=instruments,
+        )
+        self.assertEqual((coverage.covered_target_count, coverage.target_count), (2, 2))
+        self.assertTrue(coverage.complete)
+
+    def test_budget_that_drops_one_target_blocks_the_entire_rebalance(self) -> None:
+        expensive = Instrument("MSFT", 2, "USD", "NASDAQ", Decimal("0.01"), Decimal("1"), False, True)
+        targets = [Target("AAPL", Decimal("0.5")), Target("MSFT", Decimal("0.5"))]
+        quotes = {"AAPL": self.quote, "MSFT": Quote("MSFT", Decimal("499.9"), Decimal("500"), 1)}
+        instruments = {"AAPL": self.instrument, "MSFT": expensive}
+        with self.assertRaises(InsufficientTargetCoverageError) as raised:
+            build_order_intents(
+                budget_usd=Decimal("300"), targets=targets, owned_positions=[],
+                quotes=quotes, instruments=instruments,
+            )
+        self.assertEqual(raised.exception.coverage.target_count, 2)
+        self.assertEqual(raised.exception.coverage.covered_target_count, 1)
+        self.assertEqual(raised.exception.coverage.uncovered_symbols, ("MSFT",))
+        self.assertGreater(raised.exception.coverage.minimum_budget_usd, Decimal("1000"))
 
     def test_empty_target_cannot_liquidate(self) -> None:
         with self.assertRaisesRegex(ValueError, "explicit liquidation"):

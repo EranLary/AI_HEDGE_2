@@ -252,6 +252,7 @@ export function TradingDashboard() {
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div><dt className="text-[color:var(--text-muted)]">Status</dt><dd className={`mt-1 font-semibold ${statusTone(selectedConnection.status)}`}>{selectedConnection.status}</dd></div>
               <div><dt className="text-[color:var(--text-muted)]">Gateway</dt><dd className={`mt-1 font-semibold ${selectedConnection.gateway_authenticated ? "text-[color:var(--success)]" : "text-[color:var(--warning)]"}`}>{selectedConnection.gateway_authenticated ? "Authenticated" : "Offline"}</dd></div>
+              <div><dt className="text-[color:var(--text-muted)]">IBKR account structure</dt><dd className="mt-1 font-semibold text-[color:var(--text-primary)]">{selectedConnection.account_type}</dd></div>
               <div className="col-span-2"><dt className="text-[color:var(--text-muted)]">Last heartbeat</dt><dd className="mt-1 text-[color:var(--text-primary)]">{displayDate(selectedConnection.last_heartbeat_at)}</dd></div>
             </dl>
           ) : null}
@@ -270,14 +271,14 @@ export function TradingDashboard() {
         </Card>
 
         <Card title="2. Portfolio and budget">
-          <label className="text-xs font-medium text-[color:var(--text-secondary)]" htmlFor="trading-portfolio">Paper Top 20 portfolio</label>
+          <label className="text-xs font-medium text-[color:var(--text-secondary)]" htmlFor="trading-portfolio">Paper portfolio</label>
           <select id="trading-portfolio" value={portfolioKey} onChange={(event) => { setPortfolioKey(event.target.value); setPreview(null); }} className="mt-1 w-full rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--text-primary)]">
             <option value="">Select portfolio</option>
             {(data?.portfolios || []).map((portfolio) => <option key={portfolio.portfolio_key} value={portfolio.portfolio_key}>{portfolio.label} · {portfolio.holdings_count} holdings</option>)}
           </select>
           <label className="mt-3 block text-xs font-medium text-[color:var(--text-secondary)]" htmlFor="trading-budget">Fixed USD budget</label>
           <input id="trading-budget" type="number" min="100" step="100" value={budget} onChange={(event) => { setBudget(event.target.value); setPreview(null); }} className="mt-1 w-full rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--text-primary)]" />
-          <p className="mt-2 text-xs text-[color:var(--text-muted)]">Up to 98% invested; 2% remains for fees and price movement. No margin borrowing.</p>
+          <p className="mt-2 text-xs text-[color:var(--text-muted)]">Up to 98% invested; 2% remains for fees and price movement. The executor requires full N/N target coverage and never borrows on margin or counts unsettled sale proceeds.</p>
           {selectedPortfolio ? (
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div><dt className="text-[color:var(--text-muted)]">Snapshot</dt><dd className="mt-1 font-mono text-[color:var(--text-primary)]">{selectedPortfolio.latest_snapshot_id.slice(0, 8)}</dd></div>
@@ -322,7 +323,7 @@ export function TradingDashboard() {
           {!strategyPortfolio ? <p className="text-sm text-[color:var(--text-muted)]">No portfolio is armed yet.</p> : null}
         </Card>
         <Card title="Rebalance plans">
-          <div className="space-y-2">{(data?.plans || []).map((plan) => <div key={plan.id} className="flex items-start justify-between gap-3 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3 text-sm"><div><p className="font-mono text-xs">{plan.snapshot_id.slice(0, 8)}</p><p className="mt-1 text-xs text-[color:var(--text-muted)]">{plan.target_holdings.length} targets · {displayDate(plan.created_at)}</p>{plan.error ? <p className="mt-1 text-xs text-[color:var(--danger)]">{plan.error}</p> : null}</div><span className={`font-semibold ${statusTone(plan.status)}`}>{plan.status}</span></div>)}{!data?.plans.length ? <p className="text-sm text-[color:var(--text-muted)]">No rebalance plans yet.</p> : null}</div>
+          <div className="space-y-2">{(data?.plans || []).map((plan) => <div key={plan.id} className="flex items-start justify-between gap-3 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3 text-sm"><div><p className="font-mono text-xs">{plan.snapshot_id.slice(0, 8)}</p><p className="mt-1 text-xs text-[color:var(--text-muted)]">{plan.target_holdings.length} targets · coverage {String(plan.preflight.target_coverage || `pending/${plan.target_holdings.length}`)} · {displayDate(plan.created_at)}</p>{plan.preflight.minimum_budget_usd ? <p className="mt-1 text-xs text-[color:var(--text-muted)]">Estimated minimum full-coverage budget: ${String(plan.preflight.minimum_budget_usd)}</p> : null}{plan.error ? <p className="mt-1 text-xs text-[color:var(--danger)]">{plan.error}</p> : null}</div><span className={`font-semibold ${statusTone(plan.status)}`}>{plan.status}</span></div>)}{!data?.plans.length ? <p className="text-sm text-[color:var(--text-muted)]">No rebalance plans yet.</p> : null}</div>
         </Card>
         <Card title="Orders">
           <div className="space-y-2">{(data?.orders || []).map((order) => <div key={order.id} className="grid grid-cols-[auto_1fr_auto] gap-3 border-b border-[color:var(--border-subtle)] pb-2 text-sm"><span className={order.side === "BUY" ? "text-[color:var(--success)]" : "text-[color:var(--warning)]"}>{order.side}</span><span>{order.symbol} · {order.filled_quantity}/{order.requested_quantity}</span><span className={statusTone(order.status)}>{order.status}</span></div>)}{!data?.orders.length ? <p className="text-sm text-[color:var(--text-muted)]">No system orders yet.</p> : null}</div>

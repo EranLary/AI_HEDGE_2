@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from trading_executor.engine import BrokerSnapshot, ExecutionEngine, ExecutionResult
+from trading_executor.engine import BrokerSnapshot, ExecutionEngine, ExecutionFill, ExecutionResult
 from trading_executor.policy import Instrument, OrderIntent, Position, Quote
 
 
@@ -24,9 +24,14 @@ class FakeBroker:
         self.phases: list[str] = []
         self.partial_side = ""
         self.cancelled: list[str] = []
+        self.settled_cash = Decimal("1000")
+        self.account_type = "INDIVIDUAL"
 
     def reconcile(self) -> BrokerSnapshot:
-        return BrokerSnapshot("DU12345", list(self.positions), Decimal("1000"), set(), set())
+        return BrokerSnapshot(
+            account_id="DU12345", positions=list(self.positions), settled_cash_usd=self.settled_cash,
+            account_type=self.account_type,
+        )
 
     def resolve_instruments(self, symbols: list[str]) -> dict[str, Instrument]:
         return {symbol: self.instruments[symbol] for symbol in symbols}
@@ -44,10 +49,16 @@ class FakeBroker:
         for index, intent in enumerate(intents):
             fill = intent.quantity / 2 if self.partial_side == intent.side else intent.quantity
             current[intent.symbol] = current.get(intent.symbol, Decimal("0")) + (fill if intent.side == "BUY" else -fill)
+            execution_fill = ExecutionFill(
+                exec_id=f"exec-{intent.side.lower()}-{revision}-{index}", quantity=fill, price=intent.limit_price,
+                commission=Decimal("0.25"), executed_at="2026-08-24T14:05:00+00:00",
+            )
             results.append(ExecutionResult(
-                f"key-{revision}-{index}", intent.symbol, intent.side, intent.quantity, fill,
-                "filled" if fill == intent.quantity else "partially_filled", intent.limit_price,
-                average_fill_price=intent.limit_price, exec_id=f"exec-{revision}-{index}",
+                client_order_key=f"key-{revision}-{index}", symbol=intent.symbol, side=intent.side,
+                requested_quantity=intent.quantity, filled_quantity=fill,
+                status="filled" if fill == intent.quantity else "partially_filled",
+                limit_price=intent.limit_price, average_fill_price=intent.limit_price,
+                commission=Decimal("0.25"), fills=(execution_fill,),
             ))
         self.positions = [Position(symbol, quantity) for symbol, quantity in current.items() if quantity > 0]
         return results
@@ -62,16 +73,19 @@ class FakeReporter:
         self.orders: list[ExecutionResult] = []
         self.position_updates: list[list[Position]] = []
         self.alerts: list[str] = []
+        self.fills: list[ExecutionFill] = []
+        self.preflights: list[dict] = []
 
     def plan_status(self, plan_id: str, status: str, *, error: str = "", preflight: dict | None = None) -> None:
         self.statuses.append(status)
+        self.preflights.append(preflight or {})
 
     def order(self, plan_id: str, result: ExecutionResult) -> str:
         self.orders.append(result)
         return "order-id"
 
-    def fill(self, order_id: str | None, result: ExecutionResult) -> None:
-        pass
+    def fill(self, order_id: str | None, result: ExecutionResult, fill: ExecutionFill) -> None:
+        self.fills.append(fill)
 
     def positions(self, strategy_link_id: str, positions: list[Position]) -> None:
         self.position_updates.append(positions)
@@ -107,6 +121,47 @@ class EngineTests(unittest.TestCase):
         self.engine.handle(command(), now=self.now)
         self.assertEqual(self.broker.phases, ["SELL", "BUY"])
         self.assertEqual(self.reporter.statuses[-1], "completed")
+        self.assertEqual(len(self.reporter.fills), 2)
+        self.assertEqual({fill.exec_id for fill in self.reporter.fills}, {"exec-sell-1-0", "exec-buy-1-0"})
+
+    def test_sale_proceeds_are_not_used_until_ibkr_reports_settled_cash(self) -> None:
+        self.broker.settled_cash = Decimal("0")
+        self.engine.handle(command(), now=self.now)
+        self.assertEqual(self.broker.phases, ["SELL"])
+        self.assertEqual(self.reporter.statuses[-1], "awaiting_settlement")
+        self.assertEqual(self.reporter.preflights[-1]["same_day_sale_proceeds_counted"], False)
+
+    def test_buy_only_plan_cannot_borrow_on_margin(self) -> None:
+        self.broker.positions = []
+        self.broker.settled_cash = Decimal("100")
+        buy_only = command()
+        buy_only["owned_positions"] = []
+        self.engine.handle(buy_only, now=self.now)
+        self.assertEqual(self.broker.phases, [])
+        self.assertEqual(self.reporter.statuses[-1], "blocked")
+        self.assertIn("balance_anomaly", self.reporter.alerts)
+
+    def test_restart_after_reported_sell_waits_instead_of_blocking_or_reordering(self) -> None:
+        self.broker.positions = []
+        self.broker.settled_cash = Decimal("0")
+        recovered = command("selling")
+        recovered["owned_positions"] = []
+        recovered["existing_orders"] = [{"side": "SELL", "filled_quantity": 5}]
+        self.engine.handle(recovered, now=self.now)
+        self.assertEqual(self.broker.phases, [])
+        self.assertEqual(self.reporter.statuses[-1], "awaiting_settlement")
+
+    def test_zero_quantity_target_reports_n_over_n_and_minimum_budget(self) -> None:
+        self.broker.positions = []
+        self.broker.quotes["MSFT"] = Quote("MSFT", Decimal("499"), Decimal("500"), 1)
+        too_small = command()
+        too_small["owned_positions"] = []
+        too_small["budget_usd"] = 300
+        self.engine.handle(too_small, now=self.now)
+        self.assertEqual(self.broker.phases, [])
+        self.assertEqual(self.reporter.statuses[-1], "blocked")
+        self.assertEqual(self.reporter.preflights[-1]["target_coverage"], "0/1")
+        self.assertGreater(Decimal(self.reporter.preflights[-1]["minimum_budget_usd"]), Decimal("500"))
 
     def test_what_if_failure_is_atomic(self) -> None:
         self.broker.what_if_errors = ["insufficient permissions"]

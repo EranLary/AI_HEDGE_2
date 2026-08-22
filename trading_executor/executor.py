@@ -69,7 +69,8 @@ def run(args: argparse.Namespace) -> int:
             gateway_error = ""
             try:
                 gateway.connect_and_start()
-                gateway.reconcile()
+                snapshot = gateway.reconcile()
+                reporter.recover(snapshot)
                 gateway_ready = True
             except Exception as error:
                 gateway_error = str(error)
@@ -78,7 +79,9 @@ def run(args: argparse.Namespace) -> int:
                 response = client.sync({
                     "account_id": config["account_id"], "mode": "paper",
                     "executor_version": __version__, "gateway_connected": gateway_ready,
-                    "gateway_authenticated": gateway_ready, "error": gateway_error,
+                    "gateway_authenticated": gateway_ready,
+                    "account_type": snapshot.account_type if gateway_ready else "UNKNOWN",
+                    "error": gateway_error,
                 })
                 if gateway_ready:
                     for command in response.get("commands", []):

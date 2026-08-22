@@ -7,12 +7,22 @@ import type { Workspace } from "@/lib/workspace";
 
 export const PORTFOLIO_METHODOLOGY_VERSION = "top20-positive-equal-v1";
 export const PORTFOLIO_BENCHMARK_SYMBOL = "^SP500TR";
+export const PORTFOLIO_RISK_FREE_SYMBOL = "^IRX";
+export const PORTFOLIO_RISK_FREE_NAME = "13-week U.S. Treasury Bill yield proxy";
 export const PORTFOLIO_PROVIDER = "yfinance";
 export const MAX_MARKET_DATA_AGE_DAYS = 5;
+export const MAX_RISK_FREE_DATA_AGE_DAYS = 7;
+export const PORTFOLIO_RISK_MIN_OBSERVATIONS = 20;
+export const PORTFOLIO_TRADING_DAYS_PER_YEAR = 252;
 
 export type PortfolioTrack = "backtest" | "paper";
 export type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
 export type PortfolioDataStatus = "ok" | "no_positions" | "stale_market_data";
+export type PortfolioRiskStatus =
+  | "ok"
+  | "insufficient_history"
+  | "risk_free_unavailable"
+  | "stale_market_data";
 
 export function portfolioWorkspaceConfig(workspace: Workspace) {
   return workspace === "nasdaq100"
@@ -76,6 +86,13 @@ export type PortfolioPeriodSummary = {
   returnPct: number | null;
   benchmarkReturnPct: number | null;
   excessReturnPct: number | null;
+  portfolioVolatilityPct: number | null;
+  benchmarkVolatilityPct: number | null;
+  portfolioSharpe: number | null;
+  benchmarkSharpe: number | null;
+  riskObservationCount: number;
+  riskFreeObservationCount: number;
+  riskStatus: PortfolioRiskStatus;
   periodStart: string | null;
   periodEnd: string | null;
   status: PortfolioDataStatus | "insufficient_history";
@@ -262,9 +279,114 @@ function subtractPeriod(dateValue: string, period: Exclude<PortfolioPeriod, "all
   return date.toISOString().slice(0, 10);
 }
 
+function mean(values: number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sampleStandardDeviation(values: number[]): number | null {
+  if (values.length < 2) return null;
+  const average = mean(values);
+  const variance = values.reduce((sum, value) => sum + ((value - average) ** 2), 0) / (values.length - 1);
+  const standardDeviation = Math.sqrt(variance);
+  return Number.isFinite(standardDeviation) ? standardDeviation : null;
+}
+
+function annualizedVolatilityPct(returns: number[]): number | null {
+  const standardDeviation = sampleStandardDeviation(returns);
+  return standardDeviation === null ? null : standardDeviation * Math.sqrt(PORTFOLIO_TRADING_DAYS_PER_YEAR) * 100;
+}
+
+function annualizedSharpe(returns: number[], dailyRiskFreeReturns: number[]): number | null {
+  if (returns.length !== dailyRiskFreeReturns.length || returns.length < 2) return null;
+  const standardDeviation = sampleStandardDeviation(returns);
+  if (standardDeviation === null || standardDeviation <= Number.EPSILON) return null;
+  const excessReturns = returns.map((value, index) => value - dailyRiskFreeReturns[index]);
+  const sharpe = (mean(excessReturns) / standardDeviation) * Math.sqrt(PORTFOLIO_TRADING_DAYS_PER_YEAR);
+  return Number.isFinite(sharpe) ? sharpe : null;
+}
+
+function dailyRiskFreeReturn(annualYieldPct: number): number | null {
+  if (!Number.isFinite(annualYieldPct) || annualYieldPct < 0) return null;
+  const dailyReturn = ((1 + (annualYieldPct / 100)) ** (1 / PORTFOLIO_TRADING_DAYS_PER_YEAR)) - 1;
+  return Number.isFinite(dailyReturn) ? dailyReturn : null;
+}
+
+function emptyRiskSummary(riskStatus: PortfolioRiskStatus, riskObservationCount = 0) {
+  return {
+    portfolioVolatilityPct: null,
+    benchmarkVolatilityPct: null,
+    portfolioSharpe: null,
+    benchmarkSharpe: null,
+    riskObservationCount,
+    riskFreeObservationCount: 0,
+    riskStatus,
+  };
+}
+
+function dailyReturnSeries(points: PortfolioNavPoint[]) {
+  const portfolioReturns: number[] = [];
+  const benchmarkReturns: number[] = [];
+  const returnDates: string[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (previous.nav <= 0 || current.nav < 0 || previous.benchmarkNav <= 0 || current.benchmarkNav < 0) continue;
+    const portfolioReturn = (current.nav / previous.nav) - 1;
+    const benchmarkReturn = (current.benchmarkNav / previous.benchmarkNav) - 1;
+    if (!Number.isFinite(portfolioReturn) || !Number.isFinite(benchmarkReturn)) continue;
+    portfolioReturns.push(portfolioReturn);
+    benchmarkReturns.push(benchmarkReturn);
+    returnDates.push(current.date);
+  }
+  return { portfolioReturns, benchmarkReturns, returnDates };
+}
+
+function summarizeRisk(
+  points: PortfolioNavPoint[],
+  riskFreePoints: MarketPricePoint[],
+): Pick<
+  PortfolioPeriodSummary,
+  | "portfolioVolatilityPct"
+  | "benchmarkVolatilityPct"
+  | "portfolioSharpe"
+  | "benchmarkSharpe"
+  | "riskObservationCount"
+  | "riskFreeObservationCount"
+  | "riskStatus"
+> {
+  const { portfolioReturns, benchmarkReturns, returnDates } = dailyReturnSeries(points);
+
+  const riskObservationCount = portfolioReturns.length;
+  if (points.some((point) => point.status === "stale_market_data")) {
+    return emptyRiskSummary("stale_market_data", riskObservationCount);
+  }
+  if (riskObservationCount < PORTFOLIO_RISK_MIN_OBSERVATIONS) {
+    return emptyRiskSummary("insufficient_history", riskObservationCount);
+  }
+
+  const dailyRiskFreeReturns: number[] = [];
+  for (const date of returnDates) {
+    const point = latestPriceOnOrBefore(riskFreePoints, date, MAX_RISK_FREE_DATA_AGE_DAYS);
+    const dailyReturn = point ? dailyRiskFreeReturn(point.adjustedCloseLocal) : null;
+    if (dailyReturn === null) break;
+    dailyRiskFreeReturns.push(dailyReturn);
+  }
+  const hasCompleteRiskFreeSeries = dailyRiskFreeReturns.length === riskObservationCount;
+  return {
+    portfolioVolatilityPct: annualizedVolatilityPct(portfolioReturns),
+    benchmarkVolatilityPct: annualizedVolatilityPct(benchmarkReturns),
+    portfolioSharpe: hasCompleteRiskFreeSeries ? annualizedSharpe(portfolioReturns, dailyRiskFreeReturns) : null,
+    benchmarkSharpe: hasCompleteRiskFreeSeries ? annualizedSharpe(benchmarkReturns, dailyRiskFreeReturns) : null,
+    riskObservationCount,
+    riskFreeObservationCount: dailyRiskFreeReturns.length,
+    riskStatus: hasCompleteRiskFreeSeries ? "ok" : "risk_free_unavailable",
+  };
+}
+
 export function summarizePortfolioPeriod(
   points: PortfolioNavPoint[],
   period: PortfolioPeriod,
+  riskFreePoints: MarketPricePoint[] = [],
 ): PortfolioPeriodSummary {
   const sorted = points.slice().sort((a, b) => a.date.localeCompare(b.date));
   const end = sorted[sorted.length - 1];
@@ -273,6 +395,7 @@ export function summarizePortfolioPeriod(
       returnPct: null,
       benchmarkReturnPct: null,
       excessReturnPct: null,
+      ...emptyRiskSummary("insufficient_history"),
       periodStart: null,
       periodEnd: null,
       status: "insufficient_history",
@@ -286,6 +409,7 @@ export function summarizePortfolioPeriod(
         returnPct: null,
         benchmarkReturnPct: null,
         excessReturnPct: null,
+        ...emptyRiskSummary("insufficient_history", dailyReturnSeries(sorted).portfolioReturns.length),
         periodStart: null,
         periodEnd: end.date,
         status: "insufficient_history",
@@ -299,11 +423,13 @@ export function summarizePortfolioPeriod(
   const status = periodPoints.some((point) => point.status === "stale_market_data")
     ? "stale_market_data"
     : end.status;
+  const riskSummary = summarizeRisk(periodPoints, riskFreePoints);
   return {
     returnPct,
     benchmarkReturnPct,
     excessReturnPct:
       returnPct === null || benchmarkReturnPct === null ? null : returnPct - benchmarkReturnPct,
+    ...riskSummary,
     periodStart: start.date,
     periodEnd: end.date,
     status,

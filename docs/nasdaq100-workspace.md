@@ -1,8 +1,9 @@
 # Nasdaq 100 workspace operations
 
-The Nasdaq 100 workspace is release-based. It intentionally has no scheduler,
-batch runner, or constituent manifest yet. Existing reports remain in the
-Analysis workspace.
+The Nasdaq 100 workspace is release-based. Report publication remains gated by
+explicit release activation, while portfolio tracking starts automatically
+after an active release exists. Existing reports remain in the Analysis
+workspace.
 
 Create a staged release:
 
@@ -24,13 +25,22 @@ release atomically:
 python scripts/report_release.py activate --release <release-uuid-or-key>
 ```
 
-Then refresh the Nasdaq portfolio tracks manually:
+The scheduled Portfolio Performance workflow refreshes both Analysis and
+Nasdaq 100. Nasdaq refreshes exit cleanly while there is no active release;
+after the first activation they begin collecting Paper and Backtest NAV,
+QQQ benchmark history, and the `^IRX` 13-week Treasury yield used by Sharpe.
+The same tracks can also be refreshed manually:
 
 ```powershell
 Set-Location frontend
 npm run portfolio:refresh -- --workspace nasdaq100 --track paper
 npm run portfolio:refresh -- --workspace nasdaq100 --track backtest --start-cutoff 2026-04-30
 ```
+
+The workflow-dispatch form accepts `all`, `analysis`, or `nasdaq100`. Risk
+metrics are calculated from stored daily NAV rather than stored as mutable
+summary values: annualized volatility and Sharpe become visible after at least
+20 daily returns, with the observation count shown in the UI.
 
 ## Dedicated universe worker
 

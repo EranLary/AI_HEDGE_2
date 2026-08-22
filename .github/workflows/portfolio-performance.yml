@@ -15,6 +15,15 @@ on:
         options:
           - paper
           - backtest
+      workspace:
+        description: Workspace to refresh
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - analysis
+          - nasdaq100
       through:
         description: Optional inclusive end date (YYYY-MM-DD)
         type: string
@@ -38,7 +47,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: portfolio-performance-${{ github.event.inputs.track || 'paper' }}
+  group: portfolio-performance-${{ github.event.inputs.workspace || 'all' }}-${{ github.event.inputs.track || 'paper' }}
   cancel-in-progress: false
 
 env:
@@ -68,6 +77,7 @@ jobs:
       - name: Refresh portfolio data inside Fly
         env:
           INPUT_TRACK: ${{ github.event.inputs.track }}
+          INPUT_WORKSPACE: ${{ github.event.inputs.workspace }}
           INPUT_THROUGH: ${{ github.event.inputs.through }}
           INPUT_PAPER_CUTOFF: ${{ github.event.inputs.paper_cutoff }}
           INPUT_START_CUTOFF: ${{ github.event.inputs.start_cutoff }}
@@ -79,13 +89,18 @@ jobs:
             echo "::error::track must be paper or backtest"
             exit 1
           fi
-          COMMAND="cd /app/frontend && npm run portfolio:refresh -- --workspace analysis --track $TRACK"
-          if [ -n "${INPUT_THROUGH:-}" ]; then
-            if ! [[ "$INPUT_THROUGH" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-              echo "::error::through must use YYYY-MM-DD"
-              exit 1
-            fi
-            COMMAND="$COMMAND --through $INPUT_THROUGH"
+          WORKSPACE="${INPUT_WORKSPACE:-all}"
+          if [ "$WORKSPACE" = "all" ]; then
+            WORKSPACES="analysis nasdaq100"
+          elif [ "$WORKSPACE" = "analysis" ] || [ "$WORKSPACE" = "nasdaq100" ]; then
+            WORKSPACES="$WORKSPACE"
+          else
+            echo "::error::workspace must be all, analysis, or nasdaq100"
+            exit 1
+          fi
+          if [ -n "${INPUT_THROUGH:-}" ] && ! [[ "$INPUT_THROUGH" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::through must use YYYY-MM-DD"
+            exit 1
           fi
           if [ "$TRACK" = "paper" ]; then
             if [ -n "${INPUT_PAPER_CUTOFF:-}" ]; then
@@ -93,7 +108,6 @@ jobs:
                 echo "::error::paper_cutoff must use YYYY-MM-DD"
                 exit 1
               fi
-              COMMAND="$COMMAND --paper-cutoff $INPUT_PAPER_CUTOFF"
             fi
           else
             if [ -n "${INPUT_PAPER_CUTOFF:-}" ]; then
@@ -105,16 +119,29 @@ jobs:
               echo "::error::start_cutoff must use YYYY-MM-DD"
               exit 1
             fi
-            COMMAND="$COMMAND --start-cutoff $START_CUTOFF"
-            if [ "${INPUT_REPLACE:-false}" = "true" ]; then
-              COMMAND="$COMMAND --replace-backtest"
-            fi
           fi
-          flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"
+          for TARGET_WORKSPACE in $WORKSPACES; do
+            COMMAND="cd /app/frontend && npm run portfolio:refresh -- --workspace $TARGET_WORKSPACE --track $TRACK"
+            if [ -n "${INPUT_THROUGH:-}" ]; then
+              COMMAND="$COMMAND --through $INPUT_THROUGH"
+            fi
+            if [ "$TRACK" = "paper" ] && [ -n "${INPUT_PAPER_CUTOFF:-}" ]; then
+              COMMAND="$COMMAND --paper-cutoff $INPUT_PAPER_CUTOFF"
+            fi
+            if [ "$TRACK" = "backtest" ]; then
+              COMMAND="$COMMAND --start-cutoff $START_CUTOFF"
+              if [ "${INPUT_REPLACE:-false}" = "true" ]; then
+                COMMAND="$COMMAND --replace-backtest"
+              fi
+            fi
+            flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"
+          done
 
       - name: Refresh backtest alongside scheduled paper tracking
         if: github.event_name == 'schedule'
-        run: >-
-          flyctl ssh console --app "$FLY_APP" --command
-          "sh -lc 'cd /app/frontend && npm run portfolio:refresh --
-          --workspace analysis --track backtest --start-cutoff 2026-04-30'"
+        run: |
+          set -euo pipefail
+          for TARGET_WORKSPACE in analysis nasdaq100; do
+            flyctl ssh console --app "$FLY_APP" --command \
+              "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace $TARGET_WORKSPACE --track backtest --start-cutoff 2026-04-30'"
+          done

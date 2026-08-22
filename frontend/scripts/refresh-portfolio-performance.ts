@@ -29,6 +29,7 @@ import {
   latestPriceOnOrBefore,
   PORTFOLIO_METHODOLOGY_VERSION,
   PORTFOLIO_PROVIDER,
+  PORTFOLIO_RISK_FREE_SYMBOL,
   portfolioWorkspaceConfig,
   type MarketPricePoint,
   type PortfolioSnapshotDefinition,
@@ -313,7 +314,10 @@ async function main() {
     for (const snapshot of existing) {
       for (const holding of snapshot.holdings) currencyByTicker.set(holding.ticker, holding.currency);
     }
-    const instruments = Array.from(currencyByTicker.entries()).map(([symbol, currency]) => ({ symbol, currency }));
+    const instruments = [
+      ...Array.from(currencyByTicker.entries()).map(([symbol, currency]) => ({ symbol, currency })),
+      { symbol: PORTFOLIO_RISK_FREE_SYMBOL, currency: "USD" },
+    ];
     const priceStart = addDays(earliestCutoff, -10);
     const priceBundle = await runPriceProvider({
       start: priceStart,
@@ -324,7 +328,11 @@ async function main() {
     });
     const fetchedPoints = flattenPriceBundle(priceBundle);
     await upsertMarketPrices(fetchedPoints, PORTFOLIO_PROVIDER);
-    const symbols = Array.from(new Set([...currencyByTicker.keys(), workspaceConfig.benchmarkSymbol]));
+    const symbols = Array.from(new Set([
+      ...currencyByTicker.keys(),
+      workspaceConfig.benchmarkSymbol,
+      PORTFOLIO_RISK_FREE_SYMBOL,
+    ]));
     const priceBySymbol = await loadMarketPrices({
       symbols,
       startDate: priceStart,

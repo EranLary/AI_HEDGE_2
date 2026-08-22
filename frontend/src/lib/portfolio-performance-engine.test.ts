@@ -7,6 +7,8 @@ import {
   computePortfolioNavSeries,
   firstBenchmarkDateAfter,
   firstExecutionDateForCandidates,
+  PORTFOLIO_RISK_MIN_OBSERVATIONS,
+  PORTFOLIO_TRADING_DAYS_PER_YEAR,
   portfolioWorkspaceConfig,
   summarizePortfolioPeriod,
   type MarketPricePoint,
@@ -146,7 +148,74 @@ test("benchmark execution is the first session after cutoff and stale points tai
   assert.equal(nav[1].status, "stale_market_data");
   assert.equal(nav[2].status, "ok");
   assert.equal(summarizePortfolioPeriod(nav, "all").status, "stale_market_data");
+  assert.equal(summarizePortfolioPeriod(nav, "all").riskStatus, "stale_market_data");
   assert.equal(summarizePortfolioPeriod(nav, "3m").status, "insufficient_history");
+});
+
+test("risk summary annualizes daily volatility and Sharpe against matched Treasury yields", () => {
+  const portfolioReturns = Array.from({ length: PORTFOLIO_RISK_MIN_OBSERVATIONS }, (_, index) => (
+    index % 2 === 0 ? 0.01 : -0.005
+  ));
+  const benchmarkReturns = Array.from({ length: PORTFOLIO_RISK_MIN_OBSERVATIONS }, (_, index) => (
+    index % 2 === 0 ? 0.005 : -0.002
+  ));
+  let nav = 100;
+  let benchmarkNav = 100;
+  const points = [{
+    date: "2026-06-01",
+    snapshotId: "s1",
+    nav,
+    benchmarkNav,
+    holdingsCount: 1,
+    status: "ok" as const,
+  }];
+  for (let index = 0; index < portfolioReturns.length; index += 1) {
+    nav *= 1 + portfolioReturns[index];
+    benchmarkNav *= 1 + benchmarkReturns[index];
+    const date = new Date(Date.UTC(2026, 5, index + 2)).toISOString().slice(0, 10);
+    points.push({ date, snapshotId: "s1", nav, benchmarkNav, holdingsCount: 1, status: "ok" as const });
+  }
+  const riskFree = points.map((point) => price("^IRX", point.date, 5));
+  const summary = summarizePortfolioPeriod(points, "all", riskFree);
+  const sampleStdDev = (values: number[]) => {
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return Math.sqrt(values.reduce((sum, value) => sum + ((value - average) ** 2), 0) / (values.length - 1));
+  };
+  const portfolioStdDev = sampleStdDev(portfolioReturns);
+  const benchmarkStdDev = sampleStdDev(benchmarkReturns);
+  const dailyRiskFree = (1.05 ** (1 / PORTFOLIO_TRADING_DAYS_PER_YEAR)) - 1;
+  const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+
+  assert.equal(summary.riskStatus, "ok");
+  assert.equal(summary.riskObservationCount, PORTFOLIO_RISK_MIN_OBSERVATIONS);
+  assert.equal(summary.riskFreeObservationCount, PORTFOLIO_RISK_MIN_OBSERVATIONS);
+  assert.ok(Math.abs((summary.portfolioVolatilityPct || 0) - (portfolioStdDev * Math.sqrt(252) * 100)) < 1e-9);
+  assert.ok(Math.abs((summary.benchmarkVolatilityPct || 0) - (benchmarkStdDev * Math.sqrt(252) * 100)) < 1e-9);
+  assert.ok(Math.abs((summary.portfolioSharpe || 0) - (((average(portfolioReturns) - dailyRiskFree) / portfolioStdDev) * Math.sqrt(252))) < 1e-9);
+  assert.ok(Math.abs((summary.benchmarkSharpe || 0) - (((average(benchmarkReturns) - dailyRiskFree) / benchmarkStdDev) * Math.sqrt(252))) < 1e-9);
+});
+
+test("risk summary waits for enough returns and keeps volatility when Treasury data is missing", () => {
+  const points = Array.from({ length: PORTFOLIO_RISK_MIN_OBSERVATIONS + 1 }, (_, index) => ({
+    date: new Date(Date.UTC(2026, 6, index + 1)).toISOString().slice(0, 10),
+    snapshotId: "s1",
+    nav: 100 + index,
+    benchmarkNav: 100 + (index * 0.5),
+    holdingsCount: 1,
+    status: "ok" as const,
+  }));
+  const short = summarizePortfolioPeriod(points.slice(0, PORTFOLIO_RISK_MIN_OBSERVATIONS), "all", []);
+  assert.equal(short.riskStatus, "insufficient_history");
+  assert.equal(short.riskObservationCount, PORTFOLIO_RISK_MIN_OBSERVATIONS - 1);
+  assert.equal(short.portfolioVolatilityPct, null);
+
+  const missingTreasury = summarizePortfolioPeriod(points, "all", []);
+  assert.equal(missingTreasury.riskStatus, "risk_free_unavailable");
+  assert.equal(missingTreasury.riskFreeObservationCount, 0);
+  assert.notEqual(missingTreasury.portfolioVolatilityPct, null);
+  assert.notEqual(missingTreasury.benchmarkVolatilityPct, null);
+  assert.equal(missingTreasury.portfolioSharpe, null);
+  assert.equal(missingTreasury.benchmarkSharpe, null);
 });
 
 test("execution waits for a common valid session across different market holidays", () => {

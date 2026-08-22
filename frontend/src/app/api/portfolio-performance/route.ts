@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { loadPortfolioNav, type StoredPortfolioNavPoint } from "@/lib/portfolio-db";
+import { loadMarketPrices, loadPortfolioNav, type StoredPortfolioNavPoint } from "@/lib/portfolio-db";
 import {
   PORTFOLIO_METHODOLOGY_VERSION,
   PORTFOLIO_PROVIDER,
+  PORTFOLIO_RISK_FREE_NAME,
+  PORTFOLIO_RISK_FREE_SYMBOL,
+  PORTFOLIO_RISK_MIN_OBSERVATIONS,
+  PORTFOLIO_TRADING_DAYS_PER_YEAR,
   portfolioWorkspaceConfig,
   summarizePortfolioPeriod,
+  type MarketPricePoint,
   type PortfolioPeriod,
   type PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
@@ -36,9 +41,13 @@ function groupByLens(rows: StoredPortfolioNavPoint[]): StoredPortfolioNavPoint[]
   return Array.from(grouped.values());
 }
 
-function summarizeLens(rows: StoredPortfolioNavPoint[], period: PortfolioPeriod) {
+function summarizeLens(
+  rows: StoredPortfolioNavPoint[],
+  period: PortfolioPeriod,
+  riskFreePoints: MarketPricePoint[],
+) {
   const sorted = rows.slice().sort((a, b) => a.date.localeCompare(b.date));
-  const summary = summarizePortfolioPeriod(sorted, period);
+  const summary = summarizePortfolioPeriod(sorted, period, riskFreePoints);
   const latest = sorted[sorted.length - 1];
   return {
     lens_type: latest.lensType,
@@ -47,6 +56,13 @@ function summarizeLens(rows: StoredPortfolioNavPoint[], period: PortfolioPeriod)
     return_pct: summary.returnPct,
     benchmark_return_pct: summary.benchmarkReturnPct,
     excess_return_pct: summary.excessReturnPct,
+    portfolio_volatility_pct: summary.portfolioVolatilityPct,
+    benchmark_volatility_pct: summary.benchmarkVolatilityPct,
+    portfolio_sharpe: summary.portfolioSharpe,
+    benchmark_sharpe: summary.benchmarkSharpe,
+    risk_observation_count: summary.riskObservationCount,
+    risk_free_observation_count: summary.riskFreeObservationCount,
+    risk_status: summary.riskStatus,
     holdings_count: latest.holdingsCount,
     period_start: summary.periodStart,
     period_end: summary.periodEnd,
@@ -75,12 +91,23 @@ function emptyResponse(workspace: Workspace, track: PortfolioTrack, period: Port
       benchmark_symbol: config.benchmarkSymbol,
       benchmark_name: config.benchmarkName,
       market_data_provider: PORTFOLIO_PROVIDER,
+      risk_free_symbol: PORTFOLIO_RISK_FREE_SYMBOL,
+      risk_free_name: PORTFOLIO_RISK_FREE_NAME,
+      risk_calculation: "Annualized from daily returns; Sharpe uses a daily-matched short-term Treasury yield",
+      annualization_trading_days: PORTFOLIO_TRADING_DAYS_PER_YEAR,
+      minimum_risk_observations: PORTFOLIO_RISK_MIN_OBSERVATIONS,
       public_beta: true,
     },
     range: { start: null, end: null },
     by_model: [],
     by_valuator: [],
   };
+}
+
+function daysBefore(dateValue: string, days: number): string {
+  const date = new Date(`${dateValue}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
 }
 
 export async function GET(request: Request) {
@@ -92,14 +119,21 @@ export async function GET(request: Request) {
   try {
     const rows = await loadPortfolioNav(workspace, track, PORTFOLIO_METHODOLOGY_VERSION);
     if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period));
+    const dates = rows.map((row) => row.date).sort();
+    const riskFreePrices = await loadMarketPrices({
+      symbols: [PORTFOLIO_RISK_FREE_SYMBOL],
+      startDate: daysBefore(dates[0], 10),
+      endDate: dates[dates.length - 1],
+      source: PORTFOLIO_PROVIDER,
+    });
+    const riskFreePoints = riskFreePrices.get(PORTFOLIO_RISK_FREE_SYMBOL) || [];
     const summaries = groupByLens(rows)
-      .map((group) => summarizeLens(group, period))
+      .map((group) => summarizeLens(group, period, riskFreePoints))
       .sort((a, b) => {
         if (a.lens_type === "overall") return -1;
         if (b.lens_type === "overall") return 1;
         return a.label.localeCompare(b.label);
       });
-    const dates = rows.map((row) => row.date).sort();
     return NextResponse.json({
       ...emptyResponse(workspace, track, period),
       available: true,

@@ -65,41 +65,43 @@ export function ReportsTabs({
   }
 
   return (
-    <div className="mb-6 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-      <nav className="flex w-full rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-1 sm:w-auto">
-        {TAB_ORDER.map((t) => {
-          const params = new URLSearchParams(searchString);
-          params.delete("workspace");
-          params.set("tab", t.key);
-          const isActive = t.key === active;
-          const disabled = t.key === "mine" && !signedIn;
-          if (disabled) {
+    <div className={`mb-6 grid gap-3 sm:items-center ${workspace === "nasdaq100" ? "sm:grid-cols-1" : "sm:grid-cols-[auto_minmax(0,1fr)]"}`}>
+      {workspace === "analysis" ? (
+        <nav className="flex w-full rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-1 sm:w-auto">
+          {TAB_ORDER.map((t) => {
+            const params = new URLSearchParams(searchString);
+            params.delete("workspace");
+            params.set("tab", t.key);
+            const isActive = t.key === active;
+            const disabled = t.key === "mine" && !signedIn;
+            if (disabled) {
+              return (
+                <span
+                  key={t.key}
+                  className="flex-1 cursor-not-allowed rounded-lg px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-disabled)] sm:flex-none"
+                  title="Sign in to see your reports"
+                >
+                  {t.label}
+                </span>
+              );
+            }
             return (
-              <span
+              <Link
                 key={t.key}
-                className="flex-1 cursor-not-allowed rounded-lg px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-disabled)] sm:flex-none"
-                title="Sign in to see your reports"
+                href={`${workspacePath(workspace, "/reports")}?${params.toString()}`}
+                scroll={false}
+                className={`flex-1 rounded-lg px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] transition sm:flex-none ${
+                  isActive
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+                }`}
               >
                 {t.label}
-              </span>
+              </Link>
             );
-          }
-          return (
-            <Link
-              key={t.key}
-              href={`${workspacePath(workspace, "/reports")}?${params.toString()}`}
-              scroll={false}
-              className={`flex-1 rounded-lg px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] transition sm:flex-none ${
-                isActive
-                  ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
-                  : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
-              }`}
-            >
-              {t.label}
-            </Link>
-          );
-        })}
-      </nav>
+          })}
+        </nav>
+      ) : null}
 
       <form
         role="search"

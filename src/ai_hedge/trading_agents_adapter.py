@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-ADAPTER_VERSION = "2026-08-19.v5"
+ADAPTER_VERSION = "2026-08-22.v6"
 CONFIG_VERSION = "deepseek-v0.2.4-fundamentals-news-social"
 REUSE_WINDOW_DAYS = 7
 SELECTED_ANALYSTS = ["fundamentals", "news", "social"]
@@ -33,13 +33,16 @@ _TACTICAL_CONTEXT_LINE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _PRICE_TARGET_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:price\s*target|target\s*price)(?:\*\*)?\s*:\s*"
-    r"(?:[A-Z]{3}\s*)?(?:[$€£₪]\s*)?([+-]?\d[\d,]*(?:\.\d+)?)",
+    r"(?im)^\s*(?:[-•]\s*)?[\"']?(?:price[\s_-]*target|target[\s_-]*price)[\"']?"
+    r"\s*(?:\([^\n)]*\))?\s*(?::|=|[-–—])\s*"
+    r"(?:(?:about|around|approx(?:imately)?|[A-Z]{3}|[$€£₪])\s*){0,3}"
+    r"([+-]?\d[\d,]*(?:\.\d+)?)",
 )
 _TIME_HORIZON_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:time\s*horizon|holding\s*period)(?:\*\*)?\s*:\s*(.+?)\s*$",
+    r"(?im)^\s*(?:[-•]\s*)?[\"']?(?:time[\s_-]*horizon|holding[\s_-]*period)[\"']?"
+    r"\s*(?::|=|[-–—])\s*[\"']?(.+?)[\"']?\s*$",
 )
-_RATING_RE = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?rating(?:\*\*)?\s*:\s*(.+?)\s*$")
+_RATING_RE = re.compile(r"(?im)^\s*(?:[-•]\s*)?[\"']?rating[\"']?\s*(?::|=|[-–—])\s*[\"']?(.+?)[\"']?\s*$")
 
 CONTEXT_HEADER = "Independent Multi-Agent Research Lens"
 CONTEXT_INTRO = (
@@ -221,34 +224,124 @@ def _clean_markdown_value(value: Any) -> str:
     return re.sub(r"\*+", "", _text(value)).strip()
 
 
-def _extract_final_decision_metadata(final_decision: Any, processed_decision: Any = None) -> Dict[str, Any]:
-    text = _text(final_decision)
-    price_target: Optional[float] = None
-    price_match = _PRICE_TARGET_RE.search(text)
-    if price_match:
+def _structured_decision_mapping(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        raw = value
+    else:
+        dump = getattr(value, "model_dump", None)
+        if not callable(dump):
+            return {}
         try:
-            parsed = float(price_match.group(1).replace(",", ""))
+            raw = dump()
+        except Exception:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        re.sub(r"[\s-]+", "_", str(key).strip().lower()): item
+        for key, item in raw.items()
+    }
+
+
+def _extract_final_decision_metadata(final_decision: Any, processed_decision: Any = None) -> Dict[str, Any]:
+    structured = _structured_decision_mapping(final_decision)
+    price_target: Optional[float] = None
+    structured_target = structured.get("price_target", structured.get("target_price"))
+    if structured_target is not None:
+        try:
+            parsed = float(str(structured_target).replace(",", "").replace("$", "").strip())
             if math.isfinite(parsed) and parsed > 0:
                 price_target = parsed
         except Exception:
             price_target = None
 
-    time_horizon = ""
-    horizon_match = _TIME_HORIZON_RE.search(text)
-    if horizon_match:
-        time_horizon = _clean_markdown_value(horizon_match.group(1))
+    time_horizon = _clean_markdown_value(
+        structured.get("time_horizon", structured.get("holding_period", ""))
+    )
+    rating = _clean_markdown_value(structured.get("rating", ""))
 
-    rating = _clean_markdown_value(processed_decision)
+    for candidate in (final_decision, processed_decision):
+        text = re.sub(r"[*`]", "", _text(candidate))
+        if not text:
+            continue
+        if price_target is None:
+            price_match = _PRICE_TARGET_RE.search(text)
+            if price_match:
+                try:
+                    parsed = float(price_match.group(1).replace(",", ""))
+                    if math.isfinite(parsed) and parsed > 0:
+                        price_target = parsed
+                except Exception:
+                    price_target = None
+        if not time_horizon:
+            horizon_match = _TIME_HORIZON_RE.search(text)
+            if horizon_match:
+                time_horizon = _clean_markdown_value(horizon_match.group(1)).rstrip(",")
+        if not rating:
+            rating_match = _RATING_RE.search(text)
+            if rating_match:
+                rating = _clean_markdown_value(rating_match.group(1)).rstrip(",")
+
     if not rating:
-        rating_match = _RATING_RE.search(text)
-        if rating_match:
-            rating = _clean_markdown_value(rating_match.group(1))
+        rating = _clean_markdown_value(processed_decision)
 
     return {
         "rating": rating,
         "price_target": price_target,
         "time_horizon": time_horizon,
     }
+
+
+def _recover_required_tactical_metadata(
+    llm: Any,
+    ticker: str,
+    state: Dict[str, Any],
+    raw_final_decision: Any,
+) -> Dict[str, Any]:
+    """Retry only the quarantined TradingAgents tactical metadata contract."""
+
+    from pydantic import BaseModel, Field
+    from tradingagents.agents.utils.structured import bind_structured, invoke_structured_or_freetext
+
+    class RequiredTacticalMetadata(BaseModel):
+        rating: str = Field(min_length=1, description="One of Buy, Overweight, Hold, Underweight, or Sell.")
+        price_target: float = Field(gt=0, description="One numeric target in the instrument's quote currency.")
+        time_horizon: str = Field(min_length=1, description="The time horizon for the target.")
+
+    def render(decision: RequiredTacticalMetadata) -> str:
+        return (
+            f"**Rating**: {decision.rating}\n\n"
+            f"**Price Target**: {decision.price_target}\n\n"
+            f"**Time Horizon**: {decision.time_horizon}"
+        )
+
+    risk_debate = state.get("risk_debate_state") if isinstance(state, dict) else {}
+    prompt = f"""The Portfolio Manager decision for {ticker} did not yield every required tactical metadata field.
+Repair the metadata using only the TradingAgents material below. This is a TradingAgents tactical decision; do not use or imitate any AI Hedge valuation target.
+
+Return exactly one rating, one positive numeric price target in {ticker}'s quote currency, and one non-empty time horizon. The price target is required for Buy, Overweight, Hold, Underweight, and Sell.
+
+Previous Portfolio Manager decision:
+{_trim_chars(_text(raw_final_decision), 8_000)}
+
+Research Manager plan:
+{_trim_chars(_text(state.get('investment_plan')), 6_000)}
+
+Trader plan:
+{_trim_chars(_text(state.get('trader_investment_plan')), 6_000)}
+
+Risk debate:
+{_trim_chars(_text(risk_debate), 12_000)}
+""".strip()
+    structured_llm = bind_structured(llm, RequiredTacticalMetadata, "Portfolio Manager metadata repair")
+    repaired = invoke_structured_or_freetext(
+        structured_llm,
+        llm,
+        prompt,
+        render,
+        "Portfolio Manager metadata repair",
+    )
+    return _extract_final_decision_metadata(repaired)
 
 
 def _section(title: str, body: Any) -> str:
@@ -419,6 +512,9 @@ def compact_trading_agents_payload(payload: Dict[str, Any], *, api_key: str = ""
             "rating": _text(payload.get("rating")),
             "price_target": payload.get("price_target"),
             "time_horizon": _text(payload.get("time_horizon")),
+            "metadata_recovery_attempted": bool(payload.get("metadata_recovery_attempted")),
+            "metadata_recovered": bool(payload.get("metadata_recovered")),
+            "metadata_error": _text(payload.get("metadata_error")),
             "valuation_prompt_excluded_fields": [
                 "price_target",
                 "time_horizon",
@@ -531,6 +627,9 @@ def _base_payload(ticker: str, now: Optional[datetime] = None) -> Dict[str, Any]
         "rating": "",
         "price_target": None,
         "time_horizon": "",
+        "metadata_recovery_attempted": False,
+        "metadata_recovered": False,
+        "metadata_error": "",
         "valuation_prompt_excluded_fields": [
             "price_target",
             "time_horizon",
@@ -705,7 +804,29 @@ def run_trading_agents_lens(
             finally:
                 graph_setup.create_portfolio_manager = original_create_portfolio_manager
         state, decision = _propagate_trading_agents_graph(graph, ticker_u, run_date)
-        payload = normalize_trading_agents_state(ticker_u, state if isinstance(state, dict) else {}, decision, now=now)
+        state_dict = state if isinstance(state, dict) else {}
+        payload = normalize_trading_agents_state(ticker_u, state_dict, decision, now=now)
+        if payload.get("price_target") is None or not _text(payload.get("time_horizon")):
+            payload["metadata_recovery_attempted"] = True
+            try:
+                recovered = _recover_required_tactical_metadata(
+                    graph.deep_thinking_llm,
+                    ticker_u,
+                    state_dict,
+                    state_dict.get("final_trade_decision"),
+                )
+                for field in ("rating", "price_target", "time_horizon"):
+                    if payload.get(field) in (None, "") and recovered.get(field) not in (None, ""):
+                        payload[field] = recovered[field]
+                payload["metadata_recovered"] = bool(
+                    payload.get("price_target") is not None and _text(payload.get("time_horizon"))
+                )
+            except Exception as recovery_error:
+                payload["metadata_error"] = f"Metadata repair failed: {recovery_error}"
+            if payload.get("price_target") is None or not _text(payload.get("time_horizon")):
+                payload["metadata_error"] = payload.get("metadata_error") or (
+                    "TradingAgents completed, but required tactical target metadata remained incomplete after repair."
+                )
         payload["trade_date"] = run_date
         payload = compact_trading_agents_payload(payload, api_key=key)
     except Exception as exc:

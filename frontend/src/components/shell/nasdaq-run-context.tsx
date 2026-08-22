@@ -26,16 +26,25 @@ export function NasdaqRunProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (workspace !== "nasdaq100") return;
     let canceled = false;
-    fetch("/api/nasdaq100/runs", { cache: "no-store" })
-      .then(async (response) => await response.json() as NasdaqRunsResponse)
-      .then((payload) => {
-        if (!canceled) setAccess(payload);
-      })
-      .catch(() => {
-        if (!canceled) setAccess(null);
-      });
+
+    const poll = () => {
+      fetch("/api/nasdaq100/runs?include_universe=0", { cache: "no-store" })
+        .then(async (response) => await response.json() as NasdaqRunsResponse)
+        .then((payload) => {
+          if (canceled) return;
+          setAccess((current) => ({
+            ...payload,
+            universe: payload.universe ?? current?.universe,
+          }));
+        })
+        .catch(() => undefined);
+    };
+
+    poll();
+    const timer = window.setInterval(poll, 5_000);
     return () => {
       canceled = true;
+      window.clearInterval(timer);
     };
   }, [workspace]);
 

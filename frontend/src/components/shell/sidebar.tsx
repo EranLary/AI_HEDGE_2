@@ -106,18 +106,21 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
             <button
               type="button"
               onClick={workspace === "analysis" ? handleNewAnalysis : handleNasdaqRun}
-              aria-label={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq 100 universe"}
-              title={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq 100 universe"}
+              aria-label={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq100"}
+              title={workspace === "analysis" ? "Start a new analysis" : "Run Nasdaq100"}
               className={`hib-run-btn flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:bg-emerald-500/30 ${
                 collapsedDesktop ? "h-9 w-9 justify-center px-0" : "w-full justify-center"
               }`}
             >
               {workspace === "analysis" ? <Plus size={14} /> : <Play size={14} />}
-              {!collapsedDesktop ? <span>{workspace === "analysis" ? "New Analysis" : "Run"}</span> : null}
+              {!collapsedDesktop ? <span>{workspace === "analysis" ? "New Analysis" : "Run Nasdaq100"}</span> : null}
             </button>
             {workspace === "nasdaq100" && nasdaqLiveRun && !collapsedDesktop ? (
               <p className="mt-1 text-center text-[10px] text-[color:var(--text-muted)]">
                 {nasdaqLiveRun.completedCount}/{nasdaqLiveRun.requestedCount} complete
+                {nasdaqLiveRun.leadingTicker
+                  ? ` · ${nasdaqLiveRun.leadingTicker} ${nasdaqLiveRun.leadingProgressPct.toFixed(0)}%`
+                  : ""}
               </p>
             ) : null}
           </div>

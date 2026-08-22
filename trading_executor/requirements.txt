@@ -1,0 +1,2 @@
+# Windows needs the IANA timezone database used for America/New_York checks.
+tzdata

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { shouldBypassAuthForHostname } from "@/lib/auth-bypass";
 
-const LEGACY_APP_PREFIXES = ["/reports", "/compare", "/screeners", "/discovery", "/hit-rate", "/dashboard"];
+const LEGACY_APP_PREFIXES = ["/reports", "/compare", "/screeners", "/discovery", "/hit-rate", "/dashboard", "/trading"];
 
 function workspaceRouting(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -53,7 +53,9 @@ export default auth((req) => {
 
   const isPublic =
     pathname.startsWith("/auth/") ||
-    pathname.startsWith("/api/auth/");
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/trading/executor/") ||
+    pathname === "/api/trading/monitor";
 
   if (isPublic) return NextResponse.next();
   if (req.auth) return workspaceRouting(req);

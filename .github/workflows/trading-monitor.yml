@@ -1,0 +1,33 @@
+name: Trading Executor Monitor
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trading-executor-monitor
+  cancel-in-progress: true
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check executor heartbeats
+        env:
+          TRADING_MONITOR_TOKEN: ${{ secrets.TRADING_MONITOR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TRADING_MONITOR_TOKEN:-}" ]; then
+            echo "::error::TRADING_MONITOR_TOKEN repository secret is required."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-all-errors \
+            -X POST \
+            -H "Authorization: Bearer ${TRADING_MONITOR_TOKEN}" \
+            https://hedge-in-a-box.com/api/trading/monitor

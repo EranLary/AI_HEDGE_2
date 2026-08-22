@@ -249,14 +249,14 @@ jobs:
           set -euo pipefail
           if ! gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --paginate --jq '.[].filename' \
-            | grep -qx 'src/ai_hedge/db/migrations/006_portfolio_performance.sql'; then
-            echo "Portfolio migration is not part of this PR; skipping preview backfill."
+            | grep -Eq '^(src/ai_hedge/db/migrations/006_portfolio_performance\.sql|frontend/scripts/refresh-portfolio-performance\.ts|frontend/src/app/api/portfolio-performance/route\.ts|frontend/src/components/portfolio-returns-section\.tsx|frontend/src/lib/portfolio-(db|performance-engine|refresh-policy)(\.test)?\.ts)$'; then
+            echo "Portfolio performance code is not part of this PR; skipping preview backfill."
             exit 0
           fi
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track backtest --start-cutoff 2026-04-30'"
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace analysis --track backtest --start-cutoff 2026-04-30'"
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --track paper --paper-cutoff 2026-08-17'"
+            "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace analysis --track paper --paper-cutoff 2026-08-17'"
 
       - name: Diagnostics on deploy failure
         if: failure() && steps.deploy.conclusion == 'failure'

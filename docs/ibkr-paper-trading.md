@@ -45,27 +45,36 @@ all mutations and executor endpoints to return disabled.
    snapshot. Re-running the refresh cannot create a duplicate plan.
 4. The executor reconciles the account, positions, open orders, and individual
    `ExecId` fills, reports recovered broker state, and only then pulls commands.
-   It acts only Monday-Friday between 10:00 and 15:30 New York time.
+   It acquires a single-writer server lease before connecting to Gateway and
+   acts only Monday-Friday between 10:00 and 15:30 New York time. A per-connection
+   SQLite WAL journal preserves order intents, executions, and outbound events
+   across a process or control-plane restart.
 5. It resolves unique USD stock contracts, fetches fresh NBBO, checks manual
-   overlap and settled cash, and sizes at 98% of the fixed budget. Every one of
+   positions/open orders and settled cash, and sizes at 98% of the lesser of
+   the fixed budget or strategy equity. Every one of
    the snapshot's N targets must receive a tradable quantity (`N/N`), regardless
    of whether N is 20 or smaller; otherwise the complete plan is blocked.
-6. Every submitted phase passes WhatIf. Sells execute first. Buys start only
+6. Every real attempt passes WhatIf and a retry may never worsen the preflight
+   limit. Sells execute first. Buys start only
    after every sell completes and IBKR reports enough settled USD cash. Sale
-   proceeds from the same day and margin buying power are not counted. A plan
-   can wait until a later session in `awaiting_settlement`.
+   proceeds from the same day and margin buying power are not counted. The
+   correction-aware strategy cash ledger also prevents unrelated account cash
+   from refilling losses. A plan can wait until a later session in
+   `awaiting_settlement`.
 7. Paper research performance remains on Portfolio Returns. Actual orders,
    fills, fees, lag, and strategy-owned quantities remain on Trading.
 
 ## Activation checklist
 
 - Apply migrations `011_ibkr_paper_trading.sql` and
-  `012_ibkr_trading_hardening.sql`, then confirm every new table, status, and
-  unique constraint exists.
+  `012_ibkr_trading_hardening.sql` and `013_ibkr_executor_durability.sql`, then
+  confirm every new table, status, lease, cash-ledger, and correction field exists.
 - Configure production secrets and confirm the monitor workflow receives HTTP
   200.
 - Use a dedicated IBKR Paper username where account policy permits it.
 - Pair the VM, verify heartbeat, and first run with local execution disabled.
+- Verify a second local process and a second executor instance are rejected,
+  then verify Pause/kill switch cancels only system orders.
 - Verify contract resolution, fresh NBBO, and full `N/N` coverage for every
   target symbol in the selected snapshot.
 - Verify WhatIf and a low-budget Paper order cycle with Telegram alerts.

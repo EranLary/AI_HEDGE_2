@@ -52,6 +52,15 @@ function summarizeLens(
   const sorted = rows.slice().sort((a, b) => a.date.localeCompare(b.date));
   const summary = summarizePortfolioPeriod(sorted, period, riskFreePoints);
   const latest = sorted[sorted.length - 1];
+  const tradeEligibilityReasons = track === "paper"
+    ? latest.tradeEligibilityReasons.slice()
+    : ["backtest_not_tradeable"];
+  if (track === "paper" && workspace === "analysis") {
+    tradeEligibilityReasons.push("analysis_execution_not_released");
+  }
+  if (track === "paper" && !latest.tradeEligible && !tradeEligibilityReasons.length) {
+    tradeEligibilityReasons.push("refresh_not_verified");
+  }
   return {
     lens_type: latest.lensType,
     lens_key: latest.lensType === "overall" ? null : latest.lensKey,
@@ -66,8 +75,8 @@ function summarizeLens(
     cutoff_at: latest.snapshotCutoffAt,
     execution_date: latest.snapshotExecutionDate,
     trade_eligibility: {
-      eligible: track === "paper" && latest.tradeEligible,
-      reasons: track === "paper" ? latest.tradeEligibilityReasons : ["backtest_not_tradeable"],
+      eligible: track === "paper" && workspace === "nasdaq100" && latest.tradeEligible,
+      reasons: Array.from(new Set(tradeEligibilityReasons)),
     },
     return_pct: summary.returnPct,
     benchmark_return_pct: summary.benchmarkReturnPct,

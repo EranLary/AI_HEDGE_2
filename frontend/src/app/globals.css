@@ -1198,16 +1198,6 @@ html[data-theme="light"] .hib-disclaimer-amber {
   color: #78350f !important;
 }
 
-/* Hit-rate table model/valuator links must remain readable in both themes */
-.hib-hitrate-link {
-  color: var(--text-primary) !important;
-}
-.hib-hitrate-link:hover,
-.hib-hitrate-link:focus-visible {
-  color: var(--text-primary) !important;
-  opacity: 0.9;
-}
-
 /* Guest sign-in reminder: readable in both themes without yellow glare in light mode */
 .hib-guest-note {
   border-color: rgba(52, 211, 153, 0.45) !important;

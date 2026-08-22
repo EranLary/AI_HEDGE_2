@@ -16,6 +16,9 @@ kill_timeout = "1m0s"
   NODE_ENV = "production"
   PYTHONUNBUFFERED = "1"
   PYTHON_EXECUTABLE = "python3"
+  # Paper control plane only. AUTH_BYPASS_PREVIEW forces all mutations off in PR previews.
+  TRADING_CONTROL_ENABLED = "1"
+  IBKR_LIVE_TRADING_ENABLED = "0"
 
 [[mounts]]
   source = "site_data_fra"

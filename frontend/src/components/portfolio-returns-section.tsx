@@ -27,6 +27,11 @@ type PortfolioReturnRow = {
   period_start: string | null;
   period_end: string | null;
   status: PortfolioStatus;
+  portfolio_key: string;
+  latest_snapshot_id: string;
+  cutoff_at: string | null;
+  execution_date: string | null;
+  trade_eligibility: { eligible: boolean; reasons: string[] };
 };
 
 type PortfolioPerformancePayload = {
@@ -121,16 +126,19 @@ function ReturnsTable({
   rows,
   benchmarkName,
   minimumObservations,
+  track,
 }: {
   title: string;
   rows: PortfolioReturnRow[];
   benchmarkName: string;
   minimumObservations: number;
+  track: PortfolioTrack;
 }) {
   const { href } = useWorkspace();
   const rowHref = (row: PortfolioReturnRow): string => row.lens_type === "overall"
     ? href("/discovery?lens_type=overall")
     : href(`/discovery?lens_type=${row.lens_type}&lens_key=${encodeURIComponent(row.lens_key || row.label)}`);
+  const tradingHref = (row: PortfolioReturnRow): string => href(`/trading?portfolio=${encodeURIComponent(row.portfolio_key)}`);
   const sortedRows = sortRowsByReturn(rows);
   return (
     <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
@@ -146,6 +154,11 @@ function ReturnsTable({
                     {row.label}
                   </Link>
                   <p className="mt-1 text-xs text-[color:var(--text-muted)]">{statusLabel(row) || `${row.holdings_count} latest holdings`}</p>
+                  {track === "paper" ? (
+                    <Link href={tradingHref(row)} className="mt-2 inline-flex rounded-md border border-[color:var(--accent)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] hover:bg-[color:var(--surface-elevated)]">
+                      Connect
+                    </Link>
+                  ) : null}
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Excess return</p>
@@ -205,6 +218,11 @@ function ReturnsTable({
                       {statusLabel(row) || `${row.holdings_count} holdings · since ${formatDate(row.period_start)}`}
                     </p>
                     {riskNotice ? <p className="mt-0.5 max-w-56 text-[11px] leading-snug text-[color:var(--warning)]">{riskNotice}</p> : null}
+                    {track === "paper" ? (
+                      <Link href={tradingHref(row)} className="mt-1.5 inline-flex rounded-md border border-[color:var(--accent)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] hover:bg-[color:var(--surface)]">
+                        Connect
+                      </Link>
+                    ) : null}
                   </td>
                   <td className={`border-l border-[color:var(--border-subtle)] px-3 py-2 text-right font-semibold tabular-nums ${returnTone(row.return_pct)}`}>{formatPercent(row.return_pct)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{formatPercent(row.portfolio_volatility_pct)}</td>
@@ -296,8 +314,8 @@ export function PortfolioReturnsSection() {
         </div>
       ) : (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
-          <ReturnsTable title="Models" rows={data.by_model} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} />
-          <ReturnsTable title="Valuators" rows={data.by_valuator} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} />
+          <ReturnsTable title="Models" rows={data.by_model} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} />
+          <ReturnsTable title="Valuators" rows={data.by_valuator} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} />
         </div>
       )}
 

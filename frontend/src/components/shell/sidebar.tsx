@@ -13,6 +13,7 @@ import {
   Target,
   Plus,
   Play,
+  Landmark,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -37,6 +38,7 @@ const GLOBAL_NAV: NavItem[] = [
   { path: "/screeners", label: "Screeners", icon: ScanSearch },
   { path: "/discovery", label: "Discovery", icon: Compass },
   { path: "/hit-rate", label: "Track Record", icon: Target },
+  { path: "/trading", label: "Trading", icon: Landmark },
 ];
 
 type SidebarProps = {

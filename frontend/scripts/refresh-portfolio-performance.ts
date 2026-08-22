@@ -36,6 +36,12 @@ import {
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
 import { planPaperCutoffs } from "../src/lib/portfolio-refresh-policy";
+import {
+  enqueueArmedStrategiesForSnapshots,
+  finishPortfolioRefreshRun,
+  recordSnapshotTradeEligibility,
+  startPortfolioRefreshRun,
+} from "../src/lib/trading-db";
 import type { Workspace } from "../src/lib/workspace";
 
 type PriceBundle = {
@@ -273,7 +279,14 @@ async function main() {
     return;
   }
 
+  let refreshRunId: string | null = null;
   try {
+    refreshRunId = await startPortfolioRefreshRun({
+      workspace: args.workspace,
+      track: args.track,
+      methodologyVersion: PORTFOLIO_METHODOLOGY_VERSION,
+    });
+    const processedSnapshotIds: string[] = [];
     if (args.replaceBacktest) {
       await deletePortfolioTrack(args.workspace, "backtest", PORTFOLIO_METHODOLOGY_VERSION);
     }
@@ -307,6 +320,12 @@ async function main() {
     });
     if (args.workspace === "nasdaq100" && reports.length === 0) {
       console.log("[portfolio] Nasdaq 100 has no active release reports; no snapshots were created.");
+      await finishPortfolioRefreshRun({
+        runId: refreshRunId,
+        status: "partial",
+        warnings: [{ code: "no_active_release_reports" }],
+      });
+      refreshRunId = null;
       return;
     }
     const currencyByTicker = new Map<string, string>();
@@ -400,7 +419,7 @@ async function main() {
           priceBySymbol,
           currencyByTicker,
         });
-        await insertPortfolioSnapshot({
+        const storedSnapshot = await insertPortfolioSnapshot({
           workspace: args.workspace,
           track: args.track,
           lens,
@@ -413,6 +432,7 @@ async function main() {
           status: holdings.length ? "ready" : "no_positions",
           holdings,
         });
+        processedSnapshotIds.push(storedSnapshot.id);
         createdForCutoff += 1;
       }
       console.log(`[portfolio] ${args.track} cutoff ${cutoffDate}: ${createdForCutoff} snapshots (${visibleReports.length} reports).`);
@@ -439,7 +459,48 @@ async function main() {
     if (priceBundle.errors?.length) {
       console.warn(`[portfolio] provider warnings: ${JSON.stringify(priceBundle.errors)}`);
     }
+    const warningReasons = priceBundle.errors?.length ? ["provider_warnings"] : [];
+    const uniqueSnapshotIds = Array.from(new Set(processedSnapshotIds));
+    const snapshotsById = new Map(existing.map((snapshot) => [snapshot.id, snapshot]));
+    const tradeEligibleSnapshotIds: string[] = [];
+    for (const snapshotId of uniqueSnapshotIds) {
+      const snapshot = snapshotsById.get(snapshotId);
+      const reasons = [...warningReasons];
+      if (args.track !== "paper") reasons.push("backtest_not_tradeable");
+      if (args.workspace !== "nasdaq100") reasons.push("analysis_execution_not_released");
+      if (snapshot?.status !== "ready") reasons.push("empty_target_requires_confirmation");
+      const eligible = reasons.length === 0;
+      await recordSnapshotTradeEligibility({
+        snapshotIds: [snapshotId],
+        refreshRunId,
+        eligible,
+        reasons,
+        allowUpgrade: Boolean(args.paperCutoff),
+      });
+      if (eligible) tradeEligibleSnapshotIds.push(snapshotId);
+    }
+    const enqueued = await enqueueArmedStrategiesForSnapshots(tradeEligibleSnapshotIds);
+    await finishPortfolioRefreshRun({
+      runId: refreshRunId,
+      status: priceBundle.errors?.length ? "partial" : "completed",
+      warnings: priceBundle.errors || [],
+    });
+    refreshRunId = null;
+    if (enqueued) console.log(`[portfolio] enqueued ${enqueued} IBKR Paper rebalance plan(s).`);
     console.log(`[portfolio] refreshed ${args.workspace}/${args.track}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
+  } catch (error) {
+    if (refreshRunId) {
+      try {
+        await finishPortfolioRefreshRun({
+          runId: refreshRunId,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } catch (finishError) {
+        console.error(`[portfolio] could not record failed refresh: ${String(finishError)}`);
+      }
+    }
+    throw error;
   } finally {
     await releasePortfolioRefreshLock(lockKey, owner);
   }

@@ -15,6 +15,7 @@ import {
   type PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
+import { tradingPortfolioKey } from "@/lib/trading-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,8 @@ function summarizeLens(
   rows: StoredPortfolioNavPoint[],
   period: PortfolioPeriod,
   riskFreePoints: MarketPricePoint[],
+  workspace: Workspace,
+  track: PortfolioTrack,
 ) {
   const sorted = rows.slice().sort((a, b) => a.date.localeCompare(b.date));
   const summary = summarizePortfolioPeriod(sorted, period, riskFreePoints);
@@ -53,6 +56,19 @@ function summarizeLens(
     lens_type: latest.lensType,
     lens_key: latest.lensType === "overall" ? null : latest.lensKey,
     label: latest.lensType === "overall" ? "Overall" : latest.lensLabel,
+    portfolio_key: tradingPortfolioKey({
+      workspace,
+      lensType: latest.lensType,
+      lensKey: latest.lensKey,
+      methodologyVersion: latest.methodologyVersion,
+    }),
+    latest_snapshot_id: latest.snapshotId,
+    cutoff_at: latest.snapshotCutoffAt,
+    execution_date: latest.snapshotExecutionDate,
+    trade_eligibility: {
+      eligible: track === "paper" && latest.tradeEligible,
+      reasons: track === "paper" ? latest.tradeEligibilityReasons : ["backtest_not_tradeable"],
+    },
     return_pct: summary.returnPct,
     benchmark_return_pct: summary.benchmarkReturnPct,
     excess_return_pct: summary.excessReturnPct,
@@ -128,7 +144,7 @@ export async function GET(request: Request) {
     });
     const riskFreePoints = riskFreePrices.get(PORTFOLIO_RISK_FREE_SYMBOL) || [];
     const summaries = groupByLens(rows)
-      .map((group) => summarizeLens(group, period, riskFreePoints))
+      .map((group) => summarizeLens(group, period, riskFreePoints, workspace, track))
       .sort((a, b) => {
         if (a.lens_type === "overall") return -1;
         if (b.lens_type === "overall") return 1;

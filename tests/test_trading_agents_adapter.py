@@ -88,6 +88,55 @@ def test_final_decision_metadata_is_preserved_but_excluded_from_valuation_contex
     assert "6-12 months" not in artifact
 
 
+def test_final_decision_metadata_accepts_common_markdown_json_and_range_shapes():
+    markdown = ta._extract_final_decision_metadata(
+        "**Rating:** Hold\n**Price Target:** approximately USD $210-$225\n**Time Horizon:** 6-9 months"
+    )
+    structured = ta._extract_final_decision_metadata(
+        {"rating": "Overweight", "price_target": "1,234.50", "time-horizon": "12 months"}
+    )
+
+    assert markdown == {"rating": "Hold", "price_target": 210.0, "time_horizon": "6-9 months"}
+    assert structured == {"rating": "Overweight", "price_target": 1234.5, "time_horizon": "12 months"}
+
+
+def test_missing_tactical_metadata_repair_requires_numeric_target():
+    class FakeStructured:
+        def __init__(self, schema, owner):
+            self.schema = schema
+            self.owner = owner
+
+        def invoke(self, prompt):
+            self.owner.prompt = prompt
+            return self.schema(rating="Hold", price_target=245.5, time_horizon="9 months")
+
+    class FakeLlm:
+        def __init__(self):
+            self.prompt = ""
+
+        def with_structured_output(self, schema):
+            assert schema.model_fields["price_target"].is_required()
+            return FakeStructured(schema, self)
+
+        def invoke(self, _prompt):
+            raise AssertionError("structured repair should be used")
+
+    llm = FakeLlm()
+    recovered = ta._recover_required_tactical_metadata(
+        llm,
+        "TEST",
+        {
+            "investment_plan": "Balanced plan.",
+            "trader_investment_plan": "Wait for confirmation.",
+            "risk_debate_state": {"history": "Risks and catalysts are balanced."},
+        },
+        "**Rating**: Hold\n**Time Horizon**: 9 months",
+    )
+
+    assert recovered == {"rating": "Hold", "price_target": 245.5, "time_horizon": "9 months"}
+    assert "do not use or imitate any AI Hedge valuation target" in llm.prompt
+
+
 def test_compact_payload_keeps_brief_and_drops_verbose_sections(monkeypatch):
     payload = ta.normalize_trading_agents_state(
         "TEST",

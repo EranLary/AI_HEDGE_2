@@ -21,6 +21,8 @@ export type NasdaqRunSummary = {
   completedCount: number;
   failedCount: number;
   activeCount: number;
+  leadingTicker: string;
+  leadingProgressPct: number;
   concurrency: number;
   estimatedCostPerAttemptUsd: number;
   estimatedCostUsd: number;
@@ -98,6 +100,14 @@ export function NasdaqRunModal({
   }, [onData]);
 
   const data = loadedData ?? initialData;
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      void refresh().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, refresh]);
 
   useEffect(() => {
     if (!open || !data?.runs?.some((run) => run.status === "queued" || run.status === "running")) return;

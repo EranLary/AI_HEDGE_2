@@ -25,6 +25,8 @@ export type NasdaqRunSummary = {
   completedCount: number;
   failedCount: number;
   activeCount: number;
+  leadingTicker: string;
+  leadingProgressPct: number;
   concurrency: number;
   estimatedCostPerAttemptUsd: number;
   estimatedCostUsd: number;
@@ -56,6 +58,8 @@ type RunRow = {
   completed_count: number;
   failed_count: number;
   active_count: number;
+  leading_ticker?: string | null;
+  leading_progress_pct?: number | null;
   concurrency: number;
   estimated_cost_per_attempt_usd: number;
   estimated_cost_usd: number;
@@ -98,6 +102,8 @@ function toSummary(row: RunRow): NasdaqRunSummary {
     completedCount: Number(row.completed_count || 0),
     failedCount: Number(row.failed_count || 0),
     activeCount: Number(row.active_count || 0),
+    leadingTicker: String(row.leading_ticker || ""),
+    leadingProgressPct: Math.max(0, Math.min(100, Number(row.leading_progress_pct || 0))),
     concurrency: Number(row.concurrency || 1),
     estimatedCostPerAttemptUsd: Number(row.estimated_cost_per_attempt_usd || 0),
     estimatedCostUsd: Number(row.estimated_cost_usd || 0),
@@ -194,6 +200,8 @@ export async function listNasdaqRuns(limit = 5): Promise<NasdaqRunSummary[]> {
            requested_count, completed_count, failed_count,
            (SELECT count(*)::int FROM nasdaq_universe_run_items item
              WHERE item.run_id = nasdaq_universe_runs.id AND item.status = 'running') AS active_count,
+           progress.leading_ticker,
+           coalesce(progress.leading_progress_pct, 0)::float8 AS leading_progress_pct,
            concurrency, estimated_cost_per_attempt_usd::float8,
            estimated_cost_usd::float8, observed_cost_usd::float8,
            budget_limit_usd::float8, stop_requested_at::text,
@@ -202,6 +210,22 @@ export async function listNasdaqRuns(limit = 5): Promise<NasdaqRunSummary[]> {
            finished_at::text AS finished_at,
            error
       FROM nasdaq_universe_runs
+      LEFT JOIN LATERAL (
+        SELECT site_run.ticker AS leading_ticker,
+               CASE WHEN site_run.llm_total_estimated > 0
+                 THEN least(
+                   100.0,
+                   greatest(0.0, site_run.llm_completed::float8 * 100.0 / site_run.llm_total_estimated)
+                 )
+                 ELSE 0.0
+               END AS leading_progress_pct
+          FROM site_runs site_run
+         WHERE site_run.batch_id = nasdaq_universe_runs.id
+           AND site_run.workspace = 'nasdaq100'
+           AND site_run.status IN ('queued', 'running')
+         ORDER BY leading_progress_pct DESC, site_run.created_at DESC
+         LIMIT 1
+      ) progress ON true
      ORDER BY created_at DESC
      LIMIT ${safeLimit};
   `) as unknown as RunRow[];

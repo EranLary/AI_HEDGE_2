@@ -43,7 +43,7 @@ export default async function ReportsPage({
   const userId = session?.user?.id || null;
   const signedIn = Boolean(userId);
 
-  const tab = resolveTab(params.tab, signedIn);
+  const tab = workspace === "nasdaq100" ? "community" : resolveTab(params.tab, signedIn);
   const query = String(params.q || "");
 
   return (
@@ -51,13 +51,15 @@ export default async function ReportsPage({
       <header className="mb-6">
         <h1 className="font-display text-3xl text-zinc-100">Reports</h1>
         <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
-          {tab === "mine" ? "Reports you've generated" : "Public reports from the community"}
+          {workspace === "nasdaq100"
+            ? "Nasdaq 100 universe reports"
+            : tab === "mine" ? "Reports you've generated" : "Public reports from the community"}
         </p>
       </header>
 
-      <ReportsTabs active={tab} signedIn={signedIn} initialQuery={query} workspace={workspace} />
+      <ReportsTabs key={workspace} active={tab} signedIn={signedIn} initialQuery={query} workspace={workspace} />
 
-      {tab === "community" ? (
+      {workspace === "nasdaq100" || tab === "community" ? (
         <CommunityTabContent query={query} signedIn={signedIn} workspace={workspace} />
       ) : (
         <MineTabContent userId={userId} signedIn={signedIn} query={query} workspace={workspace} />
@@ -96,7 +98,7 @@ async function CommunityTabContent({
 
   return (
     <CommunityList
-      key={query.trim().toLowerCase() || "all-reports"}
+      key={`${workspace}:${query.trim().toLowerCase() || "all-reports"}`}
       initialRows={rows}
       initialHasMore={hasMore}
       query={query}

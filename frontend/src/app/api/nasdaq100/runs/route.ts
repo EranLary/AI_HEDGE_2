@@ -34,9 +34,10 @@ export async function GET(request: Request) {
   try {
     await reconcileStaleNasdaqRuns();
     const authorized = hasNasdaqRunAuthorization(request, admin.email);
+    const includeUniverse = new URL(request.url).searchParams.get("include_universe") !== "0";
     const [runs, universe] = await Promise.all([
       listNasdaqRuns(),
-      authorized ? loadNasdaqUniverse() : Promise.resolve(null),
+      authorized && includeUniverse ? loadNasdaqUniverse() : Promise.resolve(null),
     ]);
     return NextResponse.json({
       isAdmin: true,

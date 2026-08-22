@@ -10,6 +10,7 @@ import { ToastProvider } from "@/components/shell/toast";
 import { NewRunProvider } from "@/components/shell/new-run-context";
 import { NewRunModal } from "@/components/shell/new-run-modal";
 import { NasdaqRunProvider } from "@/components/shell/nasdaq-run-context";
+import { NasdaqRunIndicator } from "@/components/shell/nasdaq-run-indicator";
 import { useWorkspace, WorkspaceProvider } from "@/components/shell/workspace-context";
 import type { Workspace } from "@/lib/workspace";
 
@@ -17,7 +18,7 @@ const COLLAPSE_KEY = "hib-sidebar-v1";
 
 function WorkspaceActiveRunIndicator() {
   const { workspace } = useWorkspace();
-  return workspace === "analysis" ? <ActiveRunIndicator /> : null;
+  return workspace === "analysis" ? <ActiveRunIndicator /> : <NasdaqRunIndicator />;
 }
 
 export function AppShell({ children, initialWorkspace }: { children: ReactNode; initialWorkspace: Workspace }) {

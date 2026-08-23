@@ -164,9 +164,11 @@ export function NasdaqRunModal({
       });
       const payload = await response.json() as { error?: string; resumed?: boolean; run?: NasdaqRunSummary };
       if (!response.ok) throw new Error(payload.error || "Failed to start the universe run.");
+      const requestedCount = payload.run?.requestedCount || 0;
+      const concurrency = payload.run?.concurrency || 1;
       setNotice(payload.resumed
-        ? "Resuming the interrupted release. Only missing stocks were queued."
-        : `${payload.run?.requestedCount || 0} stocks were queued.`);
+        ? `Resuming the interrupted release: ${requestedCount} stocks queued, with up to ${concurrency} running at once.`
+        : `${requestedCount} stocks queued, with up to ${concurrency} running at once.`);
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to start the universe run.");
@@ -337,13 +339,13 @@ export function NasdaqRunModal({
                     <span className="text-xs text-[color:var(--text-muted)]">{formatDate(latestRun.createdAt)}</span>
                   </div>
                   <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
-                    {latestRun.completedCount}/{latestRun.requestedCount} completed
-                    {latestRun.activeCount ? ` · ${latestRun.activeCount} active` : ""}
+                    {latestRun.requestedCount} total in run · {latestRun.completedCount} completed
+                    {latestRun.activeCount ? ` · ${latestRun.activeCount} running now` : ""}
                     {latestRun.failedCount ? ` · ${latestRun.failedCount} failed` : ""}
                     {latestRun.effectiveMode === "resume_week" ? " · seven-day resume" : ""}
                   </p>
                   <p className="mt-2 text-xs text-[color:var(--text-muted)]">
-                    {latestRun.concurrency} workers · ${latestRun.estimatedCostUsd.toFixed(2)} planned
+                    Up to {latestRun.concurrency} stocks run simultaneously · ${latestRun.estimatedCostUsd.toFixed(2)} planned
                     {latestRun.observedCostUsd > 0 ? ` · $${latestRun.observedCostUsd.toFixed(2)} observed` : ""}
                     {` · $${latestRun.budgetLimitUsd.toFixed(0)} limit`}
                   </p>

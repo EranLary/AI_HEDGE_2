@@ -30,7 +30,7 @@ interface SiteRunRow {
 }
 
 function rowToRunStatus(row: SiteRunRow): Partial<RunStatusPayload> {
-  const llmTotal = asNumber(row.llm_total_estimated, 30);
+  const llmTotal = asNumber(row.llm_total_estimated, 50);
   const llmDone = asNumber(row.llm_completed, 0);
   const llmPct = llmTotal > 0 ? Math.min(100, Number(((llmDone / llmTotal) * 100).toFixed(2))) : 0;
 

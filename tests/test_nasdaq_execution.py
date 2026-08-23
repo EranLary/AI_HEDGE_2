@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from ai_hedge.nasdaq_execution import (
     budget_allows_attempt,
     configured_budget_limit_usd,
+    configured_concurrency,
     configured_ticker_timeout_seconds,
     is_preferred_off_peak_utc,
     retry_delay_seconds,
@@ -40,6 +41,13 @@ def test_budget_guard_includes_the_next_attempt() -> None:
 def test_default_budget_limit_is_600_usd(monkeypatch) -> None:
     monkeypatch.delenv("NASDAQ_RUN_BUDGET_USD", raising=False)
     assert configured_budget_limit_usd() == 600.0
+
+
+def test_default_concurrency_is_ten_with_a_twelve_ticker_safety_cap(monkeypatch) -> None:
+    monkeypatch.delenv("NASDAQ_RUN_CONCURRENCY", raising=False)
+    assert configured_concurrency() == 10
+    monkeypatch.setenv("NASDAQ_RUN_CONCURRENCY", "999")
+    assert configured_concurrency() == 12
 
 
 def test_ticker_timeout_is_bounded(monkeypatch) -> None:

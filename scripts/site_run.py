@@ -78,13 +78,19 @@ def _job_id_from_status(existing_status: Dict[str, Any], output_dir: str) -> str
     return Path(output_dir).name
 
 
+DEFAULT_LLM_TOTAL_ESTIMATE = 50
+
+
 def _estimate_total_llm_calls() -> int:
-    raw = str(os.getenv("SITE_RUN_LLM_TOTAL_ESTIMATE", "45") or "45").strip()
+    raw = str(
+        os.getenv("SITE_RUN_LLM_TOTAL_ESTIMATE", str(DEFAULT_LLM_TOTAL_ESTIMATE))
+        or DEFAULT_LLM_TOTAL_ESTIMATE
+    ).strip()
     try:
         n = int(raw)
         return max(1, n)
     except Exception:
-        return 45
+        return DEFAULT_LLM_TOTAL_ESTIMATE
 
 
 def _looks_like_material_success_result(result: Any) -> bool:

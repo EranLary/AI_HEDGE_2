@@ -518,7 +518,7 @@ def _execute_attempt(
             "workspace": "nasdaq100",
             "release_id": release_id,
             "batch_id": run_id,
-            "llm_total_estimated": 45,
+            "llm_total_estimated": 50,
             "llm_completed": 0,
             "observed_cost_usd": 0.0,
             "error": "",
@@ -763,7 +763,7 @@ def main() -> int:
         release_id = _uuid(run.get("release_id"))
         user_id = str(run.get("requested_by_user_id") or "").strip() or None
         max_attempts = max(1, int(run.get("max_attempts") or 3))
-        concurrency = max(1, min(12, int(run.get("concurrency") or 4)))
+        concurrency = max(1, min(12, int(run.get("concurrency") or 10)))
 
         heartbeat_thread = threading.Thread(
             target=_heartbeat,

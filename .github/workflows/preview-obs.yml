@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: preview-obs-pr-${{ github.event.pull_request.number }}
@@ -153,22 +152,22 @@ jobs:
           timeout 30 flyctl logs --app "${{ env.PREVIEW_APP }}" || true
           echo '::endgroup::'
 
-      - name: Sticky comment with preview URL
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: obs-preview
-          message: |
-            ### Obs preview deployed
+      - name: Publish preview summary
+        run: |
+          echo "::notice title=Obs preview::https://${PREVIEW_APP}.fly.dev"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### Obs preview deployed
 
-            **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
+          **URL:** https://${PREVIEW_APP}.fly.dev
 
-            ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
-            redirect URIs for `pr-*` hostnames, so the preview hands out admin access
-            to anyone with the URL. Don't share it externally.
+          ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
+          redirect URIs for \`pr-*\` hostnames, so the preview hands out admin access
+          to anyone with the URL. Don't share it externally.
 
-            - DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
-            - Machine auto-stops when idle, auto-starts on request.
-            - Tear-down (Fly app + Neon branch) runs automatically when this PR is closed.
+          - DB is a Neon branch (\`${NEON_BRANCH_NAME}\`) off prod's \`${NEON_PARENT_BRANCH}\` — safe to mutate.
+          - Machine auto-stops when idle, auto-starts on request.
+          - Tear-down (Fly app + Neon branch) runs automatically when this PR is closed.
+          EOF
 
   teardown:
     if: github.event.action == 'closed'
@@ -219,11 +218,10 @@ jobs:
             echo "Neon branch $NEON_BRANCH_NAME already gone — nothing to delete."
           fi
 
-      - name: Update sticky comment
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: obs-preview
-          message: |
-            ### Obs preview torn down
+      - name: Publish teardown summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### Obs preview torn down
 
-            The preview environment for this PR has been destroyed.
+          The preview environment for this PR has been destroyed.
+          EOF

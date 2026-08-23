@@ -9,6 +9,7 @@ from ai_hedge.nasdaq_execution import (
     is_preferred_off_peak_utc,
     retry_delay_seconds,
 )
+from scripts.nasdaq_universe_run import _snapshot_has_full_coverage
 
 
 def _utc(hour: int, minute: int = 0) -> datetime:
@@ -45,3 +46,18 @@ def test_ticker_timeout_is_bounded(monkeypatch) -> None:
     assert configured_ticker_timeout_seconds() == 30 * 60
     monkeypatch.setenv("NASDAQ_TICKER_TIMEOUT_SECONDS", "999999")
     assert configured_ticker_timeout_seconds() == 6 * 60 * 60
+
+
+def test_release_coverage_accepts_any_saved_alias_for_an_issuer() -> None:
+    snapshot = [
+        {
+            "ticker": "GOOGL",
+            "companyName": "Alphabet Inc. Class A Common Stock",
+            "aliases": ["GOOGL", "GOOG"],
+        },
+        {"ticker": "AAPL", "companyName": "Apple Inc.", "aliases": ["AAPL"]},
+    ]
+
+    assert _snapshot_has_full_coverage(snapshot, {"GOOG", "AAPL"})
+    assert _snapshot_has_full_coverage(snapshot, {"GOOGL", "AAPL"})
+    assert not _snapshot_has_full_coverage(snapshot, {"AAPL"})

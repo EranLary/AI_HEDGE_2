@@ -322,7 +322,7 @@ export function NasdaqRunModal({
                     : " · enforcement disabled"}
                 </p>
                 <p className="mt-2 text-xs text-[color:var(--text-muted)]">
-                  Universe: {stocks.length} securities · {data.universe?.source || "Unknown source"} · as of {formatDate(data.universe?.asOf)}
+                  Universe: {stocks.length} companies · {data.universe?.source || "Unknown source"} · as of {formatDate(data.universe?.asOf)}
                 </p>
               </div>
 

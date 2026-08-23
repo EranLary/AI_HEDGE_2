@@ -120,13 +120,31 @@ def _heartbeat(run_id: str, runner_prefix: str, stop: threading.Event) -> None:
             pass
 
 
-def _release_has_full_coverage(conn, release_id: str, snapshot: object) -> bool:
-    expected = {
-        str(row.get("ticker") or "").strip().upper()
-        for row in (snapshot if isinstance(snapshot, list) else [])
-        if isinstance(row, dict) and str(row.get("ticker") or "").strip()
+def _snapshot_has_full_coverage(snapshot: object, actual_tickers: object) -> bool:
+    actual = {
+        str(ticker or "").strip().upper()
+        for ticker in (actual_tickers if isinstance(actual_tickers, (list, set, tuple)) else [])
+        if str(ticker or "").strip()
     }
-    if not expected:
+    expected_groups: list[set[str]] = []
+    for row in snapshot if isinstance(snapshot, list) else []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker") or "").strip().upper()
+        aliases = {
+            str(alias or "").strip().upper()
+            for alias in (row.get("aliases") if isinstance(row.get("aliases"), list) else [])
+            if str(alias or "").strip()
+        }
+        if ticker:
+            aliases.add(ticker)
+        if aliases:
+            expected_groups.append(aliases)
+    return bool(expected_groups) and all(group & actual for group in expected_groups)
+
+
+def _release_has_full_coverage(conn, release_id: str, snapshot: object) -> bool:
+    if not isinstance(snapshot, list) or not snapshot:
         return False
     with conn.cursor() as cur:
         cur.execute(
@@ -140,7 +158,7 @@ def _release_has_full_coverage(conn, release_id: str, snapshot: object) -> bool:
             (release_id,),
         )
         actual = {str(row[0] or "").strip().upper() for row in cur.fetchall()}
-    return expected.issubset(actual)
+    return _snapshot_has_full_coverage(snapshot, actual)
 
 
 def _load_and_start_run(conn, run_id: str) -> dict[str, Any]:

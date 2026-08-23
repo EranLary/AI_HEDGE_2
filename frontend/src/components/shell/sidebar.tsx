@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
   Compass,
@@ -37,6 +38,7 @@ const GLOBAL_NAV: NavItem[] = [
   { path: "/screeners", label: "Screeners", icon: ScanSearch },
   { path: "/discovery", label: "Discovery", icon: Compass },
   { path: "/hit-rate", label: "Track Record", icon: Target },
+  { path: "/trading", label: "Trading", icon: BriefcaseBusiness },
 ];
 
 type SidebarProps = {

@@ -27,6 +27,10 @@ export type StoredPortfolioNavPoint = PortfolioNavPoint & {
   lensKey: string;
   lensLabel: string;
   methodologyVersion: string;
+  snapshotCutoffAt: string | null;
+  snapshotExecutionDate: string | null;
+  tradeEligible: boolean;
+  tradeEligibilityReasons: string[];
 };
 
 type SnapshotRow = {
@@ -393,12 +397,17 @@ export async function loadPortfolioNav(
            n.methodology_version,
            n.nav_date::text AS nav_date,
            n.snapshot_id::text AS snapshot_id,
+           s.cutoff_at::text AS snapshot_cutoff_at,
+           s.execution_date::text AS snapshot_execution_date,
+           COALESCE(e.eligible, false) AS trade_eligible,
+           COALESCE(e.reasons, '[]'::jsonb) AS trade_eligibility_reasons,
            n.nav::float8 AS nav,
            n.benchmark_nav::float8 AS benchmark_nav,
            n.holdings_count,
            n.status
       FROM portfolio_nav_daily n
       LEFT JOIN portfolio_snapshots s ON s.id = n.snapshot_id
+      LEFT JOIN portfolio_snapshot_trade_eligibility e ON e.snapshot_id = n.snapshot_id
      WHERE n.track = ${track}
        AND n.workspace = ${workspace}
        AND n.methodology_version = ${methodologyVersion}
@@ -410,6 +419,10 @@ export async function loadPortfolioNav(
     methodology_version: string;
     nav_date: string;
     snapshot_id: string;
+    snapshot_cutoff_at: string | null;
+    snapshot_execution_date: string | null;
+    trade_eligible: boolean;
+    trade_eligibility_reasons: unknown;
     nav: number;
     benchmark_nav: number;
     holdings_count: number;
@@ -420,6 +433,12 @@ export async function loadPortfolioNav(
     lensKey: row.lens_key,
     lensLabel: row.lens_label,
     methodologyVersion: row.methodology_version,
+    snapshotCutoffAt: row.snapshot_cutoff_at ? new Date(row.snapshot_cutoff_at).toISOString() : null,
+    snapshotExecutionDate: row.snapshot_execution_date,
+    tradeEligible: Boolean(row.trade_eligible),
+    tradeEligibilityReasons: Array.isArray(row.trade_eligibility_reasons)
+      ? row.trade_eligibility_reasons.map((value) => String(value))
+      : [],
     date: row.nav_date,
     snapshotId: row.snapshot_id,
     nav: Number(row.nav),

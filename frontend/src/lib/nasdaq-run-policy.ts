@@ -105,6 +105,9 @@ export function selectNasdaqRunStocks(
 
   if (opts.resumedReleaseTickers) {
     const completed = normalized(opts.resumedReleaseTickers);
+    if (opts.mode === "missing_week") {
+      for (const ticker of normalized(opts.recentlyCompletedTickers)) completed.add(ticker);
+    }
     return uniqueStocks.filter((stock) => !completed.has(stock.ticker));
   }
   if (opts.mode === "selected") {

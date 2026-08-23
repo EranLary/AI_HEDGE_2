@@ -17,6 +17,24 @@ test("a seven-day resume queues only tickers missing from the interrupted releas
   assert.deepEqual(stocks.map((stock) => stock.ticker), ["MSFT"]);
 });
 
+test("missing-week resume skips both release completions and other recent reports", () => {
+  const stocks = selectNasdaqRunStocks(UNIVERSE, {
+    mode: "missing_week",
+    resumedReleaseTickers: ["MSFT"],
+    recentlyCompletedTickers: ["aapl"],
+  });
+  assert.deepEqual(stocks.map((stock) => stock.ticker), ["NVDA"]);
+});
+
+test("all-mode resume does not inherit recent reports from other releases", () => {
+  const stocks = selectNasdaqRunStocks(UNIVERSE, {
+    mode: "all",
+    resumedReleaseTickers: ["MSFT"],
+    recentlyCompletedTickers: ["aapl"],
+  });
+  assert.deepEqual(stocks.map((stock) => stock.ticker), ["AAPL", "NVDA"]);
+});
+
 test("missing-week mode skips reports completed anywhere in the last seven days", () => {
   const stocks = selectNasdaqRunStocks(UNIVERSE, {
     mode: "missing_week",

@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import {
   listCommunityReportsPaged,
+  listNasdaqReportTickersAvailableSince,
   listUserReports,
   type DbReportSummary,
 } from "@/lib/reports-db";
@@ -10,9 +11,32 @@ import {
   CommunityList,
 } from "@/components/reports/community-list";
 import { ReportsTabs, type ReportsTabKey } from "@/components/reports/reports-tabs";
+import { summarizeNasdaqIssuerCoverage } from "@/lib/nasdaq-run-policy";
+import { loadNasdaqUniverse } from "@/lib/nasdaq-universe";
 import { parseWorkspace, type Workspace } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
+
+const NASDAQ_COVERAGE_DAYS = 30;
+
+type NasdaqCoverage = {
+  completed: number;
+  total: number;
+};
+
+async function loadNasdaqCoverage(): Promise<NasdaqCoverage | null> {
+  try {
+    const since = new Date(Date.now() - NASDAQ_COVERAGE_DAYS * 24 * 60 * 60 * 1000);
+    const [universe, completedTickers] = await Promise.all([
+      loadNasdaqUniverse(),
+      listNasdaqReportTickersAvailableSince(since),
+    ]);
+    return summarizeNasdaqIssuerCoverage(universe.stocks, completedTickers);
+  } catch (err) {
+    console.warn("[reports] Nasdaq coverage read failed:", err);
+    return null;
+  }
+}
 
 function resolveTab(raw: string | undefined, signedIn: boolean): ReportsTabKey {
   if (raw === "mine" || raw === "community") {
@@ -39,7 +63,10 @@ export default async function ReportsPage({
 }) {
   const params = await searchParams;
   const workspace = parseWorkspace(params.workspace);
-  const session = await auth();
+  const [session, nasdaqCoverage] = await Promise.all([
+    auth(),
+    workspace === "nasdaq100" ? loadNasdaqCoverage() : Promise.resolve(null),
+  ]);
   const userId = session?.user?.id || null;
   const signedIn = Boolean(userId);
 
@@ -49,7 +76,14 @@ export default async function ReportsPage({
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
       <header className="mb-6">
-        <h1 className="font-display text-3xl text-zinc-100">Reports</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="font-display text-3xl text-[color:var(--text-primary)]">Reports</h1>
+          {workspace === "nasdaq100" && nasdaqCoverage ? (
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+              {nasdaqCoverage.completed}/{nasdaqCoverage.total} companies analyzed in the last {NASDAQ_COVERAGE_DAYS} days
+            </p>
+          ) : null}
+        </div>
         <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
           {workspace === "nasdaq100"
             ? "Nasdaq 100 universe reports"

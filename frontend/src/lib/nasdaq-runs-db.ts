@@ -389,7 +389,12 @@ export async function createNasdaqRun(opts: {
       source = resume.universe_source;
       asOf = resume.universe_as_of;
       const completed = await completedTickersForRelease(releaseId);
-      stocks = selectNasdaqRunStocks(stocks, { mode: opts.mode, resumedReleaseTickers: completed });
+      const recent = opts.mode === "missing_week" ? await tickersRunInLastWeek() : undefined;
+      stocks = selectNasdaqRunStocks(stocks, {
+        mode: opts.mode,
+        recentlyCompletedTickers: recent,
+        resumedReleaseTickers: completed,
+      });
       effectiveMode = "resume_week";
       resumed = true;
     } else if (opts.mode === "missing_week") {

@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: preview-site-pr-${{ github.event.pull_request.number }}
@@ -284,24 +283,24 @@ jobs:
           timeout 30 flyctl logs --app "${{ env.PREVIEW_APP }}" || true
           echo '::endgroup::'
 
-      - name: Sticky comment with preview URL
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: site-preview
-          message: |
-            ### Site preview deployed
+      - name: Publish preview summary
+        run: |
+          echo "::notice title=Site preview::https://${PREVIEW_APP}.fly.dev"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### Site preview deployed
 
-            **URL:** https://${{ env.PREVIEW_APP }}.fly.dev
+          **URL:** https://${PREVIEW_APP}.fly.dev
 
-            ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
-            redirect URIs for `pr-*` hostnames, so the preview hands out signed-in
-            access to anyone with the URL. Don't share it externally.
+          ⚠️ **Auth is bypassed on previews** — Google OAuth doesn't allow wildcard
+          redirect URIs for \`pr-*\` hostnames, so the preview hands out signed-in
+          access to anyone with the URL. Don't share it externally.
 
-            - Volume forked from prod on PR open; staleness accepted until close.
-            - Site DB is a Neon branch (`${{ env.NEON_BRANCH_NAME }}`) off prod's `${{ env.NEON_PARENT_BRANCH }}` — safe to mutate.
-            - **Obs DB is the prod obs DB** (no branching). Pipeline runs from this preview write `obs_runs` / `obs_calls` rows tagged with `source = "preview-pr-${{ github.event.pull_request.number }}"` so they're easy to filter or clean up later.
-            - Machine auto-stops when idle, auto-starts on request. It stays up for the duration of an active analysis run (self-ping keep-alive), then auto-stops — so mid-run analyses survive a closed tab.
-            - Tear-down (Fly app + volume + Neon branch) runs automatically when this PR is closed.
+          - Volume forked from prod on PR open; staleness accepted until close.
+          - Site DB is a Neon branch (\`${NEON_BRANCH_NAME}\`) off prod's \`${NEON_PARENT_BRANCH}\` — safe to mutate.
+          - **Obs DB is the prod obs DB** (no branching). Pipeline runs from this preview write \`obs_runs\` / \`obs_calls\` rows tagged with \`source = "preview-pr-${{ github.event.pull_request.number }}"\` so they're easy to filter or clean up later.
+          - Machine auto-stops when idle, auto-starts on request. It stays up for the duration of an active analysis run (self-ping keep-alive), then auto-stops — so mid-run analyses survive a closed tab.
+          - Tear-down (Fly app + volume + Neon branch) runs automatically when this PR is closed.
+          EOF
 
   teardown:
     if: github.event.action == 'closed'
@@ -352,11 +351,10 @@ jobs:
             echo "Neon branch $NEON_BRANCH_NAME already gone — nothing to delete."
           fi
 
-      - name: Update sticky comment
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: site-preview
-          message: |
-            ### Site preview torn down
+      - name: Publish teardown summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### Site preview torn down
 
-            The preview environment for this PR has been destroyed.
+          The preview environment for this PR has been destroyed.
+          EOF

@@ -9,7 +9,7 @@ import {
   configuredNasdaqConcurrency,
   configuredNasdaqCostPerAttempt,
 } from "@/lib/nasdaq-execution-policy";
-import { selectNasdaqRunStocks } from "@/lib/nasdaq-run-policy";
+import { deduplicateNasdaqIssuerStocks, selectNasdaqRunStocks } from "@/lib/nasdaq-run-policy";
 import type { NasdaqUniverseSnapshot, NasdaqUniverseStock } from "@/lib/nasdaq-universe";
 
 export type NasdaqRunMode = "all" | "selected" | "missing_week";
@@ -279,17 +279,22 @@ async function recentResume(): Promise<ResumeRow | null> {
 
 function snapshotStocks(value: unknown): NasdaqUniverseStock[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  const stocks = value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const row = entry as Record<string, unknown>;
     const ticker = String(row.ticker || "").trim().toUpperCase();
     if (!ticker) return [];
+    const aliases = Array.isArray(row.aliases)
+      ? row.aliases.map((alias) => String(alias || "").trim().toUpperCase()).filter(Boolean)
+      : undefined;
     return [{
       ticker,
       companyName: String(row.companyName || row.company_name || ticker),
       rank: Number.isFinite(Number(row.rank)) ? Number(row.rank) : null,
+      aliases,
     }];
   });
+  return deduplicateNasdaqIssuerStocks(stocks);
 }
 
 async function completedTickersForRelease(releaseId: string): Promise<Set<string>> {

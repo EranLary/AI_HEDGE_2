@@ -3,10 +3,13 @@ import "server-only";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { deduplicateNasdaqIssuerStocks } from "@/lib/nasdaq-run-policy";
+
 export type NasdaqUniverseStock = {
   ticker: string;
   companyName: string;
   rank: number | null;
+  aliases?: string[];
 };
 
 export type NasdaqUniverseSnapshot = {
@@ -44,12 +47,13 @@ export function normalizeNasdaqUniverse(raw: RawUniverse): NasdaqUniverseStock[]
       rank: Number.isFinite(rankValue) ? rankValue : null,
     });
   }
-  return Array.from(byTicker.values()).sort((a, b) => {
+  const sorted = Array.from(byTicker.values()).sort((a, b) => {
     if (a.rank != null && b.rank != null) return a.rank - b.rank;
     if (a.rank != null) return -1;
     if (b.rank != null) return 1;
     return a.ticker.localeCompare(b.ticker);
   });
+  return deduplicateNasdaqIssuerStocks(sorted);
 }
 
 async function readUniverseFile(filePath: string): Promise<{ raw: RawUniverse; modifiedAt: string } | null> {

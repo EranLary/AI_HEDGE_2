@@ -16,10 +16,14 @@ export type NasdaqRunSummary = {
   releaseId: string;
   requestedMode: "all" | "selected" | "missing_week";
   effectiveMode: "all" | "selected" | "missing_week" | "resume_week";
-  status: "queued" | "running" | "completed" | "partial" | "failed";
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "stopped";
   requestedCount: number;
   completedCount: number;
   failedCount: number;
+  stoppedCount: number;
+  stoppedBeforeStartCount: number;
+  stoppedAfterAttemptCount: number;
+  retryPendingCount: number;
   activeCount: number;
   leadingTicker: string;
   leadingProgressPct: number;
@@ -314,7 +318,7 @@ export function NasdaqRunModal({
               ) : null}
 
               <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--text-secondary)]">
-                <p>Each ticker is retried up to 3 times. A completed report is published immediately, even if the wider run later stops.</p>
+                <p>Each ticker is attempted up to 3 times. A completed report is published immediately, even if the wider run later stops.</p>
                 <p className="mt-2 text-xs text-[color:var(--text-muted)]">
                   Execution window: {data.executionWindow?.label || "10:00-01:00 UTC"}
                   {data.executionWindow?.enforced
@@ -343,10 +347,23 @@ export function NasdaqRunModal({
                     {latestRun.observedCostUsd > 0 ? ` · $${latestRun.observedCostUsd.toFixed(2)} observed` : ""}
                     {` · $${latestRun.budgetLimitUsd.toFixed(0)} limit`}
                   </p>
-                  {latestRun.stopRequestedAt ? (
+                  {latestRun.retryPendingCount || latestRun.stoppedCount ? (
+                    <p className="mt-2 text-xs text-[color:var(--text-muted)]">
+                      {latestRun.retryPendingCount ? `${latestRun.retryPendingCount} waiting to retry` : ""}
+                      {latestRun.retryPendingCount && latestRun.stoppedBeforeStartCount ? " / " : ""}
+                      {latestRun.stoppedBeforeStartCount ? `${latestRun.stoppedBeforeStartCount} not started` : ""}
+                      {(latestRun.retryPendingCount || latestRun.stoppedBeforeStartCount) && latestRun.stoppedAfterAttemptCount ? " / " : ""}
+                      {latestRun.stoppedAfterAttemptCount ? `${latestRun.stoppedAfterAttemptCount} stopped before retry` : ""}
+                    </p>
+                  ) : null}
+                  {latestRun.stopRequestedAt && (latestRun.status === "queued" || latestRun.status === "running") ? (
                     <p className="mt-2 text-xs text-[color:var(--warning)]">Stop requested. Active stocks are finishing.</p>
                   ) : null}
-                  {latestRun.error ? <p className="mt-2 text-xs text-[color:var(--danger)]">{latestRun.error}</p> : null}
+                  {latestRun.error ? (
+                    <p className={`mt-2 text-xs ${latestRun.status === "stopped" ? "text-[color:var(--warning)]" : "text-[color:var(--danger)]"}`}>
+                      {latestRun.error}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 

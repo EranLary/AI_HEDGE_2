@@ -53,6 +53,47 @@ CONTEXT_INTRO = (
 )
 
 
+def _llm_model_name(llm: Any) -> str:
+    for attr in ("model_name", "model"):
+        value = str(getattr(llm, attr, "") or "").strip().lower()
+        if value:
+            return value
+    return ""
+
+
+def _supports_structured_output(llm: Any) -> bool:
+    """DeepSeek reasoner rejects the tool choice used by structured output."""
+
+    return "deepseek-reasoner" not in _llm_model_name(llm)
+
+
+def _bind_structured_if_supported(
+    llm: Any,
+    schema: Any,
+    agent_name: str,
+    bind_structured: Any,
+) -> Any:
+    if not _supports_structured_output(llm):
+        return None
+    return bind_structured(llm, schema, agent_name)
+
+
+def _create_deepseek_compatible_research_manager(llm: Any):
+    """Build the package Research Manager without a doomed reasoner tool call."""
+
+    from tradingagents.agents.managers import research_manager as research_manager_module
+
+    if _supports_structured_output(llm):
+        return research_manager_module.create_research_manager(llm)
+
+    original_bind = research_manager_module.bind_structured
+    try:
+        research_manager_module.bind_structured = lambda *_args, **_kwargs: None
+        return research_manager_module.create_research_manager(llm)
+    finally:
+        research_manager_module.bind_structured = original_bind
+
+
 def _create_required_target_portfolio_manager(llm: Any):
     """Build TradingAgents' portfolio manager with a required tactical target.
 
@@ -86,7 +127,12 @@ def _create_required_target_portfolio_manager(llm: Any):
             description="Required time horizon for the tactical price target, e.g. '6-12 months'.",
         )
 
-    structured_llm = bind_structured(llm, RequiredTargetPortfolioDecision, "Portfolio Manager")
+    structured_llm = _bind_structured_if_supported(
+        llm,
+        RequiredTargetPortfolioDecision,
+        "Portfolio Manager",
+        bind_structured,
+    )
 
     def portfolio_manager_node(state: Dict[str, Any]) -> Dict[str, Any]:
         instrument_context = build_instrument_context(state["company_of_interest"])
@@ -333,7 +379,12 @@ Trader plan:
 Risk debate:
 {_trim_chars(_text(risk_debate), 12_000)}
 """.strip()
-    structured_llm = bind_structured(llm, RequiredTacticalMetadata, "Portfolio Manager metadata repair")
+    structured_llm = _bind_structured_if_supported(
+        llm,
+        RequiredTacticalMetadata,
+        "Portfolio Manager metadata repair",
+        bind_structured,
+    )
     repaired = invoke_structured_or_freetext(
         structured_llm,
         llm,
@@ -798,11 +849,14 @@ def run_trading_agents_lens(
         # not change unrelated graph construction in this process.
         with _GRAPH_SETUP_LOCK:
             original_create_portfolio_manager = graph_setup.create_portfolio_manager
+            original_create_research_manager = graph_setup.create_research_manager
             try:
                 graph_setup.create_portfolio_manager = _create_required_target_portfolio_manager
+                graph_setup.create_research_manager = _create_deepseek_compatible_research_manager
                 graph = TradingAgentsGraph(selected_analysts=list(SELECTED_ANALYSTS), debug=False, config=config)
             finally:
                 graph_setup.create_portfolio_manager = original_create_portfolio_manager
+                graph_setup.create_research_manager = original_create_research_manager
         state, decision = _propagate_trading_agents_graph(graph, ticker_u, run_date)
         state_dict = state if isinstance(state, dict) else {}
         payload = normalize_trading_agents_state(ticker_u, state_dict, decision, now=now)

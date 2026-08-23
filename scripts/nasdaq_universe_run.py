@@ -49,43 +49,62 @@ class ClaimedItem:
     worker_id: str
 
 
-def _counts(conn, run_id: str) -> tuple[int, int, int, int]:
+def _attempt_job_id(run_id: str, ticker: str, attempt: int) -> str:
+    return f"N100_{ticker}_{run_id[:8]}_{attempt}"
+
+
+def _terminal_run_status(*, completed: int, failed: int, stopped: int, reason: str) -> str:
+    if reason:
+        return "stopped"
+    if failed == 0 and stopped == 0:
+        return "completed"
+    if completed:
+        return "partial"
+    if stopped:
+        return "stopped"
+    return "failed"
+
+
+def _counts(conn, run_id: str) -> tuple[int, int, int, int, int]:
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT count(*) FILTER (WHERE status = 'completed')::int,
                    count(*) FILTER (WHERE status = 'failed')::int,
                    count(*) FILTER (WHERE status = 'running')::int,
-                   count(*) FILTER (WHERE status = 'pending')::int
+                   count(*) FILTER (WHERE status = 'pending')::int,
+                   count(*) FILTER (WHERE status = 'stopped')::int
               FROM nasdaq_universe_run_items
              WHERE run_id = %s::uuid;
             """,
             (run_id,),
         )
-        row = cur.fetchone() or (0, 0, 0, 0)
+        row = cur.fetchone() or (0, 0, 0, 0, 0)
     return (
         int(row[0] or 0),
         int(row[1] or 0),
         int(row[2] or 0),
         int(row[3] or 0),
+        int(row[4] or 0),
     )
 
 
-def _update_counts(conn, run_id: str) -> tuple[int, int, int, int]:
-    completed, failed, running, pending = _counts(conn, run_id)
+def _update_counts(conn, run_id: str) -> tuple[int, int, int, int, int]:
+    completed, failed, running, pending, stopped = _counts(conn, run_id)
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE nasdaq_universe_runs
-               SET completed_count = %s,
+                   SET completed_count = %s,
                    failed_count = %s,
+                   stopped_count = %s,
                    heartbeat_at = now()
              WHERE id = %s::uuid;
             """,
-            (completed, failed, run_id),
+            (completed, failed, stopped, run_id),
         )
     conn.commit()
-    return completed, failed, running, pending
+    return completed, failed, running, pending, stopped
 
 
 def _heartbeat(run_id: str, runner_prefix: str, stop: threading.Event) -> None:
@@ -272,6 +291,7 @@ def _claim_next_item(
                 UPDATE nasdaq_universe_run_items
                    SET status = 'failed', finished_at = now(),
                        worker_id = NULL, lease_expires_at = NULL,
+                       final_status_reason = 'Maximum ticker attempts exhausted.',
                        last_error = CASE WHEN last_error = ''
                            THEN 'Maximum ticker attempts exhausted.'
                            ELSE last_error END
@@ -328,16 +348,41 @@ def _claim_next_item(
             attempts = int(item[2] or 0) + 1
             cur.execute(
                 """
+                UPDATE nasdaq_universe_run_attempts
+                   SET status = 'failed', finished_at = coalesce(finished_at, now()),
+                       error = CASE WHEN error = ''
+                           THEN 'Worker lease expired before the attempt was finalized.'
+                           ELSE error END
+                 WHERE run_id = %s::uuid AND ticker = %s AND status = 'running';
+                """,
+                (run_id, ticker),
+            )
+            cur.execute(
+                """
                 UPDATE nasdaq_universe_run_items
                    SET status = 'running', attempts = %s,
                        worker_id = %s, heartbeat_at = now(),
                        lease_expires_at = now() + (%s * interval '1 second'),
                        started_at = coalesce(started_at, now()),
-                       finished_at = NULL, last_error = '',
+                       finished_at = NULL, final_status_reason = '',
                        estimated_cost_usd = estimated_cost_usd + %s
                  WHERE run_id = %s::uuid AND ticker = %s;
                 """,
                 (attempts, worker_id, LEASE_SECONDS, per_attempt, run_id, ticker),
+            )
+            cur.execute(
+                """
+                INSERT INTO nasdaq_universe_run_attempts (
+                    run_id, ticker, attempt, worker_id, job_id, status
+                ) VALUES (%s::uuid, %s, %s, %s, %s, 'running');
+                """,
+                (
+                    run_id,
+                    ticker,
+                    attempts,
+                    worker_id,
+                    _attempt_job_id(run_id, ticker, attempts),
+                ),
             )
             cur.execute(
                 """
@@ -371,7 +416,7 @@ def _finish_attempt(
                     """
                     UPDATE nasdaq_universe_run_items
                        SET status = 'completed', report_id = %s::uuid,
-                           finished_at = now(), last_error = '',
+                           finished_at = now(), last_error = '', final_status_reason = '',
                            worker_id = NULL, lease_expires_at = NULL,
                            heartbeat_at = now(), observed_cost_usd = observed_cost_usd + %s
                      WHERE run_id = %s::uuid AND ticker = %s AND worker_id = %s;
@@ -383,6 +428,7 @@ def _finish_attempt(
                     """
                     UPDATE nasdaq_universe_run_items
                        SET status = 'failed', finished_at = now(), last_error = %s,
+                           final_status_reason = 'Maximum ticker attempts exhausted.',
                            worker_id = NULL, lease_expires_at = NULL,
                            heartbeat_at = now(), observed_cost_usd = observed_cost_usd + %s
                      WHERE run_id = %s::uuid AND ticker = %s AND worker_id = %s;
@@ -395,6 +441,7 @@ def _finish_attempt(
                     """
                     UPDATE nasdaq_universe_run_items
                        SET status = 'pending', finished_at = NULL, last_error = %s,
+                           final_status_reason = '',
                            worker_id = NULL, lease_expires_at = NULL,
                            heartbeat_at = now(),
                            next_attempt_at = now() + (%s * interval '1 second'),
@@ -408,6 +455,23 @@ def _finish_attempt(
             # observed cost must not overwrite or double-count the new owner.
             finalized = cur.rowcount > 0
             if finalized:
+                attempt_status = "completed" if report_id else "failed"
+                cur.execute(
+                    """
+                    UPDATE nasdaq_universe_run_attempts
+                       SET status = %s, finished_at = now(), error = %s
+                     WHERE run_id = %s::uuid AND ticker = %s AND attempt = %s
+                       AND worker_id = %s AND status = 'running';
+                    """,
+                    (
+                        attempt_status,
+                        "" if report_id else last_error[:4000],
+                        run_id,
+                        item.ticker,
+                        item.attempts,
+                        item.worker_id,
+                    ),
+                )
                 cur.execute(
                     """
                     UPDATE nasdaq_universe_runs
@@ -435,7 +499,7 @@ def _execute_attempt(
     site_script = root / "scripts" / "site_run.py"
     src = root / "src"
     runs_root = root / "outputs" / "_site_runs"
-    job_id = f"N100_{item.ticker}_{run_id[:8]}_{item.attempts}"
+    job_id = _attempt_job_id(run_id, item.ticker, item.attempts)
     job_dir = runs_root / job_id
     status_file = job_dir / "_status.json"
     started_at = _utc_now()
@@ -576,13 +640,28 @@ def _fail_remaining_dispatchable(run_id: str, reason: str) -> None:
             cur.execute(
                 """
                 UPDATE nasdaq_universe_run_items
-                   SET status = 'failed', finished_at = now(), last_error = %s,
+                   SET status = 'stopped', finished_at = now(),
+                       final_status_reason = %s,
                        worker_id = NULL, lease_expires_at = NULL, heartbeat_at = now()
                  WHERE run_id = %s::uuid
                    AND (
                        status = 'pending'
                        OR (status = 'running' AND coalesce(lease_expires_at, '-infinity'::timestamptz) < now())
                    );
+                """,
+                (message, run_id),
+            )
+            cur.execute(
+                """
+                UPDATE nasdaq_universe_run_attempts attempt
+                   SET status = 'stopped', finished_at = coalesce(attempt.finished_at, now()),
+                       error = CASE WHEN attempt.error = '' THEN %s ELSE attempt.error END
+                  FROM nasdaq_universe_run_items item
+                 WHERE item.run_id = %s::uuid
+                   AND item.run_id = attempt.run_id
+                   AND item.ticker = attempt.ticker
+                   AND item.status = 'stopped'
+                   AND attempt.status = 'running';
                 """,
                 (message, run_id),
             )
@@ -595,10 +674,15 @@ def _finalize(run_id: str, run: dict[str, Any], reason: str = "") -> tuple[str, 
 
     release_id = _uuid(run.get("release_id"))
     with get_conn() as conn:
-        completed, failed, running, pending = _counts(conn, run_id)
+        completed, failed, running, pending, stopped = _counts(conn, run_id)
         if running or pending:
             return "running", completed, failed
-        final_status = "completed" if failed == 0 else ("partial" if completed else "failed")
+        final_status = _terminal_run_status(
+            completed=completed,
+            failed=failed,
+            stopped=stopped,
+            reason=reason,
+        )
         coverage_complete = final_status == "completed" and _release_has_full_coverage(
             conn,
             release_id,
@@ -620,10 +704,11 @@ def _finalize(run_id: str, run: dict[str, Any], reason: str = "") -> tuple[str, 
                 """
                 UPDATE nasdaq_universe_runs
                    SET status = %s, completed_count = %s, failed_count = %s,
+                       stopped_count = %s,
                        finished_at = now(), heartbeat_at = now(), error = %s
                  WHERE id = %s::uuid;
                 """,
-                (final_status, completed, failed, error[:4000], run_id),
+                (final_status, completed, failed, stopped, error[:4000], run_id),
             )
             if final_status == "completed":
                 cur.execute(
@@ -713,7 +798,7 @@ def main() -> int:
         if reason:
             _fail_remaining_dispatchable(run_id, reason)
         final_status, _completed, failed = _finalize(run_id, run, reason)
-        return 0 if final_status == "completed" and failed == 0 else 1
+        return 0 if final_status in {"completed", "stopped"} and failed == 0 else 1
     except KeyboardInterrupt:
         halt.set()
         _fail_remaining_dispatchable(run_id, "interrupted")

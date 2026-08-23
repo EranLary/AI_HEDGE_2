@@ -13,7 +13,7 @@ import { deduplicateNasdaqIssuerStocks, selectNasdaqRunStocks } from "@/lib/nasd
 import type { NasdaqUniverseSnapshot, NasdaqUniverseStock } from "@/lib/nasdaq-universe";
 
 export type NasdaqRunMode = "all" | "selected" | "missing_week";
-export type NasdaqRunStatus = "queued" | "running" | "completed" | "partial" | "failed";
+export type NasdaqRunStatus = "queued" | "running" | "completed" | "partial" | "failed" | "stopped";
 
 export type NasdaqRunSummary = {
   id: string;
@@ -24,6 +24,10 @@ export type NasdaqRunSummary = {
   requestedCount: number;
   completedCount: number;
   failedCount: number;
+  stoppedCount: number;
+  stoppedBeforeStartCount: number;
+  stoppedAfterAttemptCount: number;
+  retryPendingCount: number;
   activeCount: number;
   leadingTicker: string;
   leadingProgressPct: number;
@@ -57,6 +61,10 @@ type RunRow = {
   requested_count: number;
   completed_count: number;
   failed_count: number;
+  stopped_count: number;
+  stopped_before_start_count: number;
+  stopped_after_attempt_count: number;
+  retry_pending_count: number;
   active_count: number;
   leading_ticker?: string | null;
   leading_progress_pct?: number | null;
@@ -101,6 +109,10 @@ function toSummary(row: RunRow): NasdaqRunSummary {
     requestedCount: Number(row.requested_count || 0),
     completedCount: Number(row.completed_count || 0),
     failedCount: Number(row.failed_count || 0),
+    stoppedCount: Number(row.stopped_count || 0),
+    stoppedBeforeStartCount: Number(row.stopped_before_start_count || 0),
+    stoppedAfterAttemptCount: Number(row.stopped_after_attempt_count || 0),
+    retryPendingCount: Number(row.retry_pending_count || 0),
     activeCount: Number(row.active_count || 0),
     leadingTicker: String(row.leading_ticker || ""),
     leadingProgressPct: Math.max(0, Math.min(100, Number(row.leading_progress_pct || 0))),
@@ -128,23 +140,33 @@ export async function reconcileStaleNasdaqRuns(): Promise<number> {
          WHERE status IN ('queued', 'running')
            AND coalesce(heartbeat_at, started_at, created_at) < now() - interval '15 minutes'
          FOR UPDATE
-      ), failed_items AS (
+      ), stopped_items AS (
         UPDATE nasdaq_universe_run_items item
-           SET status = 'failed',
+           SET status = 'stopped',
                finished_at = coalesce(item.finished_at, now()),
                worker_id = NULL,
                lease_expires_at = NULL,
-               last_error = CASE WHEN item.last_error = ''
-                 THEN 'Interrupted before completion; eligible for a seven-day resume.'
-                 ELSE item.last_error END
+               final_status_reason = 'Interrupted before completion; eligible for a seven-day resume.'
           FROM stale_ids stale
          WHERE item.run_id = stale.id
            AND item.status IN ('pending', 'running')
         RETURNING item.run_id
+      ), stopped_attempts AS (
+        UPDATE nasdaq_universe_run_attempts attempt
+           SET status = 'stopped',
+               finished_at = coalesce(attempt.finished_at, now()),
+               error = CASE WHEN attempt.error = ''
+                 THEN 'Interrupted before the attempt was finalized.'
+                 ELSE attempt.error END
+          FROM stale_ids stale
+         WHERE attempt.run_id = stale.id
+           AND attempt.status = 'running'
+        RETURNING attempt.run_id
       ), counts AS (
         SELECT stale.id, run.release_id, run.requested_count, run.universe_count,
                count(*) FILTER (WHERE item.status = 'completed')::int AS completed_count,
-               count(*) FILTER (WHERE item.status IN ('failed', 'pending', 'running'))::int AS failed_count
+               count(*) FILTER (WHERE item.status = 'failed')::int AS failed_count,
+               count(*) FILTER (WHERE item.status IN ('stopped', 'pending', 'running'))::int AS stopped_count
           FROM stale_ids stale
           JOIN nasdaq_universe_runs run ON run.id = stale.id
           LEFT JOIN nasdaq_universe_run_items item ON item.run_id = stale.id
@@ -158,12 +180,12 @@ export async function reconcileStaleNasdaqRuns(): Promise<number> {
       ), updated_runs AS (
         UPDATE nasdaq_universe_runs run
          SET status = CASE
-               WHEN counts.requested_count > 0 AND counts.completed_count = counts.requested_count THEN 'completed'
-               WHEN counts.completed_count > 0 THEN 'partial'
-               ELSE 'failed'
+             WHEN counts.requested_count > 0 AND counts.completed_count = counts.requested_count THEN 'completed'
+               ELSE 'stopped'
              END,
              completed_count = counts.completed_count,
              failed_count = counts.failed_count,
+             stopped_count = counts.stopped_count,
              finished_at = coalesce(run.finished_at, now()),
              error = CASE
                WHEN counts.requested_count > 0 AND counts.completed_count = counts.requested_count THEN ''
@@ -197,7 +219,16 @@ export async function listNasdaqRuns(limit = 5): Promise<NasdaqRunSummary[]> {
   const rows = (await sql`
     SELECT id::text AS id, release_id::text AS release_id,
            requested_mode, effective_mode, status,
-           requested_count, completed_count, failed_count,
+           requested_count, completed_count, failed_count, stopped_count,
+           (SELECT count(*)::int FROM nasdaq_universe_run_items item
+             WHERE item.run_id = nasdaq_universe_runs.id
+               AND item.status = 'stopped' AND item.attempts = 0) AS stopped_before_start_count,
+           (SELECT count(*)::int FROM nasdaq_universe_run_items item
+             WHERE item.run_id = nasdaq_universe_runs.id
+               AND item.status = 'stopped' AND item.attempts > 0) AS stopped_after_attempt_count,
+           (SELECT count(*)::int FROM nasdaq_universe_run_items item
+             WHERE item.run_id = nasdaq_universe_runs.id
+               AND item.status = 'pending' AND item.attempts > 0) AS retry_pending_count,
            (SELECT count(*)::int FROM nasdaq_universe_run_items item
              WHERE item.run_id = nasdaq_universe_runs.id AND item.status = 'running') AS active_count,
            progress.leading_ticker,
@@ -267,7 +298,7 @@ async function recentResume(): Promise<ResumeRow | null> {
            run.universe_snapshot
       FROM nasdaq_universe_runs run
       JOIN report_releases release ON release.id = run.release_id
-     WHERE run.status IN ('partial', 'failed')
+     WHERE run.status IN ('partial', 'failed', 'stopped')
        AND run.created_at >= now() - interval '7 days'
        AND (run.requested_mode IN ('all', 'missing_week') OR run.effective_mode = 'resume_week')
        AND release.status = 'running'
@@ -415,7 +446,10 @@ export async function createNasdaqRun(opts: {
         )
         SELECT id::text AS id, release_id::text AS release_id,
                requested_mode, effective_mode, status,
-               requested_count, completed_count, failed_count,
+               requested_count, completed_count, failed_count, stopped_count,
+               0::int AS stopped_before_start_count,
+               0::int AS stopped_after_attempt_count,
+               0::int AS retry_pending_count,
                0::int AS active_count, concurrency,
                estimated_cost_per_attempt_usd::float8,
                estimated_cost_usd::float8, observed_cost_usd::float8,
@@ -454,7 +488,10 @@ export async function createNasdaqRun(opts: {
         )
         SELECT id::text AS id, release_id::text AS release_id,
                requested_mode, effective_mode, status,
-               requested_count, completed_count, failed_count,
+               requested_count, completed_count, failed_count, stopped_count,
+               0::int AS stopped_before_start_count,
+               0::int AS stopped_after_attempt_count,
+               0::int AS retry_pending_count,
                0::int AS active_count, concurrency,
                estimated_cost_per_attempt_usd::float8,
                estimated_cost_usd::float8, observed_cost_usd::float8,

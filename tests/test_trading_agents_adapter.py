@@ -248,6 +248,62 @@ def test_required_target_portfolio_manager_contract():
     assert "**Time Horizon**: 6 months" in result["final_trade_decision"]
 
 
+def test_deepseek_reasoner_skips_structured_tool_choice_for_managers():
+    class Response:
+        content = "**Rating**: Hold\n\n**Price Target**: 210\n\n**Time Horizon**: 6 months"
+
+    class FakeReasoner:
+        model_name = "deepseek-reasoner"
+
+        def __init__(self):
+            self.invocations = 0
+
+        def with_structured_output(self, _schema):
+            raise AssertionError("reasoner must not bind structured tool output")
+
+        def invoke(self, _prompt):
+            self.invocations += 1
+            return Response()
+
+    llm = FakeReasoner()
+    assert ta._supports_structured_output(llm) is False
+
+    portfolio_node = ta._create_required_target_portfolio_manager(llm)
+    portfolio_result = portfolio_node(
+        {
+            "company_of_interest": "IBM",
+            "investment_plan": "Balanced plan.",
+            "trader_investment_plan": "Wait.",
+            "risk_debate_state": {
+                "history": "Balanced risks.",
+                "aggressive_history": "",
+                "conservative_history": "",
+                "neutral_history": "",
+                "current_aggressive_response": "",
+                "current_conservative_response": "",
+                "current_neutral_response": "",
+                "count": 3,
+            },
+        }
+    )
+    assert "**Price Target**: 210" in portfolio_result["final_trade_decision"]
+
+    research_node = ta._create_deepseek_compatible_research_manager(llm)
+    research_result = research_node(
+        {
+            "company_of_interest": "IBM",
+            "investment_debate_state": {
+                "history": "Bull and bear evidence.",
+                "bear_history": "Bear evidence.",
+                "bull_history": "Bull evidence.",
+                "count": 2,
+            },
+        }
+    )
+    assert "**Rating**: Hold" in research_result["investment_plan"]
+    assert llm.invocations == 2
+
+
 def test_summarize_uses_observed_legacy_deepseek_wrapper(monkeypatch):
     calls = []
 

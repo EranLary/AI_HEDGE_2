@@ -16,6 +16,8 @@ kill_timeout = "1m0s"
   NODE_ENV = "production"
   PYTHONUNBUFFERED = "1"
   PYTHON_EXECUTABLE = "python3"
+  # Recorded on each new Nasdaq universe run by the site control plane.
+  NASDAQ_RUN_CONCURRENCY = "6"
   # Paper control plane only. AUTH_BYPASS_PREVIEW forces all mutations off in PR previews.
   TRADING_CONTROL_ENABLED = "1"
   IBKR_LIVE_TRADING_ENABLED = "0"

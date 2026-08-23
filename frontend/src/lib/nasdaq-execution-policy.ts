@@ -16,7 +16,7 @@ function positiveNumber(name: string, fallback: number): number {
 }
 
 export function configuredNasdaqConcurrency(): number {
-  const fallback = String(process.env.NASDAQ_WORKER_URL || "").trim() ? 4 : 1;
+  const fallback = String(process.env.NASDAQ_WORKER_URL || "").trim() ? 10 : 1;
   return Math.max(1, Math.min(12, Math.trunc(positiveNumber("NASDAQ_RUN_CONCURRENCY", fallback))));
 }
 

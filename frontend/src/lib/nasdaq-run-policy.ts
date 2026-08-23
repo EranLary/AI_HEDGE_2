@@ -82,6 +82,21 @@ export function deduplicateNasdaqIssuerStocks(stocks: NasdaqUniverseStock[]): Na
   }));
 }
 
+export function summarizeNasdaqIssuerCoverage(
+  stocks: NasdaqUniverseStock[],
+  completedTickers: Iterable<string>,
+): { completed: number; total: number } {
+  const uniqueStocks = deduplicateNasdaqIssuerStocks(stocks);
+  const missingStocks = selectNasdaqRunStocks(uniqueStocks, {
+    mode: "missing_week",
+    recentlyCompletedTickers: completedTickers,
+  });
+  return {
+    completed: uniqueStocks.length - missingStocks.length,
+    total: uniqueStocks.length,
+  };
+}
+
 export function selectNasdaqRunStocks(
   stocks: NasdaqUniverseStock[],
   opts: {

@@ -153,6 +153,21 @@ export async function listAllTickerSymbols(workspace: Workspace = "analysis"): P
   return filterExcludedTickers(rows.map((r) => r.symbol));
 }
 
+export async function listNasdaqReportTickersAvailableSince(since: Date): Promise<string[]> {
+  if (!Number.isFinite(since.getTime())) throw new Error("A valid Nasdaq coverage start date is required.");
+  const sql = getSql();
+  if (!sql) return [];
+  const rows = (await sql`
+    SELECT DISTINCT upper(r.ticker) AS ticker
+      FROM reports r
+     WHERE r.deleted_at IS NULL
+       AND r.workspace = 'nasdaq100'
+       AND r.available_at >= ${since.toISOString()}::timestamptz
+     ORDER BY ticker;
+  `) as unknown as Array<{ ticker: string }>;
+  return filterExcludedTickers(rows.map((row) => row.ticker));
+}
+
 export async function listTickers(workspace: Workspace = "analysis"): Promise<DbTickerRow[]> {
   const sql = getSql();
   if (!sql) return [];

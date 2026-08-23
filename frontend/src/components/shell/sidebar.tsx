@@ -120,8 +120,9 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
             {workspace === "nasdaq100" && nasdaqLiveRun && !collapsedDesktop ? (
               <p className="mt-1 text-center text-[10px] text-[color:var(--text-muted)]">
                 {nasdaqLiveRun.completedCount}/{nasdaqLiveRun.requestedCount} complete
+                {` · ${nasdaqLiveRun.activeCount}/${nasdaqLiveRun.concurrency} running`}
                 {nasdaqLiveRun.leadingTicker
-                  ? ` · ${nasdaqLiveRun.leadingTicker} ${nasdaqLiveRun.leadingProgressPct.toFixed(0)}%`
+                  ? ` · leading ${nasdaqLiveRun.leadingTicker} ${nasdaqLiveRun.leadingProgressPct.toFixed(0)}%`
                   : ""}
               </p>
             ) : null}

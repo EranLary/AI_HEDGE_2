@@ -30,6 +30,9 @@ export function NasdaqRunIndicator() {
             <span className="hib-active-run-text font-semibold">
               {liveRun.completedCount} / {liveRun.requestedCount} reports complete
             </span>
+            <span className="hib-active-run-text">
+              {liveRun.activeCount} running now · up to {liveRun.concurrency} at once
+            </span>
             <span className="hib-active-run-text">Most advanced: {leadingLabel}</span>
           </div>
           <div className="mt-1.5 flex items-center gap-3">

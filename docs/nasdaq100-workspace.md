@@ -46,7 +46,7 @@ summary values: annualized volatility and Sharpe become visible after at least
 
 Universe runs use a durable database queue. Each ticker attempt is claimed with
 a renewable lease, so a crashed worker can be replaced without running the
-same ticker twice. The initial production setting is four concurrent tickers,
+same ticker twice. The current production setting is ten concurrent tickers,
 an estimated $2 per attempt, up to three attempts per ticker, and a $600 hard
 planned-cost limit. An individual attempt is terminated after two hours so a
 hung provider call cannot hold the batch forever. Completed reports remain visible immediately; a stopped,

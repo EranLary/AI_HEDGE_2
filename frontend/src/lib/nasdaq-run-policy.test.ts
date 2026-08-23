@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deduplicateNasdaqIssuerStocks, selectNasdaqRunStocks } from "./nasdaq-run-policy";
+import {
+  deduplicateNasdaqIssuerStocks,
+  selectNasdaqRunStocks,
+  summarizeNasdaqIssuerCoverage,
+} from "./nasdaq-run-policy";
 
 const UNIVERSE = [
   { ticker: "AAPL", companyName: "Apple", rank: 1 },
@@ -87,6 +91,13 @@ test("missing-week and resume modes treat a GOOG report as completed GOOGL cover
     resumedReleaseTickers: ["GOOG"],
   });
   assert.deepEqual(resumed.map((stock) => stock.ticker), ["AAPL"]);
+});
+
+test("monthly coverage counts each issuer once and accepts any completed alias", () => {
+  assert.deepEqual(
+    summarizeNasdaqIssuerCoverage(ALPHABET_UNIVERSE, ["GOOG", "GOOGL", "AAPL", "NOT-IN-UNIVERSE"]),
+    { completed: 2, total: 2 },
+  );
 });
 
 test("future same-issuer share classes collapse to the best-ranked security", () => {

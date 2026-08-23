@@ -1,4 +1,6 @@
 import os
+import random
+import time
 from contextlib import contextmanager
 from functools import lru_cache
 from importlib import resources
@@ -459,15 +461,63 @@ def _fetch_yahooquery_snapshot_safe(ticker: str) -> Dict[str, Any]:
         }
 
 
+class YahooInfoUnavailableError(RuntimeError):
+    """Raised when Yahoo cannot provide a usable company-info mapping."""
+
+
+def _fetch_yfinance_info_with_retry(
+    ticker: str,
+    *,
+    max_attempts: int = 3,
+    base_delay_seconds: float = 2.0,
+) -> tuple[Any, Dict[str, Any]]:
+    """Fetch ``Ticker.info`` with bounded backoff and a fresh client each time.
+
+    A short Yahoo outage used to be converted to the string ``"Not available"``
+    and later crash on ``.get``. Keep the value typed and let the universe
+    runner retry the whole ticker only after these inexpensive provider retries
+    have been exhausted.
+    """
+
+    clean_ticker = str(ticker or "").strip().upper()
+    attempts = max(1, int(max_attempts))
+    last_error = "Yahoo returned no data."
+
+    for attempt in range(1, attempts + 1):
+        ticker_obj = yf.Ticker(clean_ticker)
+        try:
+            raw_info = ticker_obj.info
+            if not isinstance(raw_info, dict) or not raw_info:
+                raise TypeError(
+                    f"Yahoo returned {type(raw_info).__name__}, expected a non-empty dict"
+                )
+            return ticker_obj, dict(raw_info)
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
+            if attempt >= attempts:
+                break
+            base_delay = max(0.0, float(base_delay_seconds)) * (2 ** (attempt - 1))
+            jitter = random.uniform(0.0, min(1.0, max(0.0, base_delay * 0.25)))
+            delay = base_delay + jitter
+            print(
+                f"Yahoo info fetch failed for {clean_ticker} "
+                f"(attempt {attempt}/{attempts}: {last_error}); retrying in {delay:.2f}s"
+            )
+            time.sleep(delay)
+
+    raise YahooInfoUnavailableError(
+        f"Yahoo info unavailable for {clean_ticker} after {attempts} attempts. "
+        f"Last error: {last_error}"
+    )
+
+
 def get_info_data(ticker: str) -> dict:
     info_dict = {}
-    ticker_obj = yf.Ticker(ticker)
+    ticker_obj, raw_info = _fetch_yfinance_info_with_retry(ticker)
     fin_rate = 1.0
     price_rate = 1.0
 
     try:
-        raw_info = ticker_obj.info
-
         # --- 1. Identify Currencies ---
         fin_curr_name = raw_info.get("financialCurrency", 'USD')
         price_curr_name = raw_info.get("currency", 'USD')
@@ -505,11 +555,11 @@ def get_info_data(ticker: str) -> dict:
 
         info_dict["change"] = raw_info.get("52WeekChange", 0)
 
-    except Exception as e:
-        print(f"Error processing {ticker}: {e}")
-        info_dict["info"] = "Not available"
-        info_dict["financials"] = "Not available"
-        info_dict["change"] = 0
+    except Exception as exc:
+        raise YahooInfoUnavailableError(
+            f"Yahoo info processing failed for {str(ticker or '').strip().upper()}: "
+            f"{type(exc).__name__}: {str(exc)[:500]}"
+        ) from exc
 
     try:
         info_dict["short_name"] = info_dict["info"].get("shortName")
@@ -1405,11 +1455,19 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 def get_dicts(ticker):
     info_dict = get_info_data(ticker)
     info_payload = info_dict.get("info") if isinstance(info_dict, dict) else {}
-    files_dict = latest_filing_full_text(ticker, company_info=info_payload if isinstance(info_payload, dict) else {})
-    financial_dict = get_financial_data(ticker, info_dict["info"], info_dict["financials"])
+    if not isinstance(info_payload, dict):
+        raise YahooInfoUnavailableError(
+            f"Yahoo info unavailable for {str(ticker or '').strip().upper()}: "
+            f"expected dict, got {type(info_payload).__name__}."
+        )
+    info_financials = info_dict.get("financials")
+    if not isinstance(info_financials, dict):
+        info_financials = {}
+    files_dict = latest_filing_full_text(ticker, company_info=info_payload)
+    financial_dict = get_financial_data(ticker, info_payload, info_financials)
     variables_dict = get_variables(
         ticker,
-        info_dict["info"],
+        info_payload,
         financial_dict.get("statement_metrics", {}),
     )
     return info_dict, files_dict, financial_dict, variables_dict

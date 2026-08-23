@@ -94,6 +94,27 @@ def _looks_like_material_success_result(result: Any) -> bool:
     return status in {"success", "partial_success"}
 
 
+def _terminal_progress(completed: int, total: int, *, successful: bool) -> tuple[int, float]:
+    clean_total = max(1, int(total))
+    clean_completed = max(0, int(completed))
+    if successful:
+        return max(clean_total, clean_completed), 100.0
+    pct = min(99.0, (clean_completed / float(clean_total)) * 100.0)
+    return clean_completed, round(pct, 2)
+
+
+def _material_failure_error(result: Any) -> str:
+    if isinstance(result, dict):
+        for key in ("error", "message", "detail"):
+            message = str(result.get(key) or "").strip()
+            if message:
+                return message
+        status = str(result.get("status") or "").strip()
+        if status:
+            return f"Analysis service returned terminal status '{status}' without a report."
+    return "Analysis service returned without usable report artifacts."
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a site-triggered valuation job.")
     parser.add_argument("--ticker", required=True, help="Ticker symbol")
@@ -214,6 +235,32 @@ def main() -> int:
         except Exception:
             observed_cost_usd = 0.0
 
+        if not _looks_like_material_success_result(result):
+            failed_completed, failed_pct = _terminal_progress(
+                llm_completed,
+                llm_total_estimated,
+                successful=False,
+            )
+            failed_payload = {
+                **running_payload,
+                "status": "failed",
+                "finished_at": _utc_now(),
+                "llm_completed": failed_completed,
+                "llm_progress_pct": failed_pct,
+                "observed_cost_usd": observed_cost_usd,
+                "result": result,
+                "report_id": None,
+                "persistence_error": "",
+                "error": _material_failure_error(result),
+            }
+            if isinstance(result, dict) and result.get("traceback"):
+                failed_payload["traceback"] = result.get("traceback")
+            sink.update_status(failed_payload)
+            _append_progress_line(progress_file, "Site Run Finalized: failed")
+            legacy_port._deepseek_simple_full = original_full
+            legacy_port.deepseek_simple_text = original_deepseek
+            return 1
+
         # Ensure DB persistence before marking run as completed.
         report_id = None
         persistence_error = ""
@@ -273,43 +320,41 @@ def main() -> int:
             # The run can still be materially successful for the user even if
             # DB persistence is temporarily unavailable. Keep this as completed
             # and surface the persistence issue for diagnostics.
+            completed_calls, completed_pct = _terminal_progress(
+                llm_completed,
+                llm_total_estimated,
+                successful=True,
+            )
             completed_with_warning = {
                 **running_payload,
                 "status": "completed",
                 "finished_at": _utc_now(),
-                "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
-                "llm_progress_pct": 100.0,
+                "llm_completed": completed_calls,
+                "llm_progress_pct": completed_pct,
                 "observed_cost_usd": observed_cost_usd,
                 "result": result,
                 "report_id": None,
                 "persistence_error": persistence_error or "DB persistence failed.",
                 "error": "",
             }
-            if not _looks_like_material_success_result(result):
-                failed_payload = {
-                    **completed_with_warning,
-                    "status": "failed",
-                    "error": persistence_error or "DB persistence failed.",
-                }
-                sink.update_status(failed_payload)
-                _append_progress_line(progress_file, "Site Run Finalized: failed")
-                legacy_port._deepseek_simple_full = original_full
-                legacy_port.deepseek_simple_text = original_deepseek
-                return 1
-
             sink.update_status(completed_with_warning)
             _append_progress_line(progress_file, "Site Run Finalized: completed")
             legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
             return 0
 
+        completed_calls, completed_pct = _terminal_progress(
+            llm_completed,
+            llm_total_estimated,
+            successful=True,
+        )
         completed_payload = {
             **running_payload,
             "status": "completed",
             "finished_at": _utc_now(),
             "result": result,
-            "llm_completed": llm_total_estimated if llm_total_estimated > llm_completed else llm_completed,
-            "llm_progress_pct": 100.0,
+            "llm_completed": completed_calls,
+            "llm_progress_pct": completed_pct,
             "observed_cost_usd": observed_cost_usd,
             "report_id": report_id,
         }
@@ -325,12 +370,17 @@ def main() -> int:
             observed_cost_usd = total_cost_for_source_run_id(job_id)
         except Exception:
             pass
+        failed_completed, failed_pct = _terminal_progress(
+            llm_completed,
+            llm_total_estimated,
+            successful=False,
+        )
         failed_payload = {
             **running_payload,
             "status": "failed",
             "finished_at": _utc_now(),
-            "llm_completed": llm_completed,
-            "llm_progress_pct": round(min(99.0, (llm_completed / float(llm_total_estimated)) * 100.0), 2),
+            "llm_completed": failed_completed,
+            "llm_progress_pct": failed_pct,
             "observed_cost_usd": observed_cost_usd,
             "error": str(exc),
             "traceback": traceback.format_exc(limit=6),

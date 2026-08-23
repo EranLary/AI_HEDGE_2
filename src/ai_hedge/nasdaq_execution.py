@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import random
 from datetime import datetime, timezone
 
 
@@ -73,10 +74,16 @@ def is_preferred_off_peak_utc(value: datetime | None = None) -> bool:
 
 
 def retry_delay_seconds(attempts: int) -> int:
-    """Bounded exponential backoff between whole-ticker attempts."""
+    """Bounded exponential backoff with jitter between ticker attempts.
+
+    Jitter prevents several provider failures from returning to Yahoo and the
+    LLM APIs at the same instant after a concurrent burst.
+    """
 
     clean_attempts = max(1, int(attempts))
-    return min(15 * 60, 60 * (2 ** (clean_attempts - 1)))
+    base_delay = min(15 * 60, 60 * (2 ** (clean_attempts - 1)))
+    jitter_limit = min(30, max(5, base_delay // 4))
+    return min(15 * 60, base_delay + random.randint(0, jitter_limit))
 
 
 def budget_allows_attempt(current_usd: float, per_attempt_usd: float, limit_usd: float) -> bool:

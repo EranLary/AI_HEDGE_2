@@ -122,3 +122,20 @@ def test_nasdaq_budget_migration_raises_the_default_to_600() -> None:
     ).read_text(encoding="utf-8")
 
     assert "ALTER COLUMN budget_limit_usd SET DEFAULT 600" in migration
+
+
+def test_nasdaq_diagnostics_migration_preserves_attempts_and_stopped_status() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "014_nasdaq_run_diagnostics.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "'stopped'" in migration
+    assert "stopped_count" in migration
+    assert "final_status_reason" in migration
+    assert "nasdaq_universe_run_attempts" in migration
+    assert "PRIMARY KEY (run_id, ticker, attempt)" in migration

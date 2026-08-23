@@ -146,7 +146,10 @@ jobs:
 
   deploy-nasdaq-worker:
     needs: deploy-site
-    if: always() && (github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'nasdaq-worker')
+    if: >-
+      always()
+      && (github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'nasdaq-worker')
+      && (inputs.target == 'nasdaq-worker' || needs.deploy-site.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

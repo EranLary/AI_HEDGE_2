@@ -168,11 +168,16 @@ def _release_has_full_coverage(conn, release_id: str, snapshot: object) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT ticker
-              FROM reports
-             WHERE workspace = 'nasdaq100'
-               AND release_id = %s::uuid
-               AND deleted_at IS NULL;
+            SELECT DISTINCT report.ticker
+              FROM reports report
+              JOIN report_releases release ON release.id = report.release_id
+             WHERE report.workspace = 'nasdaq100'
+               AND report.deleted_at IS NULL
+               AND release.status IN ('running', 'active')
+               AND (
+                    report.release_id = %s::uuid
+                    OR report.available_at >= now() - interval '7 days'
+               );
             """,
             (release_id,),
         )

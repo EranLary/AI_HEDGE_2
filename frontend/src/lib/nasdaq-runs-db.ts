@@ -164,19 +164,47 @@ export async function reconcileStaleNasdaqRuns(): Promise<number> {
         RETURNING attempt.run_id
       ), counts AS (
         SELECT stale.id, run.release_id, run.requested_count, run.universe_count,
+               run.universe_snapshot,
                count(*) FILTER (WHERE item.status = 'completed')::int AS completed_count,
                count(*) FILTER (WHERE item.status = 'failed')::int AS failed_count,
                count(*) FILTER (WHERE item.status IN ('stopped', 'pending', 'running'))::int AS stopped_count
           FROM stale_ids stale
           JOIN nasdaq_universe_runs run ON run.id = stale.id
           LEFT JOIN nasdaq_universe_run_items item ON item.run_id = stale.id
-         GROUP BY stale.id, run.release_id, run.requested_count, run.universe_count
-      ), report_counts AS (
-        SELECT counts.id, count(DISTINCT reports.ticker)::int AS release_report_count
+         GROUP BY stale.id, run.release_id, run.requested_count, run.universe_count, run.universe_snapshot
+      ), coverage_checks AS (
+        SELECT counts.id,
+               jsonb_typeof(counts.universe_snapshot) = 'array'
+               AND jsonb_array_length(counts.universe_snapshot) > 0
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM jsonb_array_elements(counts.universe_snapshot) expected(stock)
+                  WHERE NOT EXISTS (
+                    SELECT 1
+                      FROM reports report
+                      JOIN report_releases source_release ON source_release.id = report.release_id
+                     WHERE report.workspace = 'nasdaq100'
+                       AND report.deleted_at IS NULL
+                       AND source_release.status IN ('running', 'active')
+                       AND (
+                            report.release_id = counts.release_id
+                            OR report.available_at >= now() - interval '7 days'
+                       )
+                       AND upper(report.ticker) IN (
+                         SELECT upper(expected.stock->>'ticker')
+                         UNION
+                         SELECT upper(alias.value)
+                           FROM jsonb_array_elements_text(
+                             CASE
+                               WHEN jsonb_typeof(expected.stock->'aliases') = 'array'
+                               THEN expected.stock->'aliases'
+                               ELSE '[]'::jsonb
+                             END
+                           ) alias(value)
+                       )
+                  )
+               ) AS coverage_complete
           FROM counts
-          LEFT JOIN reports ON reports.release_id = counts.release_id
-            AND reports.workspace = 'nasdaq100' AND reports.deleted_at IS NULL
-         GROUP BY counts.id
       ), updated_runs AS (
         UPDATE nasdaq_universe_runs run
          SET status = CASE
@@ -197,11 +225,12 @@ export async function reconcileStaleNasdaqRuns(): Promise<number> {
       ), activated_releases AS (
         UPDATE report_releases release
            SET status = 'active',
-               coverage_complete = report_counts.release_report_count >= counts.universe_count
-          FROM updated_runs, counts, report_counts
+               activated_at = coalesce(release.activated_at, now()),
+               coverage_complete = coverage_checks.coverage_complete
+          FROM updated_runs, counts, coverage_checks
          WHERE release.id = updated_runs.release_id
            AND counts.id = updated_runs.id
-           AND report_counts.id = updated_runs.id
+           AND coverage_checks.id = updated_runs.id
            AND updated_runs.status = 'completed'
       )
       SELECT id::text AS id FROM updated_runs;

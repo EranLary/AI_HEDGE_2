@@ -252,6 +252,17 @@ jobs:
             echo "Portfolio performance code is not part of this PR; skipping preview backfill."
             exit 0
           fi
+          read -r PREVIEW_MACHINE_ID PREVIEW_MACHINE_STATE < <(
+            flyctl machine list --app "${{ env.PREVIEW_APP }}" --json \
+              | jq -r '.[0] | [.id, .state] | @tsv'
+          )
+          if [ -z "${PREVIEW_MACHINE_ID:-}" ]; then
+            echo "::error::Preview app has no machine to bootstrap."
+            exit 1
+          fi
+          if [ "$PREVIEW_MACHINE_STATE" != "started" ]; then
+            flyctl machine start "$PREVIEW_MACHINE_ID" --app "${{ env.PREVIEW_APP }}"
+          fi
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
             "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace analysis --track backtest --start-cutoff 2026-04-30'"
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \

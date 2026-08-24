@@ -1,9 +1,11 @@
 # Nasdaq 100 workspace operations
 
-The Nasdaq 100 workspace is release-based. Report publication remains gated by
-explicit release activation, while portfolio tracking starts automatically
-after an active release exists. Existing reports remain in the Analysis
-workspace.
+The Nasdaq 100 workspace is release-based. Portfolio tracking starts only after
+the active release cohort covers the complete issuer-deduplicated universe.
+`Missing this week` runs may satisfy that cohort with reports saved by an older
+active release during the same seven-day window; this avoids rerunning a fresh
+analysis merely to move it into a newer release. Existing reports remain in the
+Analysis workspace.
 
 Create a staged release:
 
@@ -17,17 +19,27 @@ Generate each report into that release with the regular single-ticker CLI:
 python -m ai_hedge.cli --ticker AAPL --workspace nasdaq100 --release-id <release-uuid>
 ```
 
-Staged reports are not visible through the site or public APIs. After the
-operator has performed the external coverage checks, activate the complete
-release atomically:
+For a manually staged release, activate it after the operator has performed the
+external coverage checks:
 
 ```powershell
 python scripts/report_release.py activate --release <release-uuid-or-key>
 ```
 
+Universe runs activate themselves. If a completed `Missing this week` run
+spans several active releases, reconcile the release-cohort coverage gate:
+
+```powershell
+python scripts/report_release.py reconcile --release <release-uuid-or-key>
+```
+
+The command refuses to mark coverage complete unless every constituent group
+in the run's frozen universe snapshot has a saved report in the current release
+or another active release from the preceding seven days.
+
 The scheduled Portfolio Performance workflow refreshes both Analysis and
 Nasdaq 100. Nasdaq refreshes exit cleanly while there is no active release;
-after the first activation they begin collecting Paper and Backtest NAV,
+after the first complete cohort they begin collecting Paper and Backtest NAV,
 QQQ benchmark history, and the `^IRX` 13-week Treasury yield used by Sharpe.
 The same tracks can also be refreshed manually:
 

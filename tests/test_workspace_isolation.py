@@ -85,6 +85,20 @@ def test_universe_run_migration_supports_incremental_visibility_and_resume() -> 
     assert "coverage_complete" in migration
 
 
+def test_portfolio_unlocks_the_active_nasdaq_cohort_after_full_coverage() -> None:
+    portfolio_db = (
+        Path(__file__).resolve().parents[1]
+        / "frontend"
+        / "src"
+        / "lib"
+        / "portfolio-db.ts"
+    ).read_text(encoding="utf-8")
+
+    assert "rr.status = 'active'" in portfolio_db
+    assert "coverage_release.workspace = 'nasdaq100'" in portfolio_db
+    assert "coverage_release.coverage_complete" in portfolio_db
+
+
 def test_worker_pool_migration_has_leases_budget_and_concurrency_guards() -> None:
     migration = (
         Path(__file__).resolve().parents[1]

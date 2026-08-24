@@ -104,7 +104,7 @@ function emptyResponse(workspace: Workspace, track: PortfolioTrack, period: Port
     available: false,
     workspace,
     message: message || (workspace === "nasdaq100"
-      ? "Nasdaq 100 portfolio history will appear after the first release is activated and portfolios are refreshed."
+      ? "Nasdaq 100 forward portfolio history will appear after complete universe coverage and the first eligible market session."
       : "Portfolio performance history is not available yet."),
     methodology: {
       version: PORTFOLIO_METHODOLOGY_VERSION,

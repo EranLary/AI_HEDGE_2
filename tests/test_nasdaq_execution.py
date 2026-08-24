@@ -10,7 +10,11 @@ from ai_hedge.nasdaq_execution import (
     is_preferred_off_peak_utc,
     retry_delay_seconds,
 )
-from scripts.nasdaq_universe_run import _snapshot_has_full_coverage, _terminal_run_status
+from scripts.nasdaq_universe_run import (
+    _release_has_full_coverage,
+    _snapshot_has_full_coverage,
+    _terminal_run_status,
+)
 
 
 def _utc(hour: int, minute: int = 0) -> datetime:
@@ -70,6 +74,43 @@ def test_release_coverage_accepts_any_saved_alias_for_an_issuer() -> None:
     assert _snapshot_has_full_coverage(snapshot, {"GOOG", "AAPL"})
     assert _snapshot_has_full_coverage(snapshot, {"GOOGL", "AAPL"})
     assert not _snapshot_has_full_coverage(snapshot, {"AAPL"})
+
+
+def test_release_coverage_reads_the_current_release_and_recent_active_cohort() -> None:
+    class Cursor:
+        query = ""
+        params = ()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, query, params) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return [("AAPL",), ("MSFT",)]
+
+    class Connection:
+        cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+    snapshot = [
+        {"ticker": "AAPL", "aliases": ["AAPL"]},
+        {"ticker": "MSFT", "aliases": ["MSFT"]},
+    ]
+    conn = Connection()
+
+    assert _release_has_full_coverage(conn, "5c4ea3b9-3817-4d8b-a291-598019958d85", snapshot)
+    assert "report.release_id = %s::uuid" in conn.cursor_instance.query
+    assert "report.available_at >= now() - interval '7 days'" in conn.cursor_instance.query
+    assert "release.status IN ('running', 'active')" in conn.cursor_instance.query
+    assert conn.cursor_instance.params == ("5c4ea3b9-3817-4d8b-a291-598019958d85",)
 
 
 def test_terminal_run_status_distinguishes_stop_from_technical_failure() -> None:

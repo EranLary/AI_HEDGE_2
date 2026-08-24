@@ -125,7 +125,19 @@ export async function listPortfolioReportInputs(args: {
        WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
          AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
          AND r.workspace = ${args.workspace}
-         AND (r.workspace = 'analysis' OR (rr.status = 'active' AND rr.coverage_complete))
+         AND (
+              r.workspace = 'analysis'
+              OR (
+                   rr.status = 'active'
+                   AND EXISTS (
+                     SELECT 1
+                       FROM report_releases coverage_release
+                      WHERE coverage_release.workspace = 'nasdaq100'
+                        AND coverage_release.status = 'active'
+                        AND coverage_release.coverage_complete
+                   )
+              )
+         )
        ORDER BY r.generated_at, r.id
        LIMIT ${pageSize}
       OFFSET ${offset};

@@ -21,6 +21,16 @@ test("a new Paper track uses the safe initial cutoff", () => {
   }), ["2026-08-18"]);
 });
 
+test("a new full-universe Paper track starts after its final report date", () => {
+  assert.deepEqual(planPaperCutoffs({
+    explicitCutoff: null,
+    existingCutoffDates: [],
+    defaultInitialCutoff: "2026-08-23",
+    completedUniverseCutoff: "2026-08-24",
+    newMonthlyCutoffs: [],
+  }), ["2026-08-24"]);
+});
+
 test("ongoing Paper refreshes retry existing cutoffs and add new month ends", () => {
   assert.deepEqual(planPaperCutoffs({
     explicitCutoff: null,

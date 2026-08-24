@@ -310,9 +310,9 @@ async function main() {
       });
     }
 
-    const allCutoffDates = [...cutoffs, ...existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt)))];
-    const earliestCutoff = allCutoffDates.sort()[0] || previousNyCalendarDay(now);
-    const earliestReport = addDays(earliestCutoff, -90);
+    const reportQueryCutoffs = [...cutoffs, ...existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt)))];
+    const reportQueryCutoff = reportQueryCutoffs.sort()[0] || previousNyCalendarDay(now);
+    const earliestReport = addDays(reportQueryCutoff, -90);
     const reports = await listPortfolioReportInputs({
       workspace: args.workspace,
       earliestGeneratedAt: `${earliestReport}T00:00:00Z`,
@@ -328,6 +328,27 @@ async function main() {
       refreshRunId = null;
       return;
     }
+    if (
+      args.workspace === "nasdaq100"
+      && args.track === "paper"
+      && !args.paperCutoff
+      && existing.length === 0
+    ) {
+      const completedUniverseCutoff = reports
+        .map((report) => nyDateString(new Date(report.generatedAt)))
+        .sort()
+        .at(-1) || null;
+      cutoffs = planPaperCutoffs({
+        explicitCutoff: null,
+        existingCutoffDates: [],
+        defaultInitialCutoff: previousNyCalendarDay(now),
+        completedUniverseCutoff,
+        newMonthlyCutoffs: [],
+      });
+      console.log(`[portfolio] Nasdaq 100 initial Paper cutoff aligned to ${cutoffs[0]}, after full-cohort reporting.`);
+    }
+    const allCutoffDates = [...cutoffs, ...existing.map((snapshot) => nyDateString(new Date(snapshot.cutoffAt)))];
+    const earliestCutoff = allCutoffDates.sort()[0] || previousNyCalendarDay(now);
     const currencyByTicker = new Map<string, string>();
     for (const report of reports) currencyByTicker.set(report.ticker, report.currency);
     for (const snapshot of existing) {

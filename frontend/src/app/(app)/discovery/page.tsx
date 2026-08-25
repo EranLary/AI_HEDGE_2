@@ -146,16 +146,16 @@ function SectionCard({
                   </div>
                 ) : (
                   <div className={showSummaryScore ? "rounded-lg border border-white/10 bg-white/5 px-2.5 py-2" : undefined}>
-                    <p className="text-zinc-500">Disagreement Score</p>
-                    <p className={`${accent} mt-0.5 font-semibold tabular-nums`}>
+                    <p className={showSummaryScore ? "min-h-8 text-zinc-500 leading-4" : "text-zinc-500"}>Disagreement Score</p>
+                    <p className={`${accent} ${showSummaryScore ? "mt-2" : "mt-0.5"} font-semibold tabular-nums`}>
                       {Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}
                     </p>
                   </div>
                 )}
                 {showSummaryScore ? (
                   <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">
-                    <p className="text-zinc-500">Summary Score</p>
-                    <p className={`${summaryScoreTone(row.points_score)} mt-0.5 font-semibold tabular-nums`}>
+                    <p className="min-h-8 text-zinc-500 leading-4">Summary Score</p>
+                    <p className={`${summaryScoreTone(row.points_score)} mt-2 font-semibold tabular-nums`}>
                       {fmtScore(row.points_score)}
                     </p>
                   </div>
@@ -250,7 +250,10 @@ export default function DiscoveryPage() {
       <div>
         <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <h1 className="font-display text-2xl">Market Discovery</h1>
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Reports From the Last 3 Months</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+            <span className="block">Based On Reports From the</span>
+            <span className="block">Last 3 Months</span>
+          </p>
         </header>
 
         {loading || !data ? (
@@ -378,9 +381,9 @@ export default function DiscoveryPage() {
                   />
                   <SectionCard
                     title="Lowest Conviction"
-                    icon={<Radar size={16} className="text-[color:var(--danger)]" />}
+                    icon={<Radar size={16} className="text-[color:var(--info)]" />}
                     rows={data.lowest_conviction}
-                    accent="text-[color:var(--danger)]"
+                    accent="text-[color:var(--info)]"
                     metricLabel="disagreement"
                     showSummaryScore
                   />

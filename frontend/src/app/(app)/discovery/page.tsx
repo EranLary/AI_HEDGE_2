@@ -26,6 +26,7 @@ type DiscoveryPayload = {
   top_undervalued: DiscoveryRow[];
   top_overvalued: DiscoveryRow[];
   top_conviction: DiscoveryRow[];
+  lowest_conviction: DiscoveryRow[];
   top_highest_allocation: DiscoveryRow[];
   top_lowest_allocation: DiscoveryRow[];
   top_scores: DiscoveryRow[];
@@ -54,18 +55,27 @@ function fmtScore(value: number | null | undefined): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
+function summaryScoreTone(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "text-[color:var(--text-muted)]";
+  if (value > 0) return "text-[color:var(--success)]";
+  if (value < 0) return "text-[color:var(--danger)]";
+  return "text-[color:var(--text-secondary)]";
+}
+
 function SectionCard({
   title,
   icon,
   rows,
   accent,
   metricLabel,
+  showSummaryScore = false,
 }: {
   title: string;
   icon: ReactNode;
   rows: DiscoveryRow[];
   accent: string;
   metricLabel: "return" | "disagreement" | "allocation" | "score";
+  showSummaryScore?: boolean;
 }) {
   const { href } = useWorkspace();
   const [topN, setTopN] = useState<10 | 20>(10);
@@ -135,14 +145,24 @@ function SectionCard({
                     <p className={accent}>{fmtScore(row.points_score)}</p>
                   </div>
                 ) : (
-                  <div>
-                    <p className="text-zinc-500">Disagreement Score</p>
-                    <p className={accent}>{Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}</p>
+                  <div className={showSummaryScore ? "rounded-lg border border-white/10 bg-white/5 px-2.5 py-2" : undefined}>
+                    <p className={showSummaryScore ? "min-h-8 text-zinc-500 leading-4" : "text-zinc-500"}>Disagreement Score</p>
+                    <p className={`${accent} ${showSummaryScore ? "mt-2" : "mt-0.5"} font-semibold tabular-nums`}>
+                      {Number.isFinite(row.confidence_cv) ? row.confidence_cv.toFixed(3) : "N/A"}
+                    </p>
                   </div>
                 )}
-                <div>
+                {showSummaryScore ? (
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">
+                    <p className="min-h-8 text-zinc-500 leading-4">Summary Score</p>
+                    <p className={`${summaryScoreTone(row.points_score)} mt-2 font-semibold tabular-nums`}>
+                      {fmtScore(row.points_score)}
+                    </p>
+                  </div>
+                ) : null}
+                <div className={showSummaryScore ? "col-span-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/10 pt-2" : undefined}>
                   <p className="text-zinc-500">Updated</p>
-                  <p className="text-zinc-200">{fmtDateTimeNoSeconds(String(row.updated_at || ""))}</p>
+                  <p className="text-zinc-200 tabular-nums">{fmtDateTimeNoSeconds(String(row.updated_at || ""))}</p>
                 </div>
               </div>
             </div>
@@ -230,7 +250,7 @@ export default function DiscoveryPage() {
       <div>
         <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <h1 className="font-display text-2xl">Market Discovery</h1>
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">All Reports (Latest Per Ticker)</p>
+          <p className="text-xs tracking-[0.2em] text-zinc-500">Based On Reports From the Last 3 Months</p>
         </header>
 
         {loading || !data ? (
@@ -347,13 +367,24 @@ export default function DiscoveryPage() {
                 metricLabel="allocation"
               />
               {lensType === "overall" ? (
-                <SectionCard
-                  title="Top Conviction"
-                  icon={<Radar size={16} className="hib-conviction-accent" />}
-                  rows={data.top_conviction}
-                  accent="hib-conviction-accent"
-                  metricLabel="disagreement"
-                />
+                <>
+                  <SectionCard
+                    title="Top Conviction"
+                    icon={<Radar size={16} className="hib-conviction-accent" />}
+                    rows={data.top_conviction}
+                    accent="hib-conviction-accent"
+                    metricLabel="disagreement"
+                    showSummaryScore
+                  />
+                  <SectionCard
+                    title="Lowest Conviction"
+                    icon={<Radar size={16} className="text-[color:var(--info)]" />}
+                    rows={data.lowest_conviction}
+                    accent="text-[color:var(--info)]"
+                    metricLabel="disagreement"
+                    showSummaryScore
+                  />
+                </>
               ) : null}
             </div>
           </>

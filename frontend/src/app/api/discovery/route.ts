@@ -109,6 +109,7 @@ export async function GET(request: Request) {
     top_undervalued: ranked.topUndervalued,
     top_overvalued: ranked.topOvervalued,
     top_conviction: ranked.topConviction,
+    lowest_conviction: ranked.lowestConviction,
     top_highest_allocation: ranked.topHighestAllocation,
     top_lowest_allocation: ranked.topLowestAllocation,
     top_scores: ranked.topScores,

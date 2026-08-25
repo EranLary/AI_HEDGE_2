@@ -4,6 +4,7 @@ import test from "node:test";
 import type { DashboardPayload } from "./dashboard-types";
 import {
   prepareDiscoveryUniverse,
+  rankDiscoveryRows,
   scoreDiscoveryCandidates,
   selectPositiveTopN,
   type DiscoverySourceReport,
@@ -87,7 +88,7 @@ test("historical discovery excludes future reports and anchors the 90-day window
   assert.ok(Math.abs(Number(persona[0].row.points_score) - 18.2) < 1e-9);
 });
 
-function candidate(ticker: string, score: number): ScoredDiscoveryCandidate {
+function candidate(ticker: string, score: number, disagreement: number = 0): ScoredDiscoveryCandidate {
   return {
     sourceReportIds: [],
     row: {
@@ -95,10 +96,10 @@ function candidate(ticker: string, score: number): ScoredDiscoveryCandidate {
       company_name: ticker,
       margin_safety_pct: 0,
       overvaluation_pct: 0,
-      dispersion: 0,
+      dispersion: disagreement,
       return_pct: 0,
       investment_allocation_pct: 0,
-      confidence_cv: 0,
+      confidence_cv: disagreement,
       points_score: score,
       updated_at: "2026-08-01T00:00:00Z",
     },
@@ -113,4 +114,16 @@ test("Top N keeps only positive scores and uses ticker as a deterministic tie-br
     candidate("ZERO", 0),
   ], 20);
   assert.deepEqual(selected.map((item) => item.row.ticker), ["AAA", "ZZZ"]);
+});
+
+test("conviction rankings order ticker-level disagreement in both directions", () => {
+  const ranked = rankDiscoveryRows([
+    candidate("HIGH", 1, 0.8),
+    candidate("LOW", 1, 0.1),
+    candidate("MID", 1, 0.4),
+    candidate("MISSING", 1, Number.POSITIVE_INFINITY),
+  ]);
+
+  assert.deepEqual(ranked.topConviction.map((row) => row.ticker), ["LOW", "MID", "HIGH"]);
+  assert.deepEqual(ranked.lowestConviction.map((row) => row.ticker), ["HIGH", "MID", "LOW"]);
 });

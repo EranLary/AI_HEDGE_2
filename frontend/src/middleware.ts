@@ -70,5 +70,13 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // Application and API paths may contain dotted ticker symbols (for example,
+  // BSEN.TA). Match them explicitly before the generic static-file exclusion.
+  matcher: [
+    "/api/:path*",
+    "/analysis/:path*",
+    "/nasdaq100/:path*",
+    "/dashboard/:path*",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
+  ],
 };

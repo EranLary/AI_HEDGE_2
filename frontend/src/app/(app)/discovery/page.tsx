@@ -250,10 +250,7 @@ export default function DiscoveryPage() {
       <div>
         <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <h1 className="font-display text-2xl">Market Discovery</h1>
-          <p className="text-xs tracking-[0.2em] text-zinc-500">
-            <span className="block">Based On Reports From the</span>
-            <span className="block">Last 3 Months</span>
-          </p>
+          <p className="text-xs tracking-[0.2em] text-zinc-500">Based On Reports From the Last 3 Months</p>
         </header>
 
         {loading || !data ? (

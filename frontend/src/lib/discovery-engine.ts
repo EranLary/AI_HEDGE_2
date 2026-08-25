@@ -44,6 +44,7 @@ export type RankedDiscoveryRows = {
   topUndervalued: DiscoveryRow[];
   topOvervalued: DiscoveryRow[];
   topConviction: DiscoveryRow[];
+  lowestConviction: DiscoveryRow[];
   topHighestAllocation: DiscoveryRow[];
   topLowestAllocation: DiscoveryRow[];
   topScores: DiscoveryRow[];
@@ -56,6 +57,7 @@ function safeNum(value: unknown): number {
 }
 
 function safeNumOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -259,11 +261,23 @@ export function selectPositiveTopN(
 
 export function rankDiscoveryRows(candidates: ScoredDiscoveryCandidate[]): RankedDiscoveryRows {
   const rows = candidates.map((candidate) => candidate.row);
+  const convictionRows = rows.filter((row) => Number.isFinite(row.confidence_cv));
   return {
     all: rows,
     topUndervalued: rows.filter((row) => row.return_pct > 0).sort((a, b) => b.return_pct - a.return_pct).slice(0, 20),
     topOvervalued: rows.filter((row) => row.return_pct < 0).sort((a, b) => a.return_pct - b.return_pct).slice(0, 20),
-    topConviction: [...rows].sort((a, b) => a.confidence_cv - b.confidence_cv).slice(0, 20),
+    topConviction: [...convictionRows]
+      .sort((a, b) => {
+        const disagreementDiff = a.confidence_cv - b.confidence_cv;
+        return Math.abs(disagreementDiff) > 1e-12 ? disagreementDiff : a.ticker.localeCompare(b.ticker);
+      })
+      .slice(0, 20),
+    lowestConviction: [...convictionRows]
+      .sort((a, b) => {
+        const disagreementDiff = b.confidence_cv - a.confidence_cv;
+        return Math.abs(disagreementDiff) > 1e-12 ? disagreementDiff : a.ticker.localeCompare(b.ticker);
+      })
+      .slice(0, 20),
     topHighestAllocation: rows
       .filter((row) => typeof row.investment_allocation_pct === "number" && Number(row.investment_allocation_pct) > 0)
       .sort((a, b) => Number(b.investment_allocation_pct) - Number(a.investment_allocation_pct))

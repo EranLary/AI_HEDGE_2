@@ -26,6 +26,7 @@ type DiscoveryPayload = {
   top_undervalued: DiscoveryRow[];
   top_overvalued: DiscoveryRow[];
   top_conviction: DiscoveryRow[];
+  lowest_conviction: DiscoveryRow[];
   top_highest_allocation: DiscoveryRow[];
   top_lowest_allocation: DiscoveryRow[];
   top_scores: DiscoveryRow[];
@@ -230,7 +231,7 @@ export default function DiscoveryPage() {
       <div>
         <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <h1 className="font-display text-2xl">Market Discovery</h1>
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">All Reports (Latest Per Ticker)</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Reports From the Last 3 Months</p>
         </header>
 
         {loading || !data ? (
@@ -347,13 +348,22 @@ export default function DiscoveryPage() {
                 metricLabel="allocation"
               />
               {lensType === "overall" ? (
-                <SectionCard
-                  title="Top Conviction"
-                  icon={<Radar size={16} className="hib-conviction-accent" />}
-                  rows={data.top_conviction}
-                  accent="hib-conviction-accent"
-                  metricLabel="disagreement"
-                />
+                <>
+                  <SectionCard
+                    title="Top Conviction"
+                    icon={<Radar size={16} className="hib-conviction-accent" />}
+                    rows={data.top_conviction}
+                    accent="hib-conviction-accent"
+                    metricLabel="disagreement"
+                  />
+                  <SectionCard
+                    title="Lowest Conviction"
+                    icon={<Radar size={16} className="text-[color:var(--danger)]" />}
+                    rows={data.lowest_conviction}
+                    accent="text-[color:var(--danger)]"
+                    metricLabel="disagreement"
+                  />
+                </>
               ) : null}
             </div>
           </>

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:middleware": "tsx --test src/middleware.test.ts",
     "portfolio:refresh": "tsx scripts/refresh-portfolio-performance.ts",
     "test:portfolio": "tsx --test src/lib/discovery-engine.test.ts src/lib/nasdaq-execution-policy.test.ts src/lib/nasdaq-run-policy.test.ts src/lib/portfolio-performance-engine.test.ts src/lib/portfolio-refresh-policy.test.ts src/lib/trading-access-policy.test.ts src/lib/trading-db.test.ts src/lib/trading-signature.test.ts src/lib/workspace.test.ts"
   },

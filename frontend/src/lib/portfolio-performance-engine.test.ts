@@ -8,6 +8,7 @@ import {
   computePortfolioNavSeries,
   firstBenchmarkDateAfter,
   firstExecutionDateForCandidates,
+  isPortfolioTrackSupported,
   PORTFOLIO_RISK_MIN_OBSERVATIONS,
   PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION,
   PORTFOLIO_TRADING_DAYS_PER_YEAR,
@@ -153,6 +154,13 @@ test("workspace config keeps Analysis on SP500TR and Nasdaq 100 on the QQQ adjus
   assert.equal(nasdaq.benchmarkSymbol, "QQQ");
   assert.equal(nasdaq.benchmarkName, "Invesco QQQ — total-return proxy");
   assert.match(nasdaq.universe, /active releases/i);
+});
+
+test("Backtest remains supported in Analysis but Nasdaq 100 is Paper-only", () => {
+  assert.equal(isPortfolioTrackSupported("analysis", "paper"), true);
+  assert.equal(isPortfolioTrackSupported("analysis", "backtest"), true);
+  assert.equal(isPortfolioTrackSupported("nasdaq100", "paper"), true);
+  assert.equal(isPortfolioTrackSupported("nasdaq100", "backtest"), false);
 });
 
 test("NAV starts flat at the execution close and rebalances only on the next snapshot date", () => {

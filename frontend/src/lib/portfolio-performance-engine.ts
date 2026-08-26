@@ -27,6 +27,7 @@ export type PortfolioMethodology = {
   label: string;
   shortLabel: string;
   construction: string;
+  paperLaunchCutoff: string | null;
   equalWeightFraction: number;
   scoreWeightFraction: number;
   maxEqualWeightMultiple: number | null;
@@ -40,6 +41,7 @@ export const PORTFOLIO_METHODOLOGIES: readonly PortfolioMethodology[] = [
     label: "Equal Weight",
     shortLabel: "Equal",
     construction: "Top 20 positive scores, equally weighted at each monthly rebalance.",
+    paperLaunchCutoff: null,
     equalWeightFraction: 1,
     scoreWeightFraction: 0,
     maxEqualWeightMultiple: null,
@@ -51,6 +53,7 @@ export const PORTFOLIO_METHODOLOGIES: readonly PortfolioMethodology[] = [
     label: "60/40 Score Blend",
     shortLabel: "60/40",
     construction: "60% equal weight and 40% proportional to positive score, capped at 2x equal weight.",
+    paperLaunchCutoff: "2026-08-25",
     equalWeightFraction: 0.6,
     scoreWeightFraction: 0.4,
     maxEqualWeightMultiple: 2,
@@ -64,6 +67,10 @@ export function resolvePortfolioMethodology(value?: string | null): PortfolioMet
   return PORTFOLIO_METHODOLOGIES.find((methodology) => (
     methodology.key === normalized || methodology.version.toLowerCase() === normalized
   )) || null;
+}
+
+export function isPortfolioTrackSupported(workspace: Workspace, track: PortfolioTrack): boolean {
+  return workspace === "analysis" || track === "paper";
 }
 export type PortfolioDataStatus = "ok" | "no_positions" | "stale_market_data";
 export type PortfolioRiskStatus =

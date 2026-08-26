@@ -479,7 +479,8 @@ function RefreshHealthCard({
 
 export function PortfolioReturnsSection() {
   const { workspace, api } = useWorkspace();
-  const [track, setTrack] = useState<PortfolioTrack>("paper");
+  const [selectedTrack, setSelectedTrack] = useState<PortfolioTrack>("paper");
+  const track: PortfolioTrack = workspace === "nasdaq100" ? "paper" : selectedTrack;
   const [period, setPeriod] = useState<PortfolioPeriod>("all");
   const [methodologyView, setMethodologyView] = useState<PortfolioMethodologyView>("compare");
   const [dataByMethodology, setDataByMethodology] = useState<Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>>({
@@ -583,13 +584,15 @@ export function PortfolioReturnsSection() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Portfolio track">
-            {(["paper", "backtest"] as const).map((value) => (
-              <button key={value} type="button" onClick={() => setTrack(value)} disabled={loading && track !== value} className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] ${track === value ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]" : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"}`}>
-                {value === "paper" ? "Paper" : "Backtest"}
-              </button>
-            ))}
-          </div>
+          {workspace === "analysis" ? (
+            <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Portfolio track">
+              {(["paper", "backtest"] as const).map((value) => (
+                <button key={value} type="button" onClick={() => setSelectedTrack(value)} disabled={loading && track !== value} className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] ${track === value ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]" : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"}`}>
+                  {value === "paper" ? "Paper" : "Backtest"}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <select aria-label="Return period" value={period} onChange={(event) => setPeriod(event.target.value as PortfolioPeriod)} disabled={loading} className="rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] px-3 py-2 text-xs font-semibold text-[color:var(--text-primary)] disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)]">
             {PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>

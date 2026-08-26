@@ -3,11 +3,21 @@ export function planPaperCutoffs(args: {
   existingCutoffDates: string[];
   defaultInitialCutoff: string;
   completedUniverseCutoff?: string | null;
+  methodologyLaunchCutoff?: string | null;
   newMonthlyCutoffs: string[];
 }): string[] {
-  if (args.explicitCutoff) return [args.explicitCutoff];
+  if (args.explicitCutoff) {
+    if (args.methodologyLaunchCutoff && args.explicitCutoff < args.methodologyLaunchCutoff) {
+      throw new Error(`Paper cutoff ${args.explicitCutoff} predates methodology launch cutoff ${args.methodologyLaunchCutoff}.`);
+    }
+    return [args.explicitCutoff];
+  }
   if (!args.existingCutoffDates.length) {
-    return [args.completedUniverseCutoff || args.defaultInitialCutoff];
+    const launchFloor = args.methodologyLaunchCutoff || args.defaultInitialCutoff;
+    return [[launchFloor, args.completedUniverseCutoff]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) as string];
   }
   return Array.from(new Set([
     ...args.existingCutoffDates,

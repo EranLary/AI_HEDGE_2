@@ -37,16 +37,16 @@ The command refuses to mark coverage complete unless every constituent group
 in the run's frozen universe snapshot has a saved report in the current release
 or another active release from the preceding seven days.
 
-The scheduled Portfolio Performance workflow refreshes both Analysis and
-Nasdaq 100. Nasdaq refreshes exit cleanly while there is no active release;
-after the first complete cohort they begin collecting Paper and Backtest NAV,
-QQQ benchmark history, and the `^IRX` 13-week Treasury yield used by Sharpe.
-The same tracks can also be refreshed manually:
+The scheduled Portfolio Performance workflow refreshes Analysis and Nasdaq 100.
+Nasdaq refreshes exit cleanly while there is no active release; after the first
+complete cohort they begin collecting forward-only Paper NAV, QQQ benchmark
+history, and the `^IRX` 13-week Treasury yield used by Sharpe. Nasdaq does not
+publish a Backtest track because no point-in-time Nasdaq release history existed
+before the forward cohort. Paper can also be refreshed manually:
 
 ```powershell
 Set-Location frontend
 npm run portfolio:refresh -- --workspace nasdaq100 --track paper
-npm run portfolio:refresh -- --workspace nasdaq100 --track backtest --start-cutoff 2026-04-30
 ```
 
 The workflow-dispatch form accepts `all`, `analysis`, or `nasdaq100`. Risk

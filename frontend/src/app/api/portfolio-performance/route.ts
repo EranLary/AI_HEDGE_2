@@ -2,17 +2,18 @@ import { NextResponse } from "next/server";
 
 import { loadMarketPrices, loadPortfolioNav, type StoredPortfolioNavPoint } from "@/lib/portfolio-db";
 import {
-  PORTFOLIO_METHODOLOGY_VERSION,
   PORTFOLIO_PROVIDER,
   PORTFOLIO_RISK_FREE_NAME,
   PORTFOLIO_RISK_FREE_SYMBOL,
   PORTFOLIO_RISK_MIN_OBSERVATIONS,
   PORTFOLIO_TRADING_DAYS_PER_YEAR,
   portfolioWorkspaceConfig,
+  resolvePortfolioMethodology,
   summarizePortfolioPeriod,
   type MarketPricePoint,
   type PortfolioPeriod,
   type PortfolioTrack,
+  type PortfolioMethodology,
 } from "@/lib/portfolio-performance-engine";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 import { tradingPortfolioKey } from "@/lib/trading-types";
@@ -30,6 +31,16 @@ function parseTrack(value: string | null): PortfolioTrack {
 function parsePeriod(value: string | null): PortfolioPeriod {
   const normalized = String(value || "all").toLowerCase() as PortfolioPeriod;
   return VALID_PERIODS.has(normalized) ? normalized : "all";
+}
+
+function parseStartDate(value: string | null): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(parsed)
+    && new Date(parsed).toISOString().slice(0, 10) === value
+    ? value
+    : null;
 }
 
 function groupByLens(rows: StoredPortfolioNavPoint[]): StoredPortfolioNavPoint[][] {
@@ -95,7 +106,13 @@ function summarizeLens(
   };
 }
 
-function emptyResponse(workspace: Workspace, track: PortfolioTrack, period: PortfolioPeriod, message?: string) {
+function emptyResponse(
+  workspace: Workspace,
+  track: PortfolioTrack,
+  period: PortfolioPeriod,
+  methodology: PortfolioMethodology,
+  message?: string,
+) {
   const config = portfolioWorkspaceConfig(workspace);
   return {
     generated_at: new Date().toISOString(),
@@ -107,9 +124,13 @@ function emptyResponse(workspace: Workspace, track: PortfolioTrack, period: Port
       ? "Nasdaq 100 forward portfolio history will appear after complete universe coverage and the first eligible market session."
       : "Portfolio performance history is not available yet."),
     methodology: {
-      version: PORTFOLIO_METHODOLOGY_VERSION,
+      key: methodology.key,
+      version: methodology.version,
+      label: methodology.label,
+      short_label: methodology.shortLabel,
+      trade_execution_released: methodology.tradeExecutionReleased,
       universe: config.universe,
-      construction: "Up to 20 positive-score stocks, equally weighted, rebalanced monthly",
+      construction: methodology.construction,
       score: "60% implied target return + 40% allocation, confidence-disagreement penalty applied",
       base_currency: "USD",
       return_type: "Gross simulated total return; no fees, slippage, tax, or cash interest",
@@ -139,11 +160,16 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const track = parseTrack(url.searchParams.get("track"));
   const period = parsePeriod(url.searchParams.get("period"));
+  const rawStartDate = url.searchParams.get("start");
+  const startDate = parseStartDate(rawStartDate);
+  if (rawStartDate && !startDate) return NextResponse.json({ error: "Invalid start date." }, { status: 400 });
   const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  const methodology = resolvePortfolioMethodology(url.searchParams.get("methodology"));
+  if (!methodology) return NextResponse.json({ error: "Invalid portfolio methodology." }, { status: 400 });
   try {
-    const rows = await loadPortfolioNav(workspace, track, PORTFOLIO_METHODOLOGY_VERSION);
-    if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period));
+    const rows = await loadPortfolioNav(workspace, track, methodology.version);
+    if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period, methodology));
     const dates = rows.map((row) => row.date).sort();
     const riskFreePrices = await loadMarketPrices({
       symbols: [PORTFOLIO_RISK_FREE_SYMBOL],
@@ -153,22 +179,24 @@ export async function GET(request: Request) {
     });
     const riskFreePoints = riskFreePrices.get(PORTFOLIO_RISK_FREE_SYMBOL) || [];
     const summaries = groupByLens(rows)
-      .map((group) => summarizeLens(group, period, riskFreePoints, workspace, track))
+      .map((group) => startDate ? group.filter((row) => row.date >= startDate) : group)
+      .filter((group) => group.length > 0)
+      .map((group) => summarizeLens(group, startDate ? "all" : period, riskFreePoints, workspace, track))
       .sort((a, b) => {
         if (a.lens_type === "overall") return -1;
         if (b.lens_type === "overall") return 1;
         return a.label.localeCompare(b.label);
       });
     return NextResponse.json({
-      ...emptyResponse(workspace, track, period),
+      ...emptyResponse(workspace, track, period, methodology),
       available: true,
       message: null,
-      range: { start: dates[0], end: dates[dates.length - 1] },
+      range: { start: startDate || dates[0], end: dates[dates.length - 1] },
       by_model: summaries.filter((row) => row.lens_type === "overall" || row.lens_type === "model"),
       by_valuator: summaries.filter((row) => row.lens_type === "valuator"),
     });
   } catch (error) {
     console.warn("[portfolio-performance] DB read failed:", error);
-    return NextResponse.json(emptyResponse(workspace, track, period));
+    return NextResponse.json(emptyResponse(workspace, track, period, methodology));
   }
 }

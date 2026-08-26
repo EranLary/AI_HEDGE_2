@@ -5,7 +5,10 @@ import {
 } from "@/lib/discovery-engine";
 import type { Workspace } from "@/lib/workspace";
 
-export const PORTFOLIO_METHODOLOGY_VERSION = "top20-positive-equal-v1";
+export const PORTFOLIO_EQUAL_WEIGHT_METHODOLOGY_VERSION = "top20-positive-equal-v1";
+export const PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION = "top20-positive-blend60-score40-cap2x-v2";
+// Trading automation deliberately remains pinned to the original released methodology.
+export const PORTFOLIO_METHODOLOGY_VERSION = PORTFOLIO_EQUAL_WEIGHT_METHODOLOGY_VERSION;
 export const PORTFOLIO_BENCHMARK_SYMBOL = "^SP500TR";
 export const PORTFOLIO_RISK_FREE_SYMBOL = "^IRX";
 export const PORTFOLIO_RISK_FREE_NAME = "13-week U.S. Treasury Bill yield proxy";
@@ -17,6 +20,51 @@ export const PORTFOLIO_TRADING_DAYS_PER_YEAR = 252;
 
 export type PortfolioTrack = "backtest" | "paper";
 export type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
+export type PortfolioMethodologyKey = "equal" | "score_blend";
+export type PortfolioMethodology = {
+  key: PortfolioMethodologyKey;
+  version: string;
+  label: string;
+  shortLabel: string;
+  construction: string;
+  equalWeightFraction: number;
+  scoreWeightFraction: number;
+  maxEqualWeightMultiple: number | null;
+  tradeExecutionReleased: boolean;
+};
+
+export const PORTFOLIO_METHODOLOGIES: readonly PortfolioMethodology[] = [
+  {
+    key: "equal",
+    version: PORTFOLIO_EQUAL_WEIGHT_METHODOLOGY_VERSION,
+    label: "Equal Weight",
+    shortLabel: "Equal",
+    construction: "Top 20 positive scores, equally weighted at each monthly rebalance.",
+    equalWeightFraction: 1,
+    scoreWeightFraction: 0,
+    maxEqualWeightMultiple: null,
+    tradeExecutionReleased: true,
+  },
+  {
+    key: "score_blend",
+    version: PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION,
+    label: "60/40 Score Blend",
+    shortLabel: "60/40",
+    construction: "60% equal weight and 40% proportional to positive score, capped at 2x equal weight.",
+    equalWeightFraction: 0.6,
+    scoreWeightFraction: 0.4,
+    maxEqualWeightMultiple: 2,
+    tradeExecutionReleased: false,
+  },
+] as const;
+
+export function resolvePortfolioMethodology(value?: string | null): PortfolioMethodology | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return PORTFOLIO_METHODOLOGIES[0];
+  return PORTFOLIO_METHODOLOGIES.find((methodology) => (
+    methodology.key === normalized || methodology.version.toLowerCase() === normalized
+  )) || null;
+}
 export type PortfolioDataStatus = "ok" | "no_positions" | "stale_market_data";
 export type PortfolioRiskStatus =
   | "ok"
@@ -154,6 +202,7 @@ export function buildHoldingsForSnapshot(args: {
   executionDate: string;
   priceBySymbol: Map<string, MarketPricePoint[]>;
   currencyByTicker: Map<string, string>;
+  methodologyVersion?: string;
   limit?: number;
 }): PortfolioHoldingDefinition[] {
   const ranked = selectPositiveTopN(args.candidates, args.limit || 20);
@@ -174,8 +223,56 @@ export function buildHoldingsForSnapshot(args: {
       entryPriceUsd: price.adjustedCloseUsd,
     });
   }
-  const weight = selected.length ? 1 / selected.length : 0;
-  return selected.map((holding, index) => ({ ...holding, rank: index + 1, weight }));
+  const methodology = resolvePortfolioMethodology(args.methodologyVersion);
+  if (!methodology) {
+    throw new Error(`Unknown portfolio methodology: ${args.methodologyVersion}`);
+  }
+  const weights = calculatePortfolioWeights(selected.map((holding) => holding.score), methodology);
+  return selected.map((holding, index) => ({ ...holding, rank: index + 1, weight: weights[index] }));
+}
+
+export function calculatePortfolioWeights(
+  scores: number[],
+  methodology: PortfolioMethodology = PORTFOLIO_METHODOLOGIES[0],
+): number[] {
+  const count = scores.length;
+  if (!count) return [];
+  if (scores.some((score) => !Number.isFinite(score) || score <= 0)) {
+    throw new Error("Portfolio scores must be finite positive numbers.");
+  }
+
+  const equalWeight = 1 / count;
+  const scoreTotal = scores.reduce((sum, score) => sum + score, 0);
+  const rawWeights = scores.map((score) => (
+    (methodology.equalWeightFraction * equalWeight)
+    + (methodology.scoreWeightFraction * (score / scoreTotal))
+  ));
+  if (methodology.maxEqualWeightMultiple === null) return rawWeights;
+
+  const cap = Math.min(1, methodology.maxEqualWeightMultiple * equalWeight);
+  const weights = Array(count).fill(0) as number[];
+  let remainingIndices = rawWeights.map((_, index) => index);
+  let remainingWeight = 1;
+
+  // Redistribute any capped excess proportionally across the still-uncapped raw weights.
+  while (remainingIndices.length) {
+    const remainingRawTotal = remainingIndices.reduce((sum, index) => sum + rawWeights[index], 0);
+    const cappedIndices = remainingIndices.filter((index) => (
+      (rawWeights[index] / remainingRawTotal) * remainingWeight > cap + Number.EPSILON
+    ));
+    if (!cappedIndices.length) {
+      for (const index of remainingIndices) {
+        weights[index] = (rawWeights[index] / remainingRawTotal) * remainingWeight;
+      }
+      break;
+    }
+    for (const index of cappedIndices) weights[index] = cap;
+    remainingWeight -= cap * cappedIndices.length;
+    const cappedSet = new Set(cappedIndices);
+    remainingIndices = remainingIndices.filter((index) => !cappedSet.has(index));
+  }
+
+  return weights;
 }
 
 export function computePortfolioNavSeries(args: {

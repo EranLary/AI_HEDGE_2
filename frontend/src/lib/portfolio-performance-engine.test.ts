@@ -4,11 +4,14 @@ import test from "node:test";
 import type { ScoredDiscoveryCandidate } from "./discovery-engine";
 import {
   buildHoldingsForSnapshot,
+  calculatePortfolioWeights,
   computePortfolioNavSeries,
   firstBenchmarkDateAfter,
   firstExecutionDateForCandidates,
   PORTFOLIO_RISK_MIN_OBSERVATIONS,
+  PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION,
   PORTFOLIO_TRADING_DAYS_PER_YEAR,
+  resolvePortfolioMethodology,
   portfolioWorkspaceConfig,
   summarizePortfolioPeriod,
   type MarketPricePoint,
@@ -68,6 +71,52 @@ test("snapshot construction selects at most 20 positive names with equal 1/N wei
     currencyByTicker,
   });
   assert.deepEqual(cash, []);
+});
+
+test("60/40 score blend sums to one and follows score proportions below the cap", () => {
+  const methodology = resolvePortfolioMethodology(PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION);
+  assert.ok(methodology);
+  const weights = calculatePortfolioWeights([5, 4, 3, 2, 1], methodology);
+  const expected = [
+    0.6 / 5 + 0.4 * 5 / 15,
+    0.6 / 5 + 0.4 * 4 / 15,
+    0.6 / 5 + 0.4 * 3 / 15,
+    0.6 / 5 + 0.4 * 2 / 15,
+    0.6 / 5 + 0.4 * 1 / 15,
+  ];
+  assert.ok(Math.abs(weights.reduce((sum, weight) => sum + weight, 0) - 1) < 1e-12);
+  weights.forEach((weight, index) => assert.ok(Math.abs(weight - expected[index]) < 1e-12));
+});
+
+test("60/40 score blend caps concentrated names at 2x equal weight and redistributes excess", () => {
+  const methodology = resolvePortfolioMethodology("score_blend");
+  assert.ok(methodology);
+  const weights = calculatePortfolioWeights([1000, 100, 10, 1], methodology);
+  assert.ok(Math.abs(weights.reduce((sum, weight) => sum + weight, 0) - 1) < 1e-12);
+  assert.ok(weights.every((weight) => weight <= 0.5 + 1e-12));
+  assert.ok(Math.abs(weights[0] - 0.5) < 1e-12);
+  assert.ok(weights[1] > weights[2]);
+  assert.ok(weights[2] > weights[3]);
+});
+
+test("snapshot construction applies the selected methodology without issuer deduplication", () => {
+  const candidates = [candidate("NICE", 10), candidate("NICE.TA", 5), candidate("OTHER", 1)];
+  const priceBySymbol = new Map<string, MarketPricePoint[]>();
+  const currencyByTicker = new Map<string, string>();
+  for (const item of candidates) {
+    priceBySymbol.set(item.row.ticker, [price(item.row.ticker, "2026-05-04", 100)]);
+    currencyByTicker.set(item.row.ticker, "USD");
+  }
+  const holdings = buildHoldingsForSnapshot({
+    candidates,
+    executionDate: "2026-05-04",
+    priceBySymbol,
+    currencyByTicker,
+    methodologyVersion: PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION,
+  });
+  assert.deepEqual(holdings.map((holding) => holding.ticker), ["NICE", "NICE.TA", "OTHER"]);
+  assert.ok(Math.abs(holdings.reduce((sum, holding) => sum + holding.weight, 0) - 1) < 1e-12);
+  assert.ok(holdings[0].weight > holdings[1].weight);
 });
 
 function snapshot(args: { id: string; executionDate: string; ticker: string; entryPrice: number }): PortfolioSnapshotDefinition {

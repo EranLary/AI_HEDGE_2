@@ -6,6 +6,8 @@ import { useWorkspace } from "@/components/shell/workspace-context";
 
 type PortfolioTrack = "paper" | "backtest";
 type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
+type PortfolioMethodologyKey = "equal" | "score_blend";
+type PortfolioMethodologyView = "compare" | PortfolioMethodologyKey;
 type PortfolioStatus = "ok" | "insufficient_history" | "no_positions" | "stale_market_data";
 type PortfolioRiskStatus = "ok" | "insufficient_history" | "risk_free_unavailable" | "stale_market_data";
 
@@ -41,7 +43,11 @@ type PortfolioPerformancePayload = {
   available: boolean;
   message: string | null;
   methodology: {
+    key: PortfolioMethodologyKey;
     version: string;
+    label: string;
+    short_label: string;
+    trade_execution_released: boolean;
     universe: string;
     construction: string;
     return_type: string;
@@ -65,6 +71,12 @@ const PERIODS: Array<{ value: PortfolioPeriod; label: string }> = [
   { value: "3m", label: "3M" },
   { value: "6m", label: "6M" },
   { value: "1y", label: "1Y" },
+];
+
+const METHODOLOGY_VIEWS: Array<{ value: PortfolioMethodologyView; label: string }> = [
+  { value: "compare", label: "Compare" },
+  { value: "equal", label: "Equal Weight" },
+  { value: "score_blend", label: "60/40 Score" },
 ];
 
 function formatPercent(value: number | null): string {
@@ -127,12 +139,14 @@ function ReturnsTable({
   benchmarkName,
   minimumObservations,
   track,
+  canConnect,
 }: {
   title: string;
   rows: PortfolioReturnRow[];
   benchmarkName: string;
   minimumObservations: number;
   track: PortfolioTrack;
+  canConnect: boolean;
 }) {
   const { href } = useWorkspace();
   const rowHref = (row: PortfolioReturnRow): string => row.lens_type === "overall"
@@ -154,7 +168,7 @@ function ReturnsTable({
                     {row.label}
                   </Link>
                   <p className="mt-1 text-xs text-[color:var(--text-muted)]">{statusLabel(row) || `${row.holdings_count} latest holdings`}</p>
-                  {track === "paper" ? (
+                  {track === "paper" && canConnect ? (
                     <Link href={tradingHref(row)} className="mt-2 inline-flex rounded-md border border-[color:var(--accent)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] hover:bg-[color:var(--surface-elevated)]">
                       Connect
                     </Link>
@@ -218,7 +232,7 @@ function ReturnsTable({
                       {statusLabel(row) || `${row.holdings_count} holdings · since ${formatDate(row.period_start)}`}
                     </p>
                     {riskNotice ? <p className="mt-0.5 max-w-56 text-[11px] leading-snug text-[color:var(--warning)]">{riskNotice}</p> : null}
-                    {track === "paper" ? (
+                    {track === "paper" && canConnect ? (
                       <Link href={tradingHref(row)} className="mt-1.5 inline-flex rounded-md border border-[color:var(--accent)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--accent)] hover:bg-[color:var(--surface)]">
                         Connect
                       </Link>
@@ -243,11 +257,143 @@ function ReturnsTable({
   );
 }
 
+type ComparedRow = {
+  key: string;
+  label: string;
+  reference: PortfolioReturnRow;
+  equal: PortfolioReturnRow | null;
+  scoreBlend: PortfolioReturnRow | null;
+};
+
+function pairRows(equalRows: PortfolioReturnRow[], scoreBlendRows: PortfolioReturnRow[]): ComparedRow[] {
+  const pairs = new Map<string, ComparedRow>();
+  for (const row of equalRows) {
+    const key = `${row.lens_type}:${row.lens_key || "overall"}`;
+    pairs.set(key, { key, label: row.label, reference: row, equal: row, scoreBlend: null });
+  }
+  for (const row of scoreBlendRows) {
+    const key = `${row.lens_type}:${row.lens_key || "overall"}`;
+    const existing = pairs.get(key);
+    pairs.set(key, existing
+      ? { ...existing, scoreBlend: row }
+      : { key, label: row.label, reference: row, equal: null, scoreBlend: row });
+  }
+  return Array.from(pairs.values()).sort((a, b) => {
+    const aReturn = a.equal?.return_pct ?? a.scoreBlend?.return_pct ?? Number.NEGATIVE_INFINITY;
+    const bReturn = b.equal?.return_pct ?? b.scoreBlend?.return_pct ?? Number.NEGATIVE_INFINITY;
+    return bReturn - aReturn || a.label.localeCompare(b.label);
+  });
+}
+
+function ComparisonMetrics({ row, label }: { row: PortfolioReturnRow | null; label: string }) {
+  return (
+    <dl className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3 text-xs">
+      <dt className="font-semibold uppercase tracking-[0.12em] text-[color:var(--text-secondary)]">{label}</dt>
+      {row ? (
+        <>
+          <dd className={`mt-2 text-lg font-bold tabular-nums ${returnTone(row.return_pct)}`}>{formatPercent(row.return_pct)}</dd>
+          <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[color:var(--text-muted)]">Volatility</span><span className="tabular-nums text-[color:var(--text-primary)]">{formatPercent(row.portfolio_volatility_pct)}</span></div>
+          <div className="mt-1 flex items-center justify-between gap-2"><span className="text-[color:var(--text-muted)]">Sharpe</span><span className="tabular-nums text-[color:var(--text-primary)]">{formatRatio(row.portfolio_sharpe)}</span></div>
+        </>
+      ) : <dd className="mt-2 leading-relaxed text-[color:var(--text-muted)]">Awaiting first snapshot</dd>}
+    </dl>
+  );
+}
+
+function ComparisonTable({
+  title,
+  equalRows,
+  scoreBlendRows,
+}: {
+  title: string;
+  equalRows: PortfolioReturnRow[];
+  scoreBlendRows: PortfolioReturnRow[];
+}) {
+  const { href } = useWorkspace();
+  const rows = pairRows(equalRows, scoreBlendRows);
+  const rowHref = (row: PortfolioReturnRow): string => row.lens_type === "overall"
+    ? href("/discovery?lens_type=overall")
+    : href(`/discovery?lens_type=${row.lens_type}&lens_key=${encodeURIComponent(row.lens_key || row.label)}`);
+  return (
+    <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h3>
+      <div className="space-y-2 md:hidden">
+        {rows.map((pair) => {
+          const difference = pair.equal?.return_pct === null || pair.equal?.return_pct === undefined
+            || pair.scoreBlend?.return_pct === null || pair.scoreBlend?.return_pct === undefined
+            ? null
+            : pair.scoreBlend.return_pct - pair.equal.return_pct;
+          return (
+            <article key={`${pair.key}:comparison-mobile`} className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <Link href={rowHref(pair.reference)} className="font-semibold text-[color:var(--accent)] underline-offset-2 hover:underline">{pair.label}</Link>
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">60/40 difference</p>
+                  <p className={`mt-1 font-bold tabular-nums ${returnTone(difference)}`}>{formatPercent(difference)}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <ComparisonMetrics row={pair.equal} label="Equal" />
+                <ComparisonMetrics row={pair.scoreBlend} label="60/40" />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border border-[color:var(--border-subtle)] md:block">
+        <table className="w-full min-w-[940px] text-sm">
+          <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]">
+            <tr className="border-b border-[color:var(--border-subtle)]">
+              <th rowSpan={2} className="px-3 py-2 text-left font-medium">Portfolio</th>
+              <th colSpan={3} className="border-l border-[color:var(--border-subtle)] px-3 py-2 text-center font-semibold text-[color:var(--text-secondary)]">Equal Weight</th>
+              <th colSpan={3} className="border-l border-[color:var(--border-subtle)] px-3 py-2 text-center font-semibold text-[color:var(--text-secondary)]">60/40 Score Blend</th>
+              <th rowSpan={2} className="border-l border-[color:var(--border-subtle)] px-3 py-2 text-right font-medium">Return difference</th>
+            </tr>
+            <tr className="border-b border-[color:var(--border-subtle)] text-[11px] uppercase tracking-[0.08em]">
+              {(["Return", "Volatility", "Sharpe", "Return", "Volatility", "Sharpe"] as const).map((label, index) => (
+                <th key={`${label}:${index}`} className={`${index === 0 || index === 3 ? "border-l border-[color:var(--border-subtle)] " : ""}px-3 py-2 text-right font-medium`}>{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((pair) => {
+              const difference = pair.equal?.return_pct === null || pair.equal?.return_pct === undefined
+                || pair.scoreBlend?.return_pct === null || pair.scoreBlend?.return_pct === undefined
+                ? null
+                : pair.scoreBlend.return_pct - pair.equal.return_pct;
+              return (
+                <tr key={pair.key} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
+                  <td className="px-3 py-2">
+                    <Link href={rowHref(pair.reference)} className="font-medium text-[color:var(--accent)] underline-offset-2 hover:underline">{pair.label}</Link>
+                    <p className="mt-0.5 text-[11px] text-[color:var(--text-muted)]">{pair.reference.holdings_count} latest holdings</p>
+                  </td>
+                  <td className={`border-l border-[color:var(--border-subtle)] px-3 py-2 text-right font-semibold tabular-nums ${returnTone(pair.equal?.return_pct ?? null)}`}>{formatPercent(pair.equal?.return_pct ?? null)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{formatPercent(pair.equal?.portfolio_volatility_pct ?? null)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{formatRatio(pair.equal?.portfolio_sharpe ?? null)}</td>
+                  <td className={`border-l border-[color:var(--border-subtle)] px-3 py-2 text-right font-semibold tabular-nums ${returnTone(pair.scoreBlend?.return_pct ?? null)}`}>{formatPercent(pair.scoreBlend?.return_pct ?? null)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{formatPercent(pair.scoreBlend?.portfolio_volatility_pct ?? null)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[color:var(--text-primary)]">{formatRatio(pair.scoreBlend?.portfolio_sharpe ?? null)}</td>
+                  <td className={`border-l border-[color:var(--border-subtle)] px-3 py-2 text-right font-semibold tabular-nums ${returnTone(difference)}`}>{formatPercent(difference)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!rows.length ? <p className="text-sm text-[color:var(--text-muted)]">No portfolio history is available yet.</p> : null}
+    </section>
+  );
+}
+
 export function PortfolioReturnsSection() {
   const { workspace, api } = useWorkspace();
   const [track, setTrack] = useState<PortfolioTrack>("paper");
   const [period, setPeriod] = useState<PortfolioPeriod>("all");
-  const [data, setData] = useState<PortfolioPerformancePayload | null>(null);
+  const [methodologyView, setMethodologyView] = useState<PortfolioMethodologyView>("compare");
+  const [dataByMethodology, setDataByMethodology] = useState<Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>>({
+    equal: null,
+    score_blend: null,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -255,11 +401,17 @@ export function PortfolioReturnsSection() {
     async function load() {
       setLoading(true);
       try {
-        const response = await fetch(api(`/api/portfolio-performance?track=${track}&period=${period}`), { cache: "no-store" });
-        const payload = (await response.json()) as PortfolioPerformancePayload;
-        if (!cancelled) setData(payload);
+        const entries = await Promise.all((["equal", "score_blend"] as const).map(async (methodology) => {
+          const response = await fetch(
+            api(`/api/portfolio-performance?track=${track}&period=${period}&methodology=${methodology}`),
+            { cache: "no-store" },
+          );
+          if (!response.ok) return [methodology, null] as const;
+          return [methodology, (await response.json()) as PortfolioPerformancePayload] as const;
+        }));
+        if (!cancelled) setDataByMethodology(Object.fromEntries(entries) as Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>);
       } catch {
-        if (!cancelled) setData(null);
+        if (!cancelled) setDataByMethodology({ equal: null, score_blend: null });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -268,11 +420,20 @@ export function PortfolioReturnsSection() {
     return () => { cancelled = true; };
   }, [api, period, track, workspace]);
 
-  const benchmarkName = data?.methodology.benchmark_name || (workspace === "nasdaq100"
+  const equalData = dataByMethodology.equal;
+  const scoreBlendData = dataByMethodology.score_blend;
+  const selectedData = methodologyView === "compare" ? null : dataByMethodology[methodologyView];
+  const metadataSource = equalData || scoreBlendData;
+  const benchmarkName = metadataSource?.methodology.benchmark_name || (workspace === "nasdaq100"
     ? "Invesco QQQ - total-return proxy"
     : "S&P 500 Total Return");
-  const minimumRiskObservations = data?.methodology.minimum_risk_observations || 20;
-  const riskFreeName = data?.methodology.risk_free_name || "13-week U.S. Treasury Bill yield proxy";
+  const minimumRiskObservations = metadataSource?.methodology.minimum_risk_observations || 20;
+  const riskFreeName = metadataSource?.methodology.risk_free_name || "13-week U.S. Treasury Bill yield proxy";
+  const comparisonAvailable = Boolean(equalData?.available || scoreBlendData?.available);
+  const visibleAvailable = methodologyView === "compare" ? comparisonAvailable : Boolean(selectedData?.available);
+  const unavailableMessage = methodologyView === "compare"
+    ? equalData?.message || scoreBlendData?.message
+    : selectedData?.message;
 
   return (
     <section className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-overlay)] p-4 sm:p-5">
@@ -282,7 +443,7 @@ export function PortfolioReturnsSection() {
             <h2 className="font-display text-xl text-[color:var(--text-primary)]">Portfolio Returns</h2>
             <span className="rounded-full border border-[color:var(--warning)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--warning)]">Public Beta</span>
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Monthly Top 20 positive-score portfolios, equal weighted and measured in USD against {benchmarkName}.</p>
+          <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">Compare monthly Top 20 positive-score portfolios using equal weight or a 60% equal / 40% score blend capped at 2x equal weight.</p>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-[color:var(--text-secondary)]">
             <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-2.5 py-1">Annualized daily risk</span>
             <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-2.5 py-1">Minimum {minimumRiskObservations} daily returns</span>
@@ -303,27 +464,47 @@ export function PortfolioReturnsSection() {
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--border-subtle)] pt-4">
+        <div className="inline-flex flex-wrap rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Portfolio methodology view">
+          {METHODOLOGY_VIEWS.map((option) => (
+            <button key={option.value} type="button" onClick={() => setMethodologyView(option.value)} disabled={loading && methodologyView !== option.value} className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] ${methodologyView === option.value ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]" : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"}`}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="max-w-2xl text-xs text-[color:var(--text-muted)]">
+          {methodologyView === "compare"
+            ? "Return difference is 60/40 minus Equal Weight; positive means the score blend led."
+            : selectedData?.methodology.construction}
+        </p>
+      </div>
+
       {loading ? (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="h-40 animate-pulse rounded-xl bg-[color:var(--border-subtle)]" />
           <div className="h-40 animate-pulse rounded-xl bg-[color:var(--border-subtle)]" />
         </div>
-      ) : !data?.available ? (
+      ) : !visibleAvailable ? (
         <div className="mt-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--text-muted)]">
-          {data?.message || "Portfolio performance history is not available yet."}
+          {unavailableMessage || "Portfolio performance history is not available yet."}
+        </div>
+      ) : methodologyView === "compare" ? (
+        <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
+          <ComparisonTable title="Models" equalRows={equalData?.by_model || []} scoreBlendRows={scoreBlendData?.by_model || []} />
+          <ComparisonTable title="Valuators" equalRows={equalData?.by_valuator || []} scoreBlendRows={scoreBlendData?.by_valuator || []} />
         </div>
       ) : (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
-          <ReturnsTable title="Models" rows={data.by_model} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} />
-          <ReturnsTable title="Valuators" rows={data.by_valuator} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} />
+          <ReturnsTable title="Models" rows={selectedData?.by_model || []} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} canConnect={Boolean(selectedData?.methodology.trade_execution_released)} />
+          <ReturnsTable title="Valuators" rows={selectedData?.by_valuator || []} benchmarkName={benchmarkName} minimumObservations={minimumRiskObservations} track={track} canConnect={Boolean(selectedData?.methodology.trade_execution_released)} />
         </div>
       )}
 
       <p className="mt-4 text-xs leading-relaxed text-[color:var(--text-muted)]">
         {track === "paper"
-          ? "Paper records each portfolio from the day it is created, and its holdings are never rewritten later. "
+          ? "Paper records each methodology separately from the day it is created, and its holdings are never rewritten later; the 60/40 series begins forward from its launch refresh. "
           : "Backtest reconstructs what each portfolio would have held at earlier month-ends, using only information available at the time. "}
-        Benchmark: every portfolio is compared with {benchmarkName}. {workspace === "nasdaq100" ? "QQQ adjusted close is used as an investable total-return proxy; it is not presented as the official XNDX index series. Only reports from a completed, fully covered Nasdaq 100 release can enter the ranking. " : "The Analysis benchmark is the full S&P 500 Total Return Index, including reinvested dividends. Only stocks analyzed during the previous 90 days can enter the ranking; that does not narrow the benchmark. "}Volatility is the annualized sample standard deviation of daily returns. Sharpe compares daily returns with the daily-matched {riskFreeName} yield and is annualized over 252 trading days; it appears after {minimumRiskObservations} daily returns. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices, Treasury yield, and FX come from yfinance; missing data is shown explicitly.
+        Both methods use the same candidates, rebalance dates, prices, and {benchmarkName}; only position weights differ. {workspace === "nasdaq100" ? "QQQ adjusted close is used as an investable total-return proxy; it is not presented as the official XNDX index series. Only reports from a completed, fully covered Nasdaq 100 release can enter the ranking. " : "The Analysis benchmark is the full S&P 500 Total Return Index, including reinvested dividends. Only stocks analyzed during the previous 90 days can enter the ranking; that does not narrow the benchmark. "}Volatility is the annualized sample standard deviation of daily returns. Sharpe compares daily returns with the daily-matched {riskFreeName} yield and is annualized over 252 trading days; it appears after {minimumRiskObservations} daily returns. Latest holdings is the count at the most recent frozen rebalance, so it can differ from today&apos;s live Discovery ranking. Returns are simulated before fees, taxes, slippage, or cash interest. Prices, Treasury yield, and FX come from yfinance; missing data is shown explicitly. The new 60/40 methodology is visible in Paper but is not released to automated trading.
       </p>
     </section>
   );

@@ -27,11 +27,14 @@ import {
   computePortfolioNavSeries,
   firstExecutionDateForCandidates,
   latestPriceOnOrBefore,
-  PORTFOLIO_METHODOLOGY_VERSION,
+  PORTFOLIO_METHODOLOGIES,
   PORTFOLIO_PROVIDER,
   PORTFOLIO_RISK_FREE_SYMBOL,
   portfolioWorkspaceConfig,
+  resolvePortfolioMethodology,
   type MarketPricePoint,
+  type PortfolioMethodology,
+  type PortfolioMethodologyKey,
   type PortfolioSnapshotDefinition,
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
@@ -68,10 +71,12 @@ type CliArgs = {
   paperCutoff: string | null;
   throughDate: string;
   replaceBacktest: boolean;
+  methodology: PortfolioMethodologyKey | "all";
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NY_TIME_ZONE = "America/New_York";
+const priceProviderRequests = new Map<string, Promise<PriceBundle>>();
 
 function parseCliArgs(): CliArgs {
   const values = process.argv.slice(2);
@@ -91,6 +96,11 @@ function parseCliArgs(): CliArgs {
   const throughDate = valueFor("--through") || new Date().toISOString().slice(0, 10);
   const startCutoff = valueFor("--start-cutoff") || "2026-04-30";
   const paperCutoff = valueFor("--paper-cutoff");
+  const rawMethodology = valueFor("--methodology") || "all";
+  const methodology = rawMethodology === "all" ? "all" : resolvePortfolioMethodology(rawMethodology)?.key;
+  if (!methodology) {
+    throw new Error("--methodology must be all, equal, or score_blend.");
+  }
   for (const [name, value] of [
     ["--through", throughDate],
     ["--start-cutoff", startCutoff],
@@ -108,6 +118,7 @@ function parseCliArgs(): CliArgs {
     paperCutoff,
     throughDate,
     replaceBacktest: values.includes("--replace-backtest"),
+    methodology,
   };
 }
 
@@ -189,10 +200,16 @@ function monthlyCutoffDates(startDate: string, endDate: string): string[] {
 }
 
 function runPriceProvider(payload: object): Promise<PriceBundle> {
+  const cacheKey = JSON.stringify(payload);
+  const cached = priceProviderRequests.get(cacheKey);
+  if (cached) {
+    console.log("[portfolio] reusing market data fetched for the other methodology.");
+    return cached;
+  }
   const repoRoot = path.resolve(process.cwd(), "..");
   const script = path.resolve(repoRoot, "scripts", "portfolio_prices.py");
   const python = process.env.PYTHON_EXECUTABLE || "python";
-  return new Promise((resolve, reject) => {
+  const request = new Promise<PriceBundle>((resolve, reject) => {
     const child = spawn(python, [script], {
       cwd: repoRoot,
       env: { ...process.env, PYTHONPATH: path.resolve(repoRoot, "src"), PYTHONUNBUFFERED: "1" },
@@ -215,6 +232,8 @@ function runPriceProvider(payload: object): Promise<PriceBundle> {
     });
     child.stdin.end(JSON.stringify(payload));
   });
+  priceProviderRequests.set(cacheKey, request);
+  return request;
 }
 
 function flattenPriceBundle(bundle: PriceBundle): MarketPricePoint[] {
@@ -263,8 +282,7 @@ function lensMapKey(lens: DiscoveryLensSelection): string {
   return `${lens.type}:${lens.key || "overall"}`;
 }
 
-async function main() {
-  const args = parseCliArgs();
+async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodology) {
   const workspaceConfig = portfolioWorkspaceConfig(args.workspace);
   if (args.replaceBacktest && args.track !== "backtest") {
     throw new Error("--replace-backtest is only valid with --track backtest.");
@@ -273,7 +291,7 @@ async function main() {
     throw new Error("--paper-cutoff is only valid with --track paper.");
   }
   const owner = `${process.env.HOSTNAME || "local"}:${process.pid}:${randomUUID()}`;
-  const lockKey = `portfolio-performance:${args.workspace}:${args.track}:${PORTFOLIO_METHODOLOGY_VERSION}`;
+  const lockKey = `portfolio-performance:${args.workspace}:${args.track}:${methodology.version}`;
   if (!(await acquirePortfolioRefreshLock(lockKey, owner))) {
     console.log(`[portfolio] ${lockKey} is already running; exiting cleanly.`);
     return;
@@ -284,13 +302,13 @@ async function main() {
     refreshRunId = await startPortfolioRefreshRun({
       workspace: args.workspace,
       track: args.track,
-      methodologyVersion: PORTFOLIO_METHODOLOGY_VERSION,
+      methodologyVersion: methodology.version,
     });
     const processedSnapshotIds: string[] = [];
     if (args.replaceBacktest) {
-      await deletePortfolioTrack(args.workspace, "backtest", PORTFOLIO_METHODOLOGY_VERSION);
+      await deletePortfolioTrack(args.workspace, "backtest", methodology.version);
     }
-    let existing = await loadPortfolioSnapshots(args.workspace, args.track, PORTFOLIO_METHODOLOGY_VERSION);
+    let existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
     const now = new Date();
     let cutoffs: string[];
     if (args.track === "backtest") {
@@ -439,6 +457,7 @@ async function main() {
           executionDate,
           priceBySymbol,
           currencyByTicker,
+          methodologyVersion: methodology.version,
         });
         const storedSnapshot = await insertPortfolioSnapshot({
           workspace: args.workspace,
@@ -446,7 +465,7 @@ async function main() {
           lens,
           cutoffAt: cutoffAt.toISOString(),
           executionDate,
-          methodologyVersion: PORTFOLIO_METHODOLOGY_VERSION,
+          methodologyVersion: methodology.version,
           benchmarkSymbol: workspaceConfig.benchmarkSymbol,
           benchmarkName: workspaceConfig.benchmarkName,
           candidateCount: candidates.length,
@@ -459,7 +478,7 @@ async function main() {
       console.log(`[portfolio] ${args.track} cutoff ${cutoffDate}: ${createdForCutoff} snapshots (${visibleReports.length} reports).`);
     }
 
-    existing = await loadPortfolioSnapshots(args.workspace, args.track, PORTFOLIO_METHODOLOGY_VERSION);
+    existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
     for (const lensSnapshots of groupSnapshotsByLens(existing)) {
       const first = lensSnapshots[0];
       const nav = computePortfolioNavSeries({
@@ -473,7 +492,7 @@ async function main() {
         track: args.track,
         lensType: first.lens.type,
         lensKey: first.lens.key || "overall",
-        methodologyVersion: PORTFOLIO_METHODOLOGY_VERSION,
+        methodologyVersion: methodology.version,
         points: nav,
       });
     }
@@ -488,6 +507,7 @@ async function main() {
       const snapshot = snapshotsById.get(snapshotId);
       const reasons = [...warningReasons];
       if (args.track !== "paper") reasons.push("backtest_not_tradeable");
+      if (!methodology.tradeExecutionReleased) reasons.push("methodology_execution_not_released");
       if (args.workspace !== "nasdaq100") reasons.push("analysis_execution_not_released");
       if (snapshot?.status !== "ready") reasons.push("empty_target_requires_confirmation");
       const eligible = reasons.length === 0;
@@ -508,7 +528,7 @@ async function main() {
     });
     refreshRunId = null;
     if (enqueued) console.log(`[portfolio] enqueued ${enqueued} IBKR Paper rebalance plan(s).`);
-    console.log(`[portfolio] refreshed ${args.workspace}/${args.track}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
+    console.log(`[portfolio] refreshed ${args.workspace}/${args.track}/${methodology.key}: ${existing.length} snapshots, ${fetchedPoints.length} price rows.`);
   } catch (error) {
     if (refreshRunId) {
       try {
@@ -524,6 +544,16 @@ async function main() {
     throw error;
   } finally {
     await releasePortfolioRefreshLock(lockKey, owner);
+  }
+}
+
+async function main() {
+  const args = parseCliArgs();
+  const methodologies = args.methodology === "all"
+    ? PORTFOLIO_METHODOLOGIES
+    : PORTFOLIO_METHODOLOGIES.filter((methodology) => methodology.key === args.methodology);
+  for (const methodology of methodologies) {
+    await refreshMethodology(args, methodology);
   }
 }
 

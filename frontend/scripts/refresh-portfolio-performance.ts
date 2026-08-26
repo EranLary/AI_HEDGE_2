@@ -26,6 +26,7 @@ import {
   buildHoldingsForSnapshot,
   computePortfolioNavSeries,
   firstExecutionDateForCandidates,
+  isPortfolioTrackSupported,
   latestPriceOnOrBefore,
   PORTFOLIO_METHODOLOGIES,
   PORTFOLIO_PROVIDER,
@@ -95,6 +96,9 @@ function parseCliArgs(): CliArgs {
   const rawWorkspace = valueFor("--workspace") || "analysis";
   if (rawWorkspace !== "analysis" && rawWorkspace !== "nasdaq100") {
     throw new Error("--workspace must be analysis or nasdaq100.");
+  }
+  if (!isPortfolioTrackSupported(rawWorkspace, track)) {
+    throw new Error("Nasdaq 100 portfolio tracking supports Paper only; Backtest is available in Analysis.");
   }
   const throughDate = valueFor("--through") || new Date().toISOString().slice(0, 10);
   const startCutoff = valueFor("--start-cutoff") || "2026-04-30";
@@ -325,6 +329,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         explicitCutoff: args.paperCutoff,
         existingCutoffDates,
         defaultInitialCutoff: previousNyCalendarDay(now),
+        methodologyLaunchCutoff: methodology.paperLaunchCutoff,
         newMonthlyCutoffs: latestCutoffDate
           ? monthlyCutoffDates(addDays(latestCutoffDate, 1), previousMonthEnd(now))
           : [],
@@ -364,6 +369,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         existingCutoffDates: [],
         defaultInitialCutoff: previousNyCalendarDay(now),
         completedUniverseCutoff,
+        methodologyLaunchCutoff: methodology.paperLaunchCutoff,
         newMonthlyCutoffs: [],
       });
       console.log(`[portfolio] Nasdaq 100 initial Paper cutoff aligned to ${cutoffs[0]}, after full-cohort reporting.`);

@@ -12,6 +12,7 @@ import {
   PORTFOLIO_RISK_FREE_SYMBOL,
   PORTFOLIO_RISK_MIN_OBSERVATIONS,
   PORTFOLIO_TRADING_DAYS_PER_YEAR,
+  isPortfolioTrackSupported,
   portfolioWorkspaceConfig,
   resolvePortfolioMethodology,
   summarizePortfolioPeriod,
@@ -185,6 +186,11 @@ export async function GET(request: Request) {
   if (rawStartDate && !startDate) return NextResponse.json({ error: "Invalid start date." }, { status: 400 });
   const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  if (!isPortfolioTrackSupported(workspace, track)) {
+    return NextResponse.json({
+      error: "Nasdaq 100 portfolio tracking supports Paper only; Backtest is available in Analysis.",
+    }, { status: 400 });
+  }
   const methodology = resolvePortfolioMethodology(url.searchParams.get("methodology"));
   if (!methodology) return NextResponse.json({ error: "Invalid portfolio methodology." }, { status: 400 });
   let refreshHealth = portfolioRefreshHealth(null);

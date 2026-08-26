@@ -37,6 +37,38 @@ test("a new full-universe Paper track starts after its final report date", () =>
   }), ["2026-08-24"]);
 });
 
+test("a methodology launch cutoff prevents a new Paper track from being backdated", () => {
+  assert.deepEqual(planPaperCutoffs({
+    explicitCutoff: null,
+    existingCutoffDates: [],
+    defaultInitialCutoff: "2026-08-25",
+    completedUniverseCutoff: "2026-08-24",
+    methodologyLaunchCutoff: "2026-08-25",
+    newMonthlyCutoffs: [],
+  }), ["2026-08-25"]);
+});
+
+test("complete-universe coverage remains the floor when it follows methodology launch", () => {
+  assert.deepEqual(planPaperCutoffs({
+    explicitCutoff: null,
+    existingCutoffDates: [],
+    defaultInitialCutoff: "2026-08-25",
+    completedUniverseCutoff: "2026-08-27",
+    methodologyLaunchCutoff: "2026-08-25",
+    newMonthlyCutoffs: [],
+  }), ["2026-08-27"]);
+});
+
+test("an explicit Paper cutoff cannot predate methodology launch", () => {
+  assert.throws(() => planPaperCutoffs({
+    explicitCutoff: "2026-08-24",
+    existingCutoffDates: [],
+    defaultInitialCutoff: "2026-08-25",
+    methodologyLaunchCutoff: "2026-08-25",
+    newMonthlyCutoffs: [],
+  }), /predates methodology launch cutoff 2026-08-25/);
+});
+
 test("ongoing Paper refreshes retry existing cutoffs and add new month ends", () => {
   assert.deepEqual(planPaperCutoffs({
     explicitCutoff: null,

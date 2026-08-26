@@ -120,6 +120,7 @@ jobs:
               exit 1
             fi
           fi
+          FAILURES=()
           for TARGET_WORKSPACE in $WORKSPACES; do
             COMMAND="cd /app/frontend && npm run portfolio:refresh -- --workspace $TARGET_WORKSPACE --track $TRACK"
             if [ -n "${INPUT_THROUGH:-}" ]; then
@@ -134,14 +135,29 @@ jobs:
                 COMMAND="$COMMAND --replace-backtest"
               fi
             fi
-            flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"
+            if ! flyctl ssh console --app "$FLY_APP" --command "sh -lc '$COMMAND'"; then
+              echo "::error::$TARGET_WORKSPACE/$TRACK refresh failed; remaining workspaces will still run."
+              FAILURES+=("$TARGET_WORKSPACE/$TRACK")
+            fi
           done
+          if [ "${#FAILURES[@]}" -gt 0 ]; then
+            echo "::error::Portfolio refresh failures: ${FAILURES[*]}"
+            exit 1
+          fi
 
       - name: Refresh backtest alongside scheduled paper tracking
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' && always()
         run: |
           set -euo pipefail
+          FAILURES=()
           for TARGET_WORKSPACE in analysis nasdaq100; do
-            flyctl ssh console --app "$FLY_APP" --command \
-              "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace $TARGET_WORKSPACE --track backtest --start-cutoff 2026-04-30'"
+            if ! flyctl ssh console --app "$FLY_APP" --command \
+              "sh -lc 'cd /app/frontend && npm run portfolio:refresh -- --workspace $TARGET_WORKSPACE --track backtest --start-cutoff 2026-04-30'"; then
+              echo "::error::$TARGET_WORKSPACE/backtest refresh failed; remaining workspaces will still run."
+              FAILURES+=("$TARGET_WORKSPACE/backtest")
+            fi
           done
+          if [ "${#FAILURES[@]}" -gt 0 ]; then
+            echo "::error::Portfolio backtest refresh failures: ${FAILURES[*]}"
+            exit 1
+          fi

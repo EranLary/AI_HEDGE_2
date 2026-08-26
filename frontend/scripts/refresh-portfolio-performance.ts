@@ -38,7 +38,10 @@ import {
   type PortfolioSnapshotDefinition,
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
-import { planPaperCutoffs } from "../src/lib/portfolio-refresh-policy";
+import {
+  planPaperCutoffs,
+  runPortfolioRefreshTasksIndependently,
+} from "../src/lib/portfolio-refresh-policy";
 import {
   enqueueArmedStrategiesForSnapshots,
   finishPortfolioRefreshRun,
@@ -552,8 +555,17 @@ async function main() {
   const methodologies = args.methodology === "all"
     ? PORTFOLIO_METHODOLOGIES
     : PORTFOLIO_METHODOLOGIES.filter((methodology) => methodology.key === args.methodology);
-  for (const methodology of methodologies) {
-    await refreshMethodology(args, methodology);
+  const results = await runPortfolioRefreshTasksIndependently(
+    methodologies,
+    (methodology) => refreshMethodology(args, methodology),
+  );
+  const failures = results.filter((result) => result.error !== null);
+  for (const failure of failures) {
+    const message = failure.error instanceof Error ? failure.error.message : String(failure.error);
+    console.error(`[portfolio] ${failure.item.key} methodology failed: ${message}`);
+  }
+  if (failures.length) {
+    throw new Error(`Portfolio refresh failed for ${failures.map((failure) => failure.item.key).join(", ")}; other methodologies were still attempted.`);
   }
 }
 

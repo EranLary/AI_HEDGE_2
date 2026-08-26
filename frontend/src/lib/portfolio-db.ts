@@ -8,6 +8,10 @@ import type {
   PortfolioSnapshotDefinition,
   PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
+import type {
+  PortfolioRefreshRunStatus,
+  PortfolioRefreshRunSummary,
+} from "@/lib/portfolio-refresh-policy";
 import type { Workspace } from "@/lib/workspace";
 
 export type PortfolioReportInput = {
@@ -86,6 +90,63 @@ export async function acquirePortfolioRefreshLock(lockKey: string, owner: string
 export async function releasePortfolioRefreshLock(lockKey: string, owner: string): Promise<void> {
   const sql = requireSql();
   await sql`DELETE FROM portfolio_refresh_locks WHERE lock_key = ${lockKey} AND owner = ${owner};`;
+}
+
+export async function loadPortfolioRefreshRunSummary(args: {
+  workspace: Workspace;
+  track: PortfolioTrack;
+  methodologyVersion: string;
+}): Promise<PortfolioRefreshRunSummary | null> {
+  const sql = requireSql();
+  const rows = (await sql`
+    SELECT latest.status AS latest_status,
+           latest.started_at::text AS latest_started_at,
+           latest.finished_at::text AS latest_finished_at,
+           CASE
+             WHEN jsonb_typeof(latest.provider_warnings) = 'array'
+             THEN jsonb_array_length(latest.provider_warnings)
+             ELSE 0
+           END AS provider_warning_count,
+           aggregates.last_successful_at::text AS last_successful_at,
+           aggregates.last_usable_at::text AS last_usable_at
+      FROM (
+        SELECT max(finished_at) FILTER (WHERE status = 'completed') AS last_successful_at,
+               max(finished_at) FILTER (WHERE status IN ('completed', 'partial')) AS last_usable_at
+          FROM portfolio_refresh_runs
+         WHERE workspace = ${args.workspace}
+           AND track = ${args.track}
+           AND methodology_version = ${args.methodologyVersion}
+      ) aggregates
+      LEFT JOIN LATERAL (
+        SELECT status, started_at, finished_at, provider_warnings
+          FROM portfolio_refresh_runs
+         WHERE workspace = ${args.workspace}
+           AND track = ${args.track}
+           AND methodology_version = ${args.methodologyVersion}
+         ORDER BY started_at DESC
+         LIMIT 1
+      ) latest ON true;
+  `) as Array<{
+    latest_status: PortfolioRefreshRunStatus | null;
+    latest_started_at: string | null;
+    latest_finished_at: string | null;
+    last_successful_at: string | null;
+    last_usable_at: string | null;
+    provider_warning_count: number;
+  }>;
+  const row = rows[0];
+  if (!row?.latest_status) return null;
+  const isoTimestamp = (value: string | null): string | null => (
+    value ? new Date(value).toISOString() : null
+  );
+  return {
+    latestStatus: row.latest_status,
+    latestStartedAt: isoTimestamp(row.latest_started_at),
+    latestFinishedAt: isoTimestamp(row.latest_finished_at),
+    lastSuccessfulAt: isoTimestamp(row.last_successful_at),
+    lastUsableAt: isoTimestamp(row.last_usable_at),
+    providerWarningCount: Number(row.provider_warning_count || 0),
+  };
 }
 
 export async function listPortfolioReportInputs(args: {

@@ -285,6 +285,18 @@ function pairRows(equalRows: PortfolioReturnRow[], scoreBlendRows: PortfolioRetu
   });
 }
 
+function comparisonReturnDifference(pair: ComparedRow): number | null {
+  if (
+    !pair.equal
+    || !pair.scoreBlend
+    || pair.equal.return_pct === null
+    || pair.scoreBlend.return_pct === null
+    || pair.equal.period_start !== pair.scoreBlend.period_start
+    || pair.equal.period_end !== pair.scoreBlend.period_end
+  ) return null;
+  return pair.scoreBlend.return_pct - pair.equal.return_pct;
+}
+
 function ComparisonMetrics({ row, label }: { row: PortfolioReturnRow | null; label: string }) {
   return (
     <dl className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3 text-xs">
@@ -319,10 +331,7 @@ function ComparisonTable({
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">{title}</h3>
       <div className="space-y-2 md:hidden">
         {rows.map((pair) => {
-          const difference = pair.equal?.return_pct === null || pair.equal?.return_pct === undefined
-            || pair.scoreBlend?.return_pct === null || pair.scoreBlend?.return_pct === undefined
-            ? null
-            : pair.scoreBlend.return_pct - pair.equal.return_pct;
+          const difference = comparisonReturnDifference(pair);
           return (
             <article key={`${pair.key}:comparison-mobile`} className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
               <div className="flex items-start justify-between gap-3">
@@ -357,10 +366,7 @@ function ComparisonTable({
           </thead>
           <tbody>
             {rows.map((pair) => {
-              const difference = pair.equal?.return_pct === null || pair.equal?.return_pct === undefined
-                || pair.scoreBlend?.return_pct === null || pair.scoreBlend?.return_pct === undefined
-                ? null
-                : pair.scoreBlend.return_pct - pair.equal.return_pct;
+              const difference = comparisonReturnDifference(pair);
               return (
                 <tr key={pair.key} className="border-b border-[color:var(--border-subtle)] last:border-b-0">
                   <td className="px-3 py-2">
@@ -394,6 +400,10 @@ export function PortfolioReturnsSection() {
     equal: null,
     score_blend: null,
   });
+  const [comparisonByMethodology, setComparisonByMethodology] = useState<Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>>({
+    equal: null,
+    score_blend: null,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -409,9 +419,33 @@ export function PortfolioReturnsSection() {
           if (!response.ok) return [methodology, null] as const;
           return [methodology, (await response.json()) as PortfolioPerformancePayload] as const;
         }));
-        if (!cancelled) setDataByMethodology(Object.fromEntries(entries) as Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>);
+        const loaded = Object.fromEntries(entries) as Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>;
+        let comparison = loaded;
+        const availableStarts = Object.values(loaded)
+          .filter((payload): payload is PortfolioPerformancePayload => Boolean(payload?.available && payload.range.start))
+          .map((payload) => payload.range.start as string);
+        if (period === "all" && availableStarts.length === 2 && availableStarts[0] !== availableStarts[1]) {
+          const commonStart = availableStarts.sort().at(-1) as string;
+          const alignedEntries = await Promise.all((["equal", "score_blend"] as const).map(async (methodology) => {
+            const payload = loaded[methodology];
+            if (!payload?.available || payload.range.start === commonStart) return [methodology, payload] as const;
+            const response = await fetch(
+              api(`/api/portfolio-performance?track=${track}&period=all&methodology=${methodology}&start=${commonStart}`),
+              { cache: "no-store" },
+            );
+            return [methodology, response.ok ? (await response.json()) as PortfolioPerformancePayload : null] as const;
+          }));
+          comparison = Object.fromEntries(alignedEntries) as Record<PortfolioMethodologyKey, PortfolioPerformancePayload | null>;
+        }
+        if (!cancelled) {
+          setDataByMethodology(loaded);
+          setComparisonByMethodology(comparison);
+        }
       } catch {
-        if (!cancelled) setDataByMethodology({ equal: null, score_blend: null });
+        if (!cancelled) {
+          setDataByMethodology({ equal: null, score_blend: null });
+          setComparisonByMethodology({ equal: null, score_blend: null });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -422,6 +456,8 @@ export function PortfolioReturnsSection() {
 
   const equalData = dataByMethodology.equal;
   const scoreBlendData = dataByMethodology.score_blend;
+  const equalComparisonData = comparisonByMethodology.equal;
+  const scoreBlendComparisonData = comparisonByMethodology.score_blend;
   const selectedData = methodologyView === "compare" ? null : dataByMethodology[methodologyView];
   const metadataSource = equalData || scoreBlendData;
   const benchmarkName = metadataSource?.methodology.benchmark_name || (workspace === "nasdaq100"
@@ -474,7 +510,7 @@ export function PortfolioReturnsSection() {
         </div>
         <p className="max-w-2xl text-xs text-[color:var(--text-muted)]">
           {methodologyView === "compare"
-            ? "Return difference is 60/40 minus Equal Weight; positive means the score blend led."
+            ? "Return difference is 60/40 minus Equal Weight over the same dates; positive means the score blend led."
             : selectedData?.methodology.construction}
         </p>
       </div>
@@ -490,8 +526,8 @@ export function PortfolioReturnsSection() {
         </div>
       ) : methodologyView === "compare" ? (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
-          <ComparisonTable title="Models" equalRows={equalData?.by_model || []} scoreBlendRows={scoreBlendData?.by_model || []} />
-          <ComparisonTable title="Valuators" equalRows={equalData?.by_valuator || []} scoreBlendRows={scoreBlendData?.by_valuator || []} />
+          <ComparisonTable title="Models" equalRows={equalComparisonData?.by_model || []} scoreBlendRows={scoreBlendComparisonData?.by_model || []} />
+          <ComparisonTable title="Valuators" equalRows={equalComparisonData?.by_valuator || []} scoreBlendRows={scoreBlendComparisonData?.by_valuator || []} />
         </div>
       ) : (
         <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">

@@ -33,6 +33,16 @@ function parsePeriod(value: string | null): PortfolioPeriod {
   return VALID_PERIODS.has(normalized) ? normalized : "all";
 }
 
+function parseStartDate(value: string | null): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(parsed)
+    && new Date(parsed).toISOString().slice(0, 10) === value
+    ? value
+    : null;
+}
+
 function groupByLens(rows: StoredPortfolioNavPoint[]): StoredPortfolioNavPoint[][] {
   const grouped = new Map<string, StoredPortfolioNavPoint[]>();
   for (const row of rows) {
@@ -150,6 +160,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const track = parseTrack(url.searchParams.get("track"));
   const period = parsePeriod(url.searchParams.get("period"));
+  const rawStartDate = url.searchParams.get("start");
+  const startDate = parseStartDate(rawStartDate);
+  if (rawStartDate && !startDate) return NextResponse.json({ error: "Invalid start date." }, { status: 400 });
   const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const methodology = resolvePortfolioMethodology(url.searchParams.get("methodology"));
@@ -166,7 +179,9 @@ export async function GET(request: Request) {
     });
     const riskFreePoints = riskFreePrices.get(PORTFOLIO_RISK_FREE_SYMBOL) || [];
     const summaries = groupByLens(rows)
-      .map((group) => summarizeLens(group, period, riskFreePoints, workspace, track))
+      .map((group) => startDate ? group.filter((row) => row.date >= startDate) : group)
+      .filter((group) => group.length > 0)
+      .map((group) => summarizeLens(group, startDate ? "all" : period, riskFreePoints, workspace, track))
       .sort((a, b) => {
         if (a.lens_type === "overall") return -1;
         if (b.lens_type === "overall") return 1;
@@ -176,7 +191,7 @@ export async function GET(request: Request) {
       ...emptyResponse(workspace, track, period, methodology),
       available: true,
       message: null,
-      range: { start: dates[0], end: dates[dates.length - 1] },
+      range: { start: startDate || dates[0], end: dates[dates.length - 1] },
       by_model: summaries.filter((row) => row.lens_type === "overall" || row.lens_type === "model"),
       by_valuator: summaries.filter((row) => row.lens_type === "valuator"),
     });

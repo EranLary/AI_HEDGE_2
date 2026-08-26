@@ -8,6 +8,8 @@ type PortfolioTrack = "paper" | "backtest";
 type PortfolioPeriod = "1m" | "3m" | "6m" | "1y" | "all";
 type PortfolioMethodologyKey = "equal" | "score_blend";
 type PortfolioMethodologyView = "compare" | PortfolioMethodologyKey;
+type PortfolioRefreshHealthState = "fresh" | "running" | "partial" | "failed" | "stale" | "missing";
+type PortfolioRefreshRunStatus = "running" | "completed" | "partial" | "failed";
 type PortfolioStatus = "ok" | "insufficient_history" | "no_positions" | "stale_market_data";
 type PortfolioRiskStatus = "ok" | "insufficient_history" | "risk_free_unavailable" | "stale_market_data";
 
@@ -60,6 +62,16 @@ type PortfolioPerformancePayload = {
     minimum_risk_observations: number;
     public_beta: boolean;
   };
+  refresh: {
+    state: PortfolioRefreshHealthState;
+    expected_after: string;
+    latest_status: PortfolioRefreshRunStatus | null;
+    latest_started_at: string | null;
+    latest_finished_at: string | null;
+    last_successful_at: string | null;
+    last_usable_at: string | null;
+    provider_warning_count: number;
+  };
   range: { start: string | null; end: string | null };
   by_model: PortfolioReturnRow[];
   by_valuator: PortfolioReturnRow[];
@@ -101,6 +113,34 @@ function returnTone(value: number | null): string {
     return "text-[color:var(--text-primary)]";
   }
   return value > 0 ? "text-[color:var(--success)]" : "text-[color:var(--danger)]";
+}
+
+function formatRefreshTimestamp(value: string | null): string {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Unknown";
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} ${hour}:${minute} UTC`;
+}
+
+function refreshStateLabel(state: PortfolioRefreshHealthState): string {
+  if (state === "fresh") return "Fresh";
+  if (state === "running") return "Refreshing";
+  if (state === "partial") return "Partial";
+  if (state === "failed") return "Failed";
+  if (state === "stale") return "Stale";
+  return "No history";
+}
+
+function refreshStateTone(state: PortfolioRefreshHealthState): string {
+  if (state === "fresh") return "text-[color:var(--success)]";
+  if (state === "running") return "text-[color:var(--info)]";
+  if (state === "partial" || state === "missing") return "text-[color:var(--warning)]";
+  return "text-[color:var(--danger)]";
 }
 
 function statusLabel(row: PortfolioReturnRow): string | null {
@@ -391,6 +431,52 @@ function ComparisonTable({
   );
 }
 
+function RefreshHealthCard({
+  label,
+  payload,
+}: {
+  label: string;
+  payload: PortfolioPerformancePayload | null;
+}) {
+  const refresh = payload?.refresh;
+  const state = refresh?.state || "missing";
+  const latestAttemptAt = refresh?.latest_finished_at || refresh?.latest_started_at || null;
+  return (
+    <article className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-xs font-semibold text-[color:var(--text-primary)]">{label}</h4>
+        <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${refreshStateTone(state)}`}>
+          {refreshStateLabel(state)}
+        </span>
+      </div>
+      <dl className="mt-2 space-y-1 text-[11px] text-[color:var(--text-muted)]">
+        <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+          <dt>Last successful</dt>
+          <dd className="tabular-nums text-[color:var(--text-secondary)]">{formatRefreshTimestamp(refresh?.last_successful_at || null)}</dd>
+        </div>
+        <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+          <dt>Latest attempt</dt>
+          <dd className="tabular-nums text-[color:var(--text-secondary)]">
+            {refresh?.latest_status ? `${refresh.latest_status} · ${formatRefreshTimestamp(latestAttemptAt)}` : "Not recorded"}
+          </dd>
+        </div>
+        {refresh?.provider_warning_count ? (
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[color:var(--warning)]">
+            <dt>Provider warnings</dt>
+            <dd className="tabular-nums">{refresh.provider_warning_count}</dd>
+          </div>
+        ) : null}
+        {(state === "stale" || state === "missing") && refresh?.expected_after ? (
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[color:var(--danger)]">
+            <dt>Expected refresh</dt>
+            <dd className="tabular-nums">{formatRefreshTimestamp(refresh.expected_after)}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </article>
+  );
+}
+
 export function PortfolioReturnsSection() {
   const { workspace, api } = useWorkspace();
   const [track, setTrack] = useState<PortfolioTrack>("paper");
@@ -470,6 +556,16 @@ export function PortfolioReturnsSection() {
   const unavailableMessage = methodologyView === "compare"
     ? equalData?.message || scoreBlendData?.message
     : selectedData?.message;
+  const refreshEntries = [
+    { label: "Equal Weight", payload: equalData },
+    { label: "60/40 Score", payload: scoreBlendData },
+  ];
+  const refreshIssues = refreshEntries.filter(({ payload }) => (
+    !payload || ["partial", "failed", "stale", "missing"].includes(payload.refresh.state)
+  ));
+  const hasCriticalRefreshIssue = refreshIssues.some(({ payload }) => (
+    !payload || payload.refresh.state === "failed" || payload.refresh.state === "stale"
+  ));
 
   return (
     <section className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-overlay)] p-4 sm:p-5">
@@ -514,6 +610,24 @@ export function PortfolioReturnsSection() {
             : selectedData?.methodology.construction}
         </p>
       </div>
+
+      {!loading ? (
+        <section className="mt-4" aria-label="Portfolio refresh health">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-secondary)]">Data refresh health</h3>
+            <p className="text-[11px] text-[color:var(--text-muted)]">Schedule-aware for the selected {track === "paper" ? "Paper" : "Backtest"} track</p>
+          </div>
+          {refreshIssues.length ? (
+            <div className={`mb-2 rounded-lg border bg-[color:var(--surface)] px-3 py-2 text-xs ${hasCriticalRefreshIssue ? "border-[color:var(--danger)] text-[color:var(--danger)]" : "border-[color:var(--warning)] text-[color:var(--warning)]"}`} role="alert">
+              Refresh attention: {refreshIssues.map(({ label, payload }) => `${label} is ${refreshStateLabel(payload?.refresh.state || "missing").toLowerCase()}`).join("; ")}. Stored returns remain visible, but compare the newest period only after both are Fresh.
+            </div>
+          ) : null}
+          <div className="grid gap-2 md:grid-cols-2">
+            <RefreshHealthCard label="Equal Weight" payload={equalData} />
+            <RefreshHealthCard label="60/40 Score" payload={scoreBlendData} />
+          </div>
+        </section>
+      ) : null}
 
       {loading ? (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">

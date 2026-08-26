@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { loadMarketPrices, loadPortfolioNav, type StoredPortfolioNavPoint } from "@/lib/portfolio-db";
+import {
+  loadMarketPrices,
+  loadPortfolioNav,
+  loadPortfolioRefreshRunSummary,
+  type StoredPortfolioNavPoint,
+} from "@/lib/portfolio-db";
 import {
   PORTFOLIO_PROVIDER,
   PORTFOLIO_RISK_FREE_NAME,
@@ -15,6 +20,10 @@ import {
   type PortfolioTrack,
   type PortfolioMethodology,
 } from "@/lib/portfolio-performance-engine";
+import {
+  portfolioRefreshHealth,
+  type PortfolioRefreshHealth,
+} from "@/lib/portfolio-refresh-policy";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 import { tradingPortfolioKey } from "@/lib/trading-types";
 
@@ -111,6 +120,7 @@ function emptyResponse(
   track: PortfolioTrack,
   period: PortfolioPeriod,
   methodology: PortfolioMethodology,
+  refreshHealth: PortfolioRefreshHealth,
   message?: string,
 ) {
   const config = portfolioWorkspaceConfig(workspace);
@@ -144,6 +154,16 @@ function emptyResponse(
       minimum_risk_observations: PORTFOLIO_RISK_MIN_OBSERVATIONS,
       public_beta: true,
     },
+    refresh: {
+      state: refreshHealth.state,
+      expected_after: refreshHealth.expectedAfter,
+      latest_status: refreshHealth.latestStatus,
+      latest_started_at: refreshHealth.latestStartedAt,
+      latest_finished_at: refreshHealth.latestFinishedAt,
+      last_successful_at: refreshHealth.lastSuccessfulAt,
+      last_usable_at: refreshHealth.lastUsableAt,
+      provider_warning_count: refreshHealth.providerWarningCount,
+    },
     range: { start: null, end: null },
     by_model: [],
     by_valuator: [],
@@ -167,9 +187,16 @@ export async function GET(request: Request) {
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const methodology = resolvePortfolioMethodology(url.searchParams.get("methodology"));
   if (!methodology) return NextResponse.json({ error: "Invalid portfolio methodology." }, { status: 400 });
+  let refreshHealth = portfolioRefreshHealth(null);
   try {
+    const refreshSummary = await loadPortfolioRefreshRunSummary({
+      workspace,
+      track,
+      methodologyVersion: methodology.version,
+    });
+    refreshHealth = portfolioRefreshHealth(refreshSummary);
     const rows = await loadPortfolioNav(workspace, track, methodology.version);
-    if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period, methodology));
+    if (!rows.length) return NextResponse.json(emptyResponse(workspace, track, period, methodology, refreshHealth));
     const dates = rows.map((row) => row.date).sort();
     const riskFreePrices = await loadMarketPrices({
       symbols: [PORTFOLIO_RISK_FREE_SYMBOL],
@@ -188,7 +215,7 @@ export async function GET(request: Request) {
         return a.label.localeCompare(b.label);
       });
     return NextResponse.json({
-      ...emptyResponse(workspace, track, period, methodology),
+      ...emptyResponse(workspace, track, period, methodology, refreshHealth),
       available: true,
       message: null,
       range: { start: startDate || dates[0], end: dates[dates.length - 1] },
@@ -197,6 +224,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.warn("[portfolio-performance] DB read failed:", error);
-    return NextResponse.json(emptyResponse(workspace, track, period, methodology));
+    return NextResponse.json(emptyResponse(workspace, track, period, methodology, refreshHealth));
   }
 }

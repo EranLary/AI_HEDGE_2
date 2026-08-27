@@ -1,9 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -33,6 +33,19 @@ const SECTIONS: SectionItem[] = [
 type TopbarProps = {
   onMobileMenu?: () => void;
 };
+
+function SectionPillContent({ item }: { item: SectionItem }) {
+  const { pending } = useLinkStatus();
+  const Icon = item.icon;
+
+  return (
+    <span className="inline-flex items-center gap-1.5" aria-busy={pending || undefined}>
+      {pending ? <LoaderCircle size={12} className="animate-spin" aria-hidden /> : <Icon size={12} />}
+      <span>{item.label}</span>
+      {pending ? <span className="sr-only"> loading</span> : null}
+    </span>
+  );
+}
 
 export function Topbar({ onMobileMenu }: TopbarProps) {
   const { activeTicker, activeSection } = useTickerContext();
@@ -144,19 +157,18 @@ function SectionPills({
         {SECTIONS.map((s) => {
           const active = activeSection === s.slug;
           const href = `${workspacePath(workspace, `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}`)}${suffix}`;
-          const Icon = s.icon;
           return (
             <Link
               key={s.slug}
               href={href}
+              aria-current={active ? "page" : undefined}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
                 active
                   ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
                   : "border-white/15 bg-white/5 text-zinc-300 hover:border-white/30 hover:text-zinc-100"
               }`}
             >
-              <Icon size={12} />
-              <span>{s.label}</span>
+              <SectionPillContent item={s} />
             </Link>
           );
         })}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReportListItem } from "@/lib/dashboard-types";
@@ -30,10 +30,15 @@ function scoreToneClass(value?: number | null): string {
 }
 
 export function DashboardSkeleton({ message }: { message?: string }) {
+  const loadingMessage = message || "Loading dashboard...";
+
   return (
-    <div>
-      <div className="mb-3 text-xs uppercase tracking-[0.14em] text-zinc-500">{message || "Loading dashboard..."}</div>
-      <div className="grid gap-4 md:grid-cols-3">
+    <div role="status" aria-busy="true" aria-live="polite">
+      <div className="mb-3 inline-flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+        <LoaderCircle size={14} className="animate-spin" aria-hidden />
+        <span>{loadingMessage}</span>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3" aria-hidden>
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="h-32 animate-pulse rounded-xl border border-white/10 bg-white/5" />
         ))}

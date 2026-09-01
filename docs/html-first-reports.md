@@ -11,6 +11,16 @@ stored in `report_artifacts`, so no standalone HTML file is persisted.
   The API returns `Cache-Control: private, no-store` and streams the generated
   bytes without writing them to `outputs`, R2, or the database.
 
+Valuation and Combined reports add a clearly separated TradingAgents tactical
+section from the completed dashboard payload. It can show the stored committee
+stance, rating, tactical target, and time horizon, but it is composed only at
+download/view time and never crosses back into an AI Hedge valuation prompt.
+Analysis reports intentionally omit this tactical section.
+
+Famous-investor valuation outputs are labeled `AI PERSONA` in HTML, Markdown,
+and PDF, with a disclosure that these are synthetic perspectives rather than
+statements from or endorsements by the named people.
+
 Historical reports use `prices_explain_md` when it exists. Older reports that
 predate that field are rendered from their original structured
 `dashboard.valuation_hub.prices` values, with a visible disclosure. The fallback

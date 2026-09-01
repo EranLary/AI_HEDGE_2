@@ -26,6 +26,22 @@ type TocEntry = {
   id: string;
 };
 
+const FAMOUS_VALUATOR_PERSONAS = [
+  "Warren Buffett",
+  "Aswath Damodaran",
+  "Charlie Munger",
+  "Peter Lynch",
+  "Peter Thiel",
+  "Howard Marks",
+  "Bill Ackman",
+  "Cathie Wood",
+  "Ray Dalio",
+  "Stanley Druckenmiller",
+] as const;
+
+const AI_PERSONA_LEGEND =
+  "> **AI PERSONA legend:** Famous investor names identify synthetic AI valuation personas inspired by publicly known investment frameworks. The outputs are not statements from, or endorsements by, those individuals.";
+
 let cachedReportCss = "";
 
 function reportCss(): string {
@@ -42,6 +58,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -81,6 +98,72 @@ function formatPercent(value: number | null, alreadyPercent = false): string {
 
 function markdownCell(value: string): string {
   return String(value || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+}
+
+function textValue(value: unknown): string {
+  return String(value || "").trim();
+}
+
+export function labelFamousValuatorPersonas(markdown: string): string {
+  let changed = false;
+  const labeled = String(markdown || "")
+    .split(/\r?\n/)
+    .map((line) => {
+      const isDisplayLine = /^#{1,6}\s+/.test(line) || /^\s*[-*]\s+Persona\s*:/i.test(line) || /^\s*\|/.test(line);
+      if (!isDisplayLine) return line;
+      let next = line;
+      for (const name of FAMOUS_VALUATOR_PERSONAS) {
+        if (!next.includes(name) || next.includes(`${name} — AI PERSONA`)) continue;
+        next = next.replaceAll(name, `${name} — AI PERSONA`);
+      }
+      if (next !== line) changed = true;
+      return next;
+    })
+    .join("\n");
+
+  if (!changed) return labeled;
+  const lines = labeled.split("\n");
+  const firstTitle = lines.findIndex((line) => /^#\s+/.test(line));
+  const insertAt = firstTitle >= 0 ? firstTitle + 1 : 0;
+  lines.splice(insertAt, 0, "", AI_PERSONA_LEGEND, "");
+  return lines.join("\n");
+}
+
+export function buildTradingAgentsReportMarkdown(dashboard: unknown): string {
+  const root = asObject(dashboard);
+  const tradingAgents = asObject(root?.trading_agents);
+  if (!tradingAgents || textValue(tradingAgents.status).toLowerCase() !== "success") return "";
+
+  const header = asObject(root?.header);
+  const displayCurrency = textValue(header?.display_currency || header?.currency);
+  const priceUnitNote = textValue(header?.price_unit_note);
+  const rating = textValue(tradingAgents.rating);
+  const committeeView = textValue(tradingAgents.final_committee_view);
+  const priceTarget = finiteNumber(tradingAgents.price_target);
+  const timeHorizon = textValue(tradingAgents.time_horizon);
+  if (!rating && !committeeView && priceTarget === null && !timeHorizon) return "";
+
+  const targetLabel = `Tactical price target${priceUnitNote ? ` (${priceUnitNote})` : ""}`;
+  const rows = [
+    ["Committee stance", committeeView || rating || "Not available"],
+    ["Rating", rating || "Not available"],
+    [targetLabel, formatPrice(priceTarget, displayCurrency)],
+    ["Time horizon", timeHorizon || "Not available"],
+  ];
+
+  return [
+    "## TradingAgents — Independent Tactical View",
+    "",
+    "> **Separate by design:** This tactical output was stored only after the AI Hedge valuation process. It was not shown to the valuation personas and does not affect AI Hedge target prices, consensus, score, or allocation.",
+    "",
+    "| Tactical field | Independent output |",
+    "| --- | ---: |",
+    ...rows.map(([label, value]) => `| ${markdownCell(label)} | ${markdownCell(value)} |`),
+    "",
+    "### How to read this section",
+    "",
+    "TradingAgents is a separate multi-agent tactical lens. Compare it with the valuation evidence, but do not treat it as another member of the AI Hedge valuation consensus.",
+  ].join("\n");
 }
 
 export function hasStructuredLegacyValuation(dashboard: unknown): boolean {
@@ -185,10 +268,12 @@ function valuationMarkdown(source: ReportDocumentSource): {
   usedFallback: boolean;
 } {
   const native = String(source.pricesExplainMd || "").trim();
-  if (native) return { markdown: native, usedFallback: false };
+  if (native) return { markdown: labelFamousValuatorPersonas(native), usedFallback: false };
   if (hasStructuredLegacyValuation(source.dashboard)) {
     return {
-      markdown: buildStructuredLegacyValuationMarkdown(source.dashboard, source.ticker),
+      markdown: labelFamousValuatorPersonas(
+        buildStructuredLegacyValuationMarkdown(source.dashboard, source.ticker),
+      ),
       usedFallback: true,
     };
   }
@@ -208,12 +293,16 @@ export function buildReportMarkdown(
 ): { markdown: string; usedStructuredValuationFallback: boolean } {
   const analysis = String(source.analysisMd || "").trim();
   const valuation = valuationMarkdown(source);
+  const tradingAgents = buildTradingAgentsReportMarkdown(source.dashboard);
+  const valuationWithTradingAgents = tradingAgents
+    ? `${valuation.markdown}\n\n---\n\n${tradingAgents}`
+    : valuation.markdown;
   if (kind === "analysis") {
     return { markdown: analysis, usedStructuredValuationFallback: false };
   }
   if (kind === "valuation") {
     return {
-      markdown: valuation.markdown,
+      markdown: valuationWithTradingAgents,
       usedStructuredValuationFallback: valuation.usedFallback,
     };
   }
@@ -227,7 +316,7 @@ export function buildReportMarkdown(
       "",
       "# Valuation",
       "",
-      valuation.markdown,
+      valuationWithTradingAgents,
     ].join("\n"),
     usedStructuredValuationFallback: valuation.usedFallback,
   };
@@ -333,8 +422,19 @@ const THEME_SCRIPT = `
   const root = document.documentElement;
   const key = "hib-report-theme";
   const button = document.getElementById("theme-toggle");
+  const contents = document.getElementById("report-contents");
   const stored = localStorage.getItem(key);
   if (stored === "light" || stored === "dark") root.dataset.theme = stored;
+  const mobileContents = window.matchMedia("(max-width: 820px)");
+  const syncContents = (mobile) => {
+    if (!contents) return;
+    if (mobile.matches) contents.removeAttribute("open");
+    else contents.setAttribute("open", "");
+  };
+  syncContents(mobileContents);
+  if (typeof mobileContents.addEventListener === "function") {
+    mobileContents.addEventListener("change", syncContents);
+  }
   const update = () => {
     if (!button) return;
     const current = root.dataset.theme || "dark";
@@ -362,9 +462,9 @@ export function buildStandaloneReportHtml(
     ? '<p class="report-notice">This historical valuation is reconstructed from the original stored structured values. No missing narrative was invented.</p>'
     : "";
   const tocHtml = toc.length
-    ? `<nav class="report-toc" aria-label="Table of contents"><p class="report-toc-title">Contents</p><ol>${toc
+    ? `<nav class="report-toc" aria-label="Table of contents"><details class="report-toc-details" id="report-contents" open><summary><span class="report-toc-title">Contents</span><span class="report-toc-hint">Jump to a section</span></summary><ol>${toc
       .map((entry) => `<li><a class="level-${entry.level}" href="#${escapeHtml(entry.id)}">${escapeHtml(entry.text)}</a></li>`)
-      .join("")}</ol></nav>`
+      .join("")}</ol></details></nav>`
     : "";
   const markup = `<div class="report-toolbar"><button class="report-theme-toggle" id="theme-toggle" type="button">Light mode</button></div><main class="report-shell"><header class="report-hero"><div class="report-brand">Hedge in a Box</div><div class="report-kicker">${reportLabel}</div><h1 class="report-title">${escapeHtml(source.ticker)}</h1><p class="report-company">${escapeHtml(source.companyName || "Investment research report")}</p><ul class="report-meta"><li><span class="report-meta-label">Report</span><span class="report-meta-value">${reportLabel}</span></li><li><span class="report-meta-label">Published</span><span class="report-meta-value">${escapeHtml(displayDate(source.generatedAt))}</span></li><li><span class="report-meta-label">Format</span><span class="report-meta-value">Live HTML</span></li></ul>${notice}</header><div class="report-layout">${tocHtml}<article class="report-paper"><div class="report-markdown">${renderMarkdown(built.markdown, toc)}</div></article></div><footer class="report-footer">Generated on demand from the stored report source. PDF copies are not retained. Historical research is not live investment advice.</footer></main>`;
 

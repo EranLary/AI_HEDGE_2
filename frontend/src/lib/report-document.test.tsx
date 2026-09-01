@@ -5,7 +5,9 @@ import {
   buildReportMarkdown,
   buildStandaloneReportHtml,
   buildStructuredLegacyValuationMarkdown,
+  buildTradingAgentsReportMarkdown,
   hasStructuredLegacyValuation,
+  labelFamousValuatorPersonas,
 } from "./report-document";
 
 const historicalDashboard = {
@@ -21,6 +23,17 @@ const historicalDashboard = {
       Multiples: [132],
       "Investment Percents": { DCF: 8, Multiples: 6 },
     },
+  },
+};
+
+const tacticalDashboard = {
+  header: { display_currency: "ILS", price_unit_note: "agorot" },
+  trading_agents: {
+    status: "success",
+    rating: "Overweight",
+    price_target: 3200,
+    time_horizon: "6 months",
+    final_committee_view: "Overweight",
   },
 };
 
@@ -49,6 +62,52 @@ test("native valuation Markdown takes precedence over the historical fallback", 
   assert.doesNotMatch(built.markdown, /Historical Valuation/);
 });
 
+test("TradingAgents tactical fields appear only in Valuation and Combined reports", () => {
+  const source = {
+    ticker: "ARYT.TA",
+    analysisMd: "# Analysis\n\nIndependent research evidence.",
+    pricesExplainMd: "# Valuation\n\nStored valuation narrative.",
+    dashboard: tacticalDashboard,
+  };
+  const analysis = buildReportMarkdown(source, "analysis").markdown;
+  const valuation = buildReportMarkdown(source, "valuation").markdown;
+  const combined = buildReportMarkdown(source, "combined").markdown;
+
+  assert.doesNotMatch(analysis, /Independent Tactical View/);
+  assert.match(valuation, /TradingAgents — Independent Tactical View/);
+  assert.match(valuation, /₪3,200\.00/);
+  assert.match(valuation, /Tactical price target \(agorot\)/);
+  assert.match(valuation, /6 months/);
+  assert.match(valuation, /was not shown to the valuation personas/);
+  assert.equal((combined.match(/Independent Tactical View/g) || []).length, 1);
+});
+
+test("TradingAgents section is omitted when no tactical fields were stored", () => {
+  assert.equal(buildTradingAgentsReportMarkdown({ trading_agents: { status: "success" } }), "");
+  assert.equal(buildTradingAgentsReportMarkdown({ trading_agents: { status: "unavailable" } }), "");
+});
+
+test("famous valuator output labels disclose AI PERSONA without rewriting narrative prose", () => {
+  const input = [
+    "# Valuation",
+    "",
+    "### Output 1 (Peter Lynch)",
+    "",
+    "Peter Lynch is referenced here as part of the rationale.",
+    "",
+    "| Persona | Target |",
+    "| --- | ---: |",
+    "| Warren Buffett | $120 |",
+  ].join("\n");
+  const labeled = labelFamousValuatorPersonas(input);
+
+  assert.match(labeled, /Peter Lynch — AI PERSONA/);
+  assert.match(labeled, /Warren Buffett — AI PERSONA/);
+  assert.match(labeled, /AI PERSONA legend/);
+  assert.match(labeled, /Peter Lynch is referenced here/);
+  assert.doesNotMatch(labeled, /Peter Lynch — AI PERSONA is referenced here/);
+});
+
 test("standalone report includes readable navigation, metadata, and print styling", () => {
   const built = buildStandaloneReportHtml(
     {
@@ -64,9 +123,12 @@ test("standalone report includes readable navigation, metadata, and print stylin
   assert.match(built.html, /^<!doctype html>/);
   assert.match(built.html, /Test Company/);
   assert.match(built.html, /aria-label="Table of contents"/);
+  assert.match(built.html, /id="report-contents" open/);
+  assert.match(built.html, /Jump to a section/);
   assert.match(built.html, /href="#evidence"/);
   assert.match(built.html, /class="report-table-wrap"/);
   assert.match(built.html, /@media print/);
+  assert.match(built.html, /@media \(max-width: 440px\)/);
   assert.match(built.html, /PDF copies are not retained/);
 });
 

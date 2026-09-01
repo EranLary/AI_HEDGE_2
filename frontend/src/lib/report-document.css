@@ -758,6 +758,11 @@ a:hover {
 @page {
   size: A4;
   margin: 19mm 14mm 18mm;
+
+  @top-center {
+    content: element(report-pdf-header);
+    vertical-align: middle;
+  }
 }
 
 @media print {
@@ -792,12 +797,9 @@ a:hover {
   }
 
   .report-pdf-running-brand {
-    position: fixed;
-    top: -14mm;
-    right: 0;
-    left: 0;
-    z-index: 100;
+    position: running(report-pdf-header);
     display: flex;
+    width: 100%;
     height: 8mm;
     align-items: center;
     gap: 2mm;

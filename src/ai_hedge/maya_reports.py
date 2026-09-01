@@ -35,6 +35,10 @@ MAYA_PERIOD_ALL = 5
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
 _ANNUAL_PERIOD_RE = re.compile(r"(ANNUAL|שנתי)", re.IGNORECASE)
 _QUARTER_PERIOD_RE = re.compile(r"(Q[1-4]|QUARTER|רבעון)", re.IGNORECASE)
+_SEMI_ANNUAL_RE = re.compile(
+    r"(חצי[\s\-־]*שנתי|מחצית|SEMI[\s\-]*ANNUAL|HALF[\s\-]*YEAR(?:LY)?)",
+    re.IGNORECASE,
+)
 _ANNUAL_TITLE_RE = re.compile(r"(דוח\s+תקופתי\s+ושנתי|periodic\s+report|annual\s+report|form\s+20-f)", re.IGNORECASE)
 _QUARTER_TITLE_RE = re.compile(
     r"(דוח\s+רבעון|תוצאות\s+רבעון|interim\s+report|report\s+for\s+q[1-4]|financial\s+statements\s+q[1-4]|q[1-4].*(financial|quarter)|quarter.*(ended|results))",
@@ -518,6 +522,15 @@ def _pick_latest(rows: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return rows_list[0]
 
 
+def _report_row_id(row: Optional[Dict[str, Any]]) -> Optional[int]:
+    if not row:
+        return None
+    try:
+        return int(row.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _matches_expected_title(title: str, *, report_kind: str) -> bool:
     txt = str(title or "").strip()
     if not txt:
@@ -525,15 +538,36 @@ def _matches_expected_title(title: str, *, report_kind: str) -> bool:
     if _TITLE_EXCLUDE_RE.search(txt):
         return False
     if report_kind == "annual":
+        if _SEMI_ANNUAL_RE.search(txt):
+            return False
         return bool(_ANNUAL_TITLE_RE.search(txt))
     if report_kind == "quarterly":
-        return bool(_QUARTER_TITLE_RE.search(txt))
+        return bool(_QUARTER_TITLE_RE.search(txt) or _SEMI_ANNUAL_RE.search(txt))
     return False
+
+
+def _is_semi_annual_row(row: Dict[str, Any]) -> bool:
+    period = str(row.get("period", "") or "")
+    title = str(row.get("title", "") or "")
+    return bool(_SEMI_ANNUAL_RE.search(period) or _SEMI_ANNUAL_RE.search(title))
+
+
+def _is_annual_row(row: Dict[str, Any]) -> bool:
+    if _is_semi_annual_row(row):
+        return False
+    period = str(row.get("period", "") or "")
+    title = str(row.get("title", "") or "")
+    return bool(_ANNUAL_PERIOD_RE.search(period) or _matches_expected_title(title, report_kind="annual"))
 
 
 def _is_quarter_row(row: Dict[str, Any]) -> bool:
     period = str(row.get("period", "") or "")
-    return bool(_QUARTER_PERIOD_RE.search(period))
+    title = str(row.get("title", "") or "")
+    return bool(
+        _QUARTER_PERIOD_RE.search(period)
+        or _SEMI_ANNUAL_RE.search(period)
+        or _matches_expected_title(title, report_kind="quarterly")
+    )
 
 
 def _pick_latest_quarter(session: requests.Session, company_id: int, lang: str) -> Optional[Dict[str, Any]]:
@@ -553,9 +587,7 @@ def _pick_latest_quarter(session: requests.Session, company_id: int, lang: str) 
 
 def _pick_latest_annual(session: requests.Session, company_id: int, lang: str) -> Optional[Dict[str, Any]]:
     rows = _fetch_finance_rows(session, company_id=company_id, period=MAYA_PERIOD_ANNUAL, lang=lang, page_size=50)
-    annual_rows = [r for r in rows if _ANNUAL_PERIOD_RE.search(str(r.get("period", "") or ""))]
-    if not annual_rows:
-        annual_rows = rows
+    annual_rows = [r for r in rows if _is_annual_row(r)]
     return _pick_latest(annual_rows)
 
 
@@ -790,6 +822,17 @@ def fetch_latest_maya_reports(
             report_kind="quarterly",
             lang="he",
         )
+
+    annual_report_id = _report_row_id(annual_row)
+    quarter_report_id = _report_row_id(quarter_row)
+    if annual_report_id is not None and annual_report_id == quarter_report_id:
+        # Explicit quarter/half-year signals take precedence over a broad
+        # annual fallback. Otherwise retain the annual classification. In both
+        # cases, never return the same MAYA filing under two labels.
+        if quarter_row is not None and _is_quarter_row(quarter_row):
+            annual_row = None
+        else:
+            quarter_row = None
 
     chosen: List[Tuple[str, Optional[Dict[str, Any]]]] = [
         ("MAYA Annual Report", annual_row),

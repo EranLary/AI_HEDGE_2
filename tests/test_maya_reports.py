@@ -31,17 +31,55 @@ def test_pick_latest_annual_and_quarter():
             [
                 {"id": 1, "publishDate": "2026-01-01T00:00:00", "period": "שנתי"},
                 {"id": 2, "publishDate": "2026-03-01T00:00:00", "period": "שנתי"},
+                {
+                    "id": 5,
+                    "publishDate": "2026-08-01T00:00:00",
+                    "period": "רבעון 2/חצי שנתי",
+                    "title": "דוח רבעון 2/חצי שנתי לשנת 2026",
+                },
             ],
             [
                 {"id": 3, "publishDate": "2026-04-01T00:00:00", "period": "Q1"},
                 {"id": 4, "publishDate": "2026-05-01T00:00:00", "period": "Annual"},
+                {
+                    "id": 5,
+                    "publishDate": "2026-08-01T00:00:00",
+                    "period": "רבעון 2/חצי שנתי",
+                    "title": "דוח רבעון 2/חצי שנתי לשנת 2026",
+                },
             ],
         ]
         annual = maya_reports._pick_latest_annual(session=object(), company_id=123, lang="he")
         quarter = maya_reports._pick_latest_quarter(session=object(), company_id=123, lang="he")
 
     assert annual and annual["id"] == 2
-    assert quarter and quarter["id"] == 3
+    assert quarter and quarter["id"] == 5
+
+
+def test_pick_latest_annual_rejects_semiannual_only_rows():
+    rows = [
+        {
+            "id": 10,
+            "publishDate": "2026-08-01T00:00:00",
+            "period": "חצי שנתי",
+            "title": "דוח רבעון 2/חצי שנתי לשנת 2026",
+        },
+        {
+            "id": 11,
+            "publishDate": "2026-08-02T00:00:00",
+            "period": "Semi-annual",
+            "title": "Semi-annual report 2026",
+        },
+    ]
+
+    with patch("ai_hedge.maya_reports._fetch_finance_rows", return_value=rows):
+        annual = maya_reports._pick_latest_annual(session=object(), company_id=123, lang="he")
+
+    assert annual is None
+    assert not maya_reports._matches_expected_title("Semi-annual report 2026", report_kind="annual")
+    assert maya_reports._matches_expected_title("Semi-annual report 2026", report_kind="quarterly")
+    assert maya_reports._matches_expected_title("דוח למחצית הראשונה של 2026", report_kind="quarterly")
+    assert not maya_reports._matches_expected_title("Half-year annual report 2026", report_kind="annual")
 
 
 def test_companies_feed_fallback_finds_annual_and_quarter():
@@ -73,6 +111,39 @@ def test_companies_feed_fallback_finds_annual_and_quarter():
     assert set(out.keys()) == {"MAYA Annual Report", "MAYA Quarterly Report"}
     assert out["MAYA Annual Report"]["text"]
     assert out["MAYA Quarterly Report"]["text"]
+    assert out["MAYA Annual Report"]["date"] > out["MAYA Quarterly Report"]["date"]
+
+
+def test_fetch_does_not_return_same_semiannual_report_as_annual_and_quarterly():
+    semiannual_row = {
+        "id": 33,
+        "publishDate": "2026-08-01T07:30:04",
+        "period": "רבעון 2/חצי שנתי",
+        "title": "דוח רבעון 2/חצי שנתי לשנת 2026",
+    }
+
+    with patch("ai_hedge.maya_reports._resolve_company_id", return_value=585), patch(
+        "ai_hedge.maya_reports._pick_latest_annual", return_value=semiannual_row
+    ), patch(
+        "ai_hedge.maya_reports._pick_latest_quarter", return_value=semiannual_row
+    ), patch(
+        "ai_hedge.maya_reports._fetch_finance_rows", return_value=[]
+    ), patch(
+        "ai_hedge.maya_reports._report_detail",
+        return_value={
+            "id": 33,
+            "title": semiannual_row["title"],
+            "publishDate": semiannual_row["publishDate"],
+            "attachments": [],
+        },
+    ), patch(
+        "ai_hedge.maya_reports._download_report_text",
+        return_value=("semiannual text", "https://mayafiles.tase.co.il/q2.pdf"),
+    ):
+        out = maya_reports.fetch_latest_maya_reports("HARL.TA")
+
+    assert set(out) == {"MAYA Quarterly Report"}
+    assert "semiannual text" in out["MAYA Quarterly Report"]["text"]
 
 
 def test_partial_availability_returns_single_report():

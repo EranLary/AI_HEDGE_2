@@ -128,10 +128,13 @@ test("standalone report includes responsive branding, navigation, metadata, and 
   assert.match(built.html, /href="#evidence"/);
   assert.match(built.html, /class="report-table-wrap"/);
   assert.match(built.html, /class="report-brand-lockup"/);
+  assert.match(built.html, /class="report-hero-top"/);
   assert.match(built.html, /class="report-logo-image report-logo-image-dark"/);
   assert.match(built.html, /class="report-logo-image report-logo-image-light"/);
   assert.match(built.html, /class="report-pdf-running-brand"/);
   assert.match(built.html, /class="report-pdf-logo"/);
+  assert.match(built.html, /class="report-pdf-header-copy"/);
+  assert.match(built.html, /Hedge in a Box &middot; TEST &middot; Combined report/);
   assert.match(built.html, /data:image\/svg\+xml;base64,/);
   assert.doesNotMatch(built.html, /data:image\/png;base64,/);
   assert.match(built.html, /:root\[data-theme="light"\] \.report-logo-image-dark/);
@@ -139,6 +142,13 @@ test("standalone report includes responsive branding, navigation, metadata, and 
   assert.match(
     built.html,
     /\.report-pdf-running-brand \{[\s\S]*position: running\(reportpdfheader\)/,
+  );
+  assert.match(built.html, /\.report-pdf-running-brand \{[\s\S]*white-space: nowrap/);
+  assert.match(built.html, /\.report-logo-image \{[\s\S]*object-fit: contain/);
+  assert.match(built.html, /\.report-hero-top \{[\s\S]*justify-content: space-between/);
+  assert.match(
+    built.html,
+    /@media \(max-width: 440px\) \{[\s\S]*\.report-hero-top \{[\s\S]*display: grid/,
   );
   assert.match(built.html, /@media print/);
   assert.match(built.html, /@media \(max-width: 440px\)/);

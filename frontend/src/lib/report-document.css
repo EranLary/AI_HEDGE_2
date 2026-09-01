@@ -68,14 +68,16 @@ a:hover {
 .report-pdf-running-brand {
   position: running(reportpdfheader);
   display: flex;
-  width: 100%;
+  width: 182mm;
   height: 8mm;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 2mm;
   border-bottom: 0.25mm solid var(--report-border);
   color: var(--report-text-muted);
   font-size: 7pt;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .report-pdf-logo {
@@ -83,19 +85,16 @@ a:hover {
   height: 5.5mm;
   flex: 0 0 auto;
   border-radius: 1.4mm;
-  object-fit: cover;
+  object-fit: contain;
 }
 
-.report-pdf-brand-name {
+.report-pdf-header-copy {
+  flex: 0 0 auto;
   color: var(--report-accent);
   font-weight: 750;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.report-pdf-brand-context {
-  margin-left: auto;
-  color: var(--report-text-muted);
+  white-space: nowrap;
 }
 
 @media screen {
@@ -179,6 +178,16 @@ a:hover {
   gap: 0.8rem;
 }
 
+.report-hero-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
 .report-logo-frame {
   position: relative;
   display: grid;
@@ -208,7 +217,7 @@ a:hover {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .report-logo-image-light {
@@ -240,7 +249,7 @@ a:hover {
 
 .report-kicker {
   display: inline-flex;
-  margin-top: 1.25rem;
+  flex: 0 0 auto;
   border: 1px solid color-mix(in srgb, var(--report-accent) 42%, transparent);
   border-radius: 999px;
   background: var(--report-accent-soft);
@@ -250,7 +259,7 @@ a:hover {
 
 .report-title {
   max-width: 850px;
-  margin: 1rem 0 0;
+  margin: clamp(1.35rem, 3vw, 2rem) 0 0;
   font-size: clamp(2.1rem, 7vw, 4.6rem);
   line-height: 0.98;
   letter-spacing: -0.055em;
@@ -664,18 +673,19 @@ a:hover {
     gap: 0.68rem;
   }
 
+  .report-hero-top {
+    align-items: flex-start;
+    gap: 0.85rem 1rem;
+  }
+
   .report-logo-frame {
     width: 2.8rem;
     height: 2.8rem;
     border-radius: 0.85rem;
   }
 
-  .report-kicker {
-    margin-top: 0.85rem;
-  }
-
   .report-title {
-    margin-top: 0.8rem;
+    margin-top: 1rem;
     font-size: clamp(2.2rem, 15vw, 3.5rem);
     overflow-wrap: anywhere;
   }
@@ -773,6 +783,11 @@ a:hover {
 }
 
 @media (max-width: 440px) {
+  .report-hero-top {
+    display: grid;
+    justify-items: start;
+  }
+
   .report-toc-hint {
     display: none;
   }

@@ -26,15 +26,14 @@ FALLBACK_CSS = """
 }
 body { color: #172033; font-family: Helvetica, Arial, sans-serif; font-size: 10pt; line-height: 1.45; }
 .report-toolbar, .report-toc { display: none; }
-.report-pdf-running-brand { border-bottom: 1px solid #cbd5e1; color: #526174; font-size: 7pt; height: 8mm; }
-.report-pdf-logo { border-radius: 1.4mm; height: 5.5mm; margin-right: 2mm; vertical-align: middle; width: 5.5mm; }
-.report-pdf-brand-name { color: #047857; font-weight: bold; text-transform: uppercase; }
-.report-pdf-brand-context { float: right; }
+.report-pdf-running-brand { border-bottom: 1px solid #cbd5e1; color: #526174; font-size: 7pt; height: 8mm; white-space: nowrap; }
+.report-pdf-logo { border-radius: 1.4mm; height: 5.5mm; margin-right: 2mm; object-fit: contain; vertical-align: middle; width: 5.5mm; }
+.report-pdf-header-copy { color: #047857; font-weight: bold; text-transform: uppercase; white-space: nowrap; }
 .report-shell { width: 100%; }
 .report-hero { border-bottom: 1px solid #cbd5e1; margin-bottom: 18px; padding-bottom: 14px; }
 .report-brand-lockup { display: block; }
 .report-logo-frame { display: inline-block; height: 28px; margin-right: 7px; vertical-align: middle; width: 28px; }
-.report-logo-image { height: 28px; width: 28px; }
+.report-logo-image { height: 28px; object-fit: contain; width: 28px; }
 .report-logo-image-light { display: none; }
 .report-brand-copy { display: inline-block; vertical-align: middle; }
 .report-brand-subtitle { color: #526174; display: block; font-size: 6pt; text-transform: uppercase; }

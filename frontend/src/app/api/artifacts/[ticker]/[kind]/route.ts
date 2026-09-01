@@ -1,13 +1,45 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 import { NextResponse } from "next/server";
 
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
+import {
+  buildStandaloneReportHtml,
+  type ReportDocumentKind,
+  type ReportDocumentSource,
+} from "@/lib/report-document";
 import { findLatestByFileName, outputsRoot, resolveDashboardReportPath } from "@/lib/server-outputs";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type DocumentFormat = "html" | "pdf" | "md" | "txt";
+
+type DocumentRequest = {
+  reportKind: ReportDocumentKind;
+  format: DocumentFormat;
+};
+
+const DOCUMENT_KIND_ALIASES: Record<string, DocumentRequest> = {
+  "analysis-html": { reportKind: "analysis", format: "html" },
+  "analysis-pdf": { reportKind: "analysis", format: "pdf" },
+  "analysis-md": { reportKind: "analysis", format: "md" },
+  "analysis-txt": { reportKind: "analysis", format: "txt" },
+  "valuation-html": { reportKind: "valuation", format: "html" },
+  "valuation-pdf": { reportKind: "valuation", format: "pdf" },
+  "valuation-md": { reportKind: "valuation", format: "md" },
+  "prices-explain-html": { reportKind: "valuation", format: "html" },
+  "prices-explain-pdf": { reportKind: "valuation", format: "pdf" },
+  "prices-explain-txt": { reportKind: "valuation", format: "txt" },
+  "combined-html": { reportKind: "combined", format: "html" },
+  "combined-pdf": { reportKind: "combined", format: "pdf" },
+  "combined-md": { reportKind: "combined", format: "md" },
+};
 
 const KIND_TO_FILE: Record<
   string,
@@ -94,6 +126,10 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function parseDocumentKind(kind: string): DocumentRequest | null {
+  return DOCUMENT_KIND_ALIASES[kind] || null;
+}
+
 function downloadDateStamp(value: unknown): string {
   const date = new Date(String(value || ""));
   if (Number.isNaN(date.getTime())) return "report_date";
@@ -154,6 +190,214 @@ async function remoteArtifactResponse(url: string, contentType: string, download
   headers.set("Content-Disposition", `attachment; filename="${downloadName}"`);
   const body = new Uint8Array(await res.arrayBuffer());
   return new NextResponse(body, { status: 200, headers });
+}
+
+function readDashboardNear(filePath: string): Record<string, unknown> | null {
+  try {
+    const dir = path.dirname(filePath);
+    const entries = fs.readdirSync(dir);
+    const dashboardFile = entries.find((entry) => entry.toUpperCase().endsWith("_DASHBOARD.JSON"));
+    if (!dashboardFile) return null;
+    return asObject(JSON.parse(fs.readFileSync(path.join(dir, dashboardFile), "utf8")));
+  } catch {
+    return null;
+  }
+}
+
+function localDocumentSource(
+  ticker: string,
+  reportId: string,
+  workspace: Workspace,
+): ReportDocumentSource | null {
+  if (workspace === "nasdaq100") return null;
+
+  let analysisPath = "";
+  let dashboard: Record<string, unknown> | null = null;
+  if (reportId) {
+    const reportPath = resolveDashboardReportPath(reportId);
+    if (!reportPath) return null;
+    const root = path.dirname(reportPath);
+    analysisPath = resolveFromRoot(root, `${ticker}_analysis.txt`);
+    try {
+      dashboard = asObject(JSON.parse(fs.readFileSync(reportPath, "utf8")));
+    } catch {
+      dashboard = readDashboardNear(reportPath);
+    }
+  } else {
+    analysisPath = findLatestByFileName(`${ticker}_analysis.txt`)?.path || "";
+    dashboard = analysisPath ? readDashboardNear(analysisPath) : null;
+  }
+
+  if (!analysisPath || !isExistingFile(analysisPath)) return null;
+  const valuationPath = resolveFromRoot(path.dirname(analysisPath), `${ticker}_prices_explain.txt`);
+  const header = asObject(dashboard?.header);
+  return {
+    ticker,
+    companyName: String(header?.company_name || header?.name || "").trim() || null,
+    generatedAt: String(dashboard?.generated_at || dashboard?.report_mtime || fileDateFallback(analysisPath)),
+    analysisMd: fs.readFileSync(analysisPath, "utf8"),
+    pricesExplainMd: valuationPath ? fs.readFileSync(valuationPath, "utf8") : null,
+    dashboard,
+  };
+}
+
+async function resolveDocumentSource(
+  ticker: string,
+  reportId: string,
+  workspace: Workspace,
+): Promise<ReportDocumentSource | null> {
+  const deletedFilter = await getDeletedReportFilterForTicker(ticker, workspace);
+  if (reportId && deletedFilter.isDeleted(reportId, ticker)) return null;
+
+  try {
+    const row = reportId && isUuid(reportId)
+      ? await fetchReportById(reportId, workspace)
+      : !reportId
+        ? await fetchLatestReport(ticker, workspace)
+        : null;
+    if (row && String(row.ticker || "").toUpperCase() === ticker) {
+      return {
+        ticker,
+        companyName: row.company_name,
+        generatedAt: row.generated_at,
+        analysisMd: row.analysis_md,
+        pricesExplainMd: row.prices_explain_md,
+        dashboard: row.dashboard,
+      };
+    }
+  } catch {
+    // Preserve filesystem compatibility when the DB is unavailable locally.
+  }
+
+  return localDocumentSource(ticker, reportId, workspace);
+}
+
+function documentDateStamp(value: unknown): string {
+  return downloadDateStamp(value);
+}
+
+function documentDownloadName(
+  ticker: string,
+  reportKind: ReportDocumentKind,
+  format: DocumentFormat,
+  generatedAt: unknown,
+): string {
+  const extension = format === "md" ? "md" : format;
+  return `${ticker}_${reportKind}_${documentDateStamp(generatedAt)}.${extension}`;
+}
+
+function renderPdfFromHtml(html: string): Promise<Buffer> {
+  const executable = String(process.env.PYTHON_EXECUTABLE || "python").trim() || "python";
+  const scriptPath = path.resolve(process.cwd(), "..", "scripts", "render_report_pdf.py");
+  const maxBytes = 25 * 1024 * 1024;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, [scriptPath], {
+      cwd: path.dirname(scriptPath),
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let outputBytes = 0;
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        reject(new Error("PDF generation timed out."));
+      }
+    }, 60_000);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > maxBytes) {
+        child.kill();
+        return;
+      }
+      stdout.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (outputBytes > maxBytes) {
+        reject(new Error("Generated PDF exceeded the response size limit."));
+        return;
+      }
+      if (code !== 0) {
+        const detail = Buffer.concat(stderr).toString("utf8").trim();
+        reject(new Error(detail || `PDF renderer exited with code ${code}.`));
+        return;
+      }
+      const pdf = Buffer.concat(stdout);
+      if (!pdf.subarray(0, 4).equals(Buffer.from("%PDF"))) {
+        reject(new Error("PDF renderer returned an invalid document."));
+        return;
+      }
+      resolve(pdf);
+    });
+    child.stdin.end(Buffer.from(html, "utf8"));
+  });
+}
+
+async function documentResponse(
+  ticker: string,
+  requestKind: DocumentRequest,
+  reportId: string,
+  workspace: Workspace,
+): Promise<NextResponse> {
+  const source = await resolveDocumentSource(ticker, reportId, workspace);
+  if (!source || !String(source.analysisMd || "").trim()) {
+    return NextResponse.json({ error: "Report source was not found." }, { status: 404 });
+  }
+  const document = buildStandaloneReportHtml(source, requestKind.reportKind, {
+    rasterPrintLogo: requestKind.format === "pdf",
+  });
+  const filename = documentDownloadName(
+    ticker,
+    requestKind.reportKind,
+    requestKind.format,
+    source.generatedAt,
+  );
+  const headers = new Headers();
+  headers.set("Cache-Control", "private, no-store, max-age=0");
+  headers.set("Pragma", "no-cache");
+  headers.set("X-Content-Type-Options", "nosniff");
+
+  if (requestKind.format === "html") {
+    headers.set("Content-Type", "text/html; charset=utf-8");
+    headers.set("Content-Disposition", `inline; filename="${filename}"`);
+    return new NextResponse(document.html, { status: 200, headers });
+  }
+  if (requestKind.format === "md" || requestKind.format === "txt") {
+    headers.set(
+      "Content-Type",
+      requestKind.format === "md" ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8",
+    );
+    headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+    return new NextResponse(document.markdown, { status: 200, headers });
+  }
+
+  try {
+    const pdf = await renderPdfFromHtml(document.html);
+    headers.set("Content-Type", "application/pdf");
+    headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+    return new NextResponse(new Uint8Array(pdf), { status: 200, headers });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "PDF generation failed." },
+      { status: 500, headers },
+    );
+  }
 }
 
 function collectDbCandidateRoots(row: Awaited<ReturnType<typeof fetchReportById>>): string[] {
@@ -279,17 +523,22 @@ export async function GET(
   const params = await context.params;
   const ticker = String(params.ticker || "").toUpperCase().trim();
   const kind = String(params.kind || "").toLowerCase().trim();
-  if (!ticker || !kind || !(kind in KIND_TO_FILE)) {
+  const documentKind = parseDocumentKind(kind);
+  if (!ticker || !kind || (!documentKind && !(kind in KIND_TO_FILE))) {
     return NextResponse.json({ error: "Invalid ticker or artifact kind." }, { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
+  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
+  const reportId = String(url.searchParams.get("report_id") || "").trim();
+  if (documentKind) {
+    return documentResponse(ticker, documentKind, reportId, workspace);
   }
 
   const spec = KIND_TO_FILE[kind];
   const fileName = spec.fileName.replace("{TICKER}", ticker);
   const fallbackFileName = spec.fallbackFileName?.replace("{TICKER}", ticker) || "";
-  const url = new URL(request.url);
-  const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
-  if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
-  const reportId = String(url.searchParams.get("report_id") || "").trim();
 
   let foundPath = "";
   let artifactDate = "";

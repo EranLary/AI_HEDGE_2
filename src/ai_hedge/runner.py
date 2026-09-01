@@ -72,26 +72,6 @@ class RunArtifacts:
     r2_keys: Optional[Dict[str, str]] = None
 
 
-def _combine_pdf_artifacts(pdf_paths: List[Optional[Path]], output_pdf: Path) -> str:
-    existing = [Path(p) for p in pdf_paths if p and Path(p).exists()]
-    if not existing:
-        return ""
-
-    from pypdf import PdfReader, PdfWriter
-
-    writer = PdfWriter()
-    for pdf_path in existing:
-        reader = PdfReader(str(pdf_path))
-        for page in reader.pages:
-            writer.add_page(page)
-
-    output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    with output_pdf.open("wb") as f:
-        writer.write(f)
-    return str(output_pdf.resolve()) if output_pdf.exists() else ""
-
-
-
 def _require_api_key() -> None:
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if not api_key:
@@ -1377,7 +1357,7 @@ def run_ticker_valuation(
     ticker: str,
     *,
     output_root: str = "outputs",
-    save_pdf: bool = True,
+    save_pdf: bool = False,
     show_plots: bool = True,
     valuation_iterations: int = DEFAULT_VALUATION_ITERATIONS,
     analysis_workers: int = DEFAULT_ANALYSIS_WORKERS,
@@ -1441,7 +1421,7 @@ def _run_ticker_valuation_impl(
     ticker: str,
     *,
     output_root: str = "outputs",
-    save_pdf: bool = True,
+    save_pdf: bool = False,
     show_plots: bool = True,
     valuation_iterations: int = DEFAULT_VALUATION_ITERATIONS,
     analysis_workers: int = DEFAULT_ANALYSIS_WORKERS,
@@ -1855,7 +1835,6 @@ def _run_ticker_valuation_impl(
 
     prices_explain_txt = out_dir / f"{ticker}_prices_explain.txt"
     prices_explain_pdf = ""
-    prices_explain_html = out_dir / f"{ticker}_prices_explain.html"
     dashboard_json = ""
     dashboard_signal_snapshot_text = ""
     explain_text = ""
@@ -1986,6 +1965,13 @@ def _run_ticker_valuation_impl(
                 "## Financials",
                 financials_markdown,
             )
+        sources_footer = _build_sec_sources_footer(files_dict)
+        if sources_footer:
+            merged_analysis_text = _upsert_markdown_block(
+                merged_analysis_text,
+                "## SEC Section Sources",
+                sources_footer,
+            )
         if merged_analysis_text.strip():
             analysis_src.write_text(merged_analysis_text + "\n", encoding="utf-8")
             analysis_dst.write_text(merged_analysis_text + "\n", encoding="utf-8")
@@ -2061,81 +2047,20 @@ def _run_ticker_valuation_impl(
                 if enriched_explain_text.strip():
                     prices_explain_txt.write_text(enriched_explain_text + "\n", encoding="utf-8")
 
-            from .text_to_pdf_check import convert_text_to_pdf
+        except Exception as explain_text_err:
+            notes.append(f"Prices explain enrichment failed: {explain_text_err}")
 
-            convert_text_to_pdf(
-                prices_explain_txt,
-                out_dir / f"{ticker}_prices_explain.pdf",
-                prices_explain_html,
-            )
-            pdf_candidate = out_dir / f"{ticker}_prices_explain.pdf"
-            if pdf_candidate.exists():
-                prices_explain_pdf = str(pdf_candidate.resolve())
-        except Exception as explain_pdf_err:
-            notes.append(f"Prices explain PDF generation failed: {explain_pdf_err}")
-
+    # Kept in the result contract for backwards compatibility. Full analysis runs
+    # no longer render or persist PDFs; the web route renders one in memory only
+    # when a user explicitly requests a download.
     pdf_dst = ""
-    if save_pdf:
-        target_pdf = out_dir / f"{ticker}_analysis.pdf"
-        target_html = out_dir / f"{ticker}_analysis.html"
-        try:
-            from .text_to_pdf_check import convert_text_to_pdf
-
-            merged_pdf_source = out_dir / f"{ticker}_analysis_pdf_source.txt"
-            merged_parts: List[str] = []
-            analysis_text_for_pdf = ""
-            if analysis_src.exists():
-                analysis_text_for_pdf = analysis_src.read_text(encoding="utf-8")
-                merged_parts.append(analysis_text_for_pdf)
-            elif analysis_dst.exists():
-                analysis_text_for_pdf = analysis_dst.read_text(encoding="utf-8")
-                merged_parts.append(analysis_text_for_pdf)
-
-            merged_text = "\n\n---\n\n".join(part.strip() for part in merged_parts if str(part).strip()).strip()
-            sources_footer = _build_sec_sources_footer(files_dict)
-            if sources_footer:
-                merged_text = f"{merged_text}\n\n---\n\n{sources_footer}".strip()
-            if merged_text:
-                merged_pdf_source.write_text(merged_text + "\n", encoding="utf-8")
-                convert_text_to_pdf(merged_pdf_source, target_pdf, target_html)
-                if target_pdf.exists():
-                    pdf_dst = str(target_pdf.resolve())
-        except Exception as merged_pdf_err:
-            notes.append(f"Merged analysis PDF generation failed: {merged_pdf_err}")
-
-        if not pdf_dst:
-            try:
-                legacy.pdf_downloader(ticker)
-            except Exception as pdf_err:
-                print(f"Warning: PDF generation failed, continuing without PDF. Error: {pdf_err}")
-            pdf_src = Path(f"{ticker}_analysis.pdf")
-            html_src = Path(f"{ticker}_analysis.html")
-            if pdf_src.exists():
-                shutil.move(str(pdf_src), target_pdf)
-                pdf_dst = str(target_pdf.resolve())
-            if html_src.exists():
-                shutil.move(str(html_src), target_html)
-
     combined_pdf = ""
-    if pdf_dst or prices_explain_pdf:
-        try:
-            combined_pdf = _combine_pdf_artifacts(
-                [
-                    Path(pdf_dst) if pdf_dst else None,
-                    Path(prices_explain_pdf) if prices_explain_pdf else None,
-                ],
-                out_dir / f"{ticker}_combined.pdf",
-            )
-        except Exception as combined_pdf_err:
-            notes.append(f"Combined PDF generation failed: {combined_pdf_err}")
+    _ = save_pdf
 
     store = get_artifact_store()
     artifact_local_paths: Dict[str, Path] = {
         "analysis-txt": analysis_dst,
-        "analysis-pdf": Path(pdf_dst) if pdf_dst else None,
         "prices-explain-txt": prices_explain_txt,
-        "prices-explain-pdf": Path(prices_explain_pdf) if prices_explain_pdf else None,
-        "combined-pdf": Path(combined_pdf) if combined_pdf else None,
         "dashboard-json": Path(dashboard_json) if dashboard_json else None,
         "prices-chart": out_dir / f"{ticker}_prices_valuation.png",
         "revenue-chart": out_dir / f"{ticker}_revenue_valuation.png",

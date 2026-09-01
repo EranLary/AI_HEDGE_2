@@ -123,8 +123,7 @@ export function DownloadClient({
         </p>
         <h1 className="mt-1 font-display text-3xl text-[color:var(--text-primary)]">Read or export</h1>
         <p className="mt-2 text-sm leading-6 text-[color:var(--text-secondary)]">
-          Open the live report for the best reading experience. Markdown is optimized for AI tools. PDFs are
-          generated only when you request one and are never retained.
+          Your research, your way.
         </p>
       </header>
 

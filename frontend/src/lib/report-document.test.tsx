@@ -133,7 +133,7 @@ test("standalone report includes responsive branding, navigation, metadata, and 
   assert.match(built.html, /class="report-pdf-running-brand"/);
   assert.match(built.html, /class="report-pdf-logo"/);
   assert.match(built.html, /data:image\/svg\+xml;base64,/);
-  assert.match(built.html, /data:image\/png;base64,/);
+  assert.doesNotMatch(built.html, /data:image\/png;base64,/);
   assert.match(built.html, /:root\[data-theme="light"\] \.report-logo-image-dark/);
   assert.match(built.html, /\.report-pdf-running-brand \{[\s\S]*position: fixed;/);
   assert.match(built.html, /@media print/);

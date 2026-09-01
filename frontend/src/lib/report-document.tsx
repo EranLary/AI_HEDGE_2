@@ -60,8 +60,8 @@ function reportLogos(): { dark: string; light: string; print: string } {
   cachedReportLogos = {
     dark: asDataUri("hedge-logo-dark.svg"),
     light: asDataUri("hedge-logo-light.svg"),
-    print: `data:image/png;base64,${fs
-      .readFileSync(path.join(process.cwd(), "src", "app", "apple-icon.png"))
+    print: `data:image/svg+xml;base64,${fs
+      .readFileSync(path.join(process.cwd(), "src", "app", "icon.svg"))
       .toString("base64")}`,
   };
   return cachedReportLogos;

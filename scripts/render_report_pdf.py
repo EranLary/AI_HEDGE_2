@@ -7,7 +7,9 @@ directory, R2, the database, or a server-side cache.
 
 from __future__ import annotations
 
+import base64
 import io
+from pathlib import Path
 import re
 import sys
 
@@ -65,7 +67,27 @@ def _xhtml2pdf_compatible_html(html: str) -> str:
         count=1,
         flags=re.IGNORECASE,
     )
-    return re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", simplified, flags=re.IGNORECASE)
+    simplified = re.sub(
+        r"<script\b[^>]*>[\s\S]*?</script>",
+        "",
+        simplified,
+        flags=re.IGNORECASE,
+    )
+    print_logo_path = (
+        Path(__file__).resolve().parents[1]
+        / "frontend"
+        / "src"
+        / "app"
+        / "apple-icon.png"
+    )
+    print_logo = base64.b64encode(print_logo_path.read_bytes()).decode("ascii")
+    return re.sub(
+        r'(<img class="report-pdf-logo" src=")[^"]+(" alt="">)',
+        rf"\g<1>data:image/png;base64,{print_logo}\g<2>",
+        simplified,
+        count=1,
+        flags=re.IGNORECASE,
+    )
 
 
 def render_pdf(html: str) -> bytes:

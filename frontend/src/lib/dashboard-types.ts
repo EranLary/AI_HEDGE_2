@@ -520,10 +520,16 @@ export type DashboardPayload = {
   };
   downloads?: {
     analysis_pdf: string;
+    analysis_html?: string;
+    analysis_md?: string;
     prices_explain_txt?: string;
     prices_explain_pdf?: string;
     valuation_pdf?: string;
+    valuation_html?: string;
+    valuation_md?: string;
     combined_pdf?: string;
+    combined_html?: string;
+    combined_md?: string;
     dashboard_json?: string;
     analysis_txt?: string;
     market_review_json?: string;

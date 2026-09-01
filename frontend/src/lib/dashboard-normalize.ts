@@ -383,11 +383,17 @@ export function normalizePayload(
 
   merged.downloads = {
     analysis_pdf: `/api/artifacts/${tk}/analysis-pdf${reportQuery}`,
+    analysis_html: `/api/artifacts/${tk}/analysis-html${reportQuery}`,
+    analysis_md: `/api/artifacts/${tk}/analysis-md${reportQuery}`,
     analysis_txt: `/api/artifacts/${tk}/analysis-txt${reportQuery}`,
     prices_explain_txt: `/api/artifacts/${tk}/prices-explain-txt${reportQuery}`,
     prices_explain_pdf: `/api/artifacts/${tk}/prices-explain-pdf${reportQuery}`,
     valuation_pdf: `/api/artifacts/${tk}/valuation-pdf${reportQuery}`,
+    valuation_html: `/api/artifacts/${tk}/valuation-html${reportQuery}`,
+    valuation_md: `/api/artifacts/${tk}/valuation-md${reportQuery}`,
     combined_pdf: `/api/artifacts/${tk}/combined-pdf${reportQuery}`,
+    combined_html: `/api/artifacts/${tk}/combined-html${reportQuery}`,
+    combined_md: `/api/artifacts/${tk}/combined-md${reportQuery}`,
     dashboard_json: `/api/artifacts/${tk}/dashboard-json${reportQuery}`,
     market_review_json: `/api/artifacts/${tk}/market-review-json${reportQuery}`,
     financials_json: `/api/artifacts/${tk}/financials-json${reportQuery}`,

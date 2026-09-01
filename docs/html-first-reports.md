@@ -5,11 +5,14 @@ Valuation, and Combined. Each document is rendered from the source already
 stored in `report_artifacts`, so no standalone HTML file is persisted.
 
 - HTML is the primary human-readable view and includes navigation, responsive
-  layout, light/dark themes, tables, and print styling.
+  layout, light/dark themes, tables, and print styling. The standalone document
+  embeds both official logo variants, so the brand mark follows the selected
+  theme without depending on an external image request.
 - Markdown is the smallest, cleanest export for external language models.
 - PDF is rendered from the same HTML only after an explicit download request.
   The API returns `Cache-Control: private, no-store` and streams the generated
-  bytes without writing them to `outputs`, R2, or the database.
+  bytes without writing them to `outputs`, R2, or the database. A compact
+  Hedge in a Box logo header repeats at the top of every PDF page.
 
 Valuation and Combined reports add a clearly separated TradingAgents tactical
 section from the completed dashboard payload. It can show the stored committee

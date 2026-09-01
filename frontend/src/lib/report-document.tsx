@@ -43,12 +43,28 @@ const AI_PERSONA_LEGEND =
   "> **AI PERSONA legend:** Famous investor names identify synthetic AI valuation personas inspired by publicly known investment frameworks. The outputs are not statements from, or endorsements by, those individuals.";
 
 let cachedReportCss = "";
+let cachedReportLogos: { dark: string; light: string; print: string } | null = null;
 
 function reportCss(): string {
   if (cachedReportCss) return cachedReportCss;
   const cssPath = path.join(process.cwd(), "src", "lib", "report-document.css");
   cachedReportCss = fs.readFileSync(cssPath, "utf8");
   return cachedReportCss;
+}
+
+function reportLogos(): { dark: string; light: string; print: string } {
+  if (cachedReportLogos) return cachedReportLogos;
+  const publicPath = path.join(process.cwd(), "public");
+  const asDataUri = (fileName: string) =>
+    `data:image/svg+xml;base64,${fs.readFileSync(path.join(publicPath, fileName)).toString("base64")}`;
+  cachedReportLogos = {
+    dark: asDataUri("hedge-logo-dark.svg"),
+    light: asDataUri("hedge-logo-light.svg"),
+    print: `data:image/png;base64,${fs
+      .readFileSync(path.join(process.cwd(), "src", "app", "apple-icon.png"))
+      .toString("base64")}`,
+  };
+  return cachedReportLogos;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -458,6 +474,7 @@ export function buildStandaloneReportHtml(
   const toc = extractToc(built.markdown);
   const title = `${source.ticker} ${kindLabel(kind)}`;
   const reportLabel = escapeHtml(kindLabel(kind));
+  const logos = reportLogos();
   const notice = built.usedStructuredValuationFallback
     ? '<p class="report-notice">This historical valuation is reconstructed from the original stored structured values. No missing narrative was invented.</p>'
     : "";
@@ -466,7 +483,8 @@ export function buildStandaloneReportHtml(
       .map((entry) => `<li><a class="level-${entry.level}" href="#${escapeHtml(entry.id)}">${escapeHtml(entry.text)}</a></li>`)
       .join("")}</ol></details></nav>`
     : "";
-  const markup = `<div class="report-toolbar"><button class="report-theme-toggle" id="theme-toggle" type="button">Light mode</button></div><main class="report-shell"><header class="report-hero"><div class="report-brand">Hedge in a Box</div><div class="report-kicker">${reportLabel}</div><h1 class="report-title">${escapeHtml(source.ticker)}</h1><p class="report-company">${escapeHtml(source.companyName || "Investment research report")}</p><ul class="report-meta"><li><span class="report-meta-label">Report</span><span class="report-meta-value">${reportLabel}</span></li><li><span class="report-meta-label">Published</span><span class="report-meta-value">${escapeHtml(displayDate(source.generatedAt))}</span></li><li><span class="report-meta-label">Format</span><span class="report-meta-value">Live HTML</span></li></ul>${notice}</header><div class="report-layout">${tocHtml}<article class="report-paper"><div class="report-markdown">${renderMarkdown(built.markdown, toc)}</div></article></div><footer class="report-footer">Generated on demand from the stored report source. PDF copies are not retained. Historical research is not live investment advice.</footer></main>`;
+  const logoMarkup = `<span class="report-logo-frame" aria-hidden="true"><img class="report-logo-image report-logo-image-dark" src="${logos.dark}" alt=""><img class="report-logo-image report-logo-image-light" src="${logos.light}" alt=""></span>`;
+  const markup = `<div class="report-pdf-running-brand" id="report-pdf-running-brand" aria-hidden="true"><img class="report-pdf-logo" src="${logos.print}" alt=""><span class="report-pdf-brand-name">Hedge in a Box</span><span class="report-pdf-brand-context">${escapeHtml(source.ticker)} · ${reportLabel}</span></div><div class="report-toolbar"><button class="report-theme-toggle" id="theme-toggle" type="button">Light mode</button></div><main class="report-shell"><header class="report-hero"><div class="report-brand-lockup">${logoMarkup}<span class="report-brand-copy"><span class="report-brand">Hedge in a Box</span><span class="report-brand-subtitle">AI equity research</span></span></div><div class="report-kicker">${reportLabel}</div><h1 class="report-title">${escapeHtml(source.ticker)}</h1><p class="report-company">${escapeHtml(source.companyName || "Investment research report")}</p><ul class="report-meta"><li><span class="report-meta-label">Report</span><span class="report-meta-value">${reportLabel}</span></li><li><span class="report-meta-label">Published</span><span class="report-meta-value">${escapeHtml(displayDate(source.generatedAt))}</span></li><li><span class="report-meta-label">Format</span><span class="report-meta-value">Live HTML</span></li></ul>${notice}</header><div class="report-layout">${tocHtml}<article class="report-paper"><div class="report-markdown">${renderMarkdown(built.markdown, toc)}</div></article></div><footer class="report-footer">Generated on demand from the stored report source. PDF copies are not retained. Historical research is not live investment advice.</footer></main>`;
 
   return {
     html: `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><title>${escapeHtml(title)}</title><style>${reportCss()}</style></head><body>${markup}<script>${THEME_SCRIPT}</script></body></html>`,

@@ -108,7 +108,7 @@ test("famous valuator output labels disclose AI PERSONA without rewriting narrat
   assert.doesNotMatch(labeled, /Peter Lynch — AI PERSONA is referenced here/);
 });
 
-test("standalone report includes readable navigation, metadata, and print styling", () => {
+test("standalone report includes responsive branding, navigation, metadata, and print styling", () => {
   const built = buildStandaloneReportHtml(
     {
       ticker: "TEST",
@@ -127,6 +127,15 @@ test("standalone report includes readable navigation, metadata, and print stylin
   assert.match(built.html, /Jump to a section/);
   assert.match(built.html, /href="#evidence"/);
   assert.match(built.html, /class="report-table-wrap"/);
+  assert.match(built.html, /class="report-brand-lockup"/);
+  assert.match(built.html, /class="report-logo-image report-logo-image-dark"/);
+  assert.match(built.html, /class="report-logo-image report-logo-image-light"/);
+  assert.match(built.html, /class="report-pdf-running-brand"/);
+  assert.match(built.html, /class="report-pdf-logo"/);
+  assert.match(built.html, /data:image\/svg\+xml;base64,/);
+  assert.match(built.html, /data:image\/png;base64,/);
+  assert.match(built.html, /:root\[data-theme="light"\] \.report-logo-image-dark/);
+  assert.match(built.html, /\.report-pdf-running-brand \{[\s\S]*position: fixed;/);
   assert.match(built.html, /@media print/);
   assert.match(built.html, /@media \(max-width: 440px\)/);
   assert.match(built.html, /PDF copies are not retained/);

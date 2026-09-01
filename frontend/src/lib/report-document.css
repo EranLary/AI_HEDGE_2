@@ -65,6 +65,10 @@ a:hover {
   color: var(--report-accent-strong);
 }
 
+.report-pdf-running-brand {
+  display: none;
+}
+
 .report-toolbar {
   position: sticky;
   top: 0;
@@ -122,6 +126,7 @@ a:hover {
 }
 
 .report-brand,
+.report-brand-subtitle,
 .report-kicker,
 .report-meta-label,
 .report-toc-title {
@@ -131,8 +136,71 @@ a:hover {
   text-transform: uppercase;
 }
 
+.report-brand-lockup {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.report-logo-frame {
+  position: relative;
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--report-accent) 38%, var(--report-border));
+  border-radius: 1rem;
+  background: linear-gradient(145deg, var(--report-accent-soft), var(--report-surface-soft));
+  box-shadow:
+    0 0 0 0.28rem color-mix(in srgb, var(--report-accent-soft) 58%, transparent),
+    0 0.8rem 2rem -1.1rem var(--report-shadow);
+}
+
+.report-logo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0.22rem;
+  border: 1px solid color-mix(in srgb, var(--report-border-strong) 62%, transparent);
+  border-radius: 0.72rem;
+  pointer-events: none;
+}
+
+.report-logo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.report-logo-image-light {
+  display: none;
+}
+
+:root[data-theme="light"] .report-logo-image-dark {
+  display: none;
+}
+
+:root[data-theme="light"] .report-logo-image-light {
+  display: block;
+}
+
+.report-brand-copy {
+  display: grid;
+  gap: 0.1rem;
+}
+
 .report-brand {
   color: var(--report-accent);
+}
+
+.report-brand-subtitle {
+  color: var(--report-text-muted);
+  font-size: 0.59rem;
+  letter-spacing: 0.11em;
 }
 
 .report-kicker {
@@ -550,10 +618,21 @@ a:hover {
   }
 
   .report-brand,
+  .report-brand-subtitle,
   .report-kicker,
   .report-meta-label,
   .report-toc-title {
     letter-spacing: 0.11em;
+  }
+
+  .report-brand-lockup {
+    gap: 0.68rem;
+  }
+
+  .report-logo-frame {
+    width: 2.8rem;
+    height: 2.8rem;
+    border-radius: 0.85rem;
   }
 
   .report-kicker {
@@ -678,7 +757,7 @@ a:hover {
 
 @page {
   size: A4;
-  margin: 16mm 14mm 18mm;
+  margin: 19mm 14mm 18mm;
 }
 
 @media print {
@@ -710,6 +789,50 @@ a:hover {
   .report-toolbar,
   .report-toc {
     display: none;
+  }
+
+  .report-pdf-running-brand {
+    position: fixed;
+    top: -14mm;
+    right: 0;
+    left: 0;
+    z-index: 100;
+    display: flex;
+    height: 8mm;
+    align-items: center;
+    gap: 2mm;
+    border-bottom: 0.25mm solid var(--report-border);
+    color: var(--report-text-muted);
+    font-size: 7pt;
+    line-height: 1;
+  }
+
+  .report-pdf-logo {
+    width: 5.5mm;
+    height: 5.5mm;
+    flex: 0 0 auto;
+    border-radius: 1.4mm;
+    object-fit: cover;
+  }
+
+  .report-pdf-brand-name {
+    color: var(--report-accent);
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .report-pdf-brand-context {
+    margin-left: auto;
+    color: var(--report-text-muted);
+  }
+
+  .report-logo-image-dark {
+    display: none;
+  }
+
+  .report-logo-image-light {
+    display: block;
   }
 
   .report-shell {

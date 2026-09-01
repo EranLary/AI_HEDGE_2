@@ -157,18 +157,23 @@ def _is_number(x: Any) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def _select_shares_outstanding(info: Dict[str, Any], *, default: Optional[float] = 1) -> Optional[float]:
-    for key in ("impliedSharesOutstanding", "sharesOutstanding"):
-        value = info.get(key)
-        if _is_number(value) and value > 0:
-            return float(value)
+class ShareCountUnavailableError(ValueError):
+    """Raised when Yahoo cannot provide a reliable total-company share count."""
 
+
+def _select_shares_outstanding(info: Dict[str, Any]) -> Optional[float]:
+    implied_shares = info.get("impliedSharesOutstanding")
+    if _is_number(implied_shares) and implied_shares > 0:
+        return float(implied_shares)
+
+    # Yahoo's sharesOutstanding can describe only the quoted share class.
+    # marketCap / currentPrice keeps the denominator on a total-company basis.
     market_cap = info.get("marketCap")
     price = info.get("currentPrice")
     if _is_number(market_cap) and market_cap > 0 and _is_number(price) and price > 0:
         return float(market_cap) / float(price)
 
-    return default
+    return None
 
 
 def _convert_range_str(value: str, factor: float) -> str:
@@ -412,7 +417,7 @@ def recalculate_derived_metrics(info: Dict[str, Any]) -> Dict[str, Any]:
     instead of rebuilding P/E, P/B, P/S, EV, or EV ratios from those fields.
     """
     price = info.get("currentPrice")
-    shares = _select_shares_outstanding(info, default=None)
+    shares = _select_shares_outstanding(info)
 
     if not price or not shares:
         return info
@@ -1408,7 +1413,14 @@ def get_variables(
 ) -> dict:
     variables_dict = {}
     statement_metrics = statement_metrics if isinstance(statement_metrics, dict) else {}
-    variables_dict["shares_outstanding"] = _select_shares_outstanding(info_dict, default=1)
+    shares_outstanding = _select_shares_outstanding(info_dict)
+    if shares_outstanding is None:
+        raise ShareCountUnavailableError(
+            f"Reliable total share count unavailable for {str(ticker or '').strip().upper()}: "
+            "expected positive impliedSharesOutstanding or both marketCap and currentPrice. "
+            "sharesOutstanding is intentionally excluded because it may represent only one share class."
+        )
+    variables_dict["shares_outstanding"] = shares_outstanding
     price = info_dict.get("currentPrice", 0)
     variables_dict["price"] = price if _is_number(price) else 0
     market_cap = info_dict.get("marketCap", 0)

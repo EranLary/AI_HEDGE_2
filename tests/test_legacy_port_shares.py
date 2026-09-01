@@ -1,3 +1,5 @@
+import pytest
+
 from ai_hedge import legacy_port
 
 
@@ -34,19 +36,19 @@ def test_get_variables_prefers_implied_shares_outstanding():
     assert variables["shares_outstanding"] == 123
 
 
-def test_get_variables_falls_back_to_shares_outstanding_when_implied_missing():
+def test_get_variables_uses_market_cap_over_price_when_implied_missing():
     variables = _variables_for(
         {
             "impliedSharesOutstanding": None,
-            "sharesOutstanding": 272083008,
-            "currentPrice": 31.15,
-            "marketCap": None,
+            "sharesOutstanding": 40,
+            "currentPrice": 25,
+            "marketCap": 2500,
             "bookValue": 2,
         }
     )
 
-    assert variables["shares_outstanding"] == 272083008
-    assert variables["market_cap"] == 31.15 * 272083008
+    assert variables["shares_outstanding"] == 100
+    assert variables["market_cap"] == 2500
 
 
 def test_get_variables_derives_shares_from_market_cap_and_price():
@@ -61,6 +63,22 @@ def test_get_variables_derives_shares_from_market_cap_and_price():
     )
 
     assert variables["shares_outstanding"] == 100
+
+
+def test_get_variables_rejects_class_only_shares_without_total_company_fallback():
+    with pytest.raises(
+        legacy_port.ShareCountUnavailableError,
+        match="sharesOutstanding is intentionally excluded",
+    ):
+        _variables_for(
+            {
+                "impliedSharesOutstanding": None,
+                "sharesOutstanding": 272083008,
+                "currentPrice": 31.15,
+                "marketCap": None,
+                "bookValue": 2,
+            }
+        )
 
 
 def test_get_variables_uses_statement_metrics_not_provider_financial_summary():
@@ -107,7 +125,7 @@ def test_recalculate_derived_metrics_preserves_provider_multiples():
 
     result = legacy_port.recalculate_derived_metrics(info)
 
-    assert result["marketCap"] == 1_000
+    assert result["marketCap"] == 999
     assert result["trailingPE"] == 8.5
     assert result["priceToBook"] == 1.2
     assert result["priceToSalesTrailing12Months"] == 4.1

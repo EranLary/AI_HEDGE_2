@@ -172,7 +172,7 @@ export function DownloadClient({
                     className="flex items-center justify-center rounded-lg border border-[color:var(--border-subtle)] px-3 py-2 text-xs font-semibold text-[color:var(--text-secondary)] transition hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
                     download={item.markdownLabel}
                   >
-                    Download for AI
+                    Download for LLM
                   </a>
                   <button
                     type="button"

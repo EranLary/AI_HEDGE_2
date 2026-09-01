@@ -359,7 +359,9 @@ async function documentResponse(
   if (!source || !String(source.analysisMd || "").trim()) {
     return NextResponse.json({ error: "Report source was not found." }, { status: 404 });
   }
-  const document = buildStandaloneReportHtml(source, requestKind.reportKind);
+  const document = buildStandaloneReportHtml(source, requestKind.reportKind, {
+    rasterPrintLogo: requestKind.format === "pdf",
+  });
   const filename = documentDownloadName(
     ticker,
     requestKind.reportKind,

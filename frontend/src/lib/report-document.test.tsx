@@ -133,7 +133,7 @@ test("standalone report includes responsive branding, navigation, metadata, and 
   assert.match(built.html, /class="report-pdf-running-brand"/);
   assert.match(built.html, /class="report-pdf-logo"/);
   assert.match(built.html, /data:image\/svg\+xml;base64,/);
-  assert.match(built.html, /data:image\/png;base64,/);
+  assert.doesNotMatch(built.html, /data:image\/png;base64,/);
   assert.match(built.html, /:root\[data-theme="light"\] \.report-logo-image-dark/);
   assert.match(built.html, /content: element\(reportpdfheader\)/);
   assert.match(
@@ -143,6 +143,13 @@ test("standalone report includes responsive branding, navigation, metadata, and 
   assert.match(built.html, /@media print/);
   assert.match(built.html, /@media \(max-width: 440px\)/);
   assert.match(built.html, /PDF copies are not retained/);
+
+  const pdfBuilt = buildStandaloneReportHtml(
+    { ticker: "TEST", analysisMd: "# Branded PDF" },
+    "analysis",
+    { rasterPrintLogo: true },
+  );
+  assert.match(pdfBuilt.html, /class="report-pdf-logo"[^>]+data:image\/png;base64,/);
 });
 
 test("stored Markdown cannot inject scripts or unsafe link schemes", () => {

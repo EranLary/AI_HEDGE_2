@@ -106,10 +106,11 @@ function hasCompletionArtifacts(status: RunStatusPayload): boolean {
   if (!outputDir || !ticker) return false;
 
   const dashboardJson = path.resolve(outputDir, `${ticker}_dashboard.json`);
+  const analysisMd = path.resolve(outputDir, `${ticker}_analysis.md`);
   const analysisTxt = path.resolve(outputDir, `${ticker}_analysis.txt`);
   const analysisPdf = path.resolve(outputDir, `${ticker}_analysis.pdf`);
 
-  return hasFile(dashboardJson) && (hasFile(analysisTxt) || hasFile(analysisPdf));
+  return hasFile(dashboardJson) && (hasFile(analysisMd) || hasFile(analysisTxt) || hasFile(analysisPdf));
 }
 
 function shouldPromoteRunningToCompleted(status: RunStatusPayload, progressLines: string[]): boolean {

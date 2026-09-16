@@ -50,6 +50,27 @@ def test_transform_persists_workspace_and_release_in_report_and_dashboard(tmp_pa
     assert bundle["artifact_row"]["dashboard"]["release_id"] == RELEASE_ID
 
 
+def test_transform_prefers_markdown_analysis_over_legacy_txt(tmp_path: Path) -> None:
+    ticker_dir = tmp_path / "AAPL"
+    ticker_dir.mkdir()
+    dashboard = {
+        "ticker": "AAPL",
+        "generated_at": "2026-08-21T12:00:00Z",
+        "version": "test-v1",
+        "header": {"company_name": "Apple", "currency": "USD"},
+        "valuation_hub": {"consensus": {}},
+    }
+    (ticker_dir / "AAPL_dashboard.json").write_text(json.dumps(dashboard), encoding="utf-8")
+    (ticker_dir / "AAPL_analysis.md").write_text("# Canonical Markdown", encoding="utf-8")
+    (ticker_dir / "AAPL_analysis.txt").write_text("legacy text", encoding="utf-8")
+
+    bundle = ticker_dir_to_row(ticker_dir, source="cli")
+
+    assert bundle is not None
+    assert bundle["artifact_row"]["analysis_md"] == "# Canonical Markdown"
+    assert bundle["artifact_row"]["analysis_md_source"] == "md"
+
+
 def test_workspace_migration_contains_atomic_release_and_scoped_portfolio_guards() -> None:
     migration = (
         Path(__file__).resolve().parents[1]

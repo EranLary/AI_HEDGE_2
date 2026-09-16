@@ -122,7 +122,7 @@ def run_lite_test(
         legacy.append_text_to_file(text=body, header=header)
         text_tasks.append((fn.__name__, header))
 
-    text = legacy.load_text_from_file("analysis.txt")
+    text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
 
     # Preserve legacy expectations in valuation helper funcs.
     globals()["ticker"] = ticker
@@ -163,8 +163,8 @@ def run_lite_test(
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    analysis_src = Path("analysis.txt")
-    analysis_dst = out_dir / f"{ticker}_lite_analysis.txt"
+    analysis_src = Path(legacy.ANALYSIS_MARKDOWN_FILE)
+    analysis_dst = out_dir / f"{ticker}_lite_analysis.md"
     if analysis_src.exists():
         shutil.copy(analysis_src, analysis_dst)
 
@@ -202,6 +202,8 @@ def run_lite_test(
             "dcf": {"text": dcf_summary[0], "header": dcf_summary[1]},
             "pe": {"text": earnings_summary[0], "header": earnings_summary[1]},
         },
+        "analysis_md": str(analysis_dst.resolve()),
+        # Backwards-compatible payload alias. The path now points to Markdown.
         "analysis_txt": str(analysis_dst.resolve()),
         "analysis_pdf": pdf_dst,
         "lite_prices_plot": lite_prices_plot,

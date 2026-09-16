@@ -414,9 +414,17 @@ export async function POST(
 
   const messages = normalizeMessages(body.messages);
   const personaPriorText = collectPersonaPlainText(payload, persona);
-  const localAnalysisPath = localDashboardPath
-    ? path.join(path.dirname(localDashboardPath), `${ticker}_analysis.txt`)
+  const localAnalysisRoot = localDashboardPath ? path.dirname(localDashboardPath) : "";
+  const localAnalysisMdPath = localAnalysisRoot
+    ? path.join(localAnalysisRoot, `${ticker}_analysis.md`)
     : "";
+  const localAnalysisTxtPath = localAnalysisRoot
+    ? path.join(localAnalysisRoot, `${ticker}_analysis.txt`)
+    : "";
+  const localAnalysisPath =
+    localAnalysisMdPath && fs.existsSync(localAnalysisMdPath)
+      ? localAnalysisMdPath
+      : localAnalysisTxtPath;
   const localAnalysisText =
     localAnalysisPath && fs.existsSync(localAnalysisPath)
       ? fs.readFileSync(localAnalysisPath, "utf-8")

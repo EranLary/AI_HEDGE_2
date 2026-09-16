@@ -30,7 +30,7 @@ export interface DbReportFull extends DbReportSummary {
   dashboard: unknown;
   analysis_md: string;
   prices_explain_md: string | null;
-  analysis_md_source: "txt" | "html" | "pdf";
+  analysis_md_source: "md" | "txt" | "html" | "pdf";
   r2_keys: Record<string, string> | null;
 }
 

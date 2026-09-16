@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--input",
-        default="outputs/AAPL/AAPL_analysis.txt",
+        default="outputs/AAPL/AAPL_analysis.md",
         help="Input markdown/text file path",
     )
     parser.add_argument(

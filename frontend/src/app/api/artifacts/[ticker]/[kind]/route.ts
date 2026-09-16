@@ -217,14 +217,19 @@ function localDocumentSource(
     const reportPath = resolveDashboardReportPath(reportId);
     if (!reportPath) return null;
     const root = path.dirname(reportPath);
-    analysisPath = resolveFromRoot(root, `${ticker}_analysis.txt`);
+    analysisPath =
+      resolveFromRoot(root, `${ticker}_analysis.md`) ||
+      resolveFromRoot(root, `${ticker}_analysis.txt`);
     try {
       dashboard = asObject(JSON.parse(fs.readFileSync(reportPath, "utf8")));
     } catch {
       dashboard = readDashboardNear(reportPath);
     }
   } else {
-    analysisPath = findLatestByFileName(`${ticker}_analysis.txt`)?.path || "";
+    analysisPath =
+      findLatestByFileName(`${ticker}_analysis.md`)?.path ||
+      findLatestByFileName(`${ticker}_analysis.txt`)?.path ||
+      "";
     dashboard = analysisPath ? readDashboardNear(analysisPath) : null;
   }
 
@@ -415,12 +420,13 @@ function collectDbCandidateRoots(row: Awaited<ReturnType<typeof fetchReportById>
   const dash = asObject(row.dashboard);
   const artifacts = asObject(dash?.artifacts);
   const dashboardPath = typeof artifacts?.dashboard_json === "string" ? artifacts.dashboard_json : "";
+  const analysisMdPath = typeof artifacts?.analysis_md === "string" ? artifacts.analysis_md : "";
   const analysisTxtPath = typeof artifacts?.analysis_txt === "string" ? artifacts.analysis_txt : "";
   const pricesExplainTxtPath =
     typeof artifacts?.prices_explain_txt === "string" ? artifacts.prices_explain_txt : "";
   const reportFilePath = typeof dash?.report_file === "string" ? dash.report_file : "";
 
-  for (const p of [dashboardPath, analysisTxtPath, pricesExplainTxtPath, reportFilePath]) {
+  for (const p of [dashboardPath, analysisMdPath, analysisTxtPath, pricesExplainTxtPath, reportFilePath]) {
     const candidate = String(p || "").trim();
     if (!candidate) continue;
     roots.add(path.dirname(candidate));

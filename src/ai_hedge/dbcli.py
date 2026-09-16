@@ -239,7 +239,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     target.mkdir(parents=True, exist_ok=True)
 
     dashboard_path = target / f"{args.ticker}_dashboard.json"
-    analysis_path = target / f"{args.ticker}_analysis.txt"
+    analysis_path = target / f"{args.ticker}_analysis.md"
 
     dashboard_path.write_text(
         json.dumps(record["dashboard"], indent=2, ensure_ascii=False),

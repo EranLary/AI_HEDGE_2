@@ -971,6 +971,7 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
         {
           "status": "success | failed | partial_success",
           "ticker": "<TICKER>",
+          "analysis_md": "<path or empty>",
           "analysis_txt": "<path or empty>",
           "pdf_path": "<path or empty>",
           "chart_path": "<path or empty>",
@@ -982,6 +983,7 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
     result: Dict[str, object] = {
         "status": "failed",
         "ticker": ticker_u,
+        "analysis_md": "",
         "analysis_txt": "",
         "pdf_path": "",
         "chart_path": "",
@@ -1001,7 +1003,7 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
         _ensure_deepseek_api_key()
         from .lite_test import run_lite_test
 
-        # Isolated CWD prevents collisions on analysis.txt and temporary PDF/HTML names.
+        # Isolated CWD prevents collisions on analysis.md and temporary PDF/HTML names.
         work_dir = out_dir / "_workspace"
         work_dir.mkdir(parents=True, exist_ok=True)
         prev_cwd = Path.cwd()
@@ -1020,11 +1022,11 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
             os.chdir(prev_cwd)
 
         # Normalize artifacts to output_dir root as a stable API contract.
-        analysis_target = out_dir / f"{ticker_u}_lite_analysis.txt"
+        analysis_target = out_dir / f"{ticker_u}_lite_analysis.md"
         pdf_target = out_dir / f"{ticker_u}_lite_analysis.pdf"
         chart_target = out_dir / f"{ticker_u}_lite_prices_valuation.png"
 
-        analysis_src = Path(str(lite_out.get("analysis_txt", "")))
+        analysis_src = Path(str(lite_out.get("analysis_md") or lite_out.get("analysis_txt", "")))
         pdf_src = Path(str(lite_out.get("analysis_pdf", "")))
         chart_src = Path(str(lite_out.get("lite_prices_plot", "")))
 
@@ -1033,9 +1035,10 @@ def run_lite_analysis(ticker: str, output_dir: str) -> Dict[str, object]:
         copied_chart = _copy_artifact(chart_src, chart_target)
 
         if copied_analysis:
+            result["analysis_md"] = str(analysis_target)
             result["analysis_txt"] = str(analysis_target)
         else:
-            errors.append("Analysis TXT was not generated.")
+            errors.append("Analysis Markdown was not generated.")
 
         if copied_pdf:
             result["pdf_path"] = str(pdf_target)
@@ -1081,7 +1084,9 @@ def run_full_analysis(
     result: Dict[str, object] = {
         "status": "failed",
         "ticker": ticker_u,
+        "analysis_md": "",
         "analysis_txt": "",
+        "valuation_input_md": "",
         "pdf_path": "",
         "chart_path": "",
         "prices_explain_txt": "",
@@ -1106,7 +1111,7 @@ def run_full_analysis(
         _ensure_deepseek_api_key()
         from .runner import run_ticker_valuation
 
-        # Isolated CWD prevents collisions on analysis.txt and temporary files.
+        # Isolated CWD prevents collisions on analysis.md and temporary files.
         work_dir = out_dir / "_workspace"
         work_dir.mkdir(parents=True, exist_ok=True)
         prev_cwd = Path.cwd()
@@ -1133,7 +1138,8 @@ def run_full_analysis(
         elif runner_notes:
             errors.append(str(runner_notes))
 
-        analysis_target = out_dir / f"{ticker_u}_analysis.txt"
+        analysis_target = out_dir / f"{ticker_u}_analysis.md"
+        valuation_input_target = out_dir / f"{ticker_u}_valuation_input.md"
         chart_target = out_dir / f"{ticker_u}_prices_valuation.png"
         prices_explain_txt_target = out_dir / f"{ticker_u}_prices_explain.txt"
         dashboard_json_target = out_dir / f"{ticker_u}_dashboard.json"
@@ -1141,7 +1147,8 @@ def run_full_analysis(
         trading_agents_txt_target = out_dir / f"{ticker_u}_trading_agents.txt"
         market_review_json_target = out_dir / f"{ticker_u}_market_review.json"
 
-        analysis_src = Path(str(full_out.get("analysis_txt", "")))
+        analysis_src = Path(str(full_out.get("analysis_md") or full_out.get("analysis_txt", "")))
+        valuation_input_src = Path(str(full_out.get("valuation_input_md", "")))
         chart_src = Path(str(full_out.get("prices_plot", "")))
         prices_explain_txt_src = Path(str(full_out.get("prices_explain_txt", "")))
         dashboard_json_src = Path(str(full_out.get("dashboard_json", "")))
@@ -1150,6 +1157,7 @@ def run_full_analysis(
         market_review_json_src = Path(str(full_out.get("market_review_json", "")))
 
         copied_analysis = _copy_artifact(analysis_src, analysis_target)
+        copied_valuation_input = _copy_artifact(valuation_input_src, valuation_input_target)
         copied_chart = _copy_artifact(chart_src, chart_target)
         copied_prices_explain_txt = _copy_artifact(prices_explain_txt_src, prices_explain_txt_target)
         copied_dashboard_json = _copy_artifact(dashboard_json_src, dashboard_json_target)
@@ -1158,9 +1166,14 @@ def run_full_analysis(
         copied_market_review_json = _copy_artifact(market_review_json_src, market_review_json_target)
 
         if copied_analysis:
+            result["analysis_md"] = str(analysis_target)
+            # Backwards-compatible payload alias. The path now points to Markdown.
             result["analysis_txt"] = str(analysis_target)
         else:
-            errors.append("Analysis TXT was not generated.")
+            errors.append("Analysis Markdown was not generated.")
+
+        if copied_valuation_input:
+            result["valuation_input_md"] = str(valuation_input_target)
 
         if copied_chart:
             result["chart_path"] = str(chart_target)

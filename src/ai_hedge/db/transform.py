@@ -77,9 +77,13 @@ def _extract_md_with_fallback(
     ticker_dir: Path, ticker: str, base_name: str
 ) -> tuple[str | None, str | None]:
     """
-    Returns (markdown_text, source) where source is one of {'txt','html','pdf'},
+    Returns (markdown_text, source) where source is one of {'md','txt','html','pdf'},
     or (None, None) if all three sources missing/unreadable.
     """
+    md = _read_text_if_exists(ticker_dir / f"{ticker}_{base_name}.md")
+    if md:
+        return md, "md"
+
     txt = _read_text_if_exists(ticker_dir / f"{ticker}_{base_name}.txt")
     if txt:
         return txt, "txt"

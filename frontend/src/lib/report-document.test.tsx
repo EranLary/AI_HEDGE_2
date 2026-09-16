@@ -197,6 +197,7 @@ test("standalone report includes responsive branding, navigation, metadata, and 
 
   assert.match(built.html, /^<!doctype html>/);
   assert.match(built.html, /Test Company/);
+  assert.equal((built.html.match(/<h1(?:\s|>)/g) || []).length, 1);
   assert.match(built.html, /aria-label="Table of contents"/);
   assert.match(built.html, /id="report-contents" open/);
   assert.match(built.html, /Jump to a section/);

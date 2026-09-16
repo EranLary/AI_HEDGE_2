@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ai_hedge import legacy_port, runner
 
 
@@ -28,6 +30,9 @@ def test_valuation_prompt_marks_full_markdown_and_enforces_evidence_discipline()
     assert '"SEC Summary (Warning)"' in prompt
     assert "exclude it from valuation calculations and assumptions" in prompt
     assert "Do not average, reconcile, select, or invent" in prompt
+    assert "Final self-check before returning JSON" in prompt
+    assert "include the formula and the numeric inputs used" in prompt
+    assert "resolved only by filing-backed SEC/MAYA evidence" in prompt
     for label in (
         "[REPORTED FACT]",
         "[CALCULATION]",
@@ -60,8 +65,45 @@ def test_analysis_writer_uses_one_h1_and_nests_section_headings(tmp_path: Path) 
     ]
     assert "## Outer" in markdown
     assert "### Inner" in markdown
-    assert "#### Detail" in markdown
+    assert "**Detail**" in markdown
+    assert "####" not in "\n".join(lines_outside_fences)
     assert "```markdown\n# Code sample\n```" in markdown
+
+
+def test_target_consensus_dispersion_uses_equal_weight_method_families() -> None:
+    method_means, prices = legacy_port.make_short_list_prices(
+        [
+            ([100], "Scenario DCF"),
+            ([200] * 10, "Dream Team"),
+        ],
+        1,
+    )
+
+    assert method_means == [100, 200]
+    assert prices["Overall"][0] == pytest.approx(150)
+    assert prices["STD"] == pytest.approx(50)
+
+
+def test_position_consensus_counts_dream_team_as_one_method_family() -> None:
+    family_amounts = {
+        "Scenario DCF": [15_000],
+        "Target Scenario": [20_000],
+        "Earnings Scenario": [12_000],
+        "Revenue Scenario": [20_000],
+        "Composite Scenario": [12_000],
+        "SOTP Scenario": [-15_000],
+        "Dream Team": [2_500] * 10,
+    }
+    details = {
+        method: [{"investment_amount": amount} for amount in amounts]
+        for method, amounts in family_amounts.items()
+    }
+
+    consensus = legacy_port._method_family_investment_consensus(details)
+
+    assert consensus["aggregate_investments"]["Dream Team"] == pytest.approx(2_500)
+    assert consensus["mean_investment"] == pytest.approx(9_500)
+    assert len(consensus["all_investments"]) == 16
 
 
 def test_valuation_input_snapshot_is_exact_markdown(tmp_path: Path) -> None:
@@ -95,12 +137,18 @@ def test_valuation_report_uses_clear_sections_and_position_labels() -> None:
             "aggregate_targets": {"Dream Team": 120},
             "aggregate_investments": {"Dream Team": -15_000},
         },
+        final_dict={"Prices": {"CV": 0.1, "LMIL": [-15.0, 0.2]}},
         analysis_text="# TEST - Analysis file\n\nCurrent Price: 100",
         variables_dict={"price": 100},
     )
 
     assert text.startswith("# TEST Valuation Report")
     assert "## Valuation Decision Snapshot" in text
+    assert "| Consensus Position | Short" in text
+    assert "| Target Range | $120.00 – $120.00 |" in text
+    assert "| Valuation Methods | 1 |" in text
+    assert "| Model Runs | 1 |" in text
+    assert "| Consensus Confidence | N/A — fewer than two valuation methods |" in text
     assert "## Valuation Method Comparison" in text
     assert "| Dream Team | $120.00 | +20.00% | Short | 15.0% of $100,000 notional ($15,000.00) |" in text
     assert "Average Recommended Position: Short — 15.0% of $100,000 notional ($15,000.00)" in text

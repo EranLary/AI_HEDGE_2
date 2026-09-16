@@ -1675,10 +1675,29 @@ ANALYSIS_MARKDOWN_FILE = "analysis.md"
 
 
 def _demote_markdown_headings(text: str, levels: int = 2) -> str:
-    """Nest model-authored Markdown headings below an analysis section heading."""
+    """Nest model-authored headings without creating H4-H6 report sections."""
+    source_lines = str(text or "").splitlines()
+    heading_levels = []
+    fence_marker = ""
+    for line in source_lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not fence_marker:
+                fence_marker = marker
+            elif marker == fence_marker:
+                fence_marker = ""
+            continue
+        if not fence_marker:
+            match = re.match(r"^(\s*)(#{1,6})(\s+.*)$", line)
+            if match:
+                heading_levels.append(len(match.group(2)))
+
+    shallowest_level = min(heading_levels) if heading_levels else None
+    nested_heading_level = min(3, max(1, int(levels)) + 1)
     output = []
     fence_marker = ""
-    for line in str(text or "").splitlines():
+    for line in source_lines:
         stripped = line.lstrip()
         if stripped.startswith("```") or stripped.startswith("~~~"):
             marker = stripped[:3]
@@ -1688,11 +1707,15 @@ def _demote_markdown_headings(text: str, levels: int = 2) -> str:
                 fence_marker = ""
             output.append(line)
             continue
-        if not fence_marker:
-            match = re.match(r"^(\s*)(#{1,6})(\s+.*)$", line)
+        if not fence_marker and shallowest_level is not None:
+            match = re.match(r"^(\s*)(#{1,6})\s+(.+?)\s*#*\s*$", line)
             if match:
-                hashes = "#" * min(6, len(match.group(2)) + max(0, levels))
-                line = f"{match.group(1)}{hashes}{match.group(3)}"
+                relative_depth = len(match.group(2)) - shallowest_level
+                title = match.group(3).strip()
+                if relative_depth == 0 and nested_heading_level <= 3:
+                    line = f"{'#' * nested_heading_level} {title}"
+                else:
+                    line = f"**{title}**"
         output.append(line)
     return "\n".join(output)
 
@@ -4311,6 +4334,12 @@ VALUATION_EVIDENCE_DISCIPLINE = """
   - [ANALYST ESTIMATE] - an external estimate, model assumption, or analytical inference.
 
   Never present management guidance or an analyst estimate as a reported fact. Never present a calculation as a directly reported number. Do not invent a missing date, period, unit, currency, or value. If a claim cannot be classified or supported, do not use it as a numeric valuation anchor.
+
+  Final self-check before returning JSON:
+  - Re-read every material number in step_by_step_analysis and all rationales and ensure it carries one of the four evidence labels above.
+  - For each [CALCULATION], include the formula and the numeric inputs used.
+  - Confirm that no management guidance, analyst estimate, or model assumption is phrased as a reported fact.
+  - Confirm that any factual contradiction was resolved only by filing-backed SEC/MAYA evidence; if it was not resolved there, exclude the disputed item.
   </Evidence_Discipline>
 """.strip()
 
@@ -4904,16 +4933,12 @@ import numpy as np
 def make_short_list_prices(list_of_all_results, price_currency):
     final_list = []
     price_dict = {}
-    all_values = []
-
     for results, name in list_of_all_results:
         if results:
             print(name, results)
 
             results_array = np.asarray(results, dtype=float)
             results_array = results_array * price_currency
-
-            all_values.extend(results_array)
 
             mean_val = results_array.mean()
             final_list.append(mean_val)
@@ -4926,8 +4951,11 @@ def make_short_list_prices(list_of_all_results, price_currency):
         p25, p75 = np.quantile(final_list, [0.25, 0.75])
         price_dict["Overall"] = [mean_val, p25, p75]
 
-        if all_values:
-            price_dict["STD"] = float(np.std(all_values))
+        if final_list:
+            # Dispersion must use the same equal-weight method-family unit as
+            # the consensus mean. Dream Team is therefore represented by its
+            # own mean once, rather than by ten separately weighted personas.
+            price_dict["STD"] = float(np.std(np.asarray(final_list, dtype=float)))
         else:
             price_dict["STD"] = 0.0
 
@@ -5657,6 +5685,55 @@ def _normalize_valuation_contexts(base_text, valuation_contexts):
 #    - Append text only at the very end
 #    - Return final_dict as before
 # ---------------------------------------------------------------------
+def _method_family_investment_consensus(method_details):
+    """Aggregate persona/run allocations once per valuation family."""
+    aggregate_investments = {}
+    all_investment_values = []
+    for method_name, items in method_details.items():
+        method_values = []
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    value = float(item.get("investment_amount"))
+                except Exception:
+                    continue
+                if np.isfinite(value) and -100000.0 <= value <= 100000.0:
+                    method_values.append(value)
+                    all_investment_values.append(value)
+        aggregate_investments[method_name] = (
+            float(np.mean(np.asarray(method_values, dtype=float)))
+            if method_values
+            else None
+        )
+
+    method_values = [
+        float(value)
+        for value in aggregate_investments.values()
+        if isinstance(value, (int, float, np.floating)) and np.isfinite(value)
+    ]
+    if method_values:
+        method_array = np.asarray(method_values, dtype=float)
+        mean_investment = float(method_array.mean())
+        std_investment = float(method_array.std())
+    else:
+        mean_investment = 0.0
+        std_investment = 0.0
+    investment_cv = (
+        float(std_investment / abs(mean_investment))
+        if abs(mean_investment) > 1e-9
+        else 0.0
+    )
+    return {
+        "aggregate_investments": aggregate_investments,
+        "all_investments": all_investment_values,
+        "mean_investment": mean_investment,
+        "investment_std": std_investment,
+        "investment_cv": investment_cv,
+    }
+
+
 def run_valuations(
     ticker,
     info_dict,
@@ -5715,28 +5792,6 @@ def run_valuations(
         "SOTP Scenario": [],
         "Dream Team": [],
     }
-    def _collect_investment_values(items):
-        out = []
-        if not isinstance(items, list):
-            return out
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            raw = item.get("investment_amount")
-            try:
-                val = float(raw)
-            except Exception:
-                continue
-            if np.isfinite(val) and -100000.0 <= val <= 100000.0:
-                out.append(val)
-        return out
-
-    def _mean_investment_for_method(items):
-        vals = _collect_investment_values(items)
-        if not vals:
-            return None
-        return float(np.mean(np.asarray(vals, dtype=float)))
-
     print("price_currency:", price_currency)
     print("financial_currency:", financial_currency)
     # Backward compatibility: these are intentionally ignored now.
@@ -6123,35 +6178,18 @@ def run_valuations(
     method_details["SOTP Scenario"] = details_sotp_scenario
     method_details["Dream Team"] = details_dream
 
-    all_investment_values = []
-    for method_name, items in method_details.items():
-        _ = method_name
-        all_investment_values.extend(_collect_investment_values(items))
-
-    if all_investment_values:
-        inv_arr = np.asarray(all_investment_values, dtype=float)
-        mean_investment = float(inv_arr.mean())
-        std_investment = float(inv_arr.std())
-    else:
-        mean_investment = 0.0
-        std_investment = 0.0
+    # Use one equally weighted vote per valuation family. In particular, the
+    # ten Dream Team personas are averaged first and count as one family, just
+    # like the target-price consensus produced by make_short_list_prices().
+    investment_consensus = _method_family_investment_consensus(method_details)
+    aggregate_investments = investment_consensus["aggregate_investments"]
+    all_investment_values = investment_consensus["all_investments"]
+    mean_investment = investment_consensus["mean_investment"]
+    std_investment = investment_consensus["investment_std"]
 
     mean_investment_percent = (mean_investment / 100000.0) * 100.0
-    if abs(mean_investment) > 1e-9:
-        investment_cv = float(std_investment / mean_investment)
-    else:
-        investment_cv = 0.0
+    investment_cv = investment_consensus["investment_cv"]
     lmil = [mean_investment_percent, investment_cv]
-
-    aggregate_investments = {
-        "Scenario DCF": _mean_investment_for_method(method_details["Scenario DCF"]),
-        "Target Scenario": _mean_investment_for_method(method_details["Target Scenario"]),
-        "Earnings Scenario": _mean_investment_for_method(method_details["Earnings Scenario"]),
-        "Revenue Scenario": _mean_investment_for_method(method_details["Revenue Scenario"]),
-        "Composite Scenario": _mean_investment_for_method(method_details["Composite Scenario"]),
-        "SOTP Scenario": _mean_investment_for_method(method_details["SOTP Scenario"]),
-        "Dream Team": _mean_investment_for_method(method_details["Dream Team"]),
-    }
     aggregate_investment_percents = {
         method_name: (
             (float(amount) / 100000.0) * 100.0

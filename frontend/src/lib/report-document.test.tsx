@@ -109,6 +109,59 @@ test("TradingAgents section is omitted when no tactical fields were stored", () 
   assert.equal(buildTradingAgentsReportMarkdown({ trading_agents: { status: "unavailable" } }), "");
 });
 
+test("report Markdown has one H1 and no structural headings deeper than H3", () => {
+  const source = {
+    ticker: "TEST",
+    analysisMd: [
+      "# TEST Analysis",
+      "",
+      "# Legacy Top Section",
+      "",
+      "## Nested Evidence",
+      "",
+      "### Deep Detail",
+      "",
+      "```markdown",
+      "#### Code Sample",
+      "```",
+    ].join("\n"),
+    pricesExplainMd: [
+      "# TEST Valuation Report",
+      "",
+      "## Valuation Decision Snapshot",
+      "",
+      "### Model Run 1",
+      "",
+      "#### Deep Assumption",
+    ].join("\n"),
+    dashboard: tacticalDashboard,
+  };
+
+  for (const kind of ["analysis", "valuation", "combined"] as const) {
+    const markdown = buildReportMarkdown(source, kind).markdown;
+    const headings = markdown
+      .split(/\r?\n/)
+      .filter((line) => /^#{1,6}\s+/.test(line) && !line.includes("Code Sample"));
+    assert.equal(headings.filter((line) => /^#\s+/.test(line)).length, 1);
+    assert.equal(headings.some((line) => /^#{4,6}\s+/.test(line)), false);
+  }
+
+  const analysis = buildReportMarkdown(source, "analysis").markdown;
+  assert.match(analysis, /^## Legacy Top Section$/m);
+  assert.match(analysis, /^### Nested Evidence$/m);
+  assert.match(analysis, /^\*\*Deep Detail\*\*$/m);
+  assert.match(analysis, /```markdown\n#### Code Sample\n```/);
+
+  const combined = buildReportMarkdown(source, "combined").markdown;
+  assert.match(combined, /^# TEST Combined Investment Report$/m);
+  assert.match(combined, /^## Analysis$/m);
+  assert.match(combined, /^## Valuation$/m);
+  assert.match(combined, /^## Independent Tactical View$/m);
+  assert.match(combined, /^### Legacy Top Section$/m);
+  assert.doesNotMatch(combined, /^# TEST Analysis$/m);
+  assert.doesNotMatch(combined, /^# TEST Valuation Report$/m);
+});
+
 test("famous valuator output labels disclose AI PERSONA without rewriting narrative prose", () => {
   const input = [
     "# Valuation",

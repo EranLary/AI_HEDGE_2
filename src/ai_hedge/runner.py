@@ -20,6 +20,7 @@ from .dashboard import (
     deterministic_red_flags,
     generate_wall_st_synthesis,
     generate_dashboard_sections,
+    valuation_confidence_metrics,
     write_dashboard_payload,
 )
 from .io import get_artifact_store
@@ -1049,11 +1050,77 @@ def _fmt_allocation(value: Any, *, include_direction: bool = True) -> str:
     return f"{_allocation_direction(amount)} — {allocation}"
 
 
+def _consensus_confidence_text(
+    *,
+    final_dict: Dict[str, Any],
+    target_values: List[float],
+    investment_values: List[float],
+    mean_target: Optional[float],
+    mean_investment: Optional[float],
+    current_price: Any,
+) -> str:
+    if len(target_values) < 2 or len(investment_values) < 2:
+        return "N/A — fewer than two valuation methods"
+
+    prices = final_dict.get("Prices", {}) if isinstance(final_dict, dict) else {}
+    prices = prices if isinstance(prices, dict) else {}
+    price_cv = _first_float(prices.get("CV"))
+    if price_cv is None:
+        target_std = _std_numeric_values(target_values)
+        current = _first_float(current_price)
+        denominator = (
+            (float(current) + float(mean_target)) / 2.0
+            if current is not None and mean_target is not None
+            else None
+        )
+        if target_std is not None and denominator is not None and abs(denominator) > 1e-9:
+            price_cv = float(target_std / abs(denominator))
+
+    lmil = prices.get("LMIL") if isinstance(prices.get("LMIL"), (list, tuple)) else None
+    if lmil is None:
+        investment_std = _std_numeric_values(investment_values)
+        investment_cv = (
+            float(investment_std / abs(mean_investment))
+            if investment_std is not None and mean_investment is not None and abs(mean_investment) > 1e-9
+            else 0.0
+        )
+        investment_pct = (
+            (float(mean_investment) / VALUATION_NOTIONAL_BUDGET) * 100.0
+            if mean_investment is not None
+            else 0.0
+        )
+        lmil = [investment_pct, investment_cv]
+
+    current = _first_float(current_price)
+    target_return_pct = (
+        ((float(mean_target) - float(current)) / float(current)) * 100.0
+        if mean_target is not None and current is not None and abs(current) > 1e-9
+        else None
+    )
+    position_size_pct = (
+        (float(mean_investment) / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if mean_investment is not None
+        else None
+    )
+    _, confidence_factor, _ = valuation_confidence_metrics(
+        price_cv=price_cv,
+        lmil=lmil,
+        target_return_pct=target_return_pct,
+        position_size_pct=position_size_pct,
+    )
+    if confidence_factor >= 0.75:
+        return "High — strong agreement across targets and allocations"
+    if confidence_factor >= 0.50:
+        return "Moderate — mixed agreement across targets and allocations"
+    return "Low — elevated disagreement across targets and allocations"
+
+
 def _build_valuation_decision_snapshot(
     methods: Dict[str, Any],
     aggregate_targets: Dict[str, Any],
     aggregate_investments: Dict[str, Any],
     current_price: Any,
+    final_dict: Optional[Dict[str, Any]] = None,
 ) -> str:
     target_values = [
         float(value)
@@ -1072,18 +1139,49 @@ def _build_valuation_decision_snapshot(
 
     mean_target = _avg_numeric_values(target_values)
     mean_investment = _avg_numeric_values(investment_values)
-    target_dispersion = _std_numeric_values(target_values)
-    method_names = list(methods.keys()) or sorted(
-        set(aggregate_targets.keys()) | set(aggregate_investments.keys())
+    method_names = [
+        method_name
+        for method_name in dict.fromkeys(
+            list(methods.keys())
+            + list(aggregate_targets.keys())
+            + list(aggregate_investments.keys())
+        )
+        if (
+            bool(methods.get(method_name))
+            or _first_float(aggregate_targets.get(method_name)) is not None
+            or _first_float(aggregate_investments.get(method_name)) is not None
+        )
+    ]
+    model_runs = sum(
+        1
+        for items in methods.values()
+        if isinstance(items, list)
+        for item in items
+        if isinstance(item, dict)
+    )
+    target_range = (
+        f"{_fmt_money(min(target_values))} – {_fmt_money(max(target_values))}"
+        if target_values
+        else "N/A"
+    )
+    confidence = _consensus_confidence_text(
+        final_dict=final_dict if isinstance(final_dict, dict) else {},
+        target_values=target_values,
+        investment_values=investment_values,
+        mean_target=mean_target,
+        mean_investment=mean_investment,
+        current_price=current_price,
     )
 
     rows = [
         ("Current Price", _fmt_money(current_price)),
         ("Mean Target Price", _fmt_money(mean_target)),
         ("Implied Upside / Downside", _fmt_change_from_current(mean_target, current_price)),
-        ("Average Recommended Position", _fmt_allocation(mean_investment)),
-        ("Valuation Methods Included", str(len(method_names))),
-        ("Target Price Dispersion (STD)", _fmt_money(target_dispersion)),
+        ("Consensus Position", _fmt_allocation(mean_investment)),
+        ("Target Range", target_range),
+        ("Valuation Methods", str(len(method_names))),
+        ("Model Runs", str(model_runs)),
+        ("Consensus Confidence", confidence),
     ]
     lines = [
         "## Valuation Decision Snapshot",
@@ -1333,6 +1431,7 @@ def _build_prices_explain_text(
         aggregate_targets if isinstance(aggregate_targets, dict) else {},
         aggregate_investments if isinstance(aggregate_investments, dict) else {},
         current_price,
+        final_dict if isinstance(final_dict, dict) else {},
     )
     if decision_snapshot:
         lines.extend(["", decision_snapshot])

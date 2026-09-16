@@ -72,3 +72,48 @@ def test_valuation_input_snapshot_is_exact_markdown(tmp_path: Path) -> None:
     assert path.name == "TEST_valuation_input.md"
     assert path.read_bytes() == markdown.encode("utf-8")
     assert persisted == markdown
+
+
+def test_valuation_report_uses_clear_sections_and_position_labels() -> None:
+    text = runner._build_prices_explain_text(
+        "TEST",
+        {
+            "current_price": 100,
+            "methods": {
+                "Dream Team": [
+                    {
+                        "persona": "Peter Lynch",
+                        "target_price": 120,
+                        "investment_amount": -15_000,
+                        "raw_json": {
+                            "target_market_cap": 1_200_000,
+                            "target_market_cap_rationale": "[ANALYST ESTIMATE] Multiple-based target.",
+                        },
+                    }
+                ]
+            },
+            "aggregate_targets": {"Dream Team": 120},
+            "aggregate_investments": {"Dream Team": -15_000},
+        },
+        analysis_text="# TEST - Analysis file\n\nCurrent Price: 100",
+        variables_dict={"price": 100},
+    )
+
+    assert text.startswith("# TEST Valuation Report")
+    assert "## Valuation Decision Snapshot" in text
+    assert "## Valuation Method Comparison" in text
+    assert "| Dream Team | $120.00 | +20.00% | Short | 15.0% of $100,000 notional ($15,000.00) |" in text
+    assert "Average Recommended Position: Short — 15.0% of $100,000 notional ($15,000.00)" in text
+    assert "### Peter Lynch — AI Persona" in text
+    assert "**Valuation Inputs and Outputs**" in text
+    assert "**Method Rationale and Key Assumptions**" in text
+    assert "**Target Market Cap Rationale:**" in text
+    assert "Prices Explain" not in text
+    assert "Output 1" not in text
+    assert "####" not in text
+
+
+def test_position_formatter_distinguishes_long_short_and_no_position() -> None:
+    assert runner._fmt_allocation(15_000) == "Long — 15.0% of $100,000 notional ($15,000.00)"
+    assert runner._fmt_allocation(-15_000) == "Short — 15.0% of $100,000 notional ($15,000.00)"
+    assert runner._fmt_allocation(0) == "No Position — 0.0% of $100,000 notional ($0.00)"

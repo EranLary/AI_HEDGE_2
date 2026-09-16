@@ -139,6 +139,7 @@ function textValue(value: unknown): string {
 
 export function labelFamousValuatorPersonas(markdown: string): string {
   let changed = false;
+  let hasPersonaLabel = false;
   const labeled = String(markdown || "")
     .split(/\r?\n/)
     .map((line) => {
@@ -146,15 +147,21 @@ export function labelFamousValuatorPersonas(markdown: string): string {
       if (!isDisplayLine) return line;
       let next = line;
       for (const name of FAMOUS_VALUATOR_PERSONAS) {
-        if (!next.includes(name) || next.includes(`${name} — AI PERSONA`)) continue;
+        const expectedLabel = `${name} — AI PERSONA`;
+        if (next.toLocaleLowerCase().includes(expectedLabel.toLocaleLowerCase())) {
+          hasPersonaLabel = true;
+          continue;
+        }
+        if (!next.includes(name)) continue;
         next = next.replaceAll(name, `${name} — AI PERSONA`);
+        hasPersonaLabel = true;
       }
       if (next !== line) changed = true;
       return next;
     })
     .join("\n");
 
-  if (!changed) return labeled;
+  if ((!changed && !hasPersonaLabel) || labeled.includes("AI PERSONA legend")) return labeled;
   const lines = labeled.split("\n");
   const firstTitle = lines.findIndex((line) => /^#\s+/.test(line));
   const insertAt = firstTitle >= 0 ? firstTitle + 1 : 0;

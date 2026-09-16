@@ -530,10 +530,15 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       }
       const titleLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
       const targetMatch = trimmed.match(/Method Target Price:\s*\$?([0-9,.\-]+)/i);
-      const investMatch = trimmed.match(/Method Mean Investment:\s*\$?([0-9,.\-]+)/i);
+      const legacyInvestMatch = trimmed.match(/Method Mean Investment:\s*\$?([0-9,.\-]+)/i);
+      const positionMatch = trimmed.match(
+        /Average Recommended Position:\s*(Long|Short|No Position).*?\(\$?([0-9,.]+)\)/i,
+      );
 
       const keyMetricPairs: Record<string, number> = {};
-      const numericSection = trimmed.match(/#### Key Numeric Values([\s\S]*?)(####|###|$)/i);
+      const numericSection = trimmed.match(
+        /(?:#### Key Numeric Values|\*\*Valuation Inputs and Outputs\*\*)\s*([\s\S]*?)(?=\n(?:####|###|\*\*Method Rationale)|$)/i,
+      );
       if (numericSection) {
         const metricLines = numericSection[1]
           .split("\n")
@@ -555,7 +560,19 @@ export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
       const targetPrice = parseMoney(targetMatch?.[1] || "");
       const current = base.valuation_hub.consensus.current_price || 0;
       const upside = current && targetPrice ? ((targetPrice - current) / current) * 100 : null;
-      const invest = parseMoney(investMatch?.[1] || "");
+      let invest = parseMoney(legacyInvestMatch?.[1] || "");
+      if (positionMatch) {
+        const absoluteInvestment = parseMoney(positionMatch[2]);
+        if (absoluteInvestment !== null) {
+          const direction = positionMatch[1].toLowerCase();
+          invest =
+            direction === "short"
+              ? -Math.abs(absoluteInvestment)
+              : direction === "long"
+                ? Math.abs(absoluteInvestment)
+                : 0;
+        }
+      }
       blocks.push({
         name: canonicalModelName(titleLine),
         target_price: targetPrice,

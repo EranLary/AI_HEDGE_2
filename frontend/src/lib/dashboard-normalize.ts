@@ -463,7 +463,9 @@ function parseAssumptionsPackRows(text: string, sourcePath: string) {
 
 export function buildFallbackFromArtifacts(ticker: string): DashboardPayload {
   const base = createFallbackDashboard(ticker);
-  const analysisFile = findLatestByFileName(`${ticker}_analysis.txt`);
+  const analysisFile =
+    findLatestByFileName(`${ticker}_analysis.md`) ||
+    findLatestByFileName(`${ticker}_analysis.txt`);
   const explainFile = findLatestByFileName(`${ticker}_prices_explain.txt`);
 
   if (analysisFile) {

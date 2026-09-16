@@ -56,7 +56,11 @@ export function ArtifactsClient({
   };
 
   push("analysis_pdf", "Analysis PDF", downloads.analysis_pdf || artifacts.analysis_pdf);
-  push("analysis_txt", "Analysis TXT", downloads.analysis_txt || artifacts.analysis_txt);
+  push(
+    "analysis_md",
+    "Analysis Markdown",
+    downloads.analysis_md || artifacts.analysis_md || downloads.analysis_txt || artifacts.analysis_txt,
+  );
   push("prices_plot", "Prices Chart", artifacts.prices_plot);
   push("revenue_plot", "Revenue Chart", artifacts.revenue_plot);
   push("net_income_plot", "Net Income Chart", artifacts.net_income_plot);

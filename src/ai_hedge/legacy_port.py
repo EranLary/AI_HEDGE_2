@@ -1671,13 +1671,40 @@ def deepseek_simple_text(
 from datetime import datetime
 from typing import Optional
 
+ANALYSIS_MARKDOWN_FILE = "analysis.md"
+
+
+def _demote_markdown_headings(text: str, levels: int = 2) -> str:
+    """Nest model-authored Markdown headings below an analysis section heading."""
+    output = []
+    fence_marker = ""
+    for line in str(text or "").splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not fence_marker:
+                fence_marker = marker
+            elif marker == fence_marker:
+                fence_marker = ""
+            output.append(line)
+            continue
+        if not fence_marker:
+            match = re.match(r"^(\s*)(#{1,6})(\s+.*)$", line)
+            if match:
+                hashes = "#" * min(6, len(match.group(2)) + max(0, levels))
+                line = f"{match.group(1)}{hashes}{match.group(3)}"
+        output.append(line)
+    return "\n".join(output)
+
 def append_text_to_file(
     *,
     text: str,
     header: Optional[str] = None,
-    file_path: str = "analysis.txt",
+    file_path: str = ANALYSIS_MARKDOWN_FILE,
     add_timestamp: bool = False,
-    two_rows_n = True,
+    two_rows_n: bool = True,
+    header_level: int = 2,
+    normalize_nested_headings: bool = True,
 ) -> None:
     """
     Appends text to a file.
@@ -1692,9 +1719,14 @@ def append_text_to_file(
             f.write(f"\n\n--- {ts} ---\n")
 
         if header:
-            f.write(f"# {header}:")
+            safe_header_level = max(1, min(6, int(header_level)))
+            body = str(text or "").strip()
+            if normalize_nested_headings:
+                body = _demote_markdown_headings(body, levels=safe_header_level)
+            f.write(f"{'#' * safe_header_level} {header}")
             f.write("\n")
-            f.write(f'{text.strip()}\n')
+            if body:
+                f.write(f"{body}\n")
 
         else:
             f.write(text.strip() + "\n")
@@ -1704,7 +1736,7 @@ import time
 
 from pathlib import Path
 
-def load_text_from_file(file_path: str = "analysis.txt") -> str:
+def load_text_from_file(file_path: str = ANALYSIS_MARKDOWN_FILE) -> str:
     """
     Loads and returns the full text content of a file.
 
@@ -3180,7 +3212,7 @@ def for_value_insights(financial_dict, ticker):
 
 import os
 
-def reset_file_if_not_empty(file_path: str = "analysis.txt") -> None:
+def reset_file_if_not_empty(file_path: str = ANALYSIS_MARKDOWN_FILE) -> None:
     """
     Checks if a file exists and contains any content.
     If it does, clears the file completely.
@@ -3194,7 +3226,7 @@ def reset_file_if_not_empty(file_path: str = "analysis.txt") -> None:
             pass
 
 
-def generate_first_text(ticker, variables_dict, file_path: str = "analysis.txt"):
+def generate_first_text(ticker, variables_dict, file_path: str = ANALYSIS_MARKDOWN_FILE):
     title = f"# {ticker} - Analysis file"
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -4259,6 +4291,30 @@ def _extract_raw_json_text(text: str) -> str:
 
 import datetime as dt
 
+
+VALUATION_EVIDENCE_DISCIPLINE = """
+  <Evidence_Discipline>
+  The analysis document is structured Markdown. Use its headings to identify the source and role of each section.
+
+  Contradiction rule:
+  1) If two statements conflict about the same factual item, use only the version explicitly supported by the "SEC Summary" or equivalent "MAYA Summary".
+  2) A section titled "SEC Summary (Warning)" or "MAYA Summary (Warning)" does not count as filing-backed evidence.
+  3) If no filing-backed section is available, or if it does not resolve the contradiction, treat the disputed item as unresolved and exclude it from valuation calculations and assumptions.
+  4) Do not average, reconcile, select, or invent a value merely to complete the valuation.
+  5) You may still use the rest of the analysis for qualitative context when it is not contradicted.
+
+  Anti-hallucination and evidence classification:
+  For every material input used in step_by_step_analysis or a rationale, explicitly classify it as one of:
+  - [REPORTED FACT] - directly reported in a filing or financial statement.
+  - [CALCULATION] - calculated from reported inputs; state the formula and inputs.
+  - [MANAGEMENT GUIDANCE] - a forward-looking statement or estimate attributed to management.
+  - [ANALYST ESTIMATE] - an external estimate, model assumption, or analytical inference.
+
+  Never present management guidance or an analyst estimate as a reported fact. Never present a calculation as a directly reported number. Do not invent a missing date, period, unit, currency, or value. If a claim cannot be classified or supported, do not use it as a numeric valuation anchor.
+  </Evidence_Discipline>
+""".strip()
+
+
 def build_prompt(ticker, financial_dict, instruction, text):
   financial_data = financial_dict["All Reports"]
   info = safe_company_profile(
@@ -4279,15 +4335,17 @@ def build_prompt(ticker, financial_dict, instruction, text):
   Your analyst team has delivered a full analysis package and expects a final score-grade judgment.
 
   You are given:
-  1) - Prepared analysis document (raw text)
+  1) - Full prepared analysis document (Markdown)
   2) - Financial data (structured)
   3) - Company profile and current market context (structured)
   4) - Explicit output instructions (strict JSON schema)
 
   Treat the prepared analysis as a very professional analyst opinion - very strong and high quality - but not the truth itself.
 
-  Analysis document:
-  <Analysis_Document>
+  {VALUATION_EVIDENCE_DISCIPLINE}
+
+  Analysis document (full Markdown, not summarized or shortened):
+  <Analysis_Document format="markdown">
   {text}
   </Analysis_Document>
 
@@ -6478,8 +6536,8 @@ def make_sicum_file_full(ticker, text, financial_dict, variables_dict, n_years =
 
 import shutil
 def text_dowloader(ticker, download_text):
-  new_name = f'{ticker}_analysis.text'
-  shutil.copy("analysis.txt", new_name)
+  new_name = f'{ticker}_analysis.md'
+  shutil.copy(ANALYSIS_MARKDOWN_FILE, new_name)
   if download_text:
     print(f"Text file ready: {new_name}")
 
@@ -6487,7 +6545,7 @@ def text_dowloader(ticker, download_text):
 from pathlib import Path
 
 def pdf_downloader(ticker):
-  text_path = Path("analysis.txt")
+  text_path = Path(ANALYSIS_MARKDOWN_FILE)
   pdf_path = Path(f'{ticker}_analysis.pdf')
   html_path = Path(f'{ticker}_analysis.html')
 

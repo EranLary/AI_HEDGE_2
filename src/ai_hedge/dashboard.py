@@ -1229,39 +1229,46 @@ def generate_dashboard_sections(
     }
 
 
-def build_dashboard_appendix_text(ticker: str, qualitative: Dict[str, Any]) -> str:
+def build_dashboard_appendix_text(
+    ticker: str,
+    qualitative: Dict[str, Any],
+    *,
+    include_title: bool = True,
+) -> str:
     docs = qualitative.get("documents", {}) if isinstance(qualitative, dict) else {}
     exec_doc = docs.get("executive_summary", {}) if isinstance(docs.get("executive_summary"), dict) else {}
     bull_doc = docs.get("bull_case", {}) if isinstance(docs.get("bull_case"), dict) else {}
     bear_doc = docs.get("bear_case", {}) if isinstance(docs.get("bear_case"), dict) else {}
     main_thesis_doc = docs.get("main_thesis", {}) if isinstance(docs.get("main_thesis"), dict) else {}
 
-    lines: List[str] = [
-        f"# Dashboard Extraction Pack ({ticker})",
-        "",
-        "## Executive Summary",
+    lines: List[str] = []
+    subsection_heading = "##" if include_title else "#"
+    if include_title:
+        lines.extend([f"# Dashboard Extraction Pack ({ticker})", ""])
+    lines.extend([
+        f"{subsection_heading} Executive Summary",
         str(exec_doc.get("executive_summary", qualitative.get("executive_summary_markdown", ""))).strip(),
         "",
-        "## Key Takeaways",
-    ]
+        f"{subsection_heading} Key Takeaways",
+    ])
     for item in _as_str_list(exec_doc.get("key_takeaways"), max_items=10):
         lines.append(f"- {item}")
 
-    lines.extend(["", "## Bull Case - Why This Could Be a Good Investment"])
+    lines.extend(["", f"{subsection_heading} Bull Case - Why This Could Be a Good Investment"])
     bull_reasons = _as_str_list(bull_doc.get("reasons"), max_items=15)
     if not bull_reasons:
         bull_reasons = _as_str_list(qualitative.get("bull_case_reasons"), max_items=15)
     for item in bull_reasons:
         lines.append(f"- {item}")
 
-    lines.extend(["", "## Bear Case - Why This Could Be a Bad Investment"])
+    lines.extend(["", f"{subsection_heading} Bear Case - Why This Could Be a Bad Investment"])
     bear_reasons = _as_str_list(bear_doc.get("reasons"), max_items=15)
     if not bear_reasons:
         bear_reasons = _as_str_list(qualitative.get("bear_case_reasons"), max_items=15)
     for item in bear_reasons:
         lines.append(f"- {item}")
 
-    lines.extend(["", "## Main Thesis Questions"])
+    lines.extend(["", f"{subsection_heading} Main Thesis Questions"])
     valuation_revolves = _first_non_empty(main_thesis_doc.get("valuation_revolves_around"))
     if valuation_revolves:
         lines.append(valuation_revolves)
@@ -1271,7 +1278,7 @@ def build_dashboard_appendix_text(ticker: str, qualitative: Dict[str, Any]) -> s
     for item in main_questions:
         lines.append(f"- {item}")
 
-    lines.extend(["", "## KPI Watchlist"])
+    lines.extend(["", f"{subsection_heading} KPI Watchlist"])
     watchlist_kpis = _as_kpi_list(main_thesis_doc.get("kpis"), max_items=None)
     if not watchlist_kpis:
         watchlist_kpis = _as_kpi_list(qualitative.get("watchlist_kpis"), max_items=None)

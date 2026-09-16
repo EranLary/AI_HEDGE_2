@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS report_artifacts (
     dashboard           jsonb NOT NULL,
     analysis_md         text  NOT NULL,
     prices_explain_md   text,
-    analysis_md_source  text  NOT NULL DEFAULT 'txt',  -- txt | html | pdf
+    analysis_md_source  text  NOT NULL DEFAULT 'txt',  -- md | txt | html | pdf
     r2_keys             jsonb                          -- {kind: r2_object_key}; NULL until Phase 1
 );
 

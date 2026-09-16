@@ -47,7 +47,9 @@ DEFAULT_VALUATION_BLOCK_WORKERS = _env_int("VALUATION_BLOCK_WORKERS", 8)
 class RunArtifacts:
     ticker: str
     output_dir: str
+    analysis_md: str
     analysis_txt: str
+    valuation_input_md: str
     prices_plot: str
     revenue_plot: str
     net_income_plot: str
@@ -212,8 +214,24 @@ def _build_sec_source_of_truth_guidance() -> str:
         "### SEC/MAYA Source-of-Truth Guidance for Valuation\n\n"
         "If the earlier analysis sections and the SEC/MAYA filing summary disagree on a factual financial point, "
         "treat the SEC/MAYA filing summary as the source of truth for that contradiction. "
-        "Use the broader analysis as context, but anchor valuation assumptions to the filing-backed evidence."
+        "If the filing summary does not resolve the contradiction, treat the disputed item as unresolved and "
+        "exclude it from valuation calculations and assumptions. Use the broader analysis as context, but anchor "
+        "valuation assumptions to the filing-backed evidence."
     )
+
+
+def _write_valuation_input_markdown(
+    output_dir: Path,
+    ticker: str,
+    analysis_markdown: str,
+) -> tuple[Path, str]:
+    """Persist and reload the exact Markdown string sent to every valuator."""
+    path = output_dir / f"{ticker}_valuation_input.md"
+    path.write_bytes(analysis_markdown.encode("utf-8"))
+    persisted = path.read_bytes().decode("utf-8")
+    if persisted != analysis_markdown:
+        raise RuntimeError("Valuation input Markdown changed while being persisted.")
+    return path, persisted
 
 
 def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
@@ -1469,7 +1487,7 @@ def _run_ticker_valuation_impl(
     if not info_dict.get("short_name"):
         raise ValueError(f"Ticker '{ticker}' is invalid or unavailable")
 
-    text = legacy.load_text_from_file("analysis.txt")
+    text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
     regular_text = str(text or "").strip()
     notes: List[str] = []
     market_review_payload: Dict[str, Any] = {}
@@ -1645,7 +1663,7 @@ def _run_ticker_valuation_impl(
     if not regular_text:
         regular_text = str(text or "")
     try:
-        latest_text = legacy.load_text_from_file("analysis.txt")
+        latest_text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
         if str(latest_text or "").strip():
             regular_text = str(latest_text or "").strip()
     except Exception:
@@ -1667,7 +1685,7 @@ def _run_ticker_valuation_impl(
                 text=trading_agents_context,
                 header=TRADING_AGENTS_CONTEXT_HEADER,
             )
-            latest_text = legacy.load_text_from_file("analysis.txt")
+            latest_text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
             if str(latest_text or "").strip():
                 regular_text = str(latest_text or "").strip()
         elif trading_agents_payload.get("status") not in {"", None, "success"}:
@@ -1724,7 +1742,7 @@ def _run_ticker_valuation_impl(
                 text=build_web_search_markdown(web_search_payload, include_title=False),
                 header="Web Search",
             )
-            latest_text = legacy.load_text_from_file("analysis.txt")
+            latest_text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
             if str(latest_text or "").strip():
                 regular_text = str(latest_text or "").strip()
         if web_search_payload.get("status") != "success":
@@ -1762,18 +1780,27 @@ def _run_ticker_valuation_impl(
     _append_progress(progress_file, "Finished Dashboard Extraction (Pre-Valuation)")
 
     try:
-        appendix_text = build_dashboard_appendix_text(ticker, qualitative_sections)
+        appendix_text = build_dashboard_appendix_text(
+            ticker,
+            qualitative_sections,
+            include_title=False,
+        )
         legacy.append_text_to_file(
             text=appendix_text,
             header="Dashboard Extraction Pack",
         )
-        latest_text = legacy.load_text_from_file("analysis.txt")
+        latest_text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
         if str(latest_text or "").strip():
             regular_text = str(latest_text or "").strip()
     except Exception as extraction_err:
         notes.append(f"Dashboard extraction append failed: {extraction_err}")
 
-    valuation_contexts = [regular_text]
+    valuation_input_md, valuation_context = _write_valuation_input_markdown(
+        out_dir,
+        ticker,
+        regular_text,
+    )
+    valuation_contexts = [valuation_context]
 
     explain_payload: Dict[str, Any] = {}
     with _obs.llm_context(stage="valuations"):
@@ -1782,7 +1809,7 @@ def _run_ticker_valuation_impl(
             info_dict,
             financial_dict,
             variables_dict,
-            regular_text,
+            valuation_context,
             n=1,
             llm_workers_each_block=llm_workers_each_block,
             blocks_workers=valuation_blocks_workers,
@@ -1828,8 +1855,8 @@ def _run_ticker_valuation_impl(
 
     legacy.print_overall_valuations(ticker, final_dict, variables_dict)
 
-    analysis_src = Path("analysis.txt")
-    analysis_dst = out_dir / f"{ticker}_analysis.txt"
+    analysis_src = Path(legacy.ANALYSIS_MARKDOWN_FILE)
+    analysis_dst = out_dir / f"{ticker}_analysis.md"
     if analysis_src.exists():
         shutil.copy(analysis_src, analysis_dst)
 
@@ -2011,7 +2038,9 @@ def _run_ticker_valuation_impl(
             enable_llm_extractions=True,
             analysis_duration_minutes=analysis_duration_minutes,
             artifacts={
+                "analysis_md": str(analysis_dst.resolve()) if analysis_dst.exists() else "",
                 "analysis_txt": str(analysis_dst.resolve()) if analysis_dst.exists() else "",
+                "valuation_input_md": str(valuation_input_md.resolve()) if valuation_input_md.exists() else "",
                 "prices_plot": str((out_dir / f"{ticker}_prices_valuation.png").resolve()),
                 "revenue_plot": str((out_dir / f"{ticker}_revenue_valuation.png").resolve()),
                 "net_income_plot": str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
@@ -2059,7 +2088,8 @@ def _run_ticker_valuation_impl(
 
     store = get_artifact_store()
     artifact_local_paths: Dict[str, Path] = {
-        "analysis-txt": analysis_dst,
+        "analysis-md": analysis_dst,
+        "valuation-input-md": valuation_input_md,
         "prices-explain-txt": prices_explain_txt,
         "dashboard-json": Path(dashboard_json) if dashboard_json else None,
         "prices-chart": out_dir / f"{ticker}_prices_valuation.png",
@@ -2101,7 +2131,9 @@ def _run_ticker_valuation_impl(
     artifacts = RunArtifacts(
         ticker=ticker,
         output_dir=str(out_dir.resolve()),
+        analysis_md=str(analysis_dst.resolve()),
         analysis_txt=str(analysis_dst.resolve()),
+        valuation_input_md=str(valuation_input_md.resolve()),
         prices_plot=str((out_dir / f"{ticker}_prices_valuation.png").resolve()),
         revenue_plot=str((out_dir / f"{ticker}_revenue_valuation.png").resolve()),
         net_income_plot=str((out_dir / f"{ticker}_net_income_valuation.png").resolve()),
@@ -2129,7 +2161,9 @@ def _run_ticker_valuation_impl(
     return {
         "ticker": artifacts.ticker,
         "output_dir": artifacts.output_dir,
+        "analysis_md": artifacts.analysis_md,
         "analysis_txt": artifacts.analysis_txt,
+        "valuation_input_md": artifacts.valuation_input_md,
         "prices_plot": artifacts.prices_plot,
         "revenue_plot": artifacts.revenue_plot,
         "net_income_plot": artifacts.net_income_plot,

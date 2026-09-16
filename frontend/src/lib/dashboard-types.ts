@@ -501,7 +501,9 @@ export type DashboardPayload = {
     };
   };
   artifacts: {
+    analysis_md?: string;
     analysis_txt?: string;
+    valuation_input_md?: string;
     prices_plot?: string;
     revenue_plot?: string;
     net_income_plot?: string;

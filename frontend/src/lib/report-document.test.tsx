@@ -48,17 +48,39 @@ test("historical valuation fallback uses only stored structured values", () => {
 });
 
 test("native valuation Markdown takes precedence over the historical fallback", () => {
+  const valuationMarkdown = [
+    "# TEST Valuation Report",
+    "",
+    "## Valuation Decision Snapshot",
+    "",
+    "| Metric | Result |",
+    "|---|---:|",
+    "| Current Price | $100.00 |",
+    "",
+    "## Valuation Method Comparison",
+    "",
+    "| Method / Valuator | Target Price | Upside / Downside | Position | Allocation |",
+    "|---|---:|---:|---|---:|",
+    "| Dream Team | $120.00 | +20.00% | Short | 15.0% of $100,000 notional ($15,000.00) |",
+    "",
+    "### Peter Lynch — AI Persona",
+    "",
+    "**Method Rationale and Key Assumptions**",
+  ].join("\n");
   const built = buildReportMarkdown(
     {
       ticker: "TEST",
       analysisMd: "# Analysis\n\nEvidence.",
-      pricesExplainMd: "# Native valuation\n\nOriginal narrative.",
+      pricesExplainMd: valuationMarkdown,
       dashboard: historicalDashboard,
     },
     "valuation",
   );
   assert.equal(built.usedStructuredValuationFallback, false);
-  assert.match(built.markdown, /Original narrative/);
+  assert.match(built.markdown, /Valuation Decision Snapshot/);
+  assert.match(built.markdown, /Valuation Method Comparison/);
+  assert.match(built.markdown, /Short \| 15\.0% of \$100,000 notional/);
+  assert.match(built.markdown, /Peter Lynch — AI Persona/);
   assert.doesNotMatch(built.markdown, /Historical Valuation/);
 });
 

@@ -101,8 +101,8 @@ def test_prices_explain_uses_analysis_current_price_for_usd_targets():
         variables_dict={"price": 22.0},
     )
 
-    assert "Current Price: $22.00" in text
-    assert "| Scenario DCF | $21.80 (-0.91%) | $-25,000.00 |" in text
+    assert "| Current Price | $22.00 |" in text
+    assert "| Scenario DCF | $21.80 | -0.91% | Short | 25.0% of $100,000 notional ($25,000.00) |" in text
     assert "-99" not in text
 
 

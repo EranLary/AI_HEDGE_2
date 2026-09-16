@@ -1013,15 +1013,86 @@ def _collect_targets_from_methods(methods: Dict[str, Any]) -> List[float]:
     return out
 
 
-def _fmt_target_with_change(value: Any, current_price: Any) -> str:
+VALUATION_NOTIONAL_BUDGET = 100_000.0
+
+
+def _fmt_change_from_current(value: Any, current_price: Any) -> str:
     target = _first_float(value)
-    if target is None:
-        return "N/A"
     current = _first_float(current_price)
-    if current is None or abs(float(current)) <= 1e-9:
-        return _fmt_money(target)
+    if target is None or current is None or abs(float(current)) <= 1e-9:
+        return "N/A"
     change_pct = ((float(target) - float(current)) / float(current)) * 100.0
-    return f"{_fmt_money(target)} ({_fmt_signed_pct(change_pct)})"
+    return _fmt_signed_pct(change_pct)
+
+
+def _allocation_direction(value: Any) -> str:
+    amount = _first_float(value)
+    if amount is None:
+        return "N/A"
+    if abs(float(amount)) <= 1e-9:
+        return "No Position"
+    return "Long" if float(amount) > 0 else "Short"
+
+
+def _fmt_allocation(value: Any, *, include_direction: bool = True) -> str:
+    amount = _first_float(value)
+    if amount is None:
+        return "N/A"
+    absolute_amount = abs(float(amount))
+    percentage = absolute_amount / VALUATION_NOTIONAL_BUDGET * 100.0
+    allocation = (
+        f"{percentage:.1f}% of ${VALUATION_NOTIONAL_BUDGET:,.0f} notional "
+        f"(${absolute_amount:,.2f})"
+    )
+    if not include_direction:
+        return allocation
+    return f"{_allocation_direction(amount)} — {allocation}"
+
+
+def _build_valuation_decision_snapshot(
+    methods: Dict[str, Any],
+    aggregate_targets: Dict[str, Any],
+    aggregate_investments: Dict[str, Any],
+    current_price: Any,
+) -> str:
+    target_values = [
+        float(value)
+        for value in (_first_float(raw) for raw in aggregate_targets.values())
+        if value is not None
+    ]
+    if not target_values:
+        target_values = _collect_targets_from_methods(methods)
+    investment_values = [
+        float(value)
+        for value in (_first_float(raw) for raw in aggregate_investments.values())
+        if value is not None
+    ]
+    if not investment_values:
+        investment_values = _collect_investments_from_methods(methods)
+
+    mean_target = _avg_numeric_values(target_values)
+    mean_investment = _avg_numeric_values(investment_values)
+    target_dispersion = _std_numeric_values(target_values)
+    method_names = list(methods.keys()) or sorted(
+        set(aggregate_targets.keys()) | set(aggregate_investments.keys())
+    )
+
+    rows = [
+        ("Current Price", _fmt_money(current_price)),
+        ("Mean Target Price", _fmt_money(mean_target)),
+        ("Implied Upside / Downside", _fmt_change_from_current(mean_target, current_price)),
+        ("Average Recommended Position", _fmt_allocation(mean_investment)),
+        ("Valuation Methods Included", str(len(method_names))),
+        ("Target Price Dispersion (STD)", _fmt_money(target_dispersion)),
+    ]
+    lines = [
+        "## Valuation Decision Snapshot",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+    ]
+    lines.extend(f"| {label} | {value} |" for label, value in rows)
+    return "\n".join(lines).strip()
 
 
 def _build_valuation_summary_table(
@@ -1037,7 +1108,7 @@ def _build_valuation_summary_table(
     if not isinstance(aggregate_investments, dict):
         aggregate_investments = {}
 
-    rows: List[tuple[str, str, str]] = []
+    rows: List[tuple[str, str, str, str, str]] = []
     method_names = list(methods.keys()) or sorted(
         set(aggregate_targets.keys()) | set(aggregate_investments.keys())
     )
@@ -1045,68 +1116,21 @@ def _build_valuation_summary_table(
         rows.append(
             (
                 str(method_name),
-                _fmt_target_with_change(aggregate_targets.get(method_name), current_price),
-                _fmt_money(aggregate_investments.get(method_name)),
+                _fmt_money(aggregate_targets.get(method_name)),
+                _fmt_change_from_current(aggregate_targets.get(method_name), current_price),
+                _allocation_direction(aggregate_investments.get(method_name)),
+                _fmt_allocation(aggregate_investments.get(method_name), include_direction=False),
             )
         )
 
-    all_targets = _collect_targets_from_methods(methods)
-    all_investments = _collect_investments_from_methods(methods)
-    target_model_values = [
-        float(v)
-        for v in (_first_float(raw) for raw in aggregate_targets.values())
-        if v is not None
-    ]
-    investment_model_values = [
-        float(v)
-        for v in (_first_float(raw) for raw in aggregate_investments.values())
-        if v is not None
-    ]
-
-    mean_target_models = _avg_numeric_values(target_model_values)
-    mean_target_all = _avg_numeric_values(all_targets)
-    mean_investment_models = _avg_numeric_values(investment_model_values)
-    mean_investment_all = _avg_numeric_values(all_investments)
-    std_target_models = _std_numeric_values(target_model_values)
-    std_target_all = _std_numeric_values(all_targets)
-    std_investment_models = _std_numeric_values(investment_model_values)
-    std_investment_all = _std_numeric_values(all_investments)
-
-    rows.extend(
-        [
-            (
-                "Mean",
-                (
-                    f"Across models: {_fmt_target_with_change(mean_target_models, current_price)}; "
-                    f"Across all: {_fmt_target_with_change(mean_target_all, current_price)}"
-                ),
-                (
-                    f"Across models: {_fmt_money(mean_investment_models)}; "
-                    f"Across all: {_fmt_money(mean_investment_all)}"
-                ),
-            ),
-            (
-                "STD",
-                (
-                    f"Across models: {_fmt_money(std_target_models)}; "
-                    f"Across all: {_fmt_money(std_target_all)}"
-                ),
-                (
-                    f"Across models: {_fmt_money(std_investment_models)}; "
-                    f"Across all: {_fmt_money(std_investment_all)}"
-                ),
-            ),
-        ]
-    )
-
     table_lines = [
-        "## Valuation Summary",
+        "## Valuation Method Comparison",
         "",
-        "| Model / Valuator | Price Target (Change From Current) | Investment Allocation |",
-        "|---|---:|---:|",
+        "| Method / Valuator | Target Price | Upside / Downside | Position | Allocation |",
+        "|---|---:|---:|---|---:|",
     ]
-    for name, target, allocation in rows:
-        table_lines.append(f"| {name} | {target} | {allocation} |")
+    for name, target, change, position, allocation in rows:
+        table_lines.append(f"| {name} | {target} | {change} | {position} | {allocation} |")
     return "\n".join(table_lines).strip()
 
 
@@ -1267,6 +1291,21 @@ def _extract_reason_sections(value: Any, prefix: str = "") -> List[tuple[str, st
     return out
 
 
+def _rationale_label(key: str) -> str:
+    leaf = str(key or "").split(".")[-1].strip().lower()
+    labels = {
+        "step_by_step_analysis": "Analysis Summary",
+        "target_market_cap_rationale": "Target Market Cap Rationale",
+        "investment_rationale": "Position Sizing Rationale",
+        "bull_rationale": "Bull Case Rationale",
+        "base_rationale": "Base Case Rationale",
+        "bear_rationale": "Bear Case Rationale",
+    }
+    if leaf in labels:
+        return labels[leaf]
+    return leaf.replace("_", " ").strip().title() or "Rationale"
+
+
 def _build_prices_explain_text(
     ticker: str,
     explain_payload: Dict[str, Any],
@@ -1284,12 +1323,19 @@ def _build_prices_explain_text(
     )
 
     lines: List[str] = [
-        f"# {ticker} Prices Explain",
+        f"# {ticker} Valuation Report",
         "",
-        "This report organizes each valuation method output from the valuation stage.",
-        "Each output is split into key numeric values first, then full step-by-step/rationale text.",
-        f"Current Price: {_fmt_money(current_price)}",
+        "This report summarizes the valuation decision, compares the valuation methods, and then presents each method's key assumptions and rationale.",
     ]
+
+    decision_snapshot = _build_valuation_decision_snapshot(
+        methods if isinstance(methods, dict) else {},
+        aggregate_targets if isinstance(aggregate_targets, dict) else {},
+        aggregate_investments if isinstance(aggregate_investments, dict) else {},
+        current_price,
+    )
+    if decision_snapshot:
+        lines.extend(["", decision_snapshot])
 
     summary_table = _build_valuation_summary_table(
         methods if isinstance(methods, dict) else {},
@@ -1324,8 +1370,8 @@ def _build_prices_explain_text(
             aggregate_investments.get(method_name) if isinstance(aggregate_investments, dict) else None
         )
         lines.append(f"Method Target Price: {_fmt_money(aggregate_target)}")
-        lines.append(f"Method Mean Investment: {_fmt_money(aggregate_investment)}")
-        lines.append(f"Captured Outputs: {len(items) if isinstance(items, list) else 0}")
+        lines.append(f"Average Recommended Position: {_fmt_allocation(aggregate_investment)}")
+        lines.append(f"Model Outputs: {len(items) if isinstance(items, list) else 0}")
 
         if not isinstance(items, list) or not items:
             lines.append("No valid JSON output captured for this method.")
@@ -1335,13 +1381,13 @@ def _build_prices_explain_text(
             if not isinstance(item, dict):
                 continue
             persona = str(item.get("persona", "") or "").strip()
-            run_header = f"### Output {idx}"
+            run_header = f"### Model Run {idx}"
             if persona:
-                run_header = f"{run_header} ({persona})"
+                run_header = f"### {persona} — AI Persona"
             lines.extend(["", run_header])
 
-            lines.append(f"- Output Target Price: {_fmt_money(item.get('target_price'))}")
-            lines.append(f"- Output Investment Amount: {_fmt_money(item.get('investment_amount'))}")
+            lines.append(f"- Target Price: {_fmt_money(item.get('target_price'))}")
+            lines.append(f"- Recommended Position: {_fmt_allocation(item.get('investment_amount'))}")
             raw_json = _raw_json_dict_for_item(item)
             if not raw_json:
                 lines.append("No JSON payload captured for this output.")
@@ -1351,7 +1397,7 @@ def _build_prices_explain_text(
             if not numeric_pairs:
                 generic_pairs = _extract_numeric_pairs(raw_json)
                 numeric_pairs = [( _humanize_numeric_key(k), v) for k, v in generic_pairs]
-            lines.append("#### Key Numeric Values")
+            lines.extend(["", "**Valuation Inputs and Outputs**"])
             if numeric_pairs:
                 for key, value in numeric_pairs:
                     lines.append(f"- {key}: {value}")
@@ -1361,11 +1407,11 @@ def _build_prices_explain_text(
             reason_sections = _extract_reason_sections(raw_json)
             if reason_sections:
                 lines.append("")
-                lines.append("#### Step-by-Step and Rationale (Full Text)")
+                lines.append("**Method Rationale and Key Assumptions**")
                 for key, txt in reason_sections:
-                    label = key.replace("_", " ").strip()
+                    label = _rationale_label(key)
                     lines.append("")
-                    lines.append(f"##### {label}")
+                    lines.append(f"**{label}:**")
                     lines.append(txt)
 
     return "\n".join(lines).strip() + "\n"

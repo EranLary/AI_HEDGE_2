@@ -877,6 +877,39 @@ def deterministic_red_flags(*, price_cv: Any, lmil: Any) -> List[str]:
     return _deterministic_red_flags(price_cv=price_cv, lmil=lmil)
 
 
+def valuation_confidence_metrics(
+    *,
+    price_cv: Any,
+    lmil: Any,
+    target_return_pct: Any,
+    position_size_pct: Any,
+) -> Tuple[float, float, bool]:
+    """Return disagreement, confidence factor, and direction mismatch."""
+    cv_values: List[float] = []
+    parsed_price_cv = _safe_float(price_cv)
+    if parsed_price_cv is not None:
+        cv_values.append(abs(float(parsed_price_cv)))
+    if isinstance(lmil, (list, tuple)) and len(lmil) >= 2:
+        lmil_cv = _safe_float(lmil[1])
+        if lmil_cv is not None:
+            cv_values.append(abs(float(lmil_cv)))
+
+    overall_cv = (sum(cv_values) / len(cv_values)) if cv_values else 0.0
+    parsed_target_return = _safe_float(target_return_pct)
+    parsed_position_size = _safe_float(position_size_pct)
+    misaligned_signal = (
+        parsed_target_return is not None
+        and parsed_position_size is not None
+        and abs(parsed_position_size) > 1e-9
+        and abs(parsed_target_return) > 1e-9
+        and (parsed_position_size * parsed_target_return) < 0
+    )
+    if misaligned_signal:
+        overall_cv *= 1.5
+    confidence_factor = 1.0 / (1.0 + (overall_cv ** 1.3))
+    return overall_cv, confidence_factor, misaligned_signal
+
+
 def _fallback_qualitative_sections(
     *,
     analysis_text: str,
@@ -2116,23 +2149,12 @@ def build_dashboard_payload(
     else:
         combined_score = position_size_pct
 
-    cv_values: List[float] = []
-    if confidence_cv is not None:
-        cv_values.append(abs(float(confidence_cv)))
-    if isinstance(lmil, (list, tuple)) and len(lmil) >= 2:
-        lmil_cv = _safe_float(lmil[1])
-        if lmil_cv is not None:
-            cv_values.append(abs(float(lmil_cv)))
-    overall_cv = (sum(cv_values) / len(cv_values)) if cv_values else 0.0
-    misaligned_signal = (
-        target_return_pct is not None
-        and abs(position_size_pct) > 1e-9
-        and abs(target_return_pct) > 1e-9
-        and (position_size_pct * target_return_pct) < 0
+    overall_cv, confidence_factor, misaligned_signal = valuation_confidence_metrics(
+        price_cv=confidence_cv,
+        lmil=lmil,
+        target_return_pct=target_return_pct,
+        position_size_pct=position_size_pct,
     )
-    if misaligned_signal:
-        overall_cv *= 1.5
-    confidence_factor = 1.0 / (1.0 + (overall_cv ** 1.3))
     adjusted_score = combined_score * confidence_factor
 
     return {

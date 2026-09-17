@@ -327,6 +327,99 @@ function valuationMarkdown(source: ReportDocumentSource): {
   };
 }
 
+function markdownHeadingParts(line: string): { level: number; title: string } | null {
+  const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line.trim());
+  if (!match) return null;
+  return { level: match[1].length, title: match[2].trim() };
+}
+
+function headingLevelsOutsideFences(markdown: string): number[] {
+  const levels: number[] = [];
+  let fence = "";
+  for (const line of String(markdown || "").split(/\r?\n/)) {
+    const stripped = line.trimStart();
+    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+      const marker = stripped.slice(0, 3);
+      if (!fence) fence = marker;
+      else if (fence === marker) fence = "";
+      continue;
+    }
+    if (fence) continue;
+    const heading = markdownHeadingParts(line);
+    if (heading) levels.push(heading.level);
+  }
+  return levels;
+}
+
+function normalizeStandaloneHeadings(markdown: string, fallbackTitle: string): string {
+  const body = String(markdown || "").trim();
+  const levels = headingLevelsOutsideFences(body);
+  if (!levels.length) return [`# ${fallbackTitle}`, "", body].filter(Boolean).join("\n");
+
+  const legacyMultiH1 = levels.filter((level) => level === 1).length > 1;
+  let firstHeading = true;
+  let fence = "";
+  return body
+    .split(/\r?\n/)
+    .map((line) => {
+      const stripped = line.trimStart();
+      if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+        const marker = stripped.slice(0, 3);
+        if (!fence) fence = marker;
+        else if (fence === marker) fence = "";
+        return line;
+      }
+      if (fence) return line;
+      const heading = markdownHeadingParts(line);
+      if (!heading) return line;
+      if (firstHeading) {
+        firstHeading = false;
+        return `# ${heading.title}`;
+      }
+      if (legacyMultiH1) {
+        if (heading.level === 1) return `## ${heading.title}`;
+        if (heading.level === 2) return `### ${heading.title}`;
+        return `**${heading.title}**`;
+      }
+      if (heading.level <= 2) return `## ${heading.title}`;
+      if (heading.level === 3) return `### ${heading.title}`;
+      return `**${heading.title}**`;
+    })
+    .join("\n");
+}
+
+function nestMarkdownUnderSection(markdown: string): string {
+  const body = String(markdown || "").trim();
+  const levels = headingLevelsOutsideFences(body);
+  const legacyMultiH1 = levels.filter((level) => level === 1).length > 1;
+  let skippedDocumentTitle = false;
+  let fence = "";
+  return body
+    .split(/\r?\n/)
+    .map((line) => {
+      const stripped = line.trimStart();
+      if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+        const marker = stripped.slice(0, 3);
+        if (!fence) fence = marker;
+        else if (fence === marker) fence = "";
+        return line;
+      }
+      if (fence) return line;
+      const heading = markdownHeadingParts(line);
+      if (!heading) return line;
+      if (!skippedDocumentTitle) {
+        skippedDocumentTitle = true;
+        return "";
+      }
+      if (legacyMultiH1) {
+        return heading.level === 1 ? `### ${heading.title}` : `**${heading.title}**`;
+      }
+      return heading.level <= 2 ? `### ${heading.title}` : `**${heading.title}**`;
+    })
+    .join("\n")
+    .trim();
+}
+
 export function buildReportMarkdown(
   source: ReportDocumentSource,
   kind: ReportDocumentKind,
@@ -338,25 +431,39 @@ export function buildReportMarkdown(
     ? `${valuation.markdown}\n\n---\n\n${tradingAgents}`
     : valuation.markdown;
   if (kind === "analysis") {
-    return { markdown: analysis, usedStructuredValuationFallback: false };
+    return {
+      markdown: normalizeStandaloneHeadings(analysis, `${source.ticker} Analysis Report`),
+      usedStructuredValuationFallback: false,
+    };
   }
   if (kind === "valuation") {
     return {
-      markdown: valuationWithTradingAgents,
+      markdown: normalizeStandaloneHeadings(
+        valuationWithTradingAgents,
+        `${source.ticker} Valuation Report`,
+      ),
       usedStructuredValuationFallback: valuation.usedFallback,
     };
   }
+  const nestedAnalysis = nestMarkdownUnderSection(analysis);
+  const nestedValuation = nestMarkdownUnderSection(valuation.markdown);
+  const nestedTradingAgents = tradingAgents ? nestMarkdownUnderSection(tradingAgents) : "";
   return {
     markdown: [
-      "# Analysis",
+      `# ${source.ticker} Combined Investment Report`,
       "",
-      analysis,
+      "## Analysis",
+      "",
+      nestedAnalysis,
       "",
       "---",
       "",
-      "# Valuation",
+      "## Valuation",
       "",
-      valuationWithTradingAgents,
+      nestedValuation,
+      ...(nestedTradingAgents
+        ? ["", "---", "", "## Independent Tactical View", "", nestedTradingAgents]
+        : []),
     ].join("\n"),
     usedStructuredValuationFallback: valuation.usedFallback,
   };
@@ -510,7 +617,7 @@ export function buildStandaloneReportHtml(
     : "";
   const logoMarkup = `<span class="report-logo-frame" aria-hidden="true"><img class="report-logo-image report-logo-image-dark" src="${logos.dark}" alt=""><img class="report-logo-image report-logo-image-light" src="${logos.light}" alt=""></span>`;
   const printLogo = options.rasterPrintLogo ? logos.printPng : logos.printSvg;
-  const markup = `<div class="report-pdf-running-brand" id="report-pdf-running-brand" aria-hidden="true"><img class="report-pdf-logo" src="${printLogo}" alt=""><span class="report-pdf-header-copy">Hedge in a Box &middot; ${escapeHtml(source.ticker)} &middot; ${reportLabel}</span></div><div class="report-toolbar"><button class="report-theme-toggle" id="theme-toggle" type="button">Light mode</button></div><main class="report-shell"><header class="report-hero"><div class="report-hero-top"><div class="report-brand-lockup">${logoMarkup}<span class="report-brand-copy"><span class="report-brand">Hedge in a Box</span><span class="report-brand-subtitle">AI equity research</span></span></div><div class="report-kicker">${reportLabel}</div></div><h1 class="report-title">${escapeHtml(source.ticker)}</h1><p class="report-company">${escapeHtml(source.companyName || "Investment research report")}</p><ul class="report-meta"><li><span class="report-meta-label">Report</span><span class="report-meta-value">${reportLabel}</span></li><li><span class="report-meta-label">Published</span><span class="report-meta-value">${escapeHtml(displayDate(source.generatedAt))}</span></li><li><span class="report-meta-label">Format</span><span class="report-meta-value">Live HTML</span></li></ul>${notice}</header><div class="report-layout">${tocHtml}<article class="report-paper"><div class="report-markdown">${renderMarkdown(built.markdown, toc)}</div></article></div><footer class="report-footer">Generated on demand from the stored report source. PDF copies are not retained. Historical research is not live investment advice.</footer></main>`;
+  const markup = `<div class="report-pdf-running-brand" id="report-pdf-running-brand" aria-hidden="true"><img class="report-pdf-logo" src="${printLogo}" alt=""><span class="report-pdf-header-copy">Hedge in a Box &middot; ${escapeHtml(source.ticker)} &middot; ${reportLabel}</span></div><div class="report-toolbar"><button class="report-theme-toggle" id="theme-toggle" type="button">Light mode</button></div><main class="report-shell"><header class="report-hero"><div class="report-hero-top"><div class="report-brand-lockup">${logoMarkup}<span class="report-brand-copy"><span class="report-brand">Hedge in a Box</span><span class="report-brand-subtitle">AI equity research</span></span></div><div class="report-kicker">${reportLabel}</div></div><div class="report-title">${escapeHtml(source.ticker)}</div><p class="report-company">${escapeHtml(source.companyName || "Investment research report")}</p><ul class="report-meta"><li><span class="report-meta-label">Report</span><span class="report-meta-value">${reportLabel}</span></li><li><span class="report-meta-label">Published</span><span class="report-meta-value">${escapeHtml(displayDate(source.generatedAt))}</span></li><li><span class="report-meta-label">Format</span><span class="report-meta-value">Live HTML</span></li></ul>${notice}</header><div class="report-layout">${tocHtml}<article class="report-paper"><div class="report-markdown">${renderMarkdown(built.markdown, toc)}</div></article></div><footer class="report-footer">Generated on demand from the stored report source. PDF copies are not retained. Historical research is not live investment advice.</footer></main>`;
 
   return {
     html: `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><title>${escapeHtml(title)}</title><style>${reportCss()}</style></head><body>${markup}<script>${THEME_SCRIPT}</script></body></html>`,

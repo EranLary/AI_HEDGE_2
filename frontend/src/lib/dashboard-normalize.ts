@@ -60,7 +60,12 @@ function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
   if (!prices || typeof prices !== "object" || Array.isArray(prices)) return payload;
   const priceValues = prices as Record<string, unknown>;
   const consensus = payload.valuation_hub.consensus || {};
-  const card = payload.score_card || payload.decision_card || {};
+  const card: NonNullable<DashboardPayload["score_card"]> = payload.score_card || {
+    position_size_pct_of_notional: payload.decision_card?.position_size_pct_of_notional ?? 0,
+    mean_investment_amount: payload.decision_card?.mean_investment_amount ?? null,
+    ...payload.decision_card,
+    rationale: payload.decision_card?.rationale || "Run valuation to produce a score.",
+  };
   const rawTargets = legacyFamilyValues(priceValues, "target");
   const rawInvestments = legacyFamilyValues(priceValues, "investment");
   const meanTarget = asFinite(consensus.mean_target_price) ?? numberAt(priceValues.Mean) ?? numberAt(priceValues.Overall);
@@ -120,6 +125,22 @@ function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
       rationale: card.rationale || "Legacy report: Mean is retained from the report and Median is reconstructed from independent valuation-method families.",
     },
   };
+}
+
+/**
+ * Lightweight consensus enrichment for list/aggregation routes. Unlike the
+ * full dashboard normalizer it never scans report artifacts for technical or
+ * financial supplements, so Discovery and hit-rate stay fast over history.
+ */
+export function normalizeValuationConsensus(payload: DashboardPayload): DashboardPayload {
+  return enrichLegacyMeanMedian({
+    ...payload,
+    header: payload.header || {},
+    valuation_hub: {
+      ...(payload.valuation_hub || {}),
+      consensus: payload.valuation_hub?.consensus || {},
+    },
+  });
 }
 
 function inferLegacyModelTargetScale(payload: DashboardPayload): number {
@@ -512,7 +533,7 @@ export function normalizePayload(
 
   const scale = inferLegacyModelTargetScale(merged);
   const scaled = applyLegacyModelTargetScale(merged, scale);
-  const enriched = enrichLegacyMeanMedian(scaled);
+  const enriched = normalizeValuationConsensus(scaled);
   return hydrateFinancials(hydrateTechnicalAnalysis(enriched, tk, reportMeta), tk, reportMeta);
 }
 

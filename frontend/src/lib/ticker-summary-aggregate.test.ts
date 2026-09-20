@@ -53,7 +53,7 @@ function basePayload(): DashboardPayload {
 test("computes overview/model/valuator/assumptions means across reports", () => {
   const p1 = basePayload();
   p1.valuation_hub.consensus.mean_target_price = 120;
-  p1.decision_card.position_size_pct_of_notional = 10;
+  p1.decision_card!.position_size_pct_of_notional = 10;
   p1.valuation_hub.method_tabs = [
     {
       name: "DCF",
@@ -113,7 +113,7 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
 
   const p2 = basePayload();
   p2.valuation_hub.consensus.mean_target_price = 140;
-  p2.decision_card.position_size_pct_of_notional = 20;
+  p2.decision_card!.position_size_pct_of_notional = 20;
   p2.valuation_hub.method_tabs = [
     {
       name: "DCF",

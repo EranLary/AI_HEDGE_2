@@ -55,8 +55,8 @@ test("Consensus model uses the dashboard decision target and decision investment
   ];
   payload.valuation_hub.consensus.mean_target_price = 140;
   payload.valuation_hub.consensus.decision_target_price = 80;
-  payload.decision_card.mean_investment_amount = 5000;
-  payload.decision_card.decision_investment_amount = -5000;
+  payload.decision_card!.mean_investment_amount = 5000;
+  payload.decision_card!.decision_investment_amount = -5000;
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
@@ -83,7 +83,7 @@ test("Consensus model uses the dashboard decision target and decision investment
 test("Consensus target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100
-  payload.decision_card.mean_investment_amount = 0; // neutral allocation verdict
+  payload.decision_card!.mean_investment_amount = 0; // neutral allocation verdict
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down

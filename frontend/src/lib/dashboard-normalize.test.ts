@@ -24,7 +24,7 @@ test("legacy reports reconstruct Median from independent method families without
       },
     },
     score_card: { position_size_pct_of_notional: 0, mean_investment_amount: null, rationale: "legacy" },
-  } as DashboardPayload;
+  } as unknown as DashboardPayload;
 
   const normalized = normalizePayload("TEST", legacy);
   const consensus = normalized.valuation_hub.consensus;
@@ -46,7 +46,7 @@ test("a legacy report without two independent families leaves Median unavailable
       prices: { Current: 100, Overall: [120], "Scenario DCF": [120] },
     },
     score_card: { position_size_pct_of_notional: 0, mean_investment_amount: null, rationale: "legacy" },
-  } as DashboardPayload;
+  } as unknown as DashboardPayload;
 
   const normalized = normalizePayload("TEST", legacy);
   assert.equal(normalized.valuation_hub.consensus.median_target_price, null);

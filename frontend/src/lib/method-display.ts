@@ -39,7 +39,7 @@ const MODEL_NAME_ALIASES: Record<string, string> = {
   "target scenario valuation": "Target Scenario",
   "earnings scenario valuation": "Earnings Scenario",
   "revenue scenario valuation": "Revenue Scenario",
-  overall: "Overall",
+  overall: "Consensus",
 };
 
 export function canonicalModelName(value: string): string {

@@ -82,7 +82,7 @@ def test_target_consensus_dispersion_uses_equal_weight_method_families() -> None
     assert method_means == [100, 200]
     assert prices["Mean"][0] == pytest.approx(150)
     assert prices["Median"][0] == pytest.approx(150)
-    assert prices["Overall"][0] == pytest.approx(150)
+    assert "Overall" not in prices
     assert prices["STD"] == pytest.approx(50)
 
 
@@ -99,7 +99,7 @@ def test_target_consensus_median_uses_one_value_per_method_family() -> None:
     assert method_means == [100, 200, 1_000]
     assert prices["Mean"][0] == pytest.approx(433.3333333333)
     assert prices["Median"][0] == pytest.approx(200)
-    assert prices["Overall"] == prices["Mean"]
+    assert "Overall" not in prices
 
 
 def test_position_consensus_counts_dream_team_as_one_method_family() -> None:

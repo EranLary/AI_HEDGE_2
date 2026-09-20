@@ -182,7 +182,7 @@ function HitRateTable({
   const { href } = useWorkspace();
   const discoveryHrefForRow = (row: HitRateRow): string | null => {
     if (lensType === "model") {
-      if (String(row.key || "").trim().toLowerCase() === "overall") {
+      if (["overall", "consensus"].includes(String(row.key || "").trim().toLowerCase())) {
         return href("/discovery?lens_type=overall");
       }
       return href(`/discovery?lens_type=model&lens_key=${encodeURIComponent(String(row.label || "").trim())}`);

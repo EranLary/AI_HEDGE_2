@@ -606,18 +606,22 @@ def _wall_st_synthesis_to_markdown(wall_st_payload: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
+def _extract_mean_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
     if not isinstance(final_dict, dict):
         return None
     payload = final_dict.get(metric_key, {})
     if not isinstance(payload, dict):
         return None
-    overall = payload.get("Overall")
-    if not isinstance(overall, (list, tuple)) or not overall:
+    mean_values = payload.get("Mean")
+    # Reports written before the Mean/Median contract used Overall for the mean.
+    # Keep them readable without writing that ambiguous key in new artifacts.
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
+        mean_values = payload.get("Overall")
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
         return None
-    mean_v = _first_float(overall[0]) if len(overall) >= 1 else None
-    min_v = _first_float(overall[1]) if len(overall) >= 2 else mean_v
-    max_v = _first_float(overall[2]) if len(overall) >= 3 else mean_v
+    mean_v = _first_float(mean_values[0]) if len(mean_values) >= 1 else None
+    min_v = _first_float(mean_values[1]) if len(mean_values) >= 2 else mean_v
+    max_v = _first_float(mean_values[2]) if len(mean_values) >= 3 else mean_v
     if mean_v is None and min_v is None and max_v is None:
         return None
     if mean_v is None:
@@ -639,7 +643,7 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
     ]
     lines: List[str] = []
     for label, key in specs:
-        triplet = _extract_overall_triplet(final_dict, key)
+        triplet = _extract_mean_triplet(final_dict, key)
         if not triplet:
             continue
         mean_v, min_v, max_v = triplet
@@ -1258,7 +1262,7 @@ def _build_assumptions_means_text(final_dict: Dict[str, Any], explain_payload: O
         ("Representative Earnings", "Net Income"),
         ("Representative P/E", "P/E"),
     ]:
-        triplet = _extract_overall_triplet(final_dict, key)
+        triplet = _extract_mean_triplet(final_dict, key)
         if not triplet:
             continue
         mean_v = triplet[0]
@@ -2002,12 +2006,12 @@ def _run_ticker_valuation_impl(
 
     revenue_dict = final_dict.get("Revenue", {}) if isinstance(final_dict, dict) else {}
     earnings_dict = final_dict.get("Net Income", {}) if isinstance(final_dict, dict) else {}
-    revenue_overall = revenue_dict.get("Overall", []) if isinstance(revenue_dict, dict) else []
-    earnings_overall = earnings_dict.get("Overall", []) if isinstance(earnings_dict, dict) else []
+    revenue_mean = revenue_dict.get("Mean", revenue_dict.get("Overall", [])) if isinstance(revenue_dict, dict) else []
+    earnings_mean = earnings_dict.get("Mean", earnings_dict.get("Overall", [])) if isinstance(earnings_dict, dict) else []
     current_revenue = _first_float(revenue_dict.get("Current")) if isinstance(revenue_dict, dict) else None
-    target_revenue = _first_float(revenue_overall[0] if isinstance(revenue_overall, list) and revenue_overall else None)
+    target_revenue = _first_float(revenue_mean[0] if isinstance(revenue_mean, list) and revenue_mean else None)
     current_earnings = _first_float(earnings_dict.get("Current")) if isinstance(earnings_dict, dict) else None
-    target_earnings = _first_float(earnings_overall[0] if isinstance(earnings_overall, list) and earnings_overall else None)
+    target_earnings = _first_float(earnings_mean[0] if isinstance(earnings_mean, list) and earnings_mean else None)
     legacy.plot_all_three(
         final_dict,
         ticker,

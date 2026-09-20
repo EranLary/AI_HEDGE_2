@@ -1329,7 +1329,7 @@ export function HedgeDashboard({
   const consensusMedian =
     typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
       ? Number(consensus.median_target_price)
-      : consensusMean;
+      : null;
   const consensusChangePct =
     typeof consensusCurrent === "number" && typeof consensusMean === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusMean - consensusCurrent) / consensusCurrent) * 100
@@ -1724,7 +1724,7 @@ export function HedgeDashboard({
   const medianAllocationPct =
     typeof scoreCard?.median_investment_amount === "number" && Number.isFinite(scoreCard.median_investment_amount)
       ? Number(scoreCard.median_investment_amount) / NOTIONAL_BASE_USD * 100
-      : meanAllocationPct;
+      : null;
   const decisionAllocationPct =
     typeof scoreCard?.position_size_pct_of_notional === "number" &&
     Number.isFinite(scoreCard.position_size_pct_of_notional)
@@ -1960,7 +1960,7 @@ export function HedgeDashboard({
                       </p>
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Disagreement Score</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Disagreement</p>
                       <AutoFitMetric
                         text={typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                         maxPx={32}
@@ -2381,7 +2381,7 @@ export function HedgeDashboard({
                     </span>
                   </p>
                   <p className="hib-neutral-metric text-sm">
-                    Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
+                    Consensus Disagreement: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                   </p>
                 </div>
                 <div className="grid gap-2">

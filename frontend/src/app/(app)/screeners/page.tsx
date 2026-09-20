@@ -116,7 +116,7 @@ function downloadCsv(rows: ScreenerRow[], filename: string, positionByRow: Reado
     "Company",
     "Valuation Score",
     "Quality Score",
-    "Overall Score",
+    "Composite Score",
     "Price",
     "Target",
     "Change %",
@@ -641,7 +641,7 @@ export default function ScreenersPage() {
                   />
                   <SortHeader
                     id="overall_score"
-                    label="Overall Score"
+                    label="Composite Score"
                     sortKey={sortKey}
                     sortDirection={sortDirection}
                     onSort={toggleSort}

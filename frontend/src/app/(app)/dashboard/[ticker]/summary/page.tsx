@@ -610,7 +610,7 @@ export default function DashboardSummaryPage({
       <header className="rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl text-zinc-100">Overall Summary</h1>
+            <h1 className="font-display text-2xl text-zinc-100">Consensus Summary</h1>
             <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
               {upper} · Aggregated across report history
             </p>

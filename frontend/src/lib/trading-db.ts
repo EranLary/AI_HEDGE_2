@@ -305,7 +305,7 @@ export async function listTradingPortfolios(workspace: Workspace): Promise<Tradi
       workspace,
       lens_type: lensType,
       lens_key: lensKey,
-      label: lensType === "overall" ? "Overall" : String(row.lens_label || lensKey),
+      label: lensType === "overall" ? "Consensus" : String(row.lens_label || lensKey),
       methodology_version: String(row.methodology_version),
       latest_snapshot_id: String(row.id),
       cutoff_at: new Date(String(row.cutoff_at)).toISOString(),

@@ -1416,15 +1416,19 @@ def _build_method_tab(
     }
 
 
-def _extract_overall_triplet(metric_dict: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+def _extract_mean_triplet(metric_dict: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
     if not isinstance(metric_dict, dict):
         return None, None, None
-    overall = metric_dict.get("Overall")
-    if not isinstance(overall, (list, tuple)) or not overall:
+    mean_values = metric_dict.get("Mean")
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
+        # Historical artifacts used an ambiguous Overall key. It remains read
+        # compatibility only; new runs write Mean explicitly.
+        mean_values = metric_dict.get("Overall")
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
         return None, None, None
-    mean_v = _safe_float(overall[0]) if len(overall) >= 1 else None
-    min_v = _safe_float(overall[1]) if len(overall) >= 2 else mean_v
-    max_v = _safe_float(overall[2]) if len(overall) >= 3 else mean_v
+    mean_v = _safe_float(mean_values[0]) if len(mean_values) >= 1 else None
+    min_v = _safe_float(mean_values[1]) if len(mean_values) >= 2 else mean_v
+    max_v = _safe_float(mean_values[2]) if len(mean_values) >= 3 else mean_v
     return mean_v, min_v, max_v
 
 
@@ -1624,7 +1628,7 @@ def _build_all_values_payload(
             }
         )
 
-    # Add unified representative range rows from final_dict overall outputs.
+    # Add unified representative range rows from final_dict Mean outputs.
     if isinstance(final_dict, dict):
         synthetic_rows = [
             ("representative_revenue", "Representative Revenue", final_dict.get("Revenue", {})),
@@ -1632,7 +1636,7 @@ def _build_all_values_payload(
             ("representative_earnings", "Representative Earnings", final_dict.get("Net Income", {})),
         ]
         for metric_key, label, metric_payload in synthetic_rows:
-            mean_v, min_v, max_v = _extract_overall_triplet(metric_payload if isinstance(metric_payload, dict) else {})
+            mean_v, min_v, max_v = _extract_mean_triplet(metric_payload if isinstance(metric_payload, dict) else {})
             if mean_v is None and min_v is None and max_v is None:
                 continue
             if mean_v is None:
@@ -1652,8 +1656,8 @@ def _build_all_values_payload(
                     "max": float(max_v),
                     "sample_count": 1,
                     "method_count": 1,
-                    "methods": ["Overall"],
-                    "source_paths": [f"final_dict.{metric_key}.Overall"],
+                    "methods": ["Mean"],
+                    "source_paths": [f"final_dict.{metric_key}.Mean"],
                     "current_value": _safe_float(current_values.get(metric_key)),
                 }
             )
@@ -2002,7 +2006,7 @@ def build_dashboard_payload(
         mean_prices = prices.get("Overall") if isinstance(prices.get("Overall"), (list, tuple)) else []
     median_prices = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else []
     consensus_price = _safe_float(mean_prices[0]) if len(mean_prices) >= 1 else None
-    median_price = _safe_float(median_prices[0]) if len(median_prices) >= 1 else consensus_price
+    median_price = _safe_float(median_prices[0]) if len(median_prices) >= 1 else None
     decision_price = (
         (consensus_price + median_price) / 2.0
         if consensus_price is not None and median_price is not None
@@ -2147,8 +2151,6 @@ def build_dashboard_payload(
 
     mean_investment = _safe_float(prices.get("LMIL Mean Investment"))
     median_investment = _safe_float(prices.get("LMIL Median Investment"))
-    if median_investment is None:
-        median_investment = mean_investment
     decision_investment = _safe_float(prices.get("LMIL Decision Investment"))
     if decision_investment is None:
         available = [value for value in (mean_investment, median_investment) if value is not None]
@@ -2174,10 +2176,14 @@ def build_dashboard_payload(
     )
     median_score = (
         (0.4 * median_position_size_pct) + (0.6 * median_target_return_pct)
-        if median_target_return_pct is not None
-        else median_position_size_pct
+        if median_investment is not None and median_target_return_pct is not None
+        else median_position_size_pct if median_investment is not None else None
     )
-    combined_score = (mean_score + median_score) / 2.0
+    combined_score = (
+        (mean_score + median_score) / 2.0
+        if median_score is not None
+        else mean_score
+    )
     target_return_pct = (
         (mean_target_return_pct + median_target_return_pct) / 2.0
         if mean_target_return_pct is not None and median_target_return_pct is not None
@@ -2254,9 +2260,13 @@ def build_dashboard_payload(
         "dream_team": dream_cards,
         "forecast_forensic_matrix": {
             "current_revenue": _safe_float(final_dict.get("Revenue", {}).get("Current")),
-            "target_revenue": _safe_float(final_dict.get("Revenue", {}).get("Overall", [None])[0]),
+            "target_revenue": _safe_float(
+                (final_dict.get("Revenue", {}).get("Mean") or final_dict.get("Revenue", {}).get("Overall") or [None])[0]
+            ),
             "current_earnings": _safe_float(final_dict.get("Net Income", {}).get("Current")),
-            "target_earnings": _safe_float(final_dict.get("Net Income", {}).get("Overall", [None])[0]),
+            "target_earnings": _safe_float(
+                (final_dict.get("Net Income", {}).get("Mean") or final_dict.get("Net Income", {}).get("Overall") or [None])[0]
+            ),
             "forensic_flags": _as_str_list(qualitative.get("bear_case_reasons"), max_items=6),
         },
         "score_card": {

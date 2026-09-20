@@ -85,7 +85,7 @@ function summarizeLens(
   return {
     lens_type: latest.lensType,
     lens_key: latest.lensType === "overall" ? null : latest.lensKey,
-    label: latest.lensType === "overall" ? "Overall" : latest.lensLabel,
+    label: latest.lensType === "overall" ? "Consensus" : latest.lensLabel,
     portfolio_key: tradingPortfolioKey({
       workspace,
       lensType: latest.lensType,

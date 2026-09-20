@@ -7,8 +7,119 @@ import { canonicalModelName } from "@/lib/method-display";
 import { findLatestByFileName, readJson, readUtf8 } from "@/lib/server-outputs";
 
 function asFinite(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+const LEGACY_METHOD_FAMILIES = [
+  "Scenario DCF",
+  "Target Scenario",
+  "Earnings Scenario",
+  "Revenue Scenario",
+  "Composite Scenario",
+  "SOTP Scenario",
+  "Dream Team",
+];
+const VALUATION_NOTIONAL = 100000;
+
+function numberAt(value: unknown, index = 0): number | null {
+  return Array.isArray(value) ? asFinite(value[index]) : null;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function legacyFamilyValues(prices: Record<string, unknown>, field: "target" | "investment"): number[] {
+  const source = field === "target" ? prices : (prices["Investment Percents"] as Record<string, unknown> | undefined);
+  if (!source || typeof source !== "object" || Array.isArray(source)) return [];
+  return LEGACY_METHOD_FAMILIES.map((name) => {
+    const value = field === "target" ? numberAt((source as Record<string, unknown>)[name]) : asFinite((source as Record<string, unknown>)[name]);
+    return field === "investment" && value !== null ? (value / 100) * VALUATION_NOTIONAL : value;
+  }).filter((value): value is number => value !== null);
+}
+
+function scoreFor(target: number | null, investment: number | null, currentPrice: number | null): number | null {
+  if (investment === null) return null;
+  const allocationPct = (investment / VALUATION_NOTIONAL) * 100;
+  if (target === null || currentPrice === null || Math.abs(currentPrice) < 1e-9) return allocationPct;
+  return (0.4 * allocationPct) + (0.6 * (((target - currentPrice) / currentPrice) * 100));
+}
+
+/**
+ * Pre-Mean/Median reports stored a single aggregate as "Overall" but retained
+ * each model-family result. Reconstruct Median from those independent families;
+ * never manufacture it by copying Mean.
+ */
+function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
+  const prices = payload.valuation_hub?.prices;
+  if (!prices || typeof prices !== "object" || Array.isArray(prices)) return payload;
+  const priceValues = prices as Record<string, unknown>;
+  const consensus = payload.valuation_hub.consensus || {};
+  const card = payload.score_card || payload.decision_card || {};
+  const rawTargets = legacyFamilyValues(priceValues, "target");
+  const rawInvestments = legacyFamilyValues(priceValues, "investment");
+  const meanTarget = asFinite(consensus.mean_target_price) ?? numberAt(priceValues.Mean) ?? numberAt(priceValues.Overall);
+  const actualMedianTarget = asFinite(consensus.median_target_price) ?? numberAt(priceValues.Median);
+  const medianTarget = actualMedianTarget ?? (rawTargets.length >= 2 ? median(rawTargets) : null);
+  const meanInvestment =
+    asFinite(card.mean_investment_amount_raw) ??
+    asFinite(priceValues["LMIL Mean Investment"]) ??
+    asFinite(card.mean_investment_amount) ??
+    (rawInvestments.length ? rawInvestments.reduce((sum, value) => sum + value, 0) / rawInvestments.length : null);
+  const actualMedianInvestment = asFinite(card.median_investment_amount) ?? asFinite(priceValues["LMIL Median Investment"]);
+  const medianInvestment = actualMedianInvestment ?? (rawInvestments.length >= 2 ? median(rawInvestments) : null);
+  const decisionTarget =
+    asFinite(consensus.decision_target_price) ??
+    (meanTarget !== null && medianTarget !== null ? (meanTarget + medianTarget) / 2 : meanTarget);
+  const decisionInvestment =
+    asFinite(card.decision_investment_amount) ??
+    (meanInvestment !== null && medianInvestment !== null ? (meanInvestment + medianInvestment) / 2 : meanInvestment);
+  const currentPrice = asFinite(consensus.current_price) ?? asFinite(payload.header?.current_price);
+  const meanScore = asFinite(card.mean_score) ?? scoreFor(meanTarget, meanInvestment, currentPrice);
+  const medianScore = actualMedianTarget !== null && actualMedianInvestment !== null
+    ? (asFinite(card.median_score) ?? scoreFor(medianTarget, medianInvestment, currentPrice))
+    : medianTarget !== null && medianInvestment !== null
+      ? scoreFor(medianTarget, medianInvestment, currentPrice)
+      : null;
+  const combinedScore = medianScore !== null && meanScore !== null ? (meanScore + medianScore) / 2 : meanScore;
+  const confidence = asFinite(card.confidence_factor);
+  const targetReturn = decisionTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9
+    ? ((decisionTarget - currentPrice) / currentPrice) * 100
+    : null;
+
+  return {
+    ...payload,
+    valuation_hub: {
+      ...payload.valuation_hub,
+      consensus: {
+        ...consensus,
+        mean_target_price: meanTarget,
+        median_target_price: medianTarget,
+        decision_target_price: decisionTarget,
+      },
+    },
+    score_card: {
+      ...card,
+      position_size_pct_of_notional: decisionInvestment !== null ? (decisionInvestment / VALUATION_NOTIONAL) * 100 : card.position_size_pct_of_notional ?? 0,
+      mean_investment_amount: decisionInvestment,
+      mean_investment_amount_raw: meanInvestment,
+      median_investment_amount: medianInvestment,
+      decision_investment_amount: decisionInvestment,
+      mean_target_return_pct: meanTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((meanTarget - currentPrice) / currentPrice) * 100 : null,
+      median_target_return_pct: medianTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((medianTarget - currentPrice) / currentPrice) * 100 : null,
+      target_return_pct: targetReturn,
+      mean_score: meanScore,
+      median_score: medianScore,
+      combined_score: combinedScore,
+      adjusted_score: combinedScore !== null && confidence !== null ? combinedScore * confidence : asFinite(card.adjusted_score),
+      rationale: card.rationale || "Legacy report: Mean is retained from the report and Median is reconstructed from independent valuation-method families.",
+    },
+  };
 }
 
 function inferLegacyModelTargetScale(payload: DashboardPayload): number {
@@ -401,19 +512,8 @@ export function normalizePayload(
 
   const scale = inferLegacyModelTargetScale(merged);
   const scaled = applyLegacyModelTargetScale(merged, scale);
-  const meanTarget = asFinite(scaled.valuation_hub?.consensus?.mean_target_price);
-  const medianTarget = asFinite(scaled.valuation_hub?.consensus?.median_target_price);
-  if (medianTarget === null && meanTarget !== null) {
-    scaled.valuation_hub.consensus.median_target_price = meanTarget;
-  }
-  const resolvedMedian = asFinite(scaled.valuation_hub?.consensus?.median_target_price);
-  if (asFinite(scaled.valuation_hub?.consensus?.decision_target_price) === null) {
-    const values = [meanTarget, resolvedMedian].filter((value): value is number => value !== null);
-    scaled.valuation_hub.consensus.decision_target_price = values.length
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : null;
-  }
-  return hydrateFinancials(hydrateTechnicalAnalysis(scaled, tk, reportMeta), tk, reportMeta);
+  const enriched = enrichLegacyMeanMedian(scaled);
+  return hydrateFinancials(hydrateTechnicalAnalysis(enriched, tk, reportMeta), tk, reportMeta);
 }
 
 function parseMoney(text: string): number | null {
@@ -466,7 +566,7 @@ function parseAssumptionsPackRows(text: string, sourcePath: string) {
       max,
       sample_count: 1,
       method_count: 1,
-      methods: ["Overall"],
+      methods: ["Mean"],
       source_paths: [sourcePath],
     });
   }

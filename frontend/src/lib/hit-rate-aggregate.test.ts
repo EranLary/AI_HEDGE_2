@@ -42,7 +42,7 @@ function basePayload(): DashboardPayload {
   };
 }
 
-test("Overall model uses dashboard mean target and mean investment with correct hit-rate math", () => {
+test("Consensus model uses the dashboard decision target and decision investment with correct hit-rate math", () => {
   const payload = basePayload();
   payload.valuation_hub.method_tabs = [
     {
@@ -53,32 +53,34 @@ test("Overall model uses dashboard mean target and mean investment with correct 
       outputs: [],
     },
   ];
-  payload.valuation_hub.consensus.mean_target_price = 80;
-  payload.decision_card.mean_investment_amount = -5000;
+  payload.valuation_hub.consensus.mean_target_price = 140;
+  payload.valuation_hub.consensus.decision_target_price = 80;
+  payload.decision_card.mean_investment_amount = 5000;
+  payload.decision_card.decision_investment_amount = -5000;
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 120]]); // actual direction is up vs baseline 100
 
   const agg = computeHitRateAggregation(reports, live);
-  const overall = agg.by_model.find((row) => row.key === "Overall");
-  assert.ok(overall);
+  const consensus = agg.by_model.find((row) => row.key === "Consensus");
+  assert.ok(consensus);
 
-  // Mean target 80 vs baseline 100 predicts down -> miss against actual up.
-  assert.equal(overall.targets.hits, 0);
-  assert.equal(overall.targets.misses, 1);
-  assert.equal(overall.targets.neutral, 0);
-  assert.equal(overall.targets.considered, 1);
-  assert.equal(overall.targets.hit_rate_pct, 0);
+  // Decision target 80 vs baseline 100 predicts down -> miss against actual up.
+  assert.equal(consensus.targets.hits, 0);
+  assert.equal(consensus.targets.misses, 1);
+  assert.equal(consensus.targets.neutral, 0);
+  assert.equal(consensus.targets.considered, 1);
+  assert.equal(consensus.targets.hit_rate_pct, 0);
 
-  // Mean investment -5000 predicts down allocation -> miss against actual up.
-  assert.equal(overall.allocations.hits, 0);
-  assert.equal(overall.allocations.misses, 1);
-  assert.equal(overall.allocations.neutral, 0);
-  assert.equal(overall.allocations.considered, 1);
-  assert.equal(overall.allocations.hit_rate_pct, 0);
+  // Decision investment -5000 predicts down allocation -> miss against actual up.
+  assert.equal(consensus.allocations.hits, 0);
+  assert.equal(consensus.allocations.misses, 1);
+  assert.equal(consensus.allocations.neutral, 0);
+  assert.equal(consensus.allocations.considered, 1);
+  assert.equal(consensus.allocations.hit_rate_pct, 0);
 });
 
-test("Overall target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
+test("Consensus target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100
   payload.decision_card.mean_investment_amount = 0; // neutral allocation verdict
@@ -87,19 +89,19 @@ test("Overall target < 0 is floored to 0 and neutral allocations are excluded fr
   const live = new Map<string, number | null>([["TEST", 90]]); // actual direction is down
 
   const agg = computeHitRateAggregation(reports, live);
-  const overall = agg.by_model.find((row) => row.key === "Overall");
-  assert.ok(overall);
+  const consensus = agg.by_model.find((row) => row.key === "Consensus");
+  assert.ok(consensus);
 
-  assert.equal(overall.targets.hits, 1);
-  assert.equal(overall.targets.misses, 0);
-  assert.equal(overall.targets.considered, 1);
-  assert.equal(overall.targets.hit_rate_pct, 100);
+  assert.equal(consensus.targets.hits, 1);
+  assert.equal(consensus.targets.misses, 0);
+  assert.equal(consensus.targets.considered, 1);
+  assert.equal(consensus.targets.hit_rate_pct, 100);
 
-  assert.equal(overall.allocations.hits, 0);
-  assert.equal(overall.allocations.misses, 0);
-  assert.equal(overall.allocations.neutral, 1);
-  assert.equal(overall.allocations.considered, 0);
-  assert.equal(overall.allocations.hit_rate_pct, null);
+  assert.equal(consensus.allocations.hits, 0);
+  assert.equal(consensus.allocations.misses, 0);
+  assert.equal(consensus.allocations.neutral, 1);
+  assert.equal(consensus.allocations.considered, 0);
+  assert.equal(consensus.allocations.hit_rate_pct, null);
 });
 
 test("positive_only mode counts only positive target/allocation predictions", () => {

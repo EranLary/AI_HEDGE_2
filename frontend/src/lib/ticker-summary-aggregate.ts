@@ -445,7 +445,7 @@ export function computeTickerSummaryAggregation(
     for (const row of modelRows) {
       applyModel(row.name, row.targetPrice, row.allocationPct);
     }
-    applyModel("Overall", overviewTarget, overviewAllocation);
+    applyModel("Consensus", overviewTarget, overviewAllocation);
 
     for (const tab of methodTabs) {
       const outputs = Array.isArray(tab.outputs) ? tab.outputs : [];

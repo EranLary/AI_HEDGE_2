@@ -136,15 +136,15 @@ export function resolveDiscoveryLens(
     const selected = lensKey && models.includes(lensKey) ? lensKey : models[0] || null;
     return selected
       ? { type: "model", key: selected, label: `Model: ${selected}` }
-      : { type: "overall", key: null, label: "Overall" };
+      : { type: "overall", key: null, label: "Consensus" };
   }
   if (lensType === "valuator") {
     const selected = lensKey && valuators.includes(lensKey) ? lensKey : valuators[0] || null;
     return selected
       ? { type: "valuator", key: selected, label: `Valuator: ${selected}` }
-      : { type: "overall", key: null, label: "Overall" };
+      : { type: "overall", key: null, label: "Consensus" };
   }
-  return { type: "overall", key: null, label: "Overall" };
+  return { type: "overall", key: null, label: "Consensus" };
 }
 
 export function prepareDiscoveryUniverse(args: {
@@ -172,7 +172,7 @@ export function prepareDiscoveryUniverse(args: {
     const summary = computeTickerSummaryAggregation(sourceReports, window, args.asOfMs);
     for (const row of summary.by_model) {
       const label = String(row.label || "").trim();
-      if (label && label.toLowerCase() !== "overall") models.add(label);
+      if (label && !["overall", "consensus"].includes(label.toLowerCase())) models.add(label);
     }
     for (const row of summary.by_valuator) {
       const label = String(row.label || "").trim();
@@ -296,7 +296,7 @@ export function rankDiscoveryRows(candidates: ScoredDiscoveryCandidate[]): Ranke
 
 export function allDiscoveryLenses(universe: PreparedDiscoveryUniverse): DiscoveryLensSelection[] {
   return [
-    { type: "overall", key: null, label: "Overall" },
+    { type: "overall", key: null, label: "Consensus" },
     ...universe.models.map((key) => ({ type: "model" as const, key, label: key })),
     ...universe.valuators.map((key) => ({ type: "valuator" as const, key, label: key })),
   ];

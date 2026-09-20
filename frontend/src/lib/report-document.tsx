@@ -229,7 +229,7 @@ export function buildStructuredLegacyValuationMarkdown(
   const overall = meanValues.length ? meanValues : numericArray(prices?.Overall);
   const medianValues = numericArray(prices?.Median);
   const meanTarget = finiteNumber(consensus?.mean_target_price) ?? overall[0] ?? null;
-  const medianTarget = finiteNumber(consensus?.median_target_price) ?? medianValues[0] ?? meanTarget;
+  const medianTarget = finiteNumber(consensus?.median_target_price) ?? medianValues[0] ?? null;
   const targetMin = overall.length ? Math.min(...overall) : null;
   const targetMax = overall.length ? Math.max(...overall) : null;
   const cv = finiteNumber(prices?.CV ?? consensus?.cv);

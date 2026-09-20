@@ -409,7 +409,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     const benchmarkPoints = priceBySymbol.get(workspaceConfig.benchmarkSymbol) || [];
     const knownLenses = new Map<string, DiscoveryLensSelection>();
     const lensFirstCutoff = new Map<string, string>();
-    knownLenses.set("overall:overall", { type: "overall", key: null, label: "Overall" });
+    knownLenses.set("overall:overall", { type: "overall", key: null, label: "Consensus" });
     lensFirstCutoff.set("overall:overall", earliestCutoff);
     for (const snapshot of existing) {
       const key = lensMapKey(snapshot.lens);

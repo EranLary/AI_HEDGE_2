@@ -1995,8 +1995,19 @@ def build_dashboard_payload(
     price_performance_pct = _compute_price_performance_pct(ticker)
     prices = final_dict.get("Prices", {}) if isinstance(final_dict.get("Prices"), dict) else {}
     current_price = _safe_float(prices.get("Current")) or _safe_float(variables_dict.get("price")) or 0.0
-    overall = prices.get("Overall") if isinstance(prices.get("Overall"), (list, tuple)) else []
-    consensus_price = _safe_float(overall[0]) if len(overall) >= 1 else None
+    mean_prices = prices.get("Mean") if isinstance(prices.get("Mean"), (list, tuple)) else []
+    # Historical artifacts stored the mean under "Overall". Keep them fully
+    # readable while all new valuation outputs use the unambiguous Mean key.
+    if not mean_prices:
+        mean_prices = prices.get("Overall") if isinstance(prices.get("Overall"), (list, tuple)) else []
+    median_prices = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else []
+    consensus_price = _safe_float(mean_prices[0]) if len(mean_prices) >= 1 else None
+    median_price = _safe_float(median_prices[0]) if len(median_prices) >= 1 else consensus_price
+    decision_price = (
+        (consensus_price + median_price) / 2.0
+        if consensus_price is not None and median_price is not None
+        else consensus_price if consensus_price is not None else median_price
+    )
     confidence_std = _safe_float(prices.get("STD"))
     confidence_cv = _safe_float(prices.get("CV"))
     lmil = prices.get("LMIL") if isinstance(prices.get("LMIL"), (list, tuple)) else []
@@ -2135,19 +2146,43 @@ def build_dashboard_payload(
             structural_direction = "down"
 
     mean_investment = _safe_float(prices.get("LMIL Mean Investment"))
-    position_size_pct = (mean_investment / 100000.0) * 100.0 if mean_investment is not None else 0.0
-    target_return_pct: Optional[float] = None
+    median_investment = _safe_float(prices.get("LMIL Median Investment"))
+    if median_investment is None:
+        median_investment = mean_investment
+    decision_investment = _safe_float(prices.get("LMIL Decision Investment"))
+    if decision_investment is None:
+        available = [value for value in (mean_investment, median_investment) if value is not None]
+        decision_investment = (sum(available) / len(available)) if available else None
+    mean_position_size_pct = (mean_investment / 100000.0) * 100.0 if mean_investment is not None else 0.0
+    median_position_size_pct = (median_investment / 100000.0) * 100.0 if median_investment is not None else 0.0
+    position_size_pct = (decision_investment / 100000.0) * 100.0 if decision_investment is not None else 0.0
+    mean_target_return_pct: Optional[float] = None
     if (
         consensus_price is not None
         and current_price is not None
         and abs(current_price) > 1e-9
     ):
-        target_return_pct = ((consensus_price - current_price) / current_price) * 100.0
+        mean_target_return_pct = ((consensus_price - current_price) / current_price) * 100.0
+    median_target_return_pct: Optional[float] = None
+    if median_price is not None and current_price is not None and abs(current_price) > 1e-9:
+        median_target_return_pct = ((median_price - current_price) / current_price) * 100.0
 
-    if target_return_pct is not None:
-        combined_score = (0.4 * position_size_pct) + (0.6 * target_return_pct)
-    else:
-        combined_score = position_size_pct
+    mean_score = (
+        (0.4 * mean_position_size_pct) + (0.6 * mean_target_return_pct)
+        if mean_target_return_pct is not None
+        else mean_position_size_pct
+    )
+    median_score = (
+        (0.4 * median_position_size_pct) + (0.6 * median_target_return_pct)
+        if median_target_return_pct is not None
+        else median_position_size_pct
+    )
+    combined_score = (mean_score + median_score) / 2.0
+    target_return_pct = (
+        (mean_target_return_pct + median_target_return_pct) / 2.0
+        if mean_target_return_pct is not None and median_target_return_pct is not None
+        else mean_target_return_pct if mean_target_return_pct is not None else median_target_return_pct
+    )
 
     overall_cv, confidence_factor, misaligned_signal = valuation_confidence_metrics(
         price_cv=confidence_cv,
@@ -2205,6 +2240,8 @@ def build_dashboard_payload(
             "consensus": {
                 "current_price": current_price,
                 "mean_target_price": consensus_price,
+                "median_target_price": median_price,
+                "decision_target_price": decision_price,
                 "std": confidence_std,
                 "cv": confidence_cv,
                 "lmil": lmil,
@@ -2225,12 +2262,19 @@ def build_dashboard_payload(
         "score_card": {
             "position_size_pct_of_notional": position_size_pct,
             "target_return_pct": target_return_pct,
+            "mean_target_return_pct": mean_target_return_pct,
+            "median_target_return_pct": median_target_return_pct,
             "combined_score": combined_score,
+            "mean_score": mean_score,
+            "median_score": median_score,
             "overall_cv": overall_cv,
             "confidence_factor": confidence_factor,
             "adjusted_score": adjusted_score,
-            "mean_investment_amount": mean_investment,
-            "rationale": "Score blends 40% investment allocation and 60% target-return, then applies disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
+            "mean_investment_amount": decision_investment,
+            "mean_investment_amount_raw": mean_investment,
+            "median_investment_amount": median_investment,
+            "decision_investment_amount": decision_investment,
+            "rationale": "Mean and median each blend 40% allocation with 60% target return. The decision score and allocation weight those two views equally, then apply disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},

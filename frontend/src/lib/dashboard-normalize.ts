@@ -401,6 +401,18 @@ export function normalizePayload(
 
   const scale = inferLegacyModelTargetScale(merged);
   const scaled = applyLegacyModelTargetScale(merged, scale);
+  const meanTarget = asFinite(scaled.valuation_hub?.consensus?.mean_target_price);
+  const medianTarget = asFinite(scaled.valuation_hub?.consensus?.median_target_price);
+  if (medianTarget === null && meanTarget !== null) {
+    scaled.valuation_hub.consensus.median_target_price = meanTarget;
+  }
+  const resolvedMedian = asFinite(scaled.valuation_hub?.consensus?.median_target_price);
+  if (asFinite(scaled.valuation_hub?.consensus?.decision_target_price) === null) {
+    const values = [meanTarget, resolvedMedian].filter((value): value is number => value !== null);
+    scaled.valuation_hub.consensus.decision_target_price = values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : null;
+  }
   return hydrateFinancials(hydrateTechnicalAnalysis(scaled, tk, reportMeta), tk, reportMeta);
 }
 

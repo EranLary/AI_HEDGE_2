@@ -80,8 +80,26 @@ def test_target_consensus_dispersion_uses_equal_weight_method_families() -> None
     )
 
     assert method_means == [100, 200]
+    assert prices["Mean"][0] == pytest.approx(150)
+    assert prices["Median"][0] == pytest.approx(150)
     assert prices["Overall"][0] == pytest.approx(150)
     assert prices["STD"] == pytest.approx(50)
+
+
+def test_target_consensus_median_uses_one_value_per_method_family() -> None:
+    method_means, prices = legacy_port.make_short_list_prices(
+        [
+            ([100], "Scenario DCF"),
+            ([200] * 10, "Dream Team"),
+            ([1_000], "SOTP Scenario"),
+        ],
+        1,
+    )
+
+    assert method_means == [100, 200, 1_000]
+    assert prices["Mean"][0] == pytest.approx(433.3333333333)
+    assert prices["Median"][0] == pytest.approx(200)
+    assert prices["Overall"] == prices["Mean"]
 
 
 def test_position_consensus_counts_dream_team_as_one_method_family() -> None:
@@ -103,6 +121,8 @@ def test_position_consensus_counts_dream_team_as_one_method_family() -> None:
 
     assert consensus["aggregate_investments"]["Dream Team"] == pytest.approx(2_500)
     assert consensus["mean_investment"] == pytest.approx(9_500)
+    assert consensus["median_investment"] == pytest.approx(12_000)
+    assert consensus["decision_investment"] == pytest.approx(10_750)
     assert len(consensus["all_investments"]) == 16
 
 
@@ -144,7 +164,9 @@ def test_valuation_report_uses_clear_sections_and_position_labels() -> None:
 
     assert text.startswith("# TEST Valuation Report")
     assert "## Valuation Decision Snapshot" in text
-    assert "| Consensus Position | Short" in text
+    assert "| Mean Allocation | Short" in text
+    assert "| Median Allocation | Short" in text
+    assert "| Decision Allocation (50% Mean / 50% Median) | Short" in text
     assert "| Target Range | $120.00 – $120.00 |" in text
     assert "| Valuation Methods | 1 |" in text
     assert "| Model Runs | 1 |" in text

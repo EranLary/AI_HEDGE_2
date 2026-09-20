@@ -414,7 +414,12 @@ export function computeTickerSummaryAggregation(
 
   for (const report of filtered) {
     const payload = report.payload;
-    const overviewTarget = safeTarget(payload.valuation_hub?.consensus?.mean_target_price);
+    // Portfolio/discovery decisions use the same equal-weight Mean/Median
+    // target that drives the report score. Older reports fall back to Mean.
+    const overviewTarget = safeTarget(
+      payload.valuation_hub?.consensus?.decision_target_price ??
+        payload.valuation_hub?.consensus?.mean_target_price,
+    );
     const overviewAllocation =
       toNumOrNull((payload.score_card || payload.decision_card)?.position_size_pct_of_notional) ??
       allocationPctFromAmount((payload.score_card || payload.decision_card)?.mean_investment_amount);

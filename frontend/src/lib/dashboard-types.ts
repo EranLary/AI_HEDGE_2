@@ -381,6 +381,8 @@ export type DashboardPayload = {
     consensus: {
       current_price?: number | null;
       mean_target_price?: number | null;
+      median_target_price?: number | null;
+      decision_target_price?: number | null;
       std?: number | null;
       cv?: number | null;
       lmil?: number[] | null;
@@ -409,8 +411,15 @@ export type DashboardPayload = {
   score_card?: {
     position_size_pct_of_notional: number;
     mean_investment_amount: number | null;
+    mean_investment_amount_raw?: number | null;
+    median_investment_amount?: number | null;
+    decision_investment_amount?: number | null;
     target_return_pct?: number | null;
+    mean_target_return_pct?: number | null;
+    median_target_return_pct?: number | null;
     combined_score?: number | null;
+    mean_score?: number | null;
+    median_score?: number | null;
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;
@@ -420,8 +429,15 @@ export type DashboardPayload = {
     action?: string;
     position_size_pct_of_notional?: number;
     mean_investment_amount?: number | null;
+    mean_investment_amount_raw?: number | null;
+    median_investment_amount?: number | null;
+    decision_investment_amount?: number | null;
     target_return_pct?: number | null;
+    mean_target_return_pct?: number | null;
+    median_target_return_pct?: number | null;
     combined_score?: number | null;
+    mean_score?: number | null;
+    median_score?: number | null;
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;

@@ -55,6 +55,14 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
       ? Number(consensus.current_price)
       : null;
+  const consensusMean =
+    typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
+      ? Number(consensus.mean_target_price)
+      : null;
+  const consensusMedian =
+    typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
+      ? Number(consensus.median_target_price)
+      : consensusMean;
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -189,6 +197,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-zinc-200">
         <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
           <Gauge size={14} /> Target Price by Model
+        </span>
+        <span className="text-xs text-zinc-400">
+          Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")}
         </span>
       </div>
       <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">

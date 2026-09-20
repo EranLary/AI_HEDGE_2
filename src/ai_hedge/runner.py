@@ -525,6 +525,7 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
 
     current_price = _first_float(consensus.get("current_price"))
     mean_target_price = _first_float(consensus.get("mean_target_price"))
+    median_target_price = _first_float(consensus.get("median_target_price"))
 
     target_change_pct = _first_float(score_card.get("target_return_pct"))
     if (
@@ -554,8 +555,9 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
     lines = [
         "## Dashboard Signal Snapshot",
         f"- Mean Target Price: {_fmt_price(mean_target_price, currency_code)}",
+        f"- Median Target Price: {_fmt_price(median_target_price, currency_code)}",
         f"- Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
-        f"- Investment Sizing (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Decision Allocation (% of Notional): {_fmt_signed_pct(investment_pct)}",
         f"- Disagreement Score: {_fmt_number(disagreement_score, decimals=4)}",
     ]
     return "\n".join(lines).strip()
@@ -1137,8 +1139,21 @@ def _build_valuation_decision_snapshot(
     if not investment_values:
         investment_values = _collect_investments_from_methods(methods)
 
-    mean_target = _avg_numeric_values(target_values)
-    mean_investment = _avg_numeric_values(investment_values)
+    prices = final_dict.get("Prices", {}) if isinstance(final_dict, dict) else {}
+    prices = prices if isinstance(prices, dict) else {}
+    mean_entry = prices.get("Mean") if isinstance(prices.get("Mean"), (list, tuple)) else prices.get("Overall")
+    median_entry = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else mean_entry
+    mean_target = _first_float(mean_entry[0]) if isinstance(mean_entry, (list, tuple)) and mean_entry else _avg_numeric_values(target_values)
+    median_target = _first_float(median_entry[0]) if isinstance(median_entry, (list, tuple)) and median_entry else mean_target
+    mean_investment = _first_float(prices.get("LMIL Mean Investment"))
+    if mean_investment is None:
+        mean_investment = _avg_numeric_values(investment_values)
+    median_investment = _first_float(prices.get("LMIL Median Investment"))
+    if median_investment is None:
+        median_investment = mean_investment
+    decision_investment = _first_float(prices.get("LMIL Decision Investment"))
+    if decision_investment is None and mean_investment is not None and median_investment is not None:
+        decision_investment = (mean_investment + median_investment) / 2.0
     method_names = [
         method_name
         for method_name in dict.fromkeys(
@@ -1176,8 +1191,11 @@ def _build_valuation_decision_snapshot(
     rows = [
         ("Current Price", _fmt_money(current_price)),
         ("Mean Target Price", _fmt_money(mean_target)),
+        ("Median Target Price", _fmt_money(median_target)),
         ("Implied Upside / Downside", _fmt_change_from_current(mean_target, current_price)),
-        ("Consensus Position", _fmt_allocation(mean_investment)),
+        ("Mean Allocation", _fmt_allocation(mean_investment)),
+        ("Median Allocation", _fmt_allocation(median_investment)),
+        ("Decision Allocation (50% Mean / 50% Median)", _fmt_allocation(decision_investment)),
         ("Target Range", target_range),
         ("Valuation Methods", str(len(method_names))),
         ("Model Runs", str(model_runs)),

@@ -210,7 +210,7 @@ export function hasStructuredLegacyValuation(dashboard: unknown): boolean {
   const root = asObject(dashboard);
   const hub = asObject(root?.valuation_hub);
   const prices = asObject(hub?.prices);
-  return finiteNumber(prices?.Current) !== null && numericArray(prices?.Overall).length > 0;
+  return finiteNumber(prices?.Current) !== null && (numericArray(prices?.Mean).length > 0 || numericArray(prices?.Overall).length > 0);
 }
 
 export function buildStructuredLegacyValuationMarkdown(
@@ -225,8 +225,11 @@ export function buildStructuredLegacyValuationMarkdown(
   const decision = asObject(root?.decision_card);
   const currency = String(header?.currency || "").trim();
   const currentPrice = finiteNumber(prices?.Current ?? consensus?.current_price);
-  const overall = numericArray(prices?.Overall);
+  const meanValues = numericArray(prices?.Mean);
+  const overall = meanValues.length ? meanValues : numericArray(prices?.Overall);
+  const medianValues = numericArray(prices?.Median);
   const meanTarget = finiteNumber(consensus?.mean_target_price) ?? overall[0] ?? null;
+  const medianTarget = finiteNumber(consensus?.median_target_price) ?? medianValues[0] ?? meanTarget;
   const targetMin = overall.length ? Math.min(...overall) : null;
   const targetMax = overall.length ? Math.max(...overall) : null;
   const cv = finiteNumber(prices?.CV ?? consensus?.cv);
@@ -240,6 +243,8 @@ export function buildStructuredLegacyValuationMarkdown(
 
   const excludedKeys = new Set([
     "Current",
+    "Mean",
+    "Median",
     "Overall",
     "CV",
     "STD",
@@ -247,6 +252,8 @@ export function buildStructuredLegacyValuationMarkdown(
     "Investment Percents",
     "LMIL Investment STD",
     "LMIL Mean Investment",
+    "LMIL Median Investment",
+    "LMIL Decision Investment",
   ]);
   const methodRows = Object.entries(prices || {})
     .filter(([method, value]) => !excludedKeys.has(method) && numericArray(value).length > 0)
@@ -264,6 +271,7 @@ export function buildStructuredLegacyValuationMarkdown(
   const snapshotRows = [
     ["Current price", formatPrice(currentPrice, currency)],
     ["Mean target price", formatPrice(meanTarget, currency)],
+    ["Median target price", formatPrice(medianTarget, currency)],
     ["Stored target range", targetMin !== null && targetMax !== null
       ? `${formatPrice(targetMin, currency)} – ${formatPrice(targetMax, currency)}`
       : "Not available"],

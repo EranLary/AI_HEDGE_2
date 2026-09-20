@@ -4948,8 +4948,16 @@ def make_short_list_prices(list_of_all_results, price_currency):
 
     if final_list:
         mean_val = np.mean(final_list)
+        median_val = np.median(final_list)
         p25, p75 = np.quantile(final_list, [0.25, 0.75])
-        price_dict["Overall"] = [mean_val, p25, p75]
+        # Each of the seven valuation families gets exactly one vote.  The
+        # Dream Team is already condensed to one family mean above, so neither
+        # the mean nor the median can be dominated by its ten personas.
+        price_dict["Mean"] = [mean_val, p25, p75]
+        price_dict["Median"] = [median_val, p25, p75]
+        # Compatibility alias for historical readers. New consumers must use
+        # Mean explicitly; "Overall" was an ambiguous name for this statistic.
+        price_dict["Overall"] = list(price_dict["Mean"])
 
         if final_list:
             # Dispersion must use the same equal-weight method-family unit as
@@ -5716,10 +5724,13 @@ def _method_family_investment_consensus(method_details):
     if method_values:
         method_array = np.asarray(method_values, dtype=float)
         mean_investment = float(method_array.mean())
+        median_investment = float(np.median(method_array))
         std_investment = float(method_array.std())
     else:
         mean_investment = 0.0
+        median_investment = 0.0
         std_investment = 0.0
+    decision_investment = (mean_investment + median_investment) / 2.0
     investment_cv = (
         float(std_investment / abs(mean_investment))
         if abs(mean_investment) > 1e-9
@@ -5729,6 +5740,8 @@ def _method_family_investment_consensus(method_details):
         "aggregate_investments": aggregate_investments,
         "all_investments": all_investment_values,
         "mean_investment": mean_investment,
+        "median_investment": median_investment,
+        "decision_investment": decision_investment,
         "investment_std": std_investment,
         "investment_cv": investment_cv,
     }
@@ -6185,11 +6198,15 @@ def run_valuations(
     aggregate_investments = investment_consensus["aggregate_investments"]
     all_investment_values = investment_consensus["all_investments"]
     mean_investment = investment_consensus["mean_investment"]
+    median_investment = investment_consensus["median_investment"]
+    decision_investment = investment_consensus["decision_investment"]
     std_investment = investment_consensus["investment_std"]
 
     mean_investment_percent = (mean_investment / 100000.0) * 100.0
+    median_investment_percent = (median_investment / 100000.0) * 100.0
+    decision_investment_percent = (decision_investment / 100000.0) * 100.0
     investment_cv = investment_consensus["investment_cv"]
-    lmil = [mean_investment_percent, investment_cv]
+    lmil = [decision_investment_percent, investment_cv]
     aggregate_investment_percents = {
         method_name: (
             (float(amount) / 100000.0) * 100.0
@@ -6212,10 +6229,12 @@ def run_valuations(
 
     all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
     dict_of_prices["Current"] = current_price * price_currency
-    mean_overall = dict_of_prices["Overall"][0]
+    mean_overall = dict_of_prices["Mean"][0]
     dict_of_prices["CV"] = dict_of_prices["STD"] / ((dict_of_prices["Current"] + mean_overall) / 2)
     dict_of_prices["LMIL"] = lmil
     dict_of_prices["LMIL Mean Investment"] = mean_investment
+    dict_of_prices["LMIL Median Investment"] = median_investment
+    dict_of_prices["LMIL Decision Investment"] = decision_investment
     dict_of_prices["LMIL Investment STD"] = std_investment
     dict_of_prices["Investment Percents"] = aggregate_investment_percents
     final_dict["Prices"] = dict_of_prices
@@ -6274,6 +6293,8 @@ def run_valuations(
               "methods": method_details,
               "all_investments": all_investment_values,
               "mean_investment": mean_investment,
+              "median_investment": median_investment,
+              "decision_investment": decision_investment,
               "investment_std": std_investment,
               "lmil": lmil,
               "aggregate_targets": {

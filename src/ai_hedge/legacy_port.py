@@ -4952,9 +4952,13 @@ def make_short_list_prices(list_of_all_results, price_currency):
 
     if final_list:
         mean_val = np.mean(final_list)
+        median_val = np.median(final_list)
         p25, p75 = np.quantile(final_list, [0.25, 0.75])
-        price_dict["Overall"] = [mean_val, p25, p75]
-
+        # Each of the seven valuation families gets exactly one vote.  The
+        # Dream Team is already condensed to one family mean above, so neither
+        # the mean nor the median can be dominated by its ten personas.
+        price_dict["Mean"] = [mean_val, p25, p75]
+        price_dict["Median"] = [median_val, p25, p75]
         if final_list:
             # Dispersion must use the same equal-weight method-family unit as
             # the consensus mean. Dream Team is therefore represented by its
@@ -4972,11 +4976,15 @@ def make_dict_values(list_of_values):
   if list_of_values:
     results_array = np.asarray(list_of_values, dtype=float)
     mean_val = results_array.mean()
+    median_val = np.median(results_array)
     p25, p75 = np.quantile(results_array, [0.25, 0.75])
     value_final_list = [mean_val, p25, p75]
+    median_final_list = [median_val, p25, p75]
   else:
     value_final_list = [0, 0, 0]
-  final_dict["Overall"] = value_final_list
+    median_final_list = [0, 0, 0]
+  final_dict["Mean"] = value_final_list
+  final_dict["Median"] = median_final_list
   return final_dict
 
 def overall_valuation(all_results, revenue_results, ni_results, pe_results, variables_dict):
@@ -4985,23 +4993,23 @@ def overall_valuation(all_results, revenue_results, ni_results, pe_results, vari
   price_currency = 1
   financial_currency = 1
   current_price = variables_dict["price"] * price_currency
-  append_text_to_file(text = "", header = "Overall Valuations", two_rows_n = False)
+  append_text_to_file(text = "", header = "Mean Valuations", two_rows_n = False)
   append_text_to_file(text = f"Current Price: ${current_price}", two_rows_n = False)
   print("current_price:", current_price)
-  name_of_eval = "Overall Price"
+  name_of_eval = "Mean Price"
   price_text = plot_results(all_results, name_of_eval)[0]
   append_text_to_file(text = price_text, header = name_of_eval)
-  name_of_eval = "Overall Revenue"
+  name_of_eval = "Mean Revenue"
   revenue_text = plot_results(revenue_results, name_of_eval, thousands = True)[0]
   current_rev = variables_dict["revenue"]/1000 * financial_currency
   revenue_text += f"Current Revenue: ${current_rev:,.2f} (Thousands)" + "\n\n"
   append_text_to_file(text = revenue_text, header = name_of_eval)
-  name_of_eval = "Overall Net Income"
+  name_of_eval = "Mean Net Income"
   ni_text = plot_results(ni_results, name_of_eval, thousands = True)[0]
   current_ni = variables_dict["net_income"]/1000 * financial_currency
   ni_text += f"Current Net Income: ${current_ni:,.2f} (Thousands)" + "\n\n"
   append_text_to_file(text = ni_text, header = name_of_eval)
-  name_of_eval = "Overall P/E"
+  name_of_eval = "Mean P/E"
   pe_text = plot_results(pe_results, name_of_eval, dollar_sign = False)[0]
   append_text_to_file(text = pe_text, header = name_of_eval)
 
@@ -5720,10 +5728,13 @@ def _method_family_investment_consensus(method_details):
     if method_values:
         method_array = np.asarray(method_values, dtype=float)
         mean_investment = float(method_array.mean())
+        median_investment = float(np.median(method_array))
         std_investment = float(method_array.std())
     else:
         mean_investment = 0.0
+        median_investment = 0.0
         std_investment = 0.0
+    decision_investment = (mean_investment + median_investment) / 2.0
     investment_cv = (
         float(std_investment / abs(mean_investment))
         if abs(mean_investment) > 1e-9
@@ -5733,6 +5744,8 @@ def _method_family_investment_consensus(method_details):
         "aggregate_investments": aggregate_investments,
         "all_investments": all_investment_values,
         "mean_investment": mean_investment,
+        "median_investment": median_investment,
+        "decision_investment": decision_investment,
         "investment_std": std_investment,
         "investment_cv": investment_cv,
     }
@@ -6189,11 +6202,15 @@ def run_valuations(
     aggregate_investments = investment_consensus["aggregate_investments"]
     all_investment_values = investment_consensus["all_investments"]
     mean_investment = investment_consensus["mean_investment"]
+    median_investment = investment_consensus["median_investment"]
+    decision_investment = investment_consensus["decision_investment"]
     std_investment = investment_consensus["investment_std"]
 
     mean_investment_percent = (mean_investment / 100000.0) * 100.0
+    median_investment_percent = (median_investment / 100000.0) * 100.0
+    decision_investment_percent = (decision_investment / 100000.0) * 100.0
     investment_cv = investment_consensus["investment_cv"]
-    lmil = [mean_investment_percent, investment_cv]
+    lmil = [decision_investment_percent, investment_cv]
     aggregate_investment_percents = {
         method_name: (
             (float(amount) / 100000.0) * 100.0
@@ -6216,10 +6233,12 @@ def run_valuations(
 
     all_results_currency, dict_of_prices = make_short_list_prices(all_results_list, price_currency)
     dict_of_prices["Current"] = current_price * price_currency
-    mean_overall = dict_of_prices["Overall"][0]
+    mean_overall = dict_of_prices["Mean"][0]
     dict_of_prices["CV"] = dict_of_prices["STD"] / ((dict_of_prices["Current"] + mean_overall) / 2)
     dict_of_prices["LMIL"] = lmil
     dict_of_prices["LMIL Mean Investment"] = mean_investment
+    dict_of_prices["LMIL Median Investment"] = median_investment
+    dict_of_prices["LMIL Decision Investment"] = decision_investment
     dict_of_prices["LMIL Investment STD"] = std_investment
     dict_of_prices["Investment Percents"] = aggregate_investment_percents
     final_dict["Prices"] = dict_of_prices
@@ -6233,7 +6252,7 @@ def run_valuations(
     ni_results = ni_results_earnings_scenario + ni_results_composite_scenario
     ni_results_currency = [x * financial_currency for x in ni_results]
     ni_dict = make_dict_values(ni_results_currency)
-    mean_ni = ni_dict["Overall"][0] / financial_currency
+    mean_ni = ni_dict["Mean"][0] / financial_currency
     ni_dict["Current"] = current_ni * financial_currency
     final_dict["Net Income"] = ni_dict
 
@@ -6278,6 +6297,8 @@ def run_valuations(
               "methods": method_details,
               "all_investments": all_investment_values,
               "mean_investment": mean_investment,
+              "median_investment": median_investment,
+              "decision_investment": decision_investment,
               "investment_std": std_investment,
               "lmil": lmil,
               "aggregate_targets": {
@@ -7400,7 +7421,8 @@ def plot_all_three(
             "SOTP Scenario",
             "Dream Team",
             "Scenario DCF",
-            "Overall",
+            "Mean",
+            "Median",
         ],
         extra_text=extra_price_text,
         midpoint_suffix_map=midpoint_suffix_map,
@@ -7456,9 +7478,9 @@ def print_overall_valuations(ticker, final_dict, variables_dict):
   price_currency = variables_dict["price_currency"]
   financial_currency = variables_dict["financial_currency"]
   shares = variables_dict["shares_outstanding"]
-  price = final_dict["Prices"]["Overall"][0] / price_currency
-  pe = final_dict["P/E"]["Overall"][0]
-  ni = final_dict["Net Income"]["Overall"][0] / financial_currency
+  price = final_dict["Prices"]["Mean"][0] / price_currency
+  pe = final_dict["P/E"]["Mean"][0]
+  ni = final_dict["Net Income"]["Mean"][0] / financial_currency
   curr_price = final_dict["Prices"]["Current"]
 
   pe_by_overall = price * shares / ni
@@ -7466,9 +7488,9 @@ def print_overall_valuations(ticker, final_dict, variables_dict):
   price_by_overall = ni * pe / shares * price_currency
 
   print(f"Current Price: {curr_price}")
-  print(f"Price By Overall: {price_by_overall}")
-  print(f"NI By Overall: {ni_by_overall:,.2f} (in Thousands)")
-  print(f"PE By Overall: {pe_by_overall}")
+  print(f"Price By Mean: {price_by_overall}")
+  print(f"NI By Mean: {ni_by_overall:,.2f} (in Thousands)")
+  print(f"PE By Mean: {pe_by_overall}")
 
 
 # Usage:

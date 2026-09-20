@@ -9,7 +9,8 @@ import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
-import { computeTickerSummaryAggregation, type SummarySourceReport } from "@/lib/ticker-summary-aggregate";
+import type { SummarySourceReport } from "@/lib/ticker-summary-aggregate";
+import { computeScreenerTickerSummary } from "@/lib/screener-consensus";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
 const CACHE_VERSION = 5;
@@ -251,7 +252,7 @@ async function buildTargetData(workspace: Workspace): Promise<TargetData> {
   const exactReportTickers = new Set<string>();
   for (const [ticker, reports] of byTicker.entries()) {
     exactReportTickers.add(ticker);
-    const aggregation = computeTickerSummaryAggregation(reports, "all");
+    const aggregation = computeScreenerTickerSummary(reports);
     const target = numberOrNull(aggregation.overview.mean_target_price);
     const samples = Number(aggregation.overview.target_samples || 0);
     const summary = { target, samples };

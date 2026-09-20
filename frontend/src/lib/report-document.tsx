@@ -210,7 +210,7 @@ export function hasStructuredLegacyValuation(dashboard: unknown): boolean {
   const root = asObject(dashboard);
   const hub = asObject(root?.valuation_hub);
   const prices = asObject(hub?.prices);
-  return finiteNumber(prices?.Current) !== null && numericArray(prices?.Overall).length > 0;
+  return finiteNumber(prices?.Current) !== null && (numericArray(prices?.Mean).length > 0 || numericArray(prices?.Overall).length > 0);
 }
 
 export function buildStructuredLegacyValuationMarkdown(
@@ -222,11 +222,15 @@ export function buildStructuredLegacyValuationMarkdown(
   const hub = asObject(root?.valuation_hub);
   const prices = asObject(hub?.prices);
   const consensus = asObject(hub?.consensus);
-  const decision = asObject(root?.decision_card);
+  const decision = asObject(root?.score_card) || asObject(root?.decision_card);
   const currency = String(header?.currency || "").trim();
   const currentPrice = finiteNumber(prices?.Current ?? consensus?.current_price);
-  const overall = numericArray(prices?.Overall);
+  const meanValues = numericArray(prices?.Mean);
+  const overall = meanValues.length ? meanValues : numericArray(prices?.Overall);
+  const medianValues = numericArray(prices?.Median);
   const meanTarget = finiteNumber(consensus?.mean_target_price) ?? overall[0] ?? null;
+  const medianTarget = finiteNumber(consensus?.median_target_price) ?? medianValues[0] ?? null;
+  const consensusTarget = finiteNumber(consensus?.decision_target_price) ?? meanTarget;
   const targetMin = overall.length ? Math.min(...overall) : null;
   const targetMax = overall.length ? Math.max(...overall) : null;
   const cv = finiteNumber(prices?.CV ?? consensus?.cv);
@@ -236,10 +240,17 @@ export function buildStructuredLegacyValuationMarkdown(
     decision?.position_size_pct_of_notional ?? decision?.mean_investment_amount,
   );
   const allocationIsNotional = finiteNumber(decision?.position_size_pct_of_notional) !== null;
+  const meanAllocation = finiteNumber(decision?.mean_investment_amount_raw);
+  const medianAllocation = finiteNumber(decision?.median_investment_amount);
+  const consensusBasis = medianTarget !== null && medianAllocation !== null
+    ? "50% Mean / 50% Median"
+    : "Mean only (Median unavailable)";
   const investmentPercents = asObject(prices?.["Investment Percents"]);
 
   const excludedKeys = new Set([
     "Current",
+    "Mean",
+    "Median",
     "Overall",
     "CV",
     "STD",
@@ -247,6 +258,8 @@ export function buildStructuredLegacyValuationMarkdown(
     "Investment Percents",
     "LMIL Investment STD",
     "LMIL Mean Investment",
+    "LMIL Median Investment",
+    "LMIL Decision Investment",
   ]);
   const methodRows = Object.entries(prices || {})
     .filter(([method, value]) => !excludedKeys.has(method) && numericArray(value).length > 0)
@@ -264,12 +277,22 @@ export function buildStructuredLegacyValuationMarkdown(
   const snapshotRows = [
     ["Current price", formatPrice(currentPrice, currency)],
     ["Mean target price", formatPrice(meanTarget, currency)],
+    ["Median target price", formatPrice(medianTarget, currency)],
+    ["Consensus target price", formatPrice(consensusTarget, currency)],
     ["Stored target range", targetMin !== null && targetMax !== null
       ? `${formatPrice(targetMin, currency)} – ${formatPrice(targetMax, currency)}`
       : "Not available"],
     ["Upside / downside to mean", currentPrice && meanTarget !== null
       ? formatPercent(meanTarget / currentPrice - 1)
       : "Not available"],
+    ["Upside / downside to median", currentPrice && medianTarget !== null
+      ? formatPercent(medianTarget / currentPrice - 1)
+      : "Not available"],
+    ["Upside / downside to consensus", currentPrice && consensusTarget !== null
+      ? formatPercent(consensusTarget / currentPrice - 1)
+      : "Not available"],
+    ["Mean allocation", meanAllocation !== null ? formatPercent(meanAllocation / 100000, false) : "Not available"],
+    ["Median allocation", medianAllocation !== null ? formatPercent(medianAllocation / 100000, false) : "Not available"],
     ["Cross-method coefficient of variation", formatNumber(cv, 3)],
     ["Cross-method standard deviation", formatPrice(std, currency)],
     ["Stored recommendation", recommendation || "Not available"],
@@ -278,6 +301,8 @@ export function buildStructuredLegacyValuationMarkdown(
       : allocation !== null
         ? formatNumber(allocation)
         : "Not available"],
+    ["Consensus score", formatNumber(finiteNumber(decision?.adjusted_score))],
+    ["Consensus basis", consensusBasis],
   ];
 
   return [

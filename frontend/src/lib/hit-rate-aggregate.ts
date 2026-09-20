@@ -76,6 +76,7 @@ function createMetricSet(): MetricAccSet {
 }
 
 function toNumOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || (typeof v === "string" && !v.trim())) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -229,10 +230,10 @@ export function computeHitRateAggregation(
       applyModelPrediction(modelRow.name, modelRow.target_price, modelRow.investment_amount);
     }
 
-    const overallMeanTarget = toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
-    const overallMeanInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
-    if (overallMeanTarget !== null || overallMeanInvestment !== null) {
-      applyModelPrediction("Overall", overallMeanTarget, overallMeanInvestment);
+    const consensusTarget = toNumOrNull(payload.valuation_hub?.consensus?.decision_target_price) ?? toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
+    const consensusInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.decision_investment_amount) ?? toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
+    if (consensusTarget !== null || consensusInvestment !== null) {
+      applyModelPrediction("Consensus", consensusTarget, consensusInvestment);
     }
 
     for (const tab of methodTabs) {

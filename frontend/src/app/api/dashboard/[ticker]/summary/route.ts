@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { getLiveCurrentPricesBatch, getLiveFundamentals } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import {
   computeTickerSummaryAggregation,
+  resolveDefaultSummaryWindow,
   type SummarySourceReport,
   type SummaryWindow,
 } from "@/lib/ticker-summary-aggregate";
@@ -27,8 +29,9 @@ const ASSUMPTION_CURRENT_KEYS: Record<string, string> = {
   "representative p e": "representative_pe",
 };
 
-function parseWindow(value: string | null): SummaryWindow {
+function parseWindow(value: string | null): SummaryWindow | null {
   const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
   return WINDOW_VALUES.has(raw as SummaryWindow) ? (raw as SummaryWindow) : "all";
 }
 
@@ -57,7 +60,7 @@ async function loadTickerDashboards(ticker: string, workspace: Workspace): Promi
       const row = {
         ticker: String(r.ticker || "").toUpperCase(),
         generatedAt: new Date(r.generated_at).toISOString(),
-        payload: r.dashboard as DashboardPayload,
+        payload: normalizeValuationConsensus(r.dashboard as DashboardPayload),
       };
       if (row.ticker !== ticker || !row.payload) continue;
       const runId = String((r as { source_run_id?: unknown }).source_run_id || "").trim();
@@ -83,7 +86,11 @@ async function loadTickerDashboards(ticker: string, workspace: Workspace): Promi
       typeof payload.generated_at === "string" && payload.generated_at.trim()
         ? payload.generated_at
         : new Date(entry.mtimeMs).toISOString();
-    const row: SummarySourceReport = { ticker, generatedAt, payload };
+    const row: SummarySourceReport = {
+      ticker,
+      generatedAt,
+      payload: normalizeValuationConsensus(payload),
+    };
     const runId = siteRunIdFromPathLike(entry.path);
     const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
     if (deletedFilter.isDeleted(entry.report_id, ticker, runId)) continue;
@@ -107,10 +114,11 @@ export async function GET(
   }
 
   const url = new URL(req.url);
-  const window = parseWindow(url.searchParams.get("window"));
+  const requestedWindow = parseWindow(url.searchParams.get("window"));
   const workspace = parseApiWorkspace(url.searchParams.get("workspace"));
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const reports = await loadTickerDashboards(tk, workspace);
+  const window = requestedWindow ?? resolveDefaultSummaryWindow(reports);
   const aggregation = computeTickerSummaryAggregation(reports, window);
   const [livePriceMap, liveFundamentals] = await Promise.all([
     getLiveCurrentPricesBatch([tk]),

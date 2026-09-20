@@ -380,6 +380,13 @@ export function filterReportsByWindow(
   return reports.filter((report) => shouldKeepReport(report, window, nowMs));
 }
 
+export function resolveDefaultSummaryWindow(
+  reports: SummarySourceReport[],
+  nowMs: number = Date.now(),
+): SummaryWindow {
+  return filterReportsByWindow(reports, "3m", nowMs).length > 0 ? "3m" : "all";
+}
+
 export function computeTickerSummaryAggregation(
   reports: SummarySourceReport[],
   window: SummaryWindow,
@@ -414,7 +421,12 @@ export function computeTickerSummaryAggregation(
 
   for (const report of filtered) {
     const payload = report.payload;
-    const overviewTarget = safeTarget(payload.valuation_hub?.consensus?.mean_target_price);
+    // Portfolio/discovery decisions use the same equal-weight Mean/Median
+    // target that drives the report score. Older reports fall back to Mean.
+    const overviewTarget = safeTarget(
+      payload.valuation_hub?.consensus?.decision_target_price ??
+        payload.valuation_hub?.consensus?.mean_target_price,
+    );
     const overviewAllocation =
       toNumOrNull((payload.score_card || payload.decision_card)?.position_size_pct_of_notional) ??
       allocationPctFromAmount((payload.score_card || payload.decision_card)?.mean_investment_amount);
@@ -440,7 +452,7 @@ export function computeTickerSummaryAggregation(
     for (const row of modelRows) {
       applyModel(row.name, row.targetPrice, row.allocationPct);
     }
-    applyModel("Overall", overviewTarget, overviewAllocation);
+    applyModel("Consensus", overviewTarget, overviewAllocation);
 
     for (const tab of methodTabs) {
       const outputs = Array.isArray(tab.outputs) ? tab.outputs : [];

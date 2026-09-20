@@ -526,15 +526,27 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
 
     current_price = _first_float(consensus.get("current_price"))
     mean_target_price = _first_float(consensus.get("mean_target_price"))
+    median_target_price = _first_float(consensus.get("median_target_price"))
+    decision_target_price = _first_float(consensus.get("decision_target_price"))
+    has_real_median = (
+        median_target_price is not None
+        and _first_float(score_card.get("median_investment_amount")) is not None
+    )
+    if decision_target_price is None:
+        decision_target_price = (
+            (mean_target_price + median_target_price) / 2.0
+            if has_real_median and mean_target_price is not None
+            else mean_target_price
+        )
 
     target_change_pct = _first_float(score_card.get("target_return_pct"))
     if (
         target_change_pct is None
         and current_price is not None
-        and mean_target_price is not None
+        and decision_target_price is not None
         and abs(current_price) > 1e-9
     ):
-        target_change_pct = ((mean_target_price - current_price) / current_price) * 100.0
+        target_change_pct = ((decision_target_price - current_price) / current_price) * 100.0
 
     investment_pct = _first_float(score_card.get("position_size_pct_of_notional"))
 
@@ -554,9 +566,14 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
 
     lines = [
         "## Dashboard Signal Snapshot",
+        f"- Current Price: {_fmt_price(current_price, currency_code)}",
         f"- Mean Target Price: {_fmt_price(mean_target_price, currency_code)}",
-        f"- Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
-        f"- Investment Sizing (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Median Target Price: {_fmt_price(median_target_price, currency_code) if has_real_median else 'Not available'}",
+        f"- Consensus Target Price: {_fmt_price(decision_target_price, currency_code)}",
+        f"- Consensus Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
+        f"- Consensus Allocation (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Consensus Score: {_fmt_number(score_card.get('adjusted_score'))}",
+        f"- Consensus Basis: {'50% Mean / 50% Median' if has_real_median else 'Mean only (Median unavailable)'}",
         f"- Disagreement Score: {_fmt_number(disagreement_score, decimals=4)}",
     ]
     return "\n".join(lines).strip()
@@ -605,18 +622,22 @@ def _wall_st_synthesis_to_markdown(wall_st_payload: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _extract_overall_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
+def _extract_mean_triplet(final_dict: Dict[str, Any], metric_key: str) -> Optional[tuple[float, float, float]]:
     if not isinstance(final_dict, dict):
         return None
     payload = final_dict.get(metric_key, {})
     if not isinstance(payload, dict):
         return None
-    overall = payload.get("Overall")
-    if not isinstance(overall, (list, tuple)) or not overall:
+    mean_values = payload.get("Mean")
+    # Reports written before the Mean/Median contract used Overall for the mean.
+    # Keep them readable without writing that ambiguous key in new artifacts.
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
+        mean_values = payload.get("Overall")
+    if not isinstance(mean_values, (list, tuple)) or not mean_values:
         return None
-    mean_v = _first_float(overall[0]) if len(overall) >= 1 else None
-    min_v = _first_float(overall[1]) if len(overall) >= 2 else mean_v
-    max_v = _first_float(overall[2]) if len(overall) >= 3 else mean_v
+    mean_v = _first_float(mean_values[0]) if len(mean_values) >= 1 else None
+    min_v = _first_float(mean_values[1]) if len(mean_values) >= 2 else mean_v
+    max_v = _first_float(mean_values[2]) if len(mean_values) >= 3 else mean_v
     if mean_v is None and min_v is None and max_v is None:
         return None
     if mean_v is None:
@@ -638,7 +659,7 @@ def _build_assumptions_pack_text(final_dict: Dict[str, Any], explain_payload: Op
     ]
     lines: List[str] = []
     for label, key in specs:
-        triplet = _extract_overall_triplet(final_dict, key)
+        triplet = _extract_mean_triplet(final_dict, key)
         if not triplet:
             continue
         mean_v, min_v, max_v = triplet
@@ -1138,8 +1159,43 @@ def _build_valuation_decision_snapshot(
     if not investment_values:
         investment_values = _collect_investments_from_methods(methods)
 
-    mean_target = _avg_numeric_values(target_values)
-    mean_investment = _avg_numeric_values(investment_values)
+    prices = final_dict.get("Prices", {}) if isinstance(final_dict, dict) else {}
+    prices = prices if isinstance(prices, dict) else {}
+    mean_entry = prices.get("Mean") if isinstance(prices.get("Mean"), (list, tuple)) else prices.get("Overall")
+    median_entry = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else None
+    mean_target = _first_float(mean_entry[0]) if isinstance(mean_entry, (list, tuple)) and mean_entry else _avg_numeric_values(target_values)
+    median_target = _first_float(median_entry[0]) if isinstance(median_entry, (list, tuple)) and median_entry else None
+    if median_target is None and len(target_values) >= 2:
+        sorted_targets = sorted(target_values)
+        middle = len(sorted_targets) // 2
+        median_target = (
+            sorted_targets[middle]
+            if len(sorted_targets) % 2
+            else (sorted_targets[middle - 1] + sorted_targets[middle]) / 2.0
+        )
+    mean_investment = _first_float(prices.get("LMIL Mean Investment"))
+    if mean_investment is None:
+        mean_investment = _avg_numeric_values(investment_values)
+    median_investment = _first_float(prices.get("LMIL Median Investment"))
+    if median_investment is None and len(investment_values) >= 2:
+        sorted_investments = sorted(investment_values)
+        middle = len(sorted_investments) // 2
+        median_investment = (
+            sorted_investments[middle]
+            if len(sorted_investments) % 2
+            else (sorted_investments[middle - 1] + sorted_investments[middle]) / 2.0
+        )
+    has_real_median = median_target is not None and median_investment is not None
+    decision_target = (
+        (mean_target + median_target) / 2.0
+        if has_real_median and mean_target is not None
+        else mean_target
+    )
+    decision_investment = (
+        (mean_investment + median_investment) / 2.0
+        if has_real_median and mean_investment is not None
+        else mean_investment
+    )
     method_names = [
         method_name
         for method_name in dict.fromkeys(
@@ -1173,12 +1229,57 @@ def _build_valuation_decision_snapshot(
         mean_investment=mean_investment,
         current_price=current_price,
     )
+    current = _first_float(current_price)
+    mean_return = (
+        ((mean_target - current) / current) * 100.0
+        if mean_target is not None and current is not None and abs(current) > 1e-9
+        else None
+    )
+    median_return = (
+        ((median_target - current) / current) * 100.0
+        if has_real_median and current is not None and abs(current) > 1e-9
+        else None
+    )
+    decision_return = (
+        ((decision_target - current) / current) * 100.0
+        if decision_target is not None and current is not None and abs(current) > 1e-9
+        else None
+    )
+    mean_allocation_pct = (
+        (mean_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if mean_investment is not None else None
+    )
+    median_allocation_pct = (
+        (median_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if has_real_median else None
+    )
+    mean_score = (
+        0.4 * mean_allocation_pct + 0.6 * mean_return
+        if mean_allocation_pct is not None and mean_return is not None else None
+    )
+    median_score = (
+        0.4 * median_allocation_pct + 0.6 * median_return
+        if median_allocation_pct is not None and median_return is not None else None
+    )
+    consensus_score = (
+        (mean_score + median_score) / 2.0
+        if mean_score is not None and median_score is not None else mean_score
+    )
+    basis = "50% Mean / 50% Median" if has_real_median else "Mean only (Median unavailable)"
 
     rows = [
         ("Current Price", _fmt_money(current_price)),
         ("Mean Target Price", _fmt_money(mean_target)),
-        ("Implied Upside / Downside", _fmt_change_from_current(mean_target, current_price)),
-        ("Consensus Position", _fmt_allocation(mean_investment)),
+        ("Median Target Price", _fmt_money(median_target) if has_real_median else "Not available"),
+        ("Consensus Target Price", _fmt_money(decision_target)),
+        ("Mean Upside / Downside", _fmt_signed_pct(mean_return)),
+        ("Median Upside / Downside", _fmt_signed_pct(median_return) if has_real_median else "Not available"),
+        ("Consensus Upside / Downside", _fmt_signed_pct(decision_return)),
+        ("Mean Allocation", _fmt_allocation(mean_investment)),
+        ("Median Allocation", _fmt_allocation(median_investment) if has_real_median else "Not available"),
+        ("Consensus Allocation", _fmt_allocation(decision_investment)),
+        ("Consensus Score", _fmt_number(consensus_score)),
+        ("Consensus Basis", basis),
         ("Target Range", target_range),
         ("Valuation Methods", str(len(method_names))),
         ("Model Runs", str(model_runs)),
@@ -1241,7 +1342,7 @@ def _build_assumptions_means_text(final_dict: Dict[str, Any], explain_payload: O
         ("Representative Earnings", "Net Income"),
         ("Representative P/E", "P/E"),
     ]:
-        triplet = _extract_overall_triplet(final_dict, key)
+        triplet = _extract_mean_triplet(final_dict, key)
         if not triplet:
             continue
         mean_v = triplet[0]
@@ -2020,12 +2121,12 @@ def _run_ticker_valuation_impl(
 
     revenue_dict = final_dict.get("Revenue", {}) if isinstance(final_dict, dict) else {}
     earnings_dict = final_dict.get("Net Income", {}) if isinstance(final_dict, dict) else {}
-    revenue_overall = revenue_dict.get("Overall", []) if isinstance(revenue_dict, dict) else []
-    earnings_overall = earnings_dict.get("Overall", []) if isinstance(earnings_dict, dict) else []
+    revenue_mean = revenue_dict.get("Mean", revenue_dict.get("Overall", [])) if isinstance(revenue_dict, dict) else []
+    earnings_mean = earnings_dict.get("Mean", earnings_dict.get("Overall", [])) if isinstance(earnings_dict, dict) else []
     current_revenue = _first_float(revenue_dict.get("Current")) if isinstance(revenue_dict, dict) else None
-    target_revenue = _first_float(revenue_overall[0] if isinstance(revenue_overall, list) and revenue_overall else None)
+    target_revenue = _first_float(revenue_mean[0] if isinstance(revenue_mean, list) and revenue_mean else None)
     current_earnings = _first_float(earnings_dict.get("Current")) if isinstance(earnings_dict, dict) else None
-    target_earnings = _first_float(earnings_overall[0] if isinstance(earnings_overall, list) and earnings_overall else None)
+    target_earnings = _first_float(earnings_mean[0] if isinstance(earnings_mean, list) and earnings_mean else None)
     legacy.plot_all_three(
         final_dict,
         ticker,

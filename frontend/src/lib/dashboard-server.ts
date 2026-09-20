@@ -11,6 +11,7 @@ import { isDbEnabled } from "@/lib/db";
 import {
   buildFallbackFromArtifacts,
   normalizePayload,
+  normalizeValuationConsensus,
 } from "@/lib/dashboard-normalize";
 import {
   getDeletedReportFilter,
@@ -123,9 +124,17 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
         report_file: r.source_run_id || r.id,
         updated_at: new Date(r.generated_at).toISOString(),
         score: typeof r.score === "number" && Number.isFinite(r.score) ? Number(r.score) : null,
+        consensus_target_price:
+          typeof r.consensus_target_price === "number" && Number.isFinite(r.consensus_target_price)
+            ? Number(r.consensus_target_price)
+            : null,
         mean_target_price:
           typeof r.mean_target_price === "number" && Number.isFinite(r.mean_target_price)
             ? Number(r.mean_target_price)
+            : null,
+        median_target_price:
+          typeof r.median_target_price === "number" && Number.isFinite(r.median_target_price)
+            ? Number(r.median_target_price)
             : null,
         allocation_pct:
           typeof r.allocation_pct === "number" && Number.isFinite(r.allocation_pct)
@@ -133,6 +142,7 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
             : null,
         workspace: r.workspace,
         release_id: r.release_id,
+        consensus_basis: r.consensus_basis,
       };
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
@@ -157,7 +167,8 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
 
   const reports = listDashboardReports();
   for (const report of reports) {
-    const payload = readJson<DashboardPayload>(report.path);
+    const rawPayload = readJson<DashboardPayload>(report.path);
+    const payload = rawPayload ? normalizeValuationConsensus(rawPayload) : null;
     if (payload?.workspace === "nasdaq100") continue;
     const generatedAt = String(payload?.generated_at || new Date(report.mtimeMs).toISOString());
     const row: ReportListItem = {
@@ -171,10 +182,23 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
         Number.isFinite((payload?.score_card || payload?.decision_card)?.adjusted_score)
           ? Number((payload?.score_card || payload?.decision_card)?.adjusted_score)
           : null,
+      consensus_target_price:
+        typeof payload?.valuation_hub?.consensus?.decision_target_price === "number" &&
+        Number.isFinite(payload.valuation_hub.consensus.decision_target_price)
+          ? Number(payload.valuation_hub.consensus.decision_target_price)
+          : typeof payload?.valuation_hub?.consensus?.mean_target_price === "number" &&
+              Number.isFinite(payload.valuation_hub.consensus.mean_target_price)
+            ? Number(payload.valuation_hub.consensus.mean_target_price)
+            : null,
       mean_target_price:
         typeof payload?.valuation_hub?.consensus?.mean_target_price === "number" &&
         Number.isFinite(payload.valuation_hub.consensus.mean_target_price)
           ? Number(payload.valuation_hub.consensus.mean_target_price)
+          : null,
+      median_target_price:
+        typeof payload?.valuation_hub?.consensus?.median_target_price === "number" &&
+        Number.isFinite(payload.valuation_hub.consensus.median_target_price)
+          ? Number(payload.valuation_hub.consensus.median_target_price)
           : null,
       allocation_pct:
         typeof (payload?.score_card || payload?.decision_card)?.position_size_pct_of_notional === "number" &&
@@ -182,10 +206,15 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
           ? Number((payload?.score_card || payload?.decision_card)?.position_size_pct_of_notional)
           : typeof (payload?.score_card || payload?.decision_card)?.mean_investment_amount === "number" &&
               Number.isFinite((payload?.score_card || payload?.decision_card)?.mean_investment_amount)
-            ? Number((payload?.score_card || payload?.decision_card)?.mean_investment_amount) / 100000.0
+            ? Number((payload?.score_card || payload?.decision_card)?.mean_investment_amount) / 1000.0
             : null,
       workspace: "analysis",
       release_id: null,
+      consensus_basis:
+        payload?.valuation_hub?.consensus?.consensus_basis === "mean_median" ||
+        payload?.valuation_hub?.consensus?.consensus_basis === "mean_only"
+          ? payload.valuation_hub.consensus.consensus_basis
+          : null,
     };
     const runId = siteRunIdFromPathLike(report.path);
     const key = runId ? `run:${report.ticker}:${runId}` : `file:${report.path}`;
@@ -221,14 +250,14 @@ async function loadDashboardPayload(
   if (reportId && deletedFilter.isDeleted(reportId, tk)) {
     return empty();
   }
-  if (dbEnabled && reportId && !isUuid(reportId)) {
-    return empty();
-  }
+  const reportIdIsUuid = Boolean(reportId && isUuid(reportId));
 
   try {
-    const dbRow = reportId
+    const dbRow = reportIdIsUuid
       ? await fetchReportById(reportId, workspace)
-      : await fetchLatestReport(tk, workspace);
+      : reportId
+        ? null
+        : await fetchLatestReport(tk, workspace);
     if (dbRow && dbRow.dashboard) {
       const generated = new Date(dbRow.generated_at).toISOString();
       return normalizePayload(tk, {
@@ -242,11 +271,11 @@ async function loadDashboardPayload(
       });
     }
     if (dbEnabled) {
-      if (reportId) return empty();
+      if (reportIdIsUuid) return empty();
       if (workspace === "nasdaq100") return empty();
-      return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
-        reportId: reportId || undefined,
-      });
+      if (!reportId) {
+        return normalizePayload(tk, buildFallbackFromArtifacts(tk));
+      }
     }
   } catch (err) {
     console.warn(`[dashboard] DB read failed for ${tk}:`, err);

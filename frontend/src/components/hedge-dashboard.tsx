@@ -1326,9 +1326,25 @@ export function HedgeDashboard({
     typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
       ? Number(consensus.mean_target_price)
       : null;
+  const consensusMedian =
+    typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
+      ? Number(consensus.median_target_price)
+      : null;
+  const consensusDecision =
+    typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
+      ? Number(consensus.decision_target_price)
+      : consensusMean;
   const consensusChangePct =
     typeof consensusCurrent === "number" && typeof consensusMean === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusMean - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const consensusMedianChangePct =
+    typeof consensusCurrent === "number" && typeof consensusMedian === "number" && Math.abs(consensusCurrent) > 1e-9
+      ? ((consensusMedian - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const consensusDecisionChangePct =
+    typeof consensusCurrent === "number" && typeof consensusDecision === "number" && Math.abs(consensusCurrent) > 1e-9
+      ? ((consensusDecision - consensusCurrent) / consensusCurrent) * 100
       : null;
   const consensusCvRaw =
     typeof consensus?.cv === "number" && Number.isFinite(consensus.cv) ? Math.abs(Number(consensus.cv)) : null;
@@ -1359,10 +1375,12 @@ export function HedgeDashboard({
   const activeMethodTargetChangeClass = toneClassFromSign(activeMethodTargetChangePct);
   const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
-  const consensusChangeClass = toneClassFromSign(consensusChangePct);
+  const consensusMedianClass = toneClassFromTarget(consensusMedian, consensusCurrent);
+  const consensusDecisionClass = toneClassFromTarget(consensusDecision, consensusCurrent);
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
+  const consensusMedianText = fmtTargetOrFloor(consensusMedian, currencyContext);
+  const consensusDecisionText = fmtTargetOrFloor(consensusDecision, currencyContext);
   const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
-  const consensusChangeText = typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A";
   const overallDisagreement =
     [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
       ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
@@ -1707,16 +1725,31 @@ export function HedgeDashboard({
   ].join("\n").trim();
   const scoreCard = data?.score_card || data?.decision_card || {};
   const meanAllocationPct =
-    typeof scoreCard?.position_size_pct_of_notional === "number" &&
-    Number.isFinite(scoreCard.position_size_pct_of_notional)
-      ? Number(scoreCard.position_size_pct_of_notional)
+    typeof scoreCard?.mean_investment_amount_raw === "number" && Number.isFinite(scoreCard.mean_investment_amount_raw)
+      ? Number(scoreCard.mean_investment_amount_raw) / NOTIONAL_BASE_USD * 100
       : typeof scoreCard?.mean_investment_amount === "number" && Number.isFinite(scoreCard.mean_investment_amount)
         ? Number(scoreCard.mean_investment_amount) / NOTIONAL_BASE_USD * 100
         : null;
+  const medianAllocationPct =
+    typeof scoreCard?.median_investment_amount === "number" && Number.isFinite(scoreCard.median_investment_amount)
+      ? Number(scoreCard.median_investment_amount) / NOTIONAL_BASE_USD * 100
+      : null;
+  const decisionAllocationPct =
+    typeof scoreCard?.position_size_pct_of_notional === "number" &&
+    Number.isFinite(scoreCard.position_size_pct_of_notional)
+      ? Number(scoreCard.position_size_pct_of_notional)
+      : typeof scoreCard?.decision_investment_amount === "number" && Number.isFinite(scoreCard.decision_investment_amount)
+        ? Number(scoreCard.decision_investment_amount) / NOTIONAL_BASE_USD * 100
+        : meanAllocationPct;
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
-      : combinedScore(scoreCard?.mean_investment_amount, consensusChangePct);
+      : combinedScore(
+          typeof scoreCard?.decision_investment_amount === "number"
+            ? scoreCard.decision_investment_amount
+            : scoreCard?.mean_investment_amount,
+          consensusDecisionChangePct,
+        );
   const finalAdjustedScore =
     typeof scoreCard?.adjusted_score === "number" && Number.isFinite(scoreCard.adjusted_score)
       ? Number(scoreCard.adjusted_score)
@@ -1892,53 +1925,97 @@ export function HedgeDashboard({
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Target Price</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Target</p>
                       <AutoFitMetric
-                        text={consensusMeanText}
+                        text={consensusDecisionText}
                         maxPx={42}
                         minPx={16}
-                        className={`hib-metric-value mt-1 font-bold leading-tight ${consensusMeanClass}`}
+                        className={`hib-metric-value mt-1 font-bold leading-tight ${consensusDecisionClass}`}
                       />
-                    </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">
-                        Price <span className="whitespace-nowrap">({reportDateIso})</span>
+                      <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(consensusDecisionChangePct)}`}>
+                        {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
+                      <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-zinc-400">Mean</span>
+                          <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
+                            <span className={consensusMeanClass}>{consensusMeanText}</span>
+                            <span className={`text-[11px] ${toneClassFromSign(consensusChangePct)}`}>
+                              {typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-zinc-400">Median</span>
+                          <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
+                            <span className={consensusMedianClass}>{consensusMedianText}</span>
+                            <span className={`text-[11px] ${toneClassFromSign(consensusMedianChangePct)}`}>
+                              {typeof consensusMedianChangePct === "number" ? fmtPct(consensusMedianChangePct) : "N/A"}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Report Price</p>
                       <AutoFitMetric
                         text={consensusCurrentText}
                         maxPx={42}
                         minPx={16}
                         className="hib-metric-value hib-current-price mt-1 font-bold leading-tight"
                       />
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] text-zinc-400">
+                        As of <span className="whitespace-nowrap text-zinc-300">{reportDateIso}</span>
+                      </p>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Change (%)</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Allocation</p>
                       <AutoFitMetric
-                        text={consensusChangeText}
+                        text={fmtScoreInputPctOnly(decisionAllocationPct)}
                         maxPx={32}
                         minPx={14}
-                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${consensusChangeClass}`}
+                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
+                      <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-zinc-400">Mean</span>
+                          <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(meanAllocationPct)}`}>
+                            {fmtScoreInputPctOnly(meanAllocationPct)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-zinc-400">Median</span>
+                          <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(medianAllocationPct)}`}>
+                            {fmtScoreInputPctOnly(medianAllocationPct)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Mean Allocation (%)</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Score</p>
                       <AutoFitMetric
-                        text={fmtScoreInputPctOnly(meanAllocationPct)}
+                        text={typeof finalAdjustedScore === "number" ? finalAdjustedScore.toFixed(2) : "N/A"}
                         maxPx={32}
                         minPx={14}
-                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(meanAllocationPct)}`}
+                        className={`hib-metric-subvalue mt-1 font-bold leading-tight ${scoreToneClass}`}
                       />
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                        Confidence-adjusted valuation score
+                      </p>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Disagreement Score</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Disagreement</p>
                       <AutoFitMetric
                         text={typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                         maxPx={32}
                         minPx={14}
                         className="hib-metric-subvalue mt-1 font-bold leading-tight text-zinc-100"
                       />
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                        Lower means stronger consensus
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -2330,20 +2407,28 @@ export function HedgeDashboard({
                     {typeof finalAdjustedScore === "number" && Number.isFinite(finalAdjustedScore) ? finalAdjustedScore.toFixed(2) : "N/A"}
                   </p>
                   <p className="mt-2 text-xl font-semibold text-zinc-100">
-                    <span>Mean Target Price: </span>
-                    <span className={consensusMeanClass}>{fmtTargetOrFloor(consensus?.mean_target_price, currencyContext)}</span>{" "}
-                    <span className={consensusChangeClass}>
-                      {typeof consensusChangePct === "number" ? `(${fmtPct(consensusChangePct)})` : "(N/A)"}
+                    <span>Consensus Target Price: </span>
+                    <span className={consensusDecisionClass}>{consensusDecisionText}</span>{" "}
+                    <span className={toneClassFromSign(consensusDecisionChangePct)}>
+                      {typeof consensusDecisionChangePct === "number" ? `(${fmtPct(consensusDecisionChangePct)})` : "(N/A)"}
                     </span>
                   </p>
+                  <p className="text-sm text-zinc-400">
+                    Mean <span className={consensusMeanClass}>{consensusMeanText}</span> · Median{" "}
+                    <span className={consensusMedianClass}>{consensusMedianText}</span>
+                  </p>
                   <p className="text-lg font-semibold text-zinc-100">
-                    <span>Mean Investment Score Input: </span>
-                    <span className={toneClassFromSign(scoreCard.position_size_pct_of_notional)}>
-                      {fmtScoreInputPctOnly(scoreCard.position_size_pct_of_notional)}
+                    <span>Consensus Allocation: </span>
+                    <span className={toneClassFromSign(decisionAllocationPct)}>
+                      {fmtScoreInputPctOnly(decisionAllocationPct)}
+                    </span>
+                    <span className="ml-2 text-sm font-normal text-zinc-400">
+                      (Mean <span className={toneClassFromSign(meanAllocationPct)}>{fmtScoreInputPctOnly(meanAllocationPct)}</span> · Median{" "}
+                      <span className={toneClassFromSign(medianAllocationPct)}>{fmtScoreInputPctOnly(medianAllocationPct)}</span>)
                     </span>
                   </p>
                   <p className="hib-neutral-metric text-sm">
-                    Overall Disagreement Score: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
+                    Consensus Disagreement: {typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                   </p>
                 </div>
                 <div className="grid gap-2">

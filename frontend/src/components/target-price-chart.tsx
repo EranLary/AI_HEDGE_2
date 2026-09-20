@@ -55,6 +55,18 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)
       ? Number(consensus.current_price)
       : null;
+  const consensusMean =
+    typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
+      ? Number(consensus.mean_target_price)
+      : null;
+  const consensusMedian =
+    typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
+      ? Number(consensus.median_target_price)
+      : null;
+  const consensusDecision =
+    typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
+      ? Number(consensus.decision_target_price)
+      : consensusMean;
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -85,14 +97,17 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       }));
     if (rows.length) return rows;
     return [
-      { name: "Mean", target: Number(consensus?.mean_target_price || 0), aboveCurrent: true, performer: "Consensus", investment: null },
-      { name: "Current", target: Number(consensus?.current_price || 0), aboveCurrent: true, performer: "Market", investment: null },
-    ];
-  }, [consensus, consensusCurrent, data?.valuation_hub?.method_blocks, methodPerformerByName]);
+      { name: "Mean", target: consensusMean, aboveCurrent: true, performer: "Consensus", investment: null },
+      { name: "Median", target: consensusMedian, aboveCurrent: true, performer: "Consensus", investment: null },
+    ].filter((row): row is typeof row & { target: number } => typeof row.target === "number");
+  }, [consensusCurrent, consensusMean, consensusMedian, data?.valuation_hub?.method_blocks, methodPerformerByName]);
 
   const chartScale = useMemo(() => {
     const values = chartData.map((x) => Number(x.target)).filter((x) => Number.isFinite(x));
     if (typeof consensusCurrent === "number") values.push(consensusCurrent);
+    if (typeof consensusMean === "number") values.push(consensusMean);
+    if (typeof consensusMedian === "number") values.push(consensusMedian);
+    if (typeof consensusDecision === "number") values.push(consensusDecision);
     if (!values.length) return { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1], currentEpsilon: 0.001 };
     let min = Math.min(...values);
     let max = Math.max(...values);
@@ -113,7 +128,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       new Set(ticks.map((t) => Number(t.toFixed(6))).filter((t) => Number.isFinite(t))),
     ).sort((a, b) => a - b);
     return { min, max, ticks: uniqueTicks, currentEpsilon: Math.max((max - min) * 0.002, 1e-6) };
-  }, [chartData, consensusCurrent]);
+  }, [chartData, consensusCurrent, consensusDecision, consensusMean, consensusMedian]);
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const [chartReady, setChartReady] = useState(false);
@@ -189,6 +204,12 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-zinc-200">
         <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
           <Gauge size={14} /> Target Price by Model
+        </span>
+        <span className="text-xs text-zinc-400">
+          Current {fmtMoney(consensusCurrent, currencyContext, "price")} · Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")} · Consensus {fmtMoney(consensusDecision, currencyContext, "price")}
+        </span>
+        <span className="hidden">
+          Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")}
         </span>
       </div>
       <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">

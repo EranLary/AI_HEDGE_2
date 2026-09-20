@@ -5,6 +5,7 @@ import type { DashboardPayload } from "./dashboard-types";
 import {
   computeTickerSummaryAggregation,
   filterReportsByWindow,
+  resolveDefaultSummaryWindow,
   type SummarySourceReport,
 } from "./ticker-summary-aggregate";
 
@@ -53,7 +54,7 @@ function basePayload(): DashboardPayload {
 test("computes overview/model/valuator/assumptions means across reports", () => {
   const p1 = basePayload();
   p1.valuation_hub.consensus.mean_target_price = 120;
-  p1.decision_card.position_size_pct_of_notional = 10;
+  p1.decision_card!.position_size_pct_of_notional = 10;
   p1.valuation_hub.method_tabs = [
     {
       name: "DCF",
@@ -113,7 +114,7 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
 
   const p2 = basePayload();
   p2.valuation_hub.consensus.mean_target_price = 140;
-  p2.decision_card.position_size_pct_of_notional = 20;
+  p2.decision_card!.position_size_pct_of_notional = 20;
   p2.valuation_hub.method_tabs = [
     {
       name: "DCF",
@@ -211,4 +212,23 @@ test("filters reports by selected window", () => {
   assert.equal(filterReportsByWindow(reports, "3m", now).length, 2);
   assert.equal(filterReportsByWindow(reports, "1y", now).length, 2);
   assert.equal(filterReportsByWindow(reports, "all", now).length, 2);
+});
+
+test("defaults to three months and falls back to all time when the recent window is empty", () => {
+  const p = basePayload();
+  const now = Date.parse("2026-05-02T12:00:00.000Z");
+  const recent: SummarySourceReport = {
+    ticker: "TEST",
+    generatedAt: "2026-05-01T12:00:00.000Z",
+    payload: p,
+  };
+  const old: SummarySourceReport = {
+    ticker: "TEST",
+    generatedAt: "2025-01-01T12:00:00.000Z",
+    payload: p,
+  };
+
+  assert.equal(resolveDefaultSummaryWindow([old, recent], now), "3m");
+  assert.equal(resolveDefaultSummaryWindow([old], now), "all");
+  assert.equal(resolveDefaultSummaryWindow([], now), "all");
 });

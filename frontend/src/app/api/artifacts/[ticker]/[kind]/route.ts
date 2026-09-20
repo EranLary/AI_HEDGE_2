@@ -5,6 +5,8 @@ import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 
 import { isDbEnabled } from "@/lib/db";
+import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
+import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
 import {
@@ -364,7 +366,10 @@ async function documentResponse(
   if (!source || !String(source.analysisMd || "").trim()) {
     return NextResponse.json({ error: "Report source was not found." }, { status: 404 });
   }
-  const document = buildStandaloneReportHtml(source, requestKind.reportKind, {
+  const normalizedSource = source.dashboard && typeof source.dashboard === "object"
+    ? { ...source, dashboard: normalizeValuationConsensus(source.dashboard as DashboardPayload) }
+    : source;
+  const document = buildStandaloneReportHtml(normalizedSource, requestKind.reportKind, {
     rasterPrintLogo: requestKind.format === "pdf",
   });
   const filename = documentDownloadName(

@@ -276,7 +276,7 @@ export default function DiscoveryPage() {
                         lensType === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
                       }`}
                     >
-                      Overall
+                      Consensus
                     </button>
                     <button
                       type="button"

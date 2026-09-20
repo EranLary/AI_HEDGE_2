@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
@@ -36,7 +37,7 @@ async function loadDashboards(workspace: Workspace): Promise<LoadedDashboard[]> 
       if (!ticker || isExcludedTicker(ticker)) continue;
       const row: LoadedDashboard = {
         ticker,
-        payload: record.dashboard as DashboardPayload,
+        payload: normalizeValuationConsensus(record.dashboard as DashboardPayload),
         updatedAt: new Date(record.generated_at).toISOString(),
         reportId: String(record.id || "").trim() || undefined,
       };
@@ -62,7 +63,7 @@ async function loadDashboards(workspace: Workspace): Promise<LoadedDashboard[]> 
       typeof payload.generated_at === "string" && payload.generated_at.trim()
         ? payload.generated_at
         : new Date(entry.mtimeMs).toISOString();
-    const row: LoadedDashboard = { ticker, payload, updatedAt, reportId: entry.report_id || undefined };
+    const row: LoadedDashboard = { ticker, payload: normalizeValuationConsensus(payload), updatedAt, reportId: entry.report_id || undefined };
     const runId = siteRunIdFromPathLike(entry.path);
     const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
     if (deletedFilter.isDeleted(entry.report_id, ticker, runId) || merged.has(key)) continue;

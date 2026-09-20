@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import type { Workspace } from "@/lib/workspace";
@@ -16,13 +17,17 @@ export interface DbReportSummary {
   currency: string | null;
   recommendation: string | null;
   mean_target_price: number | null;
+  median_target_price: number | null;
+  consensus_target_price: number | null;
   allocation_pct: number | null;
   score: number | null;
+  consensus_basis: "mean_median" | "mean_only" | null;
   source: string;
   source_run_id: string | null;
   visibility: ReportVisibility;
   workspace: Workspace;
   release_id: string | null;
+  valuation_dashboard?: DashboardPayload | null;
 }
 
 export interface DbReportFull extends DbReportSummary {
@@ -49,6 +54,38 @@ export interface DeletedReportRef {
   source_run_id: string | null;
 }
 
+function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
+  return rows.map((row) => {
+    const { valuation_dashboard: valuationDashboard, ...summary } = row;
+    if (!valuationDashboard || typeof valuationDashboard !== "object") return summary;
+    const dashboard = normalizeValuationConsensus(valuationDashboard);
+    const consensus = dashboard.valuation_hub?.consensus;
+    const card = dashboard.score_card || dashboard.decision_card;
+    const target = consensus?.decision_target_price;
+    const allocation = card?.position_size_pct_of_notional;
+    const score = card?.adjusted_score;
+    return {
+      ...summary,
+      mean_target_price:
+        typeof consensus?.mean_target_price === "number" && Number.isFinite(consensus.mean_target_price)
+          ? consensus.mean_target_price
+          : summary.mean_target_price,
+      median_target_price:
+        typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
+          ? consensus.median_target_price
+          : null,
+      consensus_target_price:
+        typeof target === "number" && Number.isFinite(target) ? target : summary.consensus_target_price,
+      allocation_pct: typeof allocation === "number" && Number.isFinite(allocation) ? allocation : summary.allocation_pct,
+      score: typeof score === "number" && Number.isFinite(score) ? score : summary.score,
+      consensus_basis:
+        consensus?.consensus_basis === "mean_median" || consensus?.consensus_basis === "mean_only"
+          ? consensus.consensus_basis
+          : summary.consensus_basis,
+    };
+  });
+}
+
 export async function fetchLatestReport(ticker: string, workspace: Workspace = "analysis"): Promise<DbReportFull | null> {
   if (isExcludedTicker(ticker)) return null;
   const sql = getSql();
@@ -64,16 +101,21 @@ export async function fetchLatestReport(ticker: string, workspace: Workspace = "
            r.currency,
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           r.median_target_price::float8 AS median_target_price,
+           r.consensus_target_price::float8 AS consensus_target_price,
            COALESCE(
+             r.consensus_allocation_pct::float8,
              (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
              (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 1000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 1000.0
            ) AS allocation_pct,
            COALESCE(
+             r.consensus_score::float8,
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
+           r.consensus_basis,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id,
            a.dashboard,
@@ -108,16 +150,21 @@ export async function fetchReportById(id: string, workspace: Workspace = "analys
            r.currency,
            r.recommendation,
            r.mean_target_price::float8 AS mean_target_price,
+           r.median_target_price::float8 AS median_target_price,
+           r.consensus_target_price::float8 AS consensus_target_price,
            COALESCE(
+             r.consensus_allocation_pct::float8,
              (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
              (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
+             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 1000.0,
+             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 1000.0
            ) AS allocation_pct,
            COALESCE(
+             r.consensus_score::float8,
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
+           r.consensus_basis,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id,
            a.dashboard,
@@ -203,16 +250,22 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
            r.currency,
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
-           COALESCE(
-             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
-           ) AS allocation_pct,
-           COALESCE(
-             (a.dashboard->'score_card'->>'adjusted_score')::float8,
-             (a.dashboard->'decision_card'->>'adjusted_score')::float8
-           ) AS score,
+           r.median_target_price::float8 AS median_target_price,
+           r.consensus_target_price::float8 AS consensus_target_price,
+           r.consensus_allocation_pct::float8 AS allocation_pct,
+           r.consensus_score::float8 AS score,
+           r.consensus_basis,
+           CASE WHEN r.consensus_basis IS NULL THEN
+             jsonb_build_object(
+               'header', a.dashboard->'header',
+               'valuation_hub', jsonb_build_object(
+                 'consensus', a.dashboard->'valuation_hub'->'consensus',
+                 'prices', a.dashboard->'valuation_hub'->'prices'
+               ),
+               'score_card', a.dashboard->'score_card',
+               'decision_card', a.dashboard->'decision_card'
+             )
+           ELSE NULL END AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -223,7 +276,7 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 export async function attributeReportToUser(opts: {
@@ -322,28 +375,44 @@ function fallbackCommunityReportsFromOutputs(
         Number.isFinite(dashboard.valuation_hub.consensus.mean_target_price)
           ? Number(dashboard.valuation_hub.consensus.mean_target_price)
           : null,
+      median_target_price:
+        typeof dashboard.valuation_hub?.consensus?.median_target_price === "number" &&
+        Number.isFinite(dashboard.valuation_hub.consensus.median_target_price)
+          ? Number(dashboard.valuation_hub.consensus.median_target_price)
+          : null,
+      consensus_target_price:
+        typeof dashboard.valuation_hub?.consensus?.decision_target_price === "number" &&
+        Number.isFinite(dashboard.valuation_hub.consensus.decision_target_price)
+          ? Number(dashboard.valuation_hub.consensus.decision_target_price)
+          : null,
       allocation_pct:
         typeof (dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional === "number" &&
         Number.isFinite((dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional)
           ? Number((dashboard.score_card || dashboard.decision_card)?.position_size_pct_of_notional)
           : typeof (dashboard.score_card || dashboard.decision_card)?.mean_investment_amount === "number" &&
               Number.isFinite((dashboard.score_card || dashboard.decision_card)?.mean_investment_amount)
-            ? Number((dashboard.score_card || dashboard.decision_card)?.mean_investment_amount) / 100000.0
+            ? Number((dashboard.score_card || dashboard.decision_card)?.mean_investment_amount) / 1000.0
             : null,
       score:
         typeof (dashboard.score_card || dashboard.decision_card)?.adjusted_score === "number" &&
         Number.isFinite((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
           ? Number((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
           : null,
+      consensus_basis:
+        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_median" ||
+        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_only"
+          ? dashboard.valuation_hub.consensus.consensus_basis
+          : null,
       source: "site",
       source_run_id: null,
       visibility: "public",
       workspace: "analysis",
       release_id: null,
+      valuation_dashboard: dashboard,
     });
   }
   rows.sort((a, b) => Date.parse(String(b.generated_at || "")) - Date.parse(String(a.generated_at || "")));
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 export async function findReportIdBySourceRunId(opts: {
@@ -395,16 +464,22 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
            r.currency,
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
-           COALESCE(
-             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
-           ) AS allocation_pct,
-           COALESCE(
-             (a.dashboard->'score_card'->>'adjusted_score')::float8,
-             (a.dashboard->'decision_card'->>'adjusted_score')::float8
-           ) AS score,
+           r.median_target_price::float8 AS median_target_price,
+           r.consensus_target_price::float8 AS consensus_target_price,
+           r.consensus_allocation_pct::float8 AS allocation_pct,
+           r.consensus_score::float8 AS score,
+           r.consensus_basis,
+           CASE WHEN r.consensus_basis IS NULL THEN
+             jsonb_build_object(
+               'header', a.dashboard->'header',
+               'valuation_hub', jsonb_build_object(
+                 'consensus', a.dashboard->'valuation_hub'->'consensus',
+                 'prices', a.dashboard->'valuation_hub'->'prices'
+               ),
+               'score_card', a.dashboard->'score_card',
+               'decision_card', a.dashboard->'decision_card'
+             )
+           ELSE NULL END AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -415,7 +490,7 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 /** Reports owned by a specific user, regardless of visibility. */
@@ -430,16 +505,22 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
            r.currency,
            NULLIF(r.recommendation, '') AS recommendation,
            r.mean_target_price::float8 AS mean_target_price,
-           COALESCE(
-             (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-             (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-             (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
-           ) AS allocation_pct,
-           COALESCE(
-             (a.dashboard->'score_card'->>'adjusted_score')::float8,
-             (a.dashboard->'decision_card'->>'adjusted_score')::float8
-           ) AS score,
+           r.median_target_price::float8 AS median_target_price,
+           r.consensus_target_price::float8 AS consensus_target_price,
+           r.consensus_allocation_pct::float8 AS allocation_pct,
+           r.consensus_score::float8 AS score,
+           r.consensus_basis,
+           CASE WHEN r.consensus_basis IS NULL THEN
+             jsonb_build_object(
+               'header', a.dashboard->'header',
+               'valuation_hub', jsonb_build_object(
+                 'consensus', a.dashboard->'valuation_hub'->'consensus',
+                 'prices', a.dashboard->'valuation_hub'->'prices'
+               ),
+               'score_card', a.dashboard->'score_card',
+               'decision_card', a.dashboard->'decision_card'
+             )
+           ELSE NULL END AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -451,7 +532,7 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 /** Public reports authored by anyone. */
@@ -467,16 +548,22 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
                r.currency,
                 NULLIF(r.recommendation, '') AS recommendation,
                 r.mean_target_price::float8 AS mean_target_price,
-                COALESCE(
-                  (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
-                  (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-                  (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-                  (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
-                ) AS allocation_pct,
-                COALESCE(
-                  (a.dashboard->'score_card'->>'adjusted_score')::float8,
-                  (a.dashboard->'decision_card'->>'adjusted_score')::float8
-                ) AS score,
+                r.median_target_price::float8 AS median_target_price,
+                r.consensus_target_price::float8 AS consensus_target_price,
+                r.consensus_allocation_pct::float8 AS allocation_pct,
+                r.consensus_score::float8 AS score,
+                r.consensus_basis,
+               CASE WHEN r.consensus_basis IS NULL THEN
+                 jsonb_build_object(
+                   'header', a.dashboard->'header',
+                   'valuation_hub', jsonb_build_object(
+                     'consensus', a.dashboard->'valuation_hub'->'consensus',
+                     'prices', a.dashboard->'valuation_hub'->'prices'
+                   ),
+                   'score_card', a.dashboard->'score_card',
+                   'decision_card', a.dashboard->'decision_card'
+                 )
+               ELSE NULL END AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
@@ -488,7 +575,7 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
-    return filterExcludedTickers(rows, (row) => row.ticker);
+    return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
   } catch {
     return fallbackCommunityReportsFromOutputs(workspace, undefined, await deletedReportPredicate(workspace));
   }
@@ -534,16 +621,22 @@ export async function listCommunityReportsPaged(opts: {
                r.currency,
                 NULLIF(r.recommendation, '') AS recommendation,
                 r.mean_target_price::float8 AS mean_target_price,
-                COALESCE(
-                  (a.dashboard->'score_card'->>'position_size_pct_of_notional')::float8,
-                  (a.dashboard->'decision_card'->>'position_size_pct_of_notional')::float8,
-                  (a.dashboard->'score_card'->>'mean_investment_amount')::float8 / 100000.0,
-                  (a.dashboard->'decision_card'->>'mean_investment_amount')::float8 / 100000.0
-                ) AS allocation_pct,
-                COALESCE(
-                  (a.dashboard->'score_card'->>'adjusted_score')::float8,
-                  (a.dashboard->'decision_card'->>'adjusted_score')::float8
-                ) AS score,
+                r.median_target_price::float8 AS median_target_price,
+                r.consensus_target_price::float8 AS consensus_target_price,
+                r.consensus_allocation_pct::float8 AS allocation_pct,
+                r.consensus_score::float8 AS score,
+                r.consensus_basis,
+               CASE WHEN r.consensus_basis IS NULL THEN
+                 jsonb_build_object(
+                   'header', a.dashboard->'header',
+                   'valuation_hub', jsonb_build_object(
+                     'consensus', a.dashboard->'valuation_hub'->'consensus',
+                     'prices', a.dashboard->'valuation_hub'->'prices'
+                   ),
+                   'score_card', a.dashboard->'score_card',
+                   'decision_card', a.dashboard->'decision_card'
+                 )
+               ELSE NULL END AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
@@ -559,7 +652,7 @@ export async function listCommunityReportsPaged(opts: {
         OFFSET ${offset};
       `) as unknown as DbReportSummary[]);
 
-    const filteredRows = filterExcludedTickers(rows, (row) => row.ticker);
+    const filteredRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
     const hasMore = filteredRows.length > limit;
     return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
   } catch {

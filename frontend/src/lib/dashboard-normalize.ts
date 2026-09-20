@@ -7,8 +7,151 @@ import { canonicalModelName } from "@/lib/method-display";
 import { findLatestByFileName, readJson, readUtf8 } from "@/lib/server-outputs";
 
 function asFinite(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+const LEGACY_METHOD_FAMILIES = [
+  "Scenario DCF",
+  "Target Scenario",
+  "Earnings Scenario",
+  "Revenue Scenario",
+  "Composite Scenario",
+  "SOTP Scenario",
+  "Dream Team",
+];
+const VALUATION_NOTIONAL = 100000;
+
+function numberAt(value: unknown, index = 0): number | null {
+  return Array.isArray(value) ? asFinite(value[index]) : null;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function legacyFamilyValues(prices: Record<string, unknown>, field: "target" | "investment"): number[] {
+  const source = field === "target" ? prices : (prices["Investment Percents"] as Record<string, unknown> | undefined);
+  if (!source || typeof source !== "object" || Array.isArray(source)) return [];
+  return LEGACY_METHOD_FAMILIES.map((name) => {
+    const value = field === "target" ? numberAt((source as Record<string, unknown>)[name]) : asFinite((source as Record<string, unknown>)[name]);
+    return field === "investment" && value !== null ? (value / 100) * VALUATION_NOTIONAL : value;
+  }).filter((value): value is number => value !== null);
+}
+
+function scoreFor(target: number | null, investment: number | null, currentPrice: number | null): number | null {
+  if (investment === null) return null;
+  const allocationPct = (investment / VALUATION_NOTIONAL) * 100;
+  if (target === null || currentPrice === null || Math.abs(currentPrice) < 1e-9) return allocationPct;
+  return (0.4 * allocationPct) + (0.6 * (((target - currentPrice) / currentPrice) * 100));
+}
+
+/**
+ * Pre-Mean/Median reports stored a single aggregate as "Overall" but retained
+ * each model-family result. Reconstruct Median from those independent families;
+ * never manufacture it by copying Mean.
+ */
+function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
+  const prices = payload.valuation_hub?.prices;
+  if (!prices || typeof prices !== "object" || Array.isArray(prices)) return payload;
+  const priceValues = prices as Record<string, unknown>;
+  const consensus = payload.valuation_hub.consensus || {};
+  const card: NonNullable<DashboardPayload["score_card"]> = payload.score_card || {
+    position_size_pct_of_notional: payload.decision_card?.position_size_pct_of_notional ?? 0,
+    mean_investment_amount: payload.decision_card?.mean_investment_amount ?? null,
+    ...payload.decision_card,
+    rationale: payload.decision_card?.rationale || "Run valuation to produce a score.",
+  };
+  const rawTargets = legacyFamilyValues(priceValues, "target");
+  const rawInvestments = legacyFamilyValues(priceValues, "investment");
+  const meanTarget = asFinite(consensus.mean_target_price) ?? numberAt(priceValues.Mean) ?? numberAt(priceValues.Overall);
+  const actualMedianTarget = asFinite(consensus.median_target_price) ?? numberAt(priceValues.Median);
+  const medianTarget = actualMedianTarget ?? (rawTargets.length >= 2 ? median(rawTargets) : null);
+  const meanInvestment =
+    asFinite(card.mean_investment_amount_raw) ??
+    asFinite(priceValues["LMIL Mean Investment"]) ??
+    asFinite(card.mean_investment_amount) ??
+    (rawInvestments.length ? rawInvestments.reduce((sum, value) => sum + value, 0) / rawInvestments.length : null);
+  const actualMedianInvestment = asFinite(card.median_investment_amount) ?? asFinite(priceValues["LMIL Median Investment"]);
+  const medianInvestment = actualMedianInvestment ?? (rawInvestments.length >= 2 ? median(rawInvestments) : null);
+  // Median is only a usable decision input when both halves of the valuation
+  // view exist. Otherwise the entire decision falls back to Mean; mixing a
+  // median target with a mean allocation would create a synthetic consensus.
+  const hasRealMedian = medianTarget !== null && medianInvestment !== null;
+  const decisionTarget = hasRealMedian && meanTarget !== null
+    ? (meanTarget + medianTarget) / 2
+    : meanTarget;
+  const decisionInvestment = hasRealMedian && meanInvestment !== null
+    ? (meanInvestment + medianInvestment) / 2
+    : meanInvestment;
+  const currentPrice = asFinite(consensus.current_price) ?? asFinite(payload.header?.current_price);
+  const meanScore = asFinite(card.mean_score) ?? scoreFor(meanTarget, meanInvestment, currentPrice);
+  const medianScore = hasRealMedian
+    ? (asFinite(card.median_score) ?? scoreFor(medianTarget, medianInvestment, currentPrice))
+    : null;
+  const combinedScore = medianScore !== null && meanScore !== null ? (meanScore + medianScore) / 2 : meanScore;
+  const confidence = asFinite(card.confidence_factor);
+  const disagreement = asFinite(card.overall_cv);
+  const effectiveConfidence = confidence ?? (
+    disagreement !== null ? 1 / (1 + Math.pow(Math.max(0, disagreement), 1.3)) : 1
+  );
+  const targetReturn = decisionTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9
+    ? ((decisionTarget - currentPrice) / currentPrice) * 100
+    : null;
+
+  return {
+    ...payload,
+    valuation_hub: {
+      ...payload.valuation_hub,
+      consensus: {
+        ...consensus,
+        mean_target_price: meanTarget,
+        median_target_price: hasRealMedian ? medianTarget : null,
+        decision_target_price: decisionTarget,
+        consensus_basis: hasRealMedian ? "mean_median" : "mean_only",
+      },
+    },
+    score_card: {
+      ...card,
+      position_size_pct_of_notional: decisionInvestment !== null ? (decisionInvestment / VALUATION_NOTIONAL) * 100 : card.position_size_pct_of_notional ?? 0,
+      mean_investment_amount: decisionInvestment,
+      mean_investment_amount_raw: meanInvestment,
+      median_investment_amount: hasRealMedian ? medianInvestment : null,
+      decision_investment_amount: decisionInvestment,
+      mean_target_return_pct: meanTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((meanTarget - currentPrice) / currentPrice) * 100 : null,
+      median_target_return_pct: hasRealMedian && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((medianTarget - currentPrice) / currentPrice) * 100 : null,
+      target_return_pct: targetReturn,
+      mean_score: meanScore,
+      median_score: medianScore,
+      consensus_basis: hasRealMedian ? "mean_median" : "mean_only",
+      combined_score: combinedScore,
+      confidence_factor: effectiveConfidence,
+      adjusted_score: combinedScore !== null ? combinedScore * effectiveConfidence : null,
+      rationale: hasRealMedian
+        ? "Consensus blends Mean and Median equally; legacy Median values may be reconstructed from independent valuation-method families."
+        : "Median is unavailable, so target, allocation, and score use Mean only.",
+    },
+  };
+}
+
+/**
+ * Lightweight consensus enrichment for list/aggregation routes. Unlike the
+ * full dashboard normalizer it never scans report artifacts for technical or
+ * financial supplements, so Discovery and hit-rate stay fast over history.
+ */
+export function normalizeValuationConsensus(payload: DashboardPayload): DashboardPayload {
+  return enrichLegacyMeanMedian({
+    ...payload,
+    header: payload.header || {},
+    valuation_hub: {
+      ...(payload.valuation_hub || {}),
+      consensus: payload.valuation_hub?.consensus || {},
+    },
+  });
 }
 
 function inferLegacyModelTargetScale(payload: DashboardPayload): number {
@@ -401,7 +544,8 @@ export function normalizePayload(
 
   const scale = inferLegacyModelTargetScale(merged);
   const scaled = applyLegacyModelTargetScale(merged, scale);
-  return hydrateFinancials(hydrateTechnicalAnalysis(scaled, tk, reportMeta), tk, reportMeta);
+  const enriched = normalizeValuationConsensus(scaled);
+  return hydrateFinancials(hydrateTechnicalAnalysis(enriched, tk, reportMeta), tk, reportMeta);
 }
 
 function parseMoney(text: string): number | null {
@@ -454,7 +598,7 @@ function parseAssumptionsPackRows(text: string, sourcePath: string) {
       max,
       sample_count: 1,
       method_count: 1,
-      methods: ["Overall"],
+      methods: ["Mean"],
       source_paths: [sourcePath],
     });
   }

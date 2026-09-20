@@ -9,6 +9,7 @@ import {
   type DiscoveryLensSelection,
   type DiscoverySourceReport,
 } from "../src/lib/discovery-engine";
+import { normalizeValuationConsensus } from "../src/lib/dashboard-normalize";
 import { isExcludedTicker } from "../src/lib/excluded-tickers";
 import {
   acquirePortfolioRefreshLock,
@@ -409,7 +410,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     const benchmarkPoints = priceBySymbol.get(workspaceConfig.benchmarkSymbol) || [];
     const knownLenses = new Map<string, DiscoveryLensSelection>();
     const lensFirstCutoff = new Map<string, string>();
-    knownLenses.set("overall:overall", { type: "overall", key: null, label: "Overall" });
+    knownLenses.set("overall:overall", { type: "overall", key: null, label: "Consensus" });
     lensFirstCutoff.set("overall:overall", earliestCutoff);
     for (const snapshot of existing) {
       const key = lensMapKey(snapshot.lens);
@@ -429,7 +430,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       const discoveryReports: DiscoverySourceReport[] = visibleReports.map((report) => ({
         ticker: report.ticker,
         generatedAt: report.generatedAt,
-        payload: report.dashboard,
+        payload: normalizeValuationConsensus(report.dashboard),
         reportId: report.id,
       }));
       const localPriceByTicker = new Map<string, number | null>();

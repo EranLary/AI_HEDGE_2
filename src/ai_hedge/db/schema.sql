@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS reports (
     currency            text,
     recommendation      text,                          -- LONG / SHORT / HOLD / null
     mean_target_price   numeric,
+    median_target_price numeric,
+    consensus_target_price numeric,
+    consensus_allocation_pct numeric,
+    consensus_score    numeric,
+    consensus_basis    text CHECK (consensus_basis IN ('mean_median', 'mean_only')),
 
     visibility          text NOT NULL DEFAULT 'public',-- public | private | unlisted
     source              text NOT NULL,                 -- fly_backfill | cli | site

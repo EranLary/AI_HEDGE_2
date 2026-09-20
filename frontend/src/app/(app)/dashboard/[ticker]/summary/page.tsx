@@ -458,7 +458,7 @@ export default function DashboardSummaryPage({
   const { workspace, api } = useWorkspace();
   const search = useSearchParams();
   const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
-  const [windowKey, setWindowKey] = useState<SummaryWindow>("all");
+  const [windowKey, setWindowKey] = useState<SummaryWindow | null>(null);
   const [loading, setLoading] = useState(true);
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -478,8 +478,9 @@ export default function DashboardSummaryPage({
     async function run() {
       setLoading(true);
       try {
+        const windowQuery = windowKey ? `window=${encodeURIComponent(windowKey)}&` : "";
         const res = await fetch(
-          api(`/api/dashboard/${encodeURIComponent(upper)}/summary?window=${encodeURIComponent(windowKey)}&refresh=${Date.now()}-${refreshToken}`),
+          api(`/api/dashboard/${encodeURIComponent(upper)}/summary?${windowQuery}refresh=${Date.now()}-${refreshToken}`),
           { cache: "no-store" },
         );
         const json = (await res.json()) as SummaryPayload;
@@ -604,15 +605,16 @@ export default function DashboardSummaryPage({
   const overviewCombinedScore = combinedScore(data?.overview.mean_allocation_pct, meanTargetChangePct);
   const overviewAdjustedScore = confidenceAdjustedScore(overviewCombinedScore, data?.overview.mean_disagreement_score);
   const financialCurrency = String(data?.currency_context?.financial_currency || "USD").toUpperCase();
+  const activeWindow = windowKey ?? data?.window ?? "3m";
 
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl text-zinc-100">Overall Summary</h1>
+            <h1 className="font-display text-2xl text-zinc-100">Consensus Summary</h1>
             <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-              {upper} · Aggregated across report history
+              {upper} · Aggregated across the selected report window
             </p>
             {reportId ? (
               <p className="mt-1 text-xs text-zinc-500">Current report selection is ignored here; this view always uses history.</p>
@@ -626,7 +628,7 @@ export default function DashboardSummaryPage({
                   type="button"
                   onClick={() => setWindowKey(opt.key)}
                   className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                    windowKey === opt.key
+                    activeWindow === opt.key
                       ? "bg-emerald-500/20 text-emerald-100"
                       : "text-zinc-300 hover:text-zinc-100"
                   }`}
@@ -714,7 +716,7 @@ export default function DashboardSummaryPage({
               </p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Target</p>
               <p
                 className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromTarget(
                   data.overview.mean_target_price,
@@ -729,7 +731,7 @@ export default function DashboardSummaryPage({
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Allocation</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Allocation</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(data.overview.mean_allocation_pct)}`}>
                 {fmtPct(data.overview.mean_allocation_pct)}
               </p>
@@ -741,7 +743,7 @@ export default function DashboardSummaryPage({
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Score</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Score</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(overviewAdjustedScore)}`}>
                 {typeof overviewAdjustedScore === "number" && Number.isFinite(overviewAdjustedScore)
                   ? overviewAdjustedScore.toFixed(2)

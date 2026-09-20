@@ -1932,7 +1932,7 @@ export function HedgeDashboard({
                       <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(consensusDecisionChangePct)}`}>
                         {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
-                      <div className="mt-auto space-y-2 border-t border-white/10 pt-3 text-xs">
+                      <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Mean</span>
                           <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
@@ -1961,7 +1961,7 @@ export function HedgeDashboard({
                         minPx={16}
                         className="hib-metric-value hib-current-price mt-1 font-bold leading-tight"
                       />
-                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] text-zinc-400">
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] text-zinc-400">
                         As of <span className="whitespace-nowrap text-zinc-300">{reportDateIso}</span>
                       </p>
                     </div>
@@ -1973,7 +1973,7 @@ export function HedgeDashboard({
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
-                      <div className="mt-auto space-y-2 border-t border-white/10 pt-3 text-xs">
+                      <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Mean</span>
                           <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(meanAllocationPct)}`}>
@@ -1996,7 +1996,7 @@ export function HedgeDashboard({
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${scoreToneClass}`}
                       />
-                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
                         Confidence-adjusted valuation score
                       </p>
                     </div>
@@ -2008,7 +2008,7 @@ export function HedgeDashboard({
                         minPx={14}
                         className="hib-metric-subvalue mt-1 font-bold leading-tight text-zinc-100"
                       />
-                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                      <p className="mt-auto min-h-[76px] border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
                         Lower means stronger consensus
                       </p>
                     </div>

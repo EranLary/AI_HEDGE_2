@@ -526,15 +526,26 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
     current_price = _first_float(consensus.get("current_price"))
     mean_target_price = _first_float(consensus.get("mean_target_price"))
     median_target_price = _first_float(consensus.get("median_target_price"))
+    decision_target_price = _first_float(consensus.get("decision_target_price"))
+    has_real_median = (
+        median_target_price is not None
+        and _first_float(score_card.get("median_investment_amount")) is not None
+    )
+    if decision_target_price is None:
+        decision_target_price = (
+            (mean_target_price + median_target_price) / 2.0
+            if has_real_median and mean_target_price is not None
+            else mean_target_price
+        )
 
     target_change_pct = _first_float(score_card.get("target_return_pct"))
     if (
         target_change_pct is None
         and current_price is not None
-        and mean_target_price is not None
+        and decision_target_price is not None
         and abs(current_price) > 1e-9
     ):
-        target_change_pct = ((mean_target_price - current_price) / current_price) * 100.0
+        target_change_pct = ((decision_target_price - current_price) / current_price) * 100.0
 
     investment_pct = _first_float(score_card.get("position_size_pct_of_notional"))
 
@@ -554,10 +565,14 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
 
     lines = [
         "## Dashboard Signal Snapshot",
+        f"- Current Price: {_fmt_price(current_price, currency_code)}",
         f"- Mean Target Price: {_fmt_price(mean_target_price, currency_code)}",
-        f"- Median Target Price: {_fmt_price(median_target_price, currency_code)}",
-        f"- Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
-        f"- Decision Allocation (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Median Target Price: {_fmt_price(median_target_price, currency_code) if has_real_median else 'Not available'}",
+        f"- Consensus Target Price: {_fmt_price(decision_target_price, currency_code)}",
+        f"- Consensus Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
+        f"- Consensus Allocation (% of Notional): {_fmt_signed_pct(investment_pct)}",
+        f"- Consensus Score: {_fmt_number(score_card.get('adjusted_score'))}",
+        f"- Consensus Basis: {'50% Mean / 50% Median' if has_real_median else 'Mean only (Median unavailable)'}",
         f"- Disagreement Score: {_fmt_number(disagreement_score, decimals=4)}",
     ]
     return "\n".join(lines).strip()
@@ -1146,18 +1161,40 @@ def _build_valuation_decision_snapshot(
     prices = final_dict.get("Prices", {}) if isinstance(final_dict, dict) else {}
     prices = prices if isinstance(prices, dict) else {}
     mean_entry = prices.get("Mean") if isinstance(prices.get("Mean"), (list, tuple)) else prices.get("Overall")
-    median_entry = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else mean_entry
+    median_entry = prices.get("Median") if isinstance(prices.get("Median"), (list, tuple)) else None
     mean_target = _first_float(mean_entry[0]) if isinstance(mean_entry, (list, tuple)) and mean_entry else _avg_numeric_values(target_values)
-    median_target = _first_float(median_entry[0]) if isinstance(median_entry, (list, tuple)) and median_entry else mean_target
+    median_target = _first_float(median_entry[0]) if isinstance(median_entry, (list, tuple)) and median_entry else None
+    if median_target is None and len(target_values) >= 2:
+        sorted_targets = sorted(target_values)
+        middle = len(sorted_targets) // 2
+        median_target = (
+            sorted_targets[middle]
+            if len(sorted_targets) % 2
+            else (sorted_targets[middle - 1] + sorted_targets[middle]) / 2.0
+        )
     mean_investment = _first_float(prices.get("LMIL Mean Investment"))
     if mean_investment is None:
         mean_investment = _avg_numeric_values(investment_values)
     median_investment = _first_float(prices.get("LMIL Median Investment"))
-    if median_investment is None:
-        median_investment = mean_investment
-    decision_investment = _first_float(prices.get("LMIL Decision Investment"))
-    if decision_investment is None and mean_investment is not None and median_investment is not None:
-        decision_investment = (mean_investment + median_investment) / 2.0
+    if median_investment is None and len(investment_values) >= 2:
+        sorted_investments = sorted(investment_values)
+        middle = len(sorted_investments) // 2
+        median_investment = (
+            sorted_investments[middle]
+            if len(sorted_investments) % 2
+            else (sorted_investments[middle - 1] + sorted_investments[middle]) / 2.0
+        )
+    has_real_median = median_target is not None and median_investment is not None
+    decision_target = (
+        (mean_target + median_target) / 2.0
+        if has_real_median and mean_target is not None
+        else mean_target
+    )
+    decision_investment = (
+        (mean_investment + median_investment) / 2.0
+        if has_real_median and mean_investment is not None
+        else mean_investment
+    )
     method_names = [
         method_name
         for method_name in dict.fromkeys(
@@ -1191,15 +1228,57 @@ def _build_valuation_decision_snapshot(
         mean_investment=mean_investment,
         current_price=current_price,
     )
+    current = _first_float(current_price)
+    mean_return = (
+        ((mean_target - current) / current) * 100.0
+        if mean_target is not None and current is not None and abs(current) > 1e-9
+        else None
+    )
+    median_return = (
+        ((median_target - current) / current) * 100.0
+        if has_real_median and current is not None and abs(current) > 1e-9
+        else None
+    )
+    decision_return = (
+        ((decision_target - current) / current) * 100.0
+        if decision_target is not None and current is not None and abs(current) > 1e-9
+        else None
+    )
+    mean_allocation_pct = (
+        (mean_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if mean_investment is not None else None
+    )
+    median_allocation_pct = (
+        (median_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if has_real_median else None
+    )
+    mean_score = (
+        0.4 * mean_allocation_pct + 0.6 * mean_return
+        if mean_allocation_pct is not None and mean_return is not None else None
+    )
+    median_score = (
+        0.4 * median_allocation_pct + 0.6 * median_return
+        if median_allocation_pct is not None and median_return is not None else None
+    )
+    consensus_score = (
+        (mean_score + median_score) / 2.0
+        if mean_score is not None and median_score is not None else mean_score
+    )
+    basis = "50% Mean / 50% Median" if has_real_median else "Mean only (Median unavailable)"
 
     rows = [
         ("Current Price", _fmt_money(current_price)),
         ("Mean Target Price", _fmt_money(mean_target)),
-        ("Median Target Price", _fmt_money(median_target)),
-        ("Implied Upside / Downside", _fmt_change_from_current(mean_target, current_price)),
+        ("Median Target Price", _fmt_money(median_target) if has_real_median else "Not available"),
+        ("Consensus Target Price", _fmt_money(decision_target)),
+        ("Mean Upside / Downside", _fmt_signed_pct(mean_return)),
+        ("Median Upside / Downside", _fmt_signed_pct(median_return) if has_real_median else "Not available"),
+        ("Consensus Upside / Downside", _fmt_signed_pct(decision_return)),
         ("Mean Allocation", _fmt_allocation(mean_investment)),
-        ("Median Allocation", _fmt_allocation(median_investment)),
-        ("Decision Allocation (50% Mean / 50% Median)", _fmt_allocation(decision_investment)),
+        ("Median Allocation", _fmt_allocation(median_investment) if has_real_median else "Not available"),
+        ("Consensus Allocation", _fmt_allocation(decision_investment)),
+        ("Consensus Score", _fmt_number(consensus_score)),
+        ("Consensus Basis", basis),
         ("Target Range", target_range),
         ("Valuation Methods", str(len(method_names))),
         ("Model Runs", str(model_runs)),

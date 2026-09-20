@@ -165,8 +165,10 @@ def test_valuation_report_uses_clear_sections_and_position_labels() -> None:
     assert text.startswith("# TEST Valuation Report")
     assert "## Valuation Decision Snapshot" in text
     assert "| Mean Allocation | Short" in text
-    assert "| Median Allocation | Short" in text
-    assert "| Decision Allocation (50% Mean / 50% Median) | Short" in text
+    assert "| Median Allocation | Not available |" in text
+    assert "| Consensus Allocation | Short" in text
+    assert "| Consensus Target Price | $120.00 |" in text
+    assert "| Consensus Basis | Mean only (Median unavailable) |" in text
     assert "| Target Range | $120.00 – $120.00 |" in text
     assert "| Valuation Methods | 1 |" in text
     assert "| Model Runs | 1 |" in text

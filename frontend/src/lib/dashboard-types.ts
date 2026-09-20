@@ -383,6 +383,7 @@ export type DashboardPayload = {
       mean_target_price?: number | null;
       median_target_price?: number | null;
       decision_target_price?: number | null;
+      consensus_basis?: "mean_median" | "mean_only";
       std?: number | null;
       cv?: number | null;
       lmil?: number[] | null;
@@ -420,6 +421,7 @@ export type DashboardPayload = {
     combined_score?: number | null;
     mean_score?: number | null;
     median_score?: number | null;
+    consensus_basis?: "mean_median" | "mean_only";
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;
@@ -438,6 +440,7 @@ export type DashboardPayload = {
     combined_score?: number | null;
     mean_score?: number | null;
     median_score?: number | null;
+    consensus_basis?: "mean_median" | "mean_only";
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;

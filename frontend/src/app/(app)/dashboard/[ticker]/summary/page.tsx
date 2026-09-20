@@ -714,7 +714,7 @@ export default function DashboardSummaryPage({
               </p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Target</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Target</p>
               <p
                 className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromTarget(
                   data.overview.mean_target_price,
@@ -729,7 +729,7 @@ export default function DashboardSummaryPage({
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Allocation</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Allocation</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(data.overview.mean_allocation_pct)}`}>
                 {fmtPct(data.overview.mean_allocation_pct)}
               </p>
@@ -741,7 +741,7 @@ export default function DashboardSummaryPage({
               <p className="mt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Score</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Score</p>
               <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(overviewAdjustedScore)}`}>
                 {typeof overviewAdjustedScore === "number" && Number.isFinite(overviewAdjustedScore)
                   ? overviewAdjustedScore.toFixed(2)

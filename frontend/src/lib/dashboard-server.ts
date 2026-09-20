@@ -11,6 +11,7 @@ import { isDbEnabled } from "@/lib/db";
 import {
   buildFallbackFromArtifacts,
   normalizePayload,
+  normalizeValuationConsensus,
 } from "@/lib/dashboard-normalize";
 import {
   getDeletedReportFilter,
@@ -157,7 +158,8 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
 
   const reports = listDashboardReports();
   for (const report of reports) {
-    const payload = readJson<DashboardPayload>(report.path);
+    const rawPayload = readJson<DashboardPayload>(report.path);
+    const payload = rawPayload ? normalizeValuationConsensus(rawPayload) : null;
     if (payload?.workspace === "nasdaq100") continue;
     const generatedAt = String(payload?.generated_at || new Date(report.mtimeMs).toISOString());
     const row: ReportListItem = {

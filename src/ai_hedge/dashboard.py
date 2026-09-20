@@ -2151,10 +2151,17 @@ def build_dashboard_payload(
 
     mean_investment = _safe_float(prices.get("LMIL Mean Investment"))
     median_investment = _safe_float(prices.get("LMIL Median Investment"))
+    has_real_median = median_price is not None and median_investment is not None
+    decision_price = (
+        (consensus_price + median_price) / 2.0
+        if has_real_median and consensus_price is not None
+        else consensus_price
+    )
     decision_investment = _safe_float(prices.get("LMIL Decision Investment"))
-    if decision_investment is None:
-        available = [value for value in (mean_investment, median_investment) if value is not None]
-        decision_investment = (sum(available) / len(available)) if available else None
+    if has_real_median and mean_investment is not None:
+        decision_investment = (mean_investment + median_investment) / 2.0
+    else:
+        decision_investment = mean_investment
     mean_position_size_pct = (mean_investment / 100000.0) * 100.0 if mean_investment is not None else 0.0
     median_position_size_pct = (median_investment / 100000.0) * 100.0 if median_investment is not None else 0.0
     position_size_pct = (decision_investment / 100000.0) * 100.0 if decision_investment is not None else 0.0
@@ -2176,8 +2183,8 @@ def build_dashboard_payload(
     )
     median_score = (
         (0.4 * median_position_size_pct) + (0.6 * median_target_return_pct)
-        if median_investment is not None and median_target_return_pct is not None
-        else median_position_size_pct if median_investment is not None else None
+        if has_real_median and median_target_return_pct is not None
+        else median_position_size_pct if has_real_median else None
     )
     combined_score = (
         (mean_score + median_score) / 2.0
@@ -2246,8 +2253,9 @@ def build_dashboard_payload(
             "consensus": {
                 "current_price": current_price,
                 "mean_target_price": consensus_price,
-                "median_target_price": median_price,
+                "median_target_price": median_price if has_real_median else None,
                 "decision_target_price": decision_price,
+                "consensus_basis": "mean_median" if has_real_median else "mean_only",
                 "std": confidence_std,
                 "cv": confidence_cv,
                 "lmil": lmil,
@@ -2277,6 +2285,7 @@ def build_dashboard_payload(
             "combined_score": combined_score,
             "mean_score": mean_score,
             "median_score": median_score,
+            "consensus_basis": "mean_median" if has_real_median else "mean_only",
             "overall_cv": overall_cv,
             "confidence_factor": confidence_factor,
             "adjusted_score": adjusted_score,
@@ -2284,7 +2293,11 @@ def build_dashboard_payload(
             "mean_investment_amount_raw": mean_investment,
             "median_investment_amount": median_investment,
             "decision_investment_amount": decision_investment,
-            "rationale": "Mean and median each blend 40% allocation with 60% target return. The decision score and allocation weight those two views equally, then apply disagreement confidence scaling (with extra disagreement penalty when allocation and target-direction are misaligned).",
+            "rationale": (
+                "Mean and Median each blend 40% allocation with 60% target return. Consensus weights those views equally, then applies disagreement confidence scaling."
+                if has_real_median
+                else "Median is unavailable, so Consensus uses Mean target, allocation, and score, then applies disagreement confidence scaling."
+            ),
         },
         "technical_analysis": technical_analysis if isinstance(technical_analysis, dict) else {},
         "trading_agents": trading_agents if isinstance(trading_agents, dict) else {},

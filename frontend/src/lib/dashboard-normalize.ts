@@ -78,21 +78,27 @@ function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
     (rawInvestments.length ? rawInvestments.reduce((sum, value) => sum + value, 0) / rawInvestments.length : null);
   const actualMedianInvestment = asFinite(card.median_investment_amount) ?? asFinite(priceValues["LMIL Median Investment"]);
   const medianInvestment = actualMedianInvestment ?? (rawInvestments.length >= 2 ? median(rawInvestments) : null);
-  const decisionTarget =
-    asFinite(consensus.decision_target_price) ??
-    (meanTarget !== null && medianTarget !== null ? (meanTarget + medianTarget) / 2 : meanTarget);
-  const decisionInvestment =
-    asFinite(card.decision_investment_amount) ??
-    (meanInvestment !== null && medianInvestment !== null ? (meanInvestment + medianInvestment) / 2 : meanInvestment);
+  // Median is only a usable decision input when both halves of the valuation
+  // view exist. Otherwise the entire decision falls back to Mean; mixing a
+  // median target with a mean allocation would create a synthetic consensus.
+  const hasRealMedian = medianTarget !== null && medianInvestment !== null;
+  const decisionTarget = hasRealMedian && meanTarget !== null
+    ? (meanTarget + medianTarget) / 2
+    : meanTarget;
+  const decisionInvestment = hasRealMedian && meanInvestment !== null
+    ? (meanInvestment + medianInvestment) / 2
+    : meanInvestment;
   const currentPrice = asFinite(consensus.current_price) ?? asFinite(payload.header?.current_price);
   const meanScore = asFinite(card.mean_score) ?? scoreFor(meanTarget, meanInvestment, currentPrice);
-  const medianScore = actualMedianTarget !== null && actualMedianInvestment !== null
+  const medianScore = hasRealMedian
     ? (asFinite(card.median_score) ?? scoreFor(medianTarget, medianInvestment, currentPrice))
-    : medianTarget !== null && medianInvestment !== null
-      ? scoreFor(medianTarget, medianInvestment, currentPrice)
-      : null;
+    : null;
   const combinedScore = medianScore !== null && meanScore !== null ? (meanScore + medianScore) / 2 : meanScore;
   const confidence = asFinite(card.confidence_factor);
+  const disagreement = asFinite(card.overall_cv);
+  const effectiveConfidence = confidence ?? (
+    disagreement !== null ? 1 / (1 + Math.pow(Math.max(0, disagreement), 1.3)) : 1
+  );
   const targetReturn = decisionTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9
     ? ((decisionTarget - currentPrice) / currentPrice) * 100
     : null;
@@ -104,8 +110,9 @@ function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
       consensus: {
         ...consensus,
         mean_target_price: meanTarget,
-        median_target_price: medianTarget,
+        median_target_price: hasRealMedian ? medianTarget : null,
         decision_target_price: decisionTarget,
+        consensus_basis: hasRealMedian ? "mean_median" : "mean_only",
       },
     },
     score_card: {
@@ -113,16 +120,20 @@ function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
       position_size_pct_of_notional: decisionInvestment !== null ? (decisionInvestment / VALUATION_NOTIONAL) * 100 : card.position_size_pct_of_notional ?? 0,
       mean_investment_amount: decisionInvestment,
       mean_investment_amount_raw: meanInvestment,
-      median_investment_amount: medianInvestment,
+      median_investment_amount: hasRealMedian ? medianInvestment : null,
       decision_investment_amount: decisionInvestment,
       mean_target_return_pct: meanTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((meanTarget - currentPrice) / currentPrice) * 100 : null,
-      median_target_return_pct: medianTarget !== null && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((medianTarget - currentPrice) / currentPrice) * 100 : null,
+      median_target_return_pct: hasRealMedian && currentPrice !== null && Math.abs(currentPrice) > 1e-9 ? ((medianTarget - currentPrice) / currentPrice) * 100 : null,
       target_return_pct: targetReturn,
       mean_score: meanScore,
       median_score: medianScore,
+      consensus_basis: hasRealMedian ? "mean_median" : "mean_only",
       combined_score: combinedScore,
-      adjusted_score: combinedScore !== null && confidence !== null ? combinedScore * confidence : asFinite(card.adjusted_score),
-      rationale: card.rationale || "Legacy report: Mean is retained from the report and Median is reconstructed from independent valuation-method families.",
+      confidence_factor: effectiveConfidence,
+      adjusted_score: combinedScore !== null ? combinedScore * effectiveConfidence : null,
+      rationale: hasRealMedian
+        ? "Consensus blends Mean and Median equally; legacy Median values may be reconstructed from independent valuation-method families."
+        : "Median is unavailable, so target, allocation, and score use Mean only.",
     },
   };
 }

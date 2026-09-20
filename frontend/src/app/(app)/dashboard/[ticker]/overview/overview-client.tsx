@@ -57,14 +57,32 @@ export function OverviewClient({
   const scoreCard = data.score_card || data.decision_card || {};
   const current = typeof consensus?.current_price === "number" ? consensus.current_price : null;
   const mean = typeof consensus?.mean_target_price === "number" ? consensus.mean_target_price : null;
+  const median = typeof consensus?.median_target_price === "number" ? consensus.median_target_price : null;
+  const decision = typeof consensus?.decision_target_price === "number" ? consensus.decision_target_price : mean;
   const changePct =
-    typeof current === "number" && typeof mean === "number" && Math.abs(current) > 1e-9
-      ? ((mean - current) / current) * 100
+    typeof current === "number" && typeof decision === "number" && Math.abs(current) > 1e-9
+      ? ((decision - current) / current) * 100
       : null;
   const positionPct =
     typeof scoreCard?.position_size_pct_of_notional === "number" && Number.isFinite(scoreCard.position_size_pct_of_notional)
       ? Number(scoreCard.position_size_pct_of_notional)
       : null;
+  const meanPositionPct =
+    typeof scoreCard?.mean_investment_amount_raw === "number"
+      ? scoreCard.mean_investment_amount_raw / 100000 * 100
+      : null;
+  const medianPositionPct =
+    typeof scoreCard?.median_investment_amount === "number"
+      ? scoreCard.median_investment_amount / 100000 * 100
+      : null;
+  const signedTone = (value: number | null) =>
+    typeof value === "number" && Math.abs(value) > 1e-9
+      ? value > 0 ? "hib-target-up" : "hib-target-down"
+      : "text-zinc-400";
+  const targetTone = (value: number | null) =>
+    typeof value === "number" && typeof current === "number"
+      ? value > current ? "hib-target-up" : value < current ? "hib-target-down" : "text-zinc-400"
+      : "text-zinc-400";
   const changeClass =
     typeof changePct === "number" && Math.abs(changePct) > 1e-9
       ? changePct > 0
@@ -183,16 +201,20 @@ export function OverviewClient({
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-              Mean Target
+              Consensus Target
             </p>
-            <p className={`mt-1 text-2xl font-bold ${typeof mean === "number" && typeof current === "number" ? (mean > current ? "hib-target-up" : "hib-target-down") : "text-zinc-200"}`}>
-              {fmtMoney(mean, ctx, "price")}
+            <p className={`mt-1 text-2xl font-bold ${targetTone(decision)}`}>
+              {fmtMoney(decision, ctx, "price")}
             </p>
             <p className={`mt-1 text-xs font-semibold ${changeClass}`}>{fmtPct(changePct)}</p>
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Mean <span className={targetTone(mean)}>{fmtMoneyCompact(mean, ctx, "price")}</span> · Median{" "}
+              <span className={targetTone(median)}>{fmtMoneyCompact(median, ctx, "price")}</span>
+            </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-              Investment Sizing
+              Consensus Allocation
             </p>
             <p className={`mt-1 text-2xl font-bold ${positionToneClass}`}>
               {typeof scoreCard?.position_size_pct_of_notional === "number"
@@ -200,6 +222,10 @@ export function OverviewClient({
                 : "N/A"}
             </p>
             <p className="mt-1 text-xs text-zinc-500">of notional</p>
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Mean <span className={signedTone(meanPositionPct)}>{fmtPct(meanPositionPct)}</span> · Median{" "}
+              <span className={signedTone(medianPositionPct)}>{fmtPct(medianPositionPct)}</span>
+            </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Disagreement Score</p>

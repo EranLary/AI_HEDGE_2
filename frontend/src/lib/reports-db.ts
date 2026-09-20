@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import type { Workspace } from "@/lib/workspace";
@@ -23,6 +24,7 @@ export interface DbReportSummary {
   visibility: ReportVisibility;
   workspace: Workspace;
   release_id: string | null;
+  valuation_dashboard?: DashboardPayload | null;
 }
 
 export interface DbReportFull extends DbReportSummary {
@@ -47,6 +49,25 @@ export interface DeletedReportRef {
   id: string;
   ticker: string;
   source_run_id: string | null;
+}
+
+function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
+  return rows.map((row) => {
+    const { valuation_dashboard: valuationDashboard, ...summary } = row;
+    if (!valuationDashboard || typeof valuationDashboard !== "object") return summary;
+    const dashboard = normalizeValuationConsensus(valuationDashboard);
+    const consensus = dashboard.valuation_hub?.consensus;
+    const card = dashboard.score_card || dashboard.decision_card;
+    const target = consensus?.decision_target_price;
+    const allocation = card?.position_size_pct_of_notional;
+    const score = card?.adjusted_score;
+    return {
+      ...summary,
+      mean_target_price: typeof target === "number" && Number.isFinite(target) ? target : summary.mean_target_price,
+      allocation_pct: typeof allocation === "number" && Number.isFinite(allocation) ? allocation : summary.allocation_pct,
+      score: typeof score === "number" && Number.isFinite(score) ? score : summary.score,
+    };
+  });
 }
 
 export async function fetchLatestReport(ticker: string, workspace: Workspace = "analysis"): Promise<DbReportFull | null> {
@@ -213,6 +234,7 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
+           a.dashboard AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -223,7 +245,7 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.ticker, r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 export async function attributeReportToUser(opts: {
@@ -340,10 +362,11 @@ function fallbackCommunityReportsFromOutputs(
       visibility: "public",
       workspace: "analysis",
       release_id: null,
+      valuation_dashboard: dashboard,
     });
   }
   rows.sort((a, b) => Date.parse(String(b.generated_at || "")) - Date.parse(String(a.generated_at || "")));
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 export async function findReportIdBySourceRunId(opts: {
@@ -405,6 +428,7 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
+           a.dashboard AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -415,7 +439,7 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 /** Reports owned by a specific user, regardless of visibility. */
@@ -440,6 +464,7 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
+           a.dashboard AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -451,7 +476,7 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;
   `) as unknown as DbReportSummary[];
-  return filterExcludedTickers(rows, (row) => row.ticker);
+  return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
 }
 
 /** Public reports authored by anyone. */
@@ -477,6 +502,7 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
+               a.dashboard AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
@@ -488,7 +514,7 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
          ORDER BY r.generated_at DESC;
       `) as unknown as DbReportSummary[]);
-    return filterExcludedTickers(rows, (row) => row.ticker);
+    return withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
   } catch {
     return fallbackCommunityReportsFromOutputs(workspace, undefined, await deletedReportPredicate(workspace));
   }
@@ -544,6 +570,7 @@ export async function listCommunityReportsPaged(opts: {
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
+               a.dashboard AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
@@ -559,7 +586,7 @@ export async function listCommunityReportsPaged(opts: {
         OFFSET ${offset};
       `) as unknown as DbReportSummary[]);
 
-    const filteredRows = filterExcludedTickers(rows, (row) => row.ticker);
+    const filteredRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
     const hasMore = filteredRows.length > limit;
     return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
   } catch {

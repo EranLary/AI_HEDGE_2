@@ -1434,6 +1434,10 @@ def get_variables(
     variables_dict["financial_currency"] = info_dict.get("financial_currency_to_USD", 1)
     total_debt = statement_metrics.get("total_debt")
     total_cash = statement_metrics.get("total_cash")
+    # Retain the dated balance-sheet values so a later verified share-count
+    # update can rebuild market cap and EV from the same authoritative bridge.
+    variables_dict["total_debt"] = total_debt
+    variables_dict["total_cash"] = total_cash
 
     # The EV/equity bridge uses dated balance-sheet rows, never opaque INFO
     # debt/cash fields. If statement net debt is unavailable, retain the

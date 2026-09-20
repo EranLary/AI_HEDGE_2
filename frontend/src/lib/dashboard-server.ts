@@ -226,14 +226,14 @@ async function loadDashboardPayload(
   if (reportId && deletedFilter.isDeleted(reportId, tk)) {
     return empty();
   }
-  if (dbEnabled && reportId && !isUuid(reportId)) {
-    return empty();
-  }
+  const reportIdIsUuid = Boolean(reportId && isUuid(reportId));
 
   try {
-    const dbRow = reportId
+    const dbRow = reportIdIsUuid
       ? await fetchReportById(reportId, workspace)
-      : await fetchLatestReport(tk, workspace);
+      : reportId
+        ? null
+        : await fetchLatestReport(tk, workspace);
     if (dbRow && dbRow.dashboard) {
       const generated = new Date(dbRow.generated_at).toISOString();
       return normalizePayload(tk, {
@@ -247,11 +247,11 @@ async function loadDashboardPayload(
       });
     }
     if (dbEnabled) {
-      if (reportId) return empty();
+      if (reportIdIsUuid) return empty();
       if (workspace === "nasdaq100") return empty();
-      return normalizePayload(tk, buildFallbackFromArtifacts(tk), {
-        reportId: reportId || undefined,
-      });
+      if (!reportId) {
+        return normalizePayload(tk, buildFallbackFromArtifacts(tk));
+      }
     }
   } catch (err) {
     console.warn(`[dashboard] DB read failed for ${tk}:`, err);

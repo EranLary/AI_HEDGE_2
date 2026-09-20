@@ -234,7 +234,15 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
-           a.dashboard AS valuation_dashboard,
+           jsonb_build_object(
+             'header', a.dashboard->'header',
+             'valuation_hub', jsonb_build_object(
+               'consensus', a.dashboard->'valuation_hub'->'consensus',
+               'prices', a.dashboard->'valuation_hub'->'prices'
+             ),
+             'score_card', a.dashboard->'score_card',
+             'decision_card', a.dashboard->'decision_card'
+           ) AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -428,7 +436,15 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
-           a.dashboard AS valuation_dashboard,
+           jsonb_build_object(
+             'header', a.dashboard->'header',
+             'valuation_hub', jsonb_build_object(
+               'consensus', a.dashboard->'valuation_hub'->'consensus',
+               'prices', a.dashboard->'valuation_hub'->'prices'
+             ),
+             'score_card', a.dashboard->'score_card',
+             'decision_card', a.dashboard->'decision_card'
+           ) AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -464,7 +480,15 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
              (a.dashboard->'score_card'->>'adjusted_score')::float8,
              (a.dashboard->'decision_card'->>'adjusted_score')::float8
            ) AS score,
-           a.dashboard AS valuation_dashboard,
+           jsonb_build_object(
+             'header', a.dashboard->'header',
+             'valuation_hub', jsonb_build_object(
+               'consensus', a.dashboard->'valuation_hub'->'consensus',
+               'prices', a.dashboard->'valuation_hub'->'prices'
+             ),
+             'score_card', a.dashboard->'score_card',
+             'decision_card', a.dashboard->'decision_card'
+           ) AS valuation_dashboard,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id
       FROM reports r
@@ -502,7 +526,15 @@ export async function listCommunityReports(workspace: Workspace = "analysis"): P
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
-               a.dashboard AS valuation_dashboard,
+               jsonb_build_object(
+                 'header', a.dashboard->'header',
+                 'valuation_hub', jsonb_build_object(
+                   'consensus', a.dashboard->'valuation_hub'->'consensus',
+                   'prices', a.dashboard->'valuation_hub'->'prices'
+                 ),
+                 'score_card', a.dashboard->'score_card',
+                 'decision_card', a.dashboard->'decision_card'
+               ) AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r
@@ -570,7 +602,15 @@ export async function listCommunityReportsPaged(opts: {
                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
                 ) AS score,
-               a.dashboard AS valuation_dashboard,
+               jsonb_build_object(
+                 'header', a.dashboard->'header',
+                 'valuation_hub', jsonb_build_object(
+                   'consensus', a.dashboard->'valuation_hub'->'consensus',
+                   'prices', a.dashboard->'valuation_hub'->'prices'
+                 ),
+                 'score_card', a.dashboard->'score_card',
+                 'decision_card', a.dashboard->'decision_card'
+               ) AS valuation_dashboard,
                r.source, r.source_run_id,
                r.visibility, r.workspace, r.release_id::text AS release_id
           FROM reports r

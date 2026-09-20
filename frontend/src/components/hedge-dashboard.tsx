@@ -1377,7 +1377,6 @@ export function HedgeDashboard({
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
   const consensusMedianClass = toneClassFromTarget(consensusMedian, consensusCurrent);
   const consensusDecisionClass = toneClassFromTarget(consensusDecision, consensusCurrent);
-  const consensusChangeClass = toneClassFromSign(consensusChangePct);
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
   const consensusMedianText = fmtTargetOrFloor(consensusMedian, currencyContext);
   const consensusDecisionText = fmtTargetOrFloor(consensusDecision, currencyContext);
@@ -1933,10 +1932,26 @@ export function HedgeDashboard({
                       <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(consensusDecisionChangePct)}`}>
                         {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
-                      <p className="mt-1 text-xs text-zinc-400">
-                        Mean <span className={consensusMeanClass}>{consensusMeanText}</span> · Median{" "}
-                        <span className={consensusMedianClass}>{consensusMedianText}</span>
-                      </p>
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-zinc-400">Mean</span>
+                          <span className={`text-right font-semibold ${consensusMeanClass}`}>
+                            {consensusMeanText}{" "}
+                            <span className={toneClassFromSign(consensusChangePct)}>
+                              ({typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"})
+                            </span>
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-zinc-400">Median</span>
+                          <span className={`text-right font-semibold ${consensusMedianClass}`}>
+                            {consensusMedianText}{" "}
+                            <span className={toneClassFromSign(consensusMedianChangePct)}>
+                              ({typeof consensusMedianChangePct === "number" ? fmtPct(consensusMedianChangePct) : "N/A"})
+                            </span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">
@@ -1957,10 +1972,20 @@ export function HedgeDashboard({
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
-                      <p className="mt-1 text-xs text-zinc-400">
-                        Mean <span className={toneClassFromSign(meanAllocationPct)}>{fmtScoreInputPctOnly(meanAllocationPct)}</span> · Median{" "}
-                        <span className={toneClassFromSign(medianAllocationPct)}>{fmtScoreInputPctOnly(medianAllocationPct)}</span>
-                      </p>
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-zinc-400">Mean</span>
+                          <span className={`text-right font-semibold ${toneClassFromSign(meanAllocationPct)}`}>
+                            {fmtScoreInputPctOnly(meanAllocationPct)}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-zinc-400">Median</span>
+                          <span className={`text-right font-semibold ${toneClassFromSign(medianAllocationPct)}`}>
+                            {fmtScoreInputPctOnly(medianAllocationPct)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Score</p>

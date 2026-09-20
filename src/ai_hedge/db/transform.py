@@ -126,13 +126,34 @@ def _json_safe(value: Any) -> Any:
 def _pluck_dashboard_fields(dashboard: dict) -> dict:
     header = dashboard.get("header") or {}
     consensus = ((dashboard.get("valuation_hub") or {}).get("consensus")) or {}
+    score_card = dashboard.get("score_card") or dashboard.get("decision_card") or {}
+    mean_target_price = _safe_float(consensus.get("mean_target_price"))
+    median_target_price = _safe_float(consensus.get("median_target_price"))
+    consensus_target_price = _safe_float(consensus.get("decision_target_price"))
+    if consensus_target_price is None:
+        consensus_target_price = mean_target_price
+    consensus_allocation_pct = _safe_float(score_card.get("position_size_pct_of_notional"))
+    if consensus_allocation_pct is None:
+        decision_investment = _safe_float(score_card.get("decision_investment_amount"))
+        if decision_investment is None:
+            decision_investment = _safe_float(score_card.get("mean_investment_amount"))
+        if decision_investment is not None:
+            consensus_allocation_pct = (decision_investment / 100000.0) * 100.0
+    consensus_basis = consensus.get("consensus_basis") or score_card.get("consensus_basis")
+    if consensus_basis not in {"mean_median", "mean_only"}:
+        consensus_basis = None
     return {
         "company_name": header.get("company_name"),
         "current_price": _safe_float(header.get("current_price")),
         "market_cap": _safe_float(header.get("market_cap")),
         "currency": header.get("display_currency") or header.get("currency"),
         "recommendation": None,
-        "mean_target_price": _safe_float(consensus.get("mean_target_price")),
+        "mean_target_price": mean_target_price,
+        "median_target_price": median_target_price,
+        "consensus_target_price": consensus_target_price,
+        "consensus_allocation_pct": consensus_allocation_pct,
+        "consensus_score": _safe_float(score_card.get("adjusted_score")),
+        "consensus_basis": consensus_basis,
     }
 
 

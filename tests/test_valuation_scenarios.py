@@ -234,6 +234,46 @@ def test_db_transform_sanitizes_non_finite_dashboard_values(tmp_path):
     assert bundle["artifact_row"]["dashboard"]["header"]["price_performance_pct"]["1D"] is None
 
 
+def test_db_transform_persists_consensus_summary_fields(tmp_path):
+    ticker_dir = tmp_path / "_site_runs" / "TEST_123" / "TEST"
+    ticker_dir.mkdir(parents=True)
+    (ticker_dir / "TEST_analysis.md").write_text("analysis", encoding="utf-8")
+    (ticker_dir / "TEST_dashboard.json").write_text(
+        json.dumps(
+            {
+                "ticker": "TEST",
+                "generated_at": "2026-09-20T00:00:00+00:00",
+                "header": {"current_price": 100},
+                "valuation_hub": {
+                    "consensus": {
+                        "mean_target_price": 140,
+                        "median_target_price": 120,
+                        "decision_target_price": 130,
+                        "consensus_basis": "mean_median",
+                    }
+                },
+                "score_card": {
+                    "position_size_pct_of_notional": 7.5,
+                    "adjusted_score": 12.25,
+                    "consensus_basis": "mean_median",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    bundle = ticker_dir_to_row(ticker_dir, source="site")
+
+    assert bundle is not None
+    row = bundle["report_row"]
+    assert row["mean_target_price"] == 140
+    assert row["median_target_price"] == 120
+    assert row["consensus_target_price"] == 130
+    assert row["consensus_allocation_pct"] == 7.5
+    assert row["consensus_score"] == 12.25
+    assert row["consensus_basis"] == "mean_median"
+
+
 def test_runner_assumptions_pack_blended_probabilities_include_sotp_object_shape():
     explain_payload = {
         "methods": {

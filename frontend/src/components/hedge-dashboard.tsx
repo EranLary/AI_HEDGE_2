@@ -1744,7 +1744,12 @@ export function HedgeDashboard({
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
-      : combinedScore(scoreCard?.mean_investment_amount, consensusChangePct);
+      : combinedScore(
+          typeof scoreCard?.decision_investment_amount === "number"
+            ? scoreCard.decision_investment_amount
+            : scoreCard?.mean_investment_amount,
+          consensusDecisionChangePct,
+        );
   const finalAdjustedScore =
     typeof scoreCard?.adjusted_score === "number" && Number.isFinite(scoreCard.adjusted_score)
       ? Number(scoreCard.adjusted_score)

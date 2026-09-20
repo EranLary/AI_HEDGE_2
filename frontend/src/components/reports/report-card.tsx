@@ -50,7 +50,7 @@ export function ReportCard({
 }) {
   const href = `${workspacePath(report.workspace, `/dashboard/${encodeURIComponent(report.ticker)}/summary`)}?report=${encodeURIComponent(report.id)}`;
   const score = scoreTone(report.score);
-  const target = signedMetricTone("Target", targetReturnPct(report.mean_target_price, report.current_price), "%");
+  const target = signedMetricTone("Target", targetReturnPct(report.consensus_target_price, report.current_price), "%");
   const allocation = signedMetricTone("Allocation", report.allocation_pct, "%");
   const company = report.company_name || report.ticker;
   const metrics = [score, target, allocation];

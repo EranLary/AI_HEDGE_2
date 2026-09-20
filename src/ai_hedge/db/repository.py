@@ -52,12 +52,14 @@ _INSERT_REPORT_SQL = """
 INSERT INTO reports (
     ticker, user_id, generated_at, dashboard_version,
     company_name, current_price, market_cap, currency,
-    recommendation, mean_target_price,
+    recommendation, mean_target_price, median_target_price,
+    consensus_target_price, consensus_allocation_pct, consensus_score, consensus_basis,
     visibility, source, source_run_id, origin_path, workspace, release_id
 ) VALUES (
     %(ticker)s, %(user_id)s, %(generated_at)s, %(dashboard_version)s,
     %(company_name)s, %(current_price)s, %(market_cap)s, %(currency)s,
-    %(recommendation)s, %(mean_target_price)s,
+    %(recommendation)s, %(mean_target_price)s, %(median_target_price)s,
+    %(consensus_target_price)s, %(consensus_allocation_pct)s, %(consensus_score)s, %(consensus_basis)s,
     %(visibility)s, %(source)s, %(source_run_id)s, %(origin_path)s, %(workspace)s, %(release_id)s
 )
 ON CONFLICT (
@@ -140,7 +142,9 @@ def get_latest_by_ticker(
     sql = """
     SELECT r.id, r.ticker, r.generated_at, r.dashboard_version,
            r.company_name, r.current_price, r.market_cap, r.currency,
-           r.recommendation, r.mean_target_price,
+           r.recommendation, r.mean_target_price, r.median_target_price,
+           r.consensus_target_price, r.consensus_allocation_pct,
+           r.consensus_score, r.consensus_basis,
            r.visibility, r.source, r.source_run_id, r.origin_path,
            r.created_at,
            a.dashboard, a.analysis_md, a.prices_explain_md, a.analysis_md_source

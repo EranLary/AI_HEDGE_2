@@ -578,8 +578,11 @@ export type ReportListItem = {
   report_file: string;
   updated_at: string;
   score?: number | null;
+  consensus_target_price?: number | null;
   mean_target_price?: number | null;
+  median_target_price?: number | null;
   allocation_pct?: number | null;
+  consensus_basis?: "mean_median" | "mean_only" | null;
   workspace?: "analysis" | "nasdaq100";
   release_id?: string | null;
 };

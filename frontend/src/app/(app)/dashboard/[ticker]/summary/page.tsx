@@ -458,7 +458,7 @@ export default function DashboardSummaryPage({
   const { workspace, api } = useWorkspace();
   const search = useSearchParams();
   const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
-  const [windowKey, setWindowKey] = useState<SummaryWindow>("all");
+  const [windowKey, setWindowKey] = useState<SummaryWindow | null>(null);
   const [loading, setLoading] = useState(true);
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -478,8 +478,9 @@ export default function DashboardSummaryPage({
     async function run() {
       setLoading(true);
       try {
+        const windowQuery = windowKey ? `window=${encodeURIComponent(windowKey)}&` : "";
         const res = await fetch(
-          api(`/api/dashboard/${encodeURIComponent(upper)}/summary?window=${encodeURIComponent(windowKey)}&refresh=${Date.now()}-${refreshToken}`),
+          api(`/api/dashboard/${encodeURIComponent(upper)}/summary?${windowQuery}refresh=${Date.now()}-${refreshToken}`),
           { cache: "no-store" },
         );
         const json = (await res.json()) as SummaryPayload;
@@ -604,6 +605,7 @@ export default function DashboardSummaryPage({
   const overviewCombinedScore = combinedScore(data?.overview.mean_allocation_pct, meanTargetChangePct);
   const overviewAdjustedScore = confidenceAdjustedScore(overviewCombinedScore, data?.overview.mean_disagreement_score);
   const financialCurrency = String(data?.currency_context?.financial_currency || "USD").toUpperCase();
+  const activeWindow = windowKey ?? data?.window ?? "3m";
 
   return (
     <div className="space-y-4">
@@ -612,7 +614,7 @@ export default function DashboardSummaryPage({
           <div>
             <h1 className="font-display text-2xl text-zinc-100">Consensus Summary</h1>
             <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-              {upper} · Aggregated across report history
+              {upper} · Aggregated across the selected report window
             </p>
             {reportId ? (
               <p className="mt-1 text-xs text-zinc-500">Current report selection is ignored here; this view always uses history.</p>
@@ -626,7 +628,7 @@ export default function DashboardSummaryPage({
                   type="button"
                   onClick={() => setWindowKey(opt.key)}
                   className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                    windowKey === opt.key
+                    activeWindow === opt.key
                       ? "bg-emerald-500/20 text-emerald-100"
                       : "text-zinc-300 hover:text-zinc-100"
                   }`}

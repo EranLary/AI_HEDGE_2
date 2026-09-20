@@ -380,6 +380,13 @@ export function filterReportsByWindow(
   return reports.filter((report) => shouldKeepReport(report, window, nowMs));
 }
 
+export function resolveDefaultSummaryWindow(
+  reports: SummarySourceReport[],
+  nowMs: number = Date.now(),
+): SummaryWindow {
+  return filterReportsByWindow(reports, "3m", nowMs).length > 0 ? "3m" : "all";
+}
+
 export function computeTickerSummaryAggregation(
   reports: SummarySourceReport[],
   window: SummaryWindow,

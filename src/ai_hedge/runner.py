@@ -65,6 +65,7 @@ class RunArtifacts:
     web_search_json: str
     web_search_txt: str
     financials_json: str
+    share_count_resolution_json: str
     notes: List[str]
     current_revenue: Optional[float]
     target_revenue: Optional[float]
@@ -1805,6 +1806,41 @@ def _run_ticker_valuation_impl(
         f"Finished analysis from SEC Filings. Sources used: {sec_sources}",
     )
 
+    # Resolve the single total-company denominator before creating the exact
+    # Markdown sent to valuators.  This is deliberately non-blocking: a failed
+    # filing review retains the pre-validated deterministic provider fallback.
+    share_count_resolution: Dict[str, Any] = {}
+    share_count_resolution_json = ""
+    try:
+        from .share_count_agent import (
+            apply_share_count_resolution,
+            format_share_count_resolution_markdown,
+            resolve_share_count,
+        )
+
+        with _obs.llm_context(stage="share_count.verify"):
+            share_count_resolution = resolve_share_count(
+                ticker=ticker,
+                info_dict=info_dict,
+                files_dict=files_dict,
+                current_value=variables_dict.get("shares_outstanding"),
+                api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
+            )
+        variables_dict = apply_share_count_resolution(variables_dict, share_count_resolution)
+        share_count_resolution_path = out_dir / f"{ticker}_share_count_resolution.json"
+        share_count_resolution_path.write_text(
+            json.dumps(share_count_resolution, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        share_count_resolution_json = str(share_count_resolution_path.resolve())
+        legacy.append_text_to_file(
+            text=format_share_count_resolution_markdown(share_count_resolution),
+            header="Verified Share Count for Valuation",
+        )
+        _append_progress(progress_file, "Finished verified share-count review for valuation")
+    except Exception as share_count_exc:
+        notes.append(f"Share-count verification failed; retained provider denominator: {share_count_exc}")
+
     if not regular_text:
         regular_text = str(text or "")
     try:
@@ -2197,6 +2233,7 @@ def _run_ticker_valuation_impl(
                 "web_search_json": web_search_json,
                 "web_search_txt": web_search_txt,
                 "financials_json": financials_json,
+                "share_count_resolution_json": share_count_resolution_json,
             },
         )
         dashboard_payload["workspace"] = workspace
@@ -2246,6 +2283,7 @@ def _run_ticker_valuation_impl(
         "web-search-json": Path(web_search_json) if web_search_json else None,
         "web-search-txt": Path(web_search_txt) if web_search_txt else None,
         "financials-json": Path(financials_json) if financials_json else None,
+        "share-count-resolution-json": Path(share_count_resolution_json) if share_count_resolution_json else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     collected_keys: Dict[str, str] = {}
@@ -2293,6 +2331,7 @@ def _run_ticker_valuation_impl(
         web_search_json=web_search_json,
         web_search_txt=web_search_txt,
         financials_json=financials_json,
+        share_count_resolution_json=share_count_resolution_json,
         notes=notes,
         current_revenue=current_revenue,
         target_revenue=target_revenue,
@@ -2323,6 +2362,7 @@ def _run_ticker_valuation_impl(
         "web_search_json": artifacts.web_search_json,
         "web_search_txt": artifacts.web_search_txt,
         "financials_json": artifacts.financials_json,
+        "share_count_resolution_json": artifacts.share_count_resolution_json,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,
         "target_revenue": artifacts.target_revenue,

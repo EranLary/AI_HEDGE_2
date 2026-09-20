@@ -1920,9 +1920,9 @@ export function HedgeDashboard({
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Target Price</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Target</p>
                       <AutoFitMetric
                         text={consensusDecisionText}
                         maxPx={42}
@@ -1932,78 +1932,85 @@ export function HedgeDashboard({
                       <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(consensusDecisionChangePct)}`}>
                         {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
-                      <div className="mt-2 space-y-1 text-xs">
-                        <div className="flex items-baseline justify-between gap-3">
+                      <div className="mt-auto space-y-2 border-t border-white/10 pt-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Mean</span>
-                          <span className={`text-right font-semibold ${consensusMeanClass}`}>
-                            {consensusMeanText}{" "}
-                            <span className={toneClassFromSign(consensusChangePct)}>
-                              ({typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"})
+                          <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
+                            <span className={consensusMeanClass}>{consensusMeanText}</span>
+                            <span className={`text-[11px] ${toneClassFromSign(consensusChangePct)}`}>
+                              {typeof consensusChangePct === "number" ? fmtPct(consensusChangePct) : "N/A"}
                             </span>
                           </span>
                         </div>
-                        <div className="flex items-baseline justify-between gap-3">
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Median</span>
-                          <span className={`text-right font-semibold ${consensusMedianClass}`}>
-                            {consensusMedianText}{" "}
-                            <span className={toneClassFromSign(consensusMedianChangePct)}>
-                              ({typeof consensusMedianChangePct === "number" ? fmtPct(consensusMedianChangePct) : "N/A"})
+                          <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
+                            <span className={consensusMedianClass}>{consensusMedianText}</span>
+                            <span className={`text-[11px] ${toneClassFromSign(consensusMedianChangePct)}`}>
+                              {typeof consensusMedianChangePct === "number" ? fmtPct(consensusMedianChangePct) : "N/A"}
                             </span>
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">
-                        Price <span className="whitespace-nowrap">({reportDateIso})</span>
-                      </p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Report Price</p>
                       <AutoFitMetric
                         text={consensusCurrentText}
                         maxPx={42}
                         minPx={16}
                         className="hib-metric-value hib-current-price mt-1 font-bold leading-tight"
                       />
+                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] text-zinc-400">
+                        As of <span className="whitespace-nowrap text-zinc-300">{reportDateIso}</span>
+                      </p>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Allocation (%)</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Allocation</p>
                       <AutoFitMetric
                         text={fmtScoreInputPctOnly(decisionAllocationPct)}
                         maxPx={32}
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
-                      <div className="mt-2 space-y-1 text-xs">
-                        <div className="flex items-baseline justify-between gap-3">
+                      <div className="mt-auto space-y-2 border-t border-white/10 pt-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Mean</span>
-                          <span className={`text-right font-semibold ${toneClassFromSign(meanAllocationPct)}`}>
+                          <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(meanAllocationPct)}`}>
                             {fmtScoreInputPctOnly(meanAllocationPct)}
                           </span>
                         </div>
-                        <div className="flex items-baseline justify-between gap-3">
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-zinc-400">Median</span>
-                          <span className={`text-right font-semibold ${toneClassFromSign(medianAllocationPct)}`}>
+                          <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(medianAllocationPct)}`}>
                             {fmtScoreInputPctOnly(medianAllocationPct)}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Score</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Score</p>
                       <AutoFitMetric
                         text={typeof finalAdjustedScore === "number" ? finalAdjustedScore.toFixed(2) : "N/A"}
                         maxPx={32}
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${scoreToneClass}`}
                       />
+                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                        Confidence-adjusted valuation score
+                      </p>
                     </div>
-                    <div className="min-w-0 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200">Consensus Disagreement</p>
+                    <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Disagreement</p>
                       <AutoFitMetric
                         text={typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                         maxPx={32}
                         minPx={14}
                         className="hib-metric-subvalue mt-1 font-bold leading-tight text-zinc-100"
                       />
+                      <p className="mt-auto border-t border-white/10 pt-3 text-[11px] leading-relaxed text-zinc-400">
+                        Lower means stronger consensus
+                      </p>
                     </div>
                   </div>
                 </div>

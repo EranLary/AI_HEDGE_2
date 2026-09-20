@@ -18,7 +18,7 @@ import type { DashboardPayload } from "@/lib/dashboard-types";
 import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
 import { useThemeTokens } from "@/lib/theme-tokens";
 
-const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear", "--chart-series-2"] as const;
+const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear"] as const;
 
 type ChartHoverState = {
   chartX?: number;
@@ -240,15 +240,6 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
                 stroke={tokens["--chart-current"]}
                 strokeWidth={2.5}
                 strokeDasharray="6 4"
-              />
-            ) : null}
-            {typeof consensusDecision === "number" ? (
-              <ReferenceLine
-                y={consensusDecision}
-                stroke={tokens["--chart-series-2"]}
-                strokeWidth={2.5}
-                strokeDasharray="3 3"
-                label={{ value: "Consensus", position: "insideTopRight", fill: tokens["--chart-series-2"] }}
               />
             ) : null}
             <Bar dataKey="target" radius={[6, 6, 0, 0]} isAnimationActive activeBar={false}>

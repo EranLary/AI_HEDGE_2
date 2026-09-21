@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowRight, ChevronDown, Database } from "lucide-react";
+import { ArrowRight, ChevronDown, Layers3 } from "lucide-react";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import {
@@ -105,7 +105,7 @@ export function ValuationShareCount({ data }: { data: DashboardPayload | null })
       >
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
-            <Database size={12} aria-hidden="true" /> Valuation shares
+            <Layers3 size={12} aria-hidden="true" /> Valuation shares
           </span>
           <span className="mt-0.5 block text-sm font-semibold tabular-nums text-[color:var(--text-primary)]">
             {formatCompactShares(finalShares)}

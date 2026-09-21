@@ -8,6 +8,7 @@ import {
   resolvedShareCount,
   shareCountChanged,
   shareCountDelta,
+  shareCountPresentation,
   shareCountResolutionFromAnalysisMarkdown,
 } from "./share-count-display";
 
@@ -108,4 +109,24 @@ More report content.`;
     validation_note: "Official filing evidence was ambiguous; retained the existing provider denominator.",
     provider_candidates: { current_valuation_denominator: 117_217_504 },
   });
+});
+
+test("presents share-count outcomes without exposing internal field names", () => {
+  const unchanged = shareCountPresentation({
+    selected_shares_outstanding: 117_217_504,
+    original_yahoo_shares: 117_217_504,
+    source_type: "provider_fallback",
+    basis: "current_valuation_denominator",
+  });
+  assert.equal(unchanged.badge, "Yahoo retained");
+  assert.equal(unchanged.verification, "Yahoo value retained after verification");
+  assert.equal(JSON.stringify(unchanged).includes("current_valuation_denominator"), false);
+
+  const adjusted = shareCountPresentation({
+    selected_shares_outstanding: 42_274_119,
+    original_yahoo_shares: 40_000_000,
+    source_type: "official_filing",
+  });
+  assert.equal(adjusted.badge, "Adjusted from Yahoo");
+  assert.match(adjusted.summary, /different total-company share count/);
 });

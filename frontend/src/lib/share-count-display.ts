@@ -143,3 +143,47 @@ export function shareCountDelta(resolution?: ShareCountResolution | null): {
     percent: ((finalValue - originalValue) / originalValue) * 100,
   };
 }
+
+export type ShareCountPresentation = {
+  badge: string;
+  summary: string;
+  verification: string;
+  note: string;
+};
+
+export function shareCountPresentation(
+  resolution?: ShareCountResolution | null,
+): ShareCountPresentation {
+  if (!resolution) {
+    return {
+      badge: "Stored value",
+      summary: "This historical report stores the share count used in valuation, but not the full verification details.",
+      verification: "Historical report",
+      note: "",
+    };
+  }
+
+  const changed = shareCountChanged(resolution);
+  if (resolution.source_type === "official_filing") {
+    return changed
+      ? {
+          badge: "Adjusted from Yahoo",
+          summary: "The filing review found a different total-company share count, and that number is used throughout the valuation.",
+          verification: "Verified in an official filing",
+          note: "The selected count is supported by the filing excerpt below.",
+        }
+      : {
+          badge: "Matches Yahoo",
+          summary: "The official filing confirmed the same total-company share count as Yahoo.",
+          verification: "Confirmed by official filing",
+          note: "The selected count is supported by the filing excerpt below.",
+        };
+  }
+
+  return {
+    badge: "Yahoo retained",
+    summary: "The verification did not support a different total-company share count, so the original Yahoo value is used.",
+    verification: "Yahoo value retained after verification",
+    note: "No validated filing evidence supported replacing Yahoo's share count.",
+  };
+}

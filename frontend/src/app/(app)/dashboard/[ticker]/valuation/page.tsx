@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HedgeDashboard } from "@/components/hedge-dashboard";
 import { TargetPriceChart } from "@/components/target-price-chart";
+import { ValuationShareCount } from "@/components/valuation-share-count";
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { useWorkspace } from "@/components/shell/workspace-context";
 
@@ -89,6 +90,7 @@ export default function DashboardValuationPage({
         hideMainTabBar
         hideScoreFooter
         onReportChange={handleReportChange}
+        headerMetricSlot={payload ? <ValuationShareCount data={payload} /> : null}
         postHeaderSlot={<TargetPriceChart data={payload} />}
       />
     </div>

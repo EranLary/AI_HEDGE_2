@@ -22,6 +22,7 @@ unless `-IncludeLiveDb` is supplied.
 ### Backend
 
 ```powershell
+New-Item -ItemType Directory -Force .tmp | Out-Null
 python -m pytest -q --basetemp=.tmp/pytest
 ```
 

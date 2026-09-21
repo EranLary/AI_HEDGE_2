@@ -22,6 +22,7 @@ function Invoke-Checked {
 }
 
 function Test-Backend {
+    New-Item -ItemType Directory -Force (Join-Path $repoRoot ".tmp") | Out-Null
     Invoke-Checked "Python tests" {
         python -m pytest -q --basetemp=.tmp/pytest
     }

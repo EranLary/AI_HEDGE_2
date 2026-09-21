@@ -9,6 +9,7 @@ import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { getDeletedReportFilterForTicker, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { fetchLatestReport, fetchReportById } from "@/lib/reports-db";
+import { shareCountResolutionFromAnalysisMarkdown } from "@/lib/share-count-display";
 import {
   buildStandaloneReportHtml,
   type ReportDocumentKind,
@@ -570,6 +571,20 @@ export async function GET(
     foundPath = resolved.foundPath;
 
     if (!foundPath) {
+      if (kind === "share-count-resolution-json") {
+        const source = await resolveDocumentSource(ticker, reportId, workspace);
+        const dashboard = asObject(source?.dashboard);
+        const header = asObject(dashboard?.header);
+        const recovered = shareCountResolutionFromAnalysisMarkdown(
+          source?.analysisMd,
+          header?.shares_outstanding,
+        );
+        if (recovered) {
+          return NextResponse.json(recovered, {
+            headers: { "Cache-Control": "private, no-store, max-age=0" },
+          });
+        }
+      }
       return NextResponse.json(
         { error: `${fileName} was not found for report_id=${reportId}.` },
         { status: 404 },

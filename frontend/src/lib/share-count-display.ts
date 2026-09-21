@@ -33,7 +33,9 @@ export function normalizeShareCountResolution(
 
   const selected = finiteShareCount(raw.selected_shares_outstanding) ?? finiteShareCount(finalFallback);
   if (selected === null) return null;
-  const original = finiteShareCount(providerCandidates.current_valuation_denominator);
+  const original =
+    finiteShareCount(raw.original_yahoo_shares) ??
+    finiteShareCount(providerCandidates.current_valuation_denominator);
   const changed = original === null ? null : Math.abs(selected - original) > 0.5;
   return {
     status: textValue(raw.status) || "unavailable",
@@ -49,6 +51,53 @@ export function normalizeShareCountResolution(
     fallback_used: raw.fallback_used === true,
     validation_note: textValue(raw.validation_note),
     provider_candidates: providerCandidates,
+  };
+}
+
+function markdownField(section: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = section.match(new RegExp(`^- ${escaped}:\\s*(.+?)\\s*$`, "im"));
+  return match?.[1]?.trim() || "";
+}
+
+export function shareCountResolutionFromAnalysisMarkdown(
+  markdown: unknown,
+  finalFallback: unknown,
+): ShareCountResolution | null {
+  if (typeof markdown !== "string" || !markdown.trim()) return null;
+  const heading = /^## Verified Share Count for Valuation\s*$/im.exec(markdown);
+  if (!heading || typeof heading.index !== "number") return null;
+  const sectionStart = heading.index + heading[0].length;
+  const remaining = markdown.slice(sectionStart);
+  const nextHeading = remaining.search(/\r?\n##\s+/);
+  const section = nextHeading >= 0 ? remaining.slice(0, nextHeading) : remaining;
+
+  const selectedText = markdownField(section, "Selected total-company shares");
+  const selectedParsed = Number(selectedText.replace(/[^0-9.]/g, ""));
+  const selected = finiteShareCount(selectedParsed) ?? finiteShareCount(finalFallback);
+  if (selected === null) return null;
+
+  const status = markdownField(section, "Status") || "unavailable";
+  const sourceType = markdownField(section, "Source") || "unavailable";
+  const basis = markdownField(section, "Basis");
+  const asOfText = markdownField(section, "As-of date");
+  const validationNote = markdownField(section, "Fallback note");
+  const original = basis === "current_valuation_denominator" ? selected : null;
+
+  return {
+    status,
+    selected_shares_outstanding: selected,
+    original_yahoo_shares: original,
+    changed_from_yahoo: original === null ? null : Math.abs(selected - original) > 0.5,
+    source_type: sourceType,
+    basis,
+    as_of_date: asOfText && asOfText.toLowerCase() !== "not stated" ? asOfText : null,
+    evidence_excerpt: "",
+    calculation: "",
+    confidence: markdownField(section, "Confidence") || "Low",
+    fallback_used: status === "fallback" || sourceType === "provider_fallback",
+    validation_note: validationNote,
+    provider_candidates: original === null ? {} : { current_valuation_denominator: original },
   };
 }
 

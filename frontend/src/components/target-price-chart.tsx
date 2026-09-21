@@ -16,9 +16,16 @@ import {
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
+import { targetPriceTone, type TargetPriceTone } from "@/lib/target-price-comparison";
 import { useThemeTokens } from "@/lib/theme-tokens";
 
 const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear"] as const;
+
+const TARGET_TONE_CLASS: Record<TargetPriceTone, string> = {
+  positive: "text-[color:var(--success)]",
+  negative: "text-[color:var(--danger)]",
+  neutral: "text-[color:var(--text-muted)]",
+};
 
 type ChartHoverState = {
   chartX?: number;
@@ -67,6 +74,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
       ? Number(consensus.decision_target_price)
       : consensusMean;
+  const meanTone = targetPriceTone(consensusMean, consensusCurrent);
+  const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
+  const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -205,8 +215,13 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
         <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
           <Gauge size={14} /> Target Price by Model
         </span>
-        <span className="text-xs text-zinc-400">
-          Current {fmtMoney(consensusCurrent, currencyContext, "price")} · Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")} · Consensus {fmtMoney(consensusDecision, currencyContext, "price")}
+        <span className="text-xs text-[color:var(--text-muted)]">
+          Current {fmtMoney(consensusCurrent, currencyContext, "price")} <span aria-hidden="true">·</span>{" "}
+          <span className={TARGET_TONE_CLASS[meanTone]}>Mean {fmtMoney(consensusMean, currencyContext, "price")}</span>{" "}
+          <span aria-hidden="true">·</span>{" "}
+          <span className={TARGET_TONE_CLASS[medianTone]}>Median {fmtMoney(consensusMedian, currencyContext, "price")}</span>{" "}
+          <span aria-hidden="true">·</span>{" "}
+          <span className={TARGET_TONE_CLASS[consensusTone]}>Consensus {fmtMoney(consensusDecision, currencyContext, "price")}</span>
         </span>
         <span className="hidden">
           Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")}

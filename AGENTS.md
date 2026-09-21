@@ -7,8 +7,21 @@ Guidance for AI coding agents (Codex, etc.) working in this repo.
 This file mirrors the most important cross-cutting rules so Codex doesn't have to chase indirections.
 
 For the current runtime order and persistence boundaries, also read
+[docs/architecture/system-map.md](docs/architecture/system-map.md),
 [docs/architecture/pipeline.md](docs/architecture/pipeline.md) and
 [docs/architecture/data-lifecycle.md](docs/architecture/data-lifecycle.md).
+
+## Current system boundaries
+
+- `src/ai_hedge/` is the shared analysis core used by the CLI, site-triggered
+  runs, and the release-scoped Nasdaq worker.
+- `frontend/` is both the customer-facing site and the server-side control plane
+  for reports, portfolios, Nasdaq orchestration, and Paper trading.
+- `frontend-obs/` is a separate internal app backed by the observability database.
+- `trading_executor/` is the local Windows IBKR Paper agent and the only component
+  allowed to contact IB Gateway; broker credentials must never move to the site.
+- There is no active Telegram bot runtime. Telegram is used only for trading
+  alerts sent by the site.
 
 ## Task mode and existing work
 
@@ -116,6 +129,7 @@ These come from [CLAUDE.md](CLAUDE.md) and apply equally here:
 ## Where to look
 
 - Architecture, env, deployment: [CLAUDE.md](CLAUDE.md).
+- System topology: [docs/architecture/system-map.md](docs/architecture/system-map.md).
 - Runtime order: [docs/architecture/pipeline.md](docs/architecture/pipeline.md).
 - Persistence and source-of-truth rules: [docs/architecture/data-lifecycle.md](docs/architecture/data-lifecycle.md).
 - Documentation index: [docs/README.md](docs/README.md).

@@ -2,7 +2,8 @@
 
 This is the high-level runtime order for a full ticker analysis. The detailed
 legacy-agent dependency map remains in `docs/architecture/dependency-map.md`; this document is
-the current orchestration contract.
+the current orchestration contract. For the broader web, worker, observability,
+portfolio, and trading topology, see `docs/architecture/system-map.md`.
 
 ## Entrypoints
 

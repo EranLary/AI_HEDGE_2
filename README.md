@@ -1,10 +1,13 @@
 # AI_HEDGE_2
 
-AI_HEDGE_2 is an AI-driven equity analysis platform with three active surfaces:
+AI_HEDGE_2 is an AI-driven equity research and portfolio platform. Its current
+runtime is split into five domains:
 
-1. Python valuation engine (`run.py`, `run_lite.py`)
-2. Public web app (`frontend/`, "Hedge in a Box")
-3. Observability admin app (`frontend-obs/`)
+1. Python analysis core and local CLI (`src/ai_hedge/`, `run.py`, `run_lite.py`)
+2. Public web app and control plane (`frontend/`, "Hedge in a Box")
+3. Scale-to-zero Nasdaq analysis worker (`scripts/nasdaq_worker_server.py`)
+4. Internal observability app (`frontend-obs/`)
+5. Local-only IBKR Paper execution agent (`trading_executor/`)
 
 The codebase has evolved far beyond a notebook port. This README documents the current project shape.
 
@@ -14,6 +17,8 @@ The codebase has evolved far beyond a notebook port. This README documents the c
 - Produces analysis artifacts (text, PDF, charts, dashboard JSON)
 - Stores report data in Neon Postgres
 - Serves reports in the Next.js site
+- Runs release-scoped Nasdaq 100 analysis through a durable worker queue
+- Tracks research portfolios and operates an isolated IBKR Paper control plane
 - Exposes Summary filing source links for latest annual and quarterly filings (SEC or MAYA)
 - Tracks LLM run/call telemetry in the observability app
 
@@ -27,8 +32,10 @@ The codebase has evolved far beyond a notebook port. This README documents the c
 - `src/ai_hedge/obs/`: observability instrumentation and DB writes
 - `frontend/`: public dashboard site (Next.js)
 - `frontend-obs/`: internal observability admin app (Next.js)
+- `trading_executor/`: Windows-only IBKR Paper agent; the only component allowed to contact IB Gateway
 - `scripts/`: runtime entrypoints plus grouped DB, deploy, development, and docs tooling
 - `outputs/`: generated local artifacts (gitignored)
+- `docs/architecture/system-map.md`: runtime and deployment boundaries
 - `docs/architecture/pipeline.md`: current end-to-end runtime order
 - `docs/architecture/data-lifecycle.md`: DB/R2/volume sources of truth
 - `docs/README.md`: documentation index
@@ -200,7 +207,7 @@ Status/logs:
 ### GitHub Actions
 
 - `.github/workflows/ci.yml`: Python, fresh-DB bootstrap, frontend, and observability checks
-- `.github/workflows/deploy-fly.yml`: deploys `site` and `obs` on push to `main`/`master`
+- `.github/workflows/deploy-fly.yml`: deploys `site`, `obs`, and the Nasdaq worker on push to `main`/`master`
 - `.github/workflows/preview-site.yml`: per-PR site previews
 - `.github/workflows/preview-obs.yml`: per-PR obs previews
 

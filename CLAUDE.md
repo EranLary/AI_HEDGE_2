@@ -4,16 +4,20 @@ Guidance for Claude Code working in this repo.
 
 ## What this is
 
-AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Three active surfaces share the same core:
+AI-driven equity research and portfolio platform evolved from
+`AI_HEDGE_FUND_YF.ipynb`. The current system has five runtime domains:
 
-- **CLI** (`run.py`) — run valuation for one ticker, write artifacts to `outputs/<TICKER>/`.
-- **Next.js dashboard** (`frontend/`) — "Hedge in a Box", customer-facing site at `hedge-in-a-box.com`. Reads saved reports from Neon first and retains an `outputs/` compatibility fallback for Analysis reports.
-- **Observability app** (`frontend-obs/`) — internal-only admin app at `observability.hedge-in-a-box.com`. Reads `obs_runs` / `obs_calls` from the obs Neon DB and renders the LLM call DAG. DB-backed admin allowlist (`obs_admins` table) editable from `/users` — no env-var allowlist.
+- **Analysis core and CLI** (`src/ai_hedge/`, `run.py`) — run analysis for one ticker and write working artifacts below `outputs/`.
+- **Public site and control plane** (`frontend/`) — "Hedge in a Box" at `hedge-in-a-box.com`; serves saved research, starts site/Nasdaq work, tracks portfolios, and owns the server side of Paper trading.
+- **Nasdaq worker** (`scripts/nasdaq_worker_server.py`) — consumes durable Nasdaq run work and executes the same full-analysis service with release isolation.
+- **Observability app** (`frontend-obs/`) — internal-only admin app at `observability.hedge-in-a-box.com`; reads the dedicated observability Neon DB and renders the LLM call DAG.
+- **IBKR Paper executor** (`trading_executor/`) — Windows process and the only component that contacts IB Gateway. Credentials remain local; the site supplies a DB-backed control plane.
 
 Deployment target is Fly.io (three apps: `hedge-in-a-box-site`, `hedge-in-a-box-obs`, and the scale-to-zero `hedge-in-a-box-nasdaq-worker`).
 
-Current runtime order and persistence ownership are documented in
-[`docs/architecture/pipeline.md`](docs/architecture/pipeline.md) and
+Current topology, runtime order, and persistence ownership are documented in
+[`docs/architecture/system-map.md`](docs/architecture/system-map.md),
+[`docs/architecture/pipeline.md`](docs/architecture/pipeline.md), and
 [`docs/architecture/data-lifecycle.md`](docs/architecture/data-lifecycle.md).
 
 ## Layout
@@ -24,13 +28,14 @@ Current runtime order and persistence ownership are documented in
   - [legacy_port.py](src/ai_hedge/legacy_port.py) — notebook port (prompts, parsers, valuation flow). **Do not casually refactor** — it preserves notebook behavior.
   - [runner.py](src/ai_hedge/runner.py) — orchestrates a full run, writes artifacts + dashboard JSON.
   - [dashboard.py](src/ai_hedge/dashboard.py) — builds the dashboard payload consumed by the frontend.
-  - [service.py](src/ai_hedge/service.py) — service layer used by the bot.
+  - [service.py](src/ai_hedge/service.py) — shared full-analysis service used by CLI, site runs, and the Nasdaq worker.
   - [cli.py](src/ai_hedge/cli.py) — argparse wrapper.
 - [frontend/](frontend/) — Next.js 16 + React 19 + Tailwind 4 app (public site).
 - [frontend-obs/](frontend-obs/) — Next.js 16 observability admin app. Independent NextAuth (Google), DB-backed admin allowlist via `obs_admins`. No persistent volume — reads from Neon only.
+- [trading_executor/](trading_executor/) — local Windows IBKR Paper executor with DPAPI-protected configuration and a durable SQLite outbox.
 - [outputs/](outputs/) — run artifacts per ticker (gitignored).
-- [logs/](logs/) — bot logs (gitignored).
-- [Dockerfile](Dockerfile) / [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) / [Dockerfile.nasdaq-worker](Dockerfile.nasdaq-worker) — Fly images (bot / site / obs / Nasdaq worker). Not needed for local dev.
+- [logs/](logs/) — local/runtime logs (gitignored).
+- [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) / [Dockerfile.nasdaq-worker](Dockerfile.nasdaq-worker) — Fly images for the three deployed apps. Not needed for local dev.
 
 ## Required env
 
@@ -79,7 +84,7 @@ site, observability, and the Nasdaq worker on pushes to `main`/`master` (needs
 5. Add CNAME at DNS provider: `observability.hedge-in-a-box.com → hedge-in-a-box-obs.fly.dev`. Cert auto-issues.
 6. Apply [src/ai_hedge/db/migrations/003_obs_admins.sql](src/ai_hedge/db/migrations/003_obs_admins.sql) against `OBS_DATABASE_URL` (replace TBD seed emails first).
 
-**Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets signed-in access, so don't share it externally. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). The preview's site DB is a Neon branch named `pr-<N>` off `main` in the `ai-hedge` Neon project — previews can mutate freely without touching prod. The preview's **obs DB is the prod obs DB** (no branching) — pipeline runs from a site preview write `obs_runs` / `obs_calls` rows directly to prod, but with `obs_runs.source = "preview-pr-<N>"` (set via the `OBS_RUN_SOURCE_LABEL` env var the workflow injects, honored in [src/ai_hedge/obs/db.py](src/ai_hedge/obs/db.py)) so they're trivially filterable from real `cli`/`site`/`bot` rows. The wiring requires a GitHub Actions repo secret `OBS_DATABASE_URL` (same value as the prod Fly secret on `hedge-in-a-box-obs`); if missing, the workflow logs a warning and obs writes silently no-op against the branched site DB. Machines auto-stop when idle. The Fly app, volume, and Neon site branch are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes both Fly preview apps and orphaned Neon `pr-*` branches older than 14 days.
+**Per-PR site previews.** [.github/workflows/preview-site.yml](.github/workflows/preview-site.yml) creates `pr-<N>-hedge-in-a-box-site.fly.dev` for any PR that touches `frontend/**`, `Dockerfile.site`, or `fly.site.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets signed-in access, so don't share it externally. The preview's `/data` volume is forked from the latest prod snapshot at PR open and kept for the life of the PR (staleness accepted). The preview's site DB is a Neon branch named `pr-<N>` off `main` in the `ai-hedge` Neon project — previews can mutate freely without touching prod. The preview's **obs DB is the prod obs DB** (no branching) — pipeline runs from a site preview write `obs_runs` / `obs_calls` rows directly to prod, but with `obs_runs.source = "preview-pr-<N>"` (set via the `OBS_RUN_SOURCE_LABEL` env var the workflow injects, honored in [src/ai_hedge/obs/db.py](src/ai_hedge/obs/db.py)) so they're trivially filterable from real `cli`/`site` rows. The wiring requires a GitHub Actions repo secret `OBS_DATABASE_URL` (same value as the prod Fly secret on `hedge-in-a-box-obs`); if missing, the workflow logs a warning and obs writes silently no-op against the branched site DB. Machines auto-stop when idle. The Fly app, volume, and Neon site branch are destroyed when the PR closes; [.github/workflows/preview-site-cleanup.yml](.github/workflows/preview-site-cleanup.yml) is a daily safety net that nukes both Fly preview apps and orphaned Neon `pr-*` branches older than 14 days.
 
 **Per-PR obs previews.** [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml) creates `pr-<N>-hedge-in-a-box-obs.fly.dev` for any PR that touches `frontend-obs/**`, `Dockerfile.obs`, or `fly.obs.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets admin access, so don't share it externally. The preview's DB is a Neon branch named `pr-<N>` off `production` in the `hedge_obs` Neon project (forked at PR open, deleted on close). No persistent volume; machines auto-stop when idle; app destroyed on PR close.
 

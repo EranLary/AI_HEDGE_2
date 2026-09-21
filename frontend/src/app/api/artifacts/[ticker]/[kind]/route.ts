@@ -69,6 +69,10 @@ const KIND_TO_FILE: Record<
   "trading-agents-txt": { fileName: "{TICKER}_trading_agents.txt", contentType: "text/plain; charset=utf-8" },
   "market-review-json": { fileName: "{TICKER}_market_review.json", contentType: "application/json; charset=utf-8" },
   "financials-json": { fileName: "{TICKER}_financials.json", contentType: "application/json; charset=utf-8" },
+  "share-count-resolution-json": {
+    fileName: "{TICKER}_share_count_resolution.json",
+    contentType: "application/json; charset=utf-8",
+  },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   formatCompactShares,
   formatFullShares,
+  normalizeShareCountResolution,
   resolvedShareCount,
   shareCountChanged,
   shareCountDelta,
@@ -33,4 +34,44 @@ test("formats compact and full share counts", () => {
   assert.equal(formatCompactShares(117_217_504), "117.22M");
   assert.equal(formatFullShares(117_217_504), "117,217,504");
   assert.equal(formatCompactShares(null), "N/A");
+});
+
+test("normalizes a historical sidecar into the dashboard contract", () => {
+  assert.deepEqual(
+    normalizeShareCountResolution(
+      {
+        status: "fallback",
+        selected_shares_outstanding: 117_217_504,
+        source_type: "provider_fallback",
+        basis: "current_valuation_denominator",
+        confidence: "Low",
+        fallback_used: true,
+        validation_note: "No official filing share-count evidence was available.",
+        provider_candidates: {
+          current_valuation_denominator: 117_217_504,
+          provider_implied_shares: 117_217_504,
+          ignored: 1,
+        },
+      },
+      null,
+    ),
+    {
+      status: "fallback",
+      selected_shares_outstanding: 117_217_504,
+      original_yahoo_shares: 117_217_504,
+      changed_from_yahoo: false,
+      source_type: "provider_fallback",
+      basis: "current_valuation_denominator",
+      as_of_date: null,
+      evidence_excerpt: "",
+      calculation: "",
+      confidence: "Low",
+      fallback_used: true,
+      validation_note: "No official filing share-count evidence was available.",
+      provider_candidates: {
+        current_valuation_denominator: 117_217_504,
+        provider_implied_shares: 117_217_504,
+      },
+    },
+  );
 });

@@ -20,6 +20,7 @@ import {
   finiteShareCount,
   formatCompactShares,
   formatFullShares,
+  normalizeShareCountResolution,
   resolvedShareCount,
   shareCountChanged,
   shareCountDelta,
@@ -107,7 +108,16 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
   const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
-  const shareResolution = data?.header?.share_count_resolution;
+  const embeddedShareResolution = data?.header?.share_count_resolution;
+  const [historicalShareResult, setHistoricalShareResult] = useState<{
+    reportId: string;
+    resolution: NonNullable<DashboardPayload["header"]["share_count_resolution"]>;
+  } | null>(null);
+  const historicalShareResolution =
+    historicalShareResult && historicalShareResult.reportId === data?.report_id
+      ? historicalShareResult.resolution
+      : null;
+  const shareResolution = embeddedShareResolution || historicalShareResolution;
   const finalShares = resolvedShareCount(data?.header?.shares_outstanding, shareResolution);
   const originalShares = finiteShareCount(shareResolution?.original_yahoo_shares);
   const sharesChanged = shareCountChanged(shareResolution);
@@ -198,6 +208,30 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     observer.observe(node);
     return () => observer.disconnect();
   }, [chartData.length]);
+
+  useEffect(() => {
+    if (embeddedShareResolution || !data?.report_id || !data?.ticker) {
+      return;
+    }
+    const reportId = data.report_id;
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      workspace: data.workspace === "nasdaq100" ? "nasdaq100" : "analysis",
+      report_id: reportId,
+    });
+    fetch(
+      `/api/artifacts/${encodeURIComponent(data.ticker)}/share-count-resolution-json?${query.toString()}`,
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!payload) return;
+        const resolution = normalizeShareCountResolution(payload, data.header?.shares_outstanding);
+        if (resolution) setHistoricalShareResult({ reportId, resolution });
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [data?.header?.shares_outstanding, data?.report_id, data?.ticker, data?.workspace, embeddedShareResolution]);
 
   useEffect(() => {
     if (!shareDetailsOpen) return;

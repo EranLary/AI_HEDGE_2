@@ -555,6 +555,7 @@ export type DashboardPayload = {
     market_review_json?: string;
     web_search_json?: string;
     web_search_txt?: string;
+    share_count_resolution_json?: string;
   };
   downloads?: {
     analysis_pdf: string;

@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+      - name: Run Python tests
+        run: python -m pytest -q --basetemp=.tmp/pytest
+
+  database-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_hedge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_hedge_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@127.0.0.1:5432/ai_hedge_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install DB tooling
+        run: python -m pip install "psycopg[binary]>=3.2" "python-dotenv>=1.0.1"
+      - name: Bootstrap empty database
+        run: python scripts/bootstrap_db.py
+      - name: Verify migration convergence
+        run: python scripts/migrate.py --dry-run
+      - name: Audit reconstructed schema
+        run: python scripts/db_audit.py --strict --fail-on-unexpected
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Lint changed frontend files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_SHA}" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMR "${BASE_SHA}" HEAD \
+              | sed -n -E 's#^frontend/(.+\.(ts|tsx|js|jsx|mjs|cjs))$#\1#p'
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No changed frontend JS/TS files."
+            exit 0
+          fi
+          cd frontend
+          npx eslint "${files[@]}"
+      - name: Run frontend tests
+        working-directory: frontend
+        run: |
+          npm run test:middleware
+          npm run test:reports
+          npm run test:portfolio
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend-obs/package-lock.json
+      - name: Install observability dependencies
+        working-directory: frontend-obs
+        run: npm ci
+      - name: Lint changed observability files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_SHA}" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMR "${BASE_SHA}" HEAD \
+              | sed -n -E 's#^frontend-obs/(.+\.(ts|tsx|js|jsx|mjs|cjs))$#\1#p'
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No changed observability JS/TS files."
+            exit 0
+          fi
+          cd frontend-obs
+          npx eslint "${files[@]}"
+      - name: Build observability app
+        working-directory: frontend-obs
+        run: npm run build

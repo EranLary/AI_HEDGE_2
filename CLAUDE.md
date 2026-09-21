@@ -4,14 +4,17 @@ Guidance for Claude Code working in this repo.
 
 ## What this is
 
-AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Four surfaces share the same core:
+AI-driven equity valuation pipeline ported from `AI_HEDGE_FUND_YF.ipynb`. Three active surfaces share the same core:
 
 - **CLI** (`run.py`) — run valuation for one ticker, write artifacts to `outputs/<TICKER>/`.
-- **Telegram bot** (`bot/telegram_bot.py`) — thin wrapper around the valuation service with Stars billing.
-- **Next.js dashboard** (`frontend/`) — "Hedge in a Box", customer-facing site at `hedge-in-a-box.com`. Reads `outputs/**/<TICKER>_dashboard.json` and renders the analysis.
+- **Next.js dashboard** (`frontend/`) — "Hedge in a Box", customer-facing site at `hedge-in-a-box.com`. Reads saved reports from Neon first and retains an `outputs/` compatibility fallback for Analysis reports.
 - **Observability app** (`frontend-obs/`) — internal-only admin app at `observability.hedge-in-a-box.com`. Reads `obs_runs` / `obs_calls` from the obs Neon DB and renders the LLM call DAG. DB-backed admin allowlist (`obs_admins` table) editable from `/users` — no env-var allowlist.
 
-Deployment target is Fly.io (four apps: `ai-hedge-telegram-bot`, `hedge-in-a-box-site`, `hedge-in-a-box-obs`, and the scale-to-zero `hedge-in-a-box-nasdaq-worker`).
+Deployment target is Fly.io (three apps: `hedge-in-a-box-site`, `hedge-in-a-box-obs`, and the scale-to-zero `hedge-in-a-box-nasdaq-worker`).
+
+Current runtime order and persistence ownership are documented in
+[`docs/architecture/pipeline.md`](docs/architecture/pipeline.md) and
+[`docs/architecture/data-lifecycle.md`](docs/architecture/data-lifecycle.md).
 
 ## Layout
 
@@ -23,7 +26,6 @@ Deployment target is Fly.io (four apps: `ai-hedge-telegram-bot`, `hedge-in-a-box
   - [dashboard.py](src/ai_hedge/dashboard.py) — builds the dashboard payload consumed by the frontend.
   - [service.py](src/ai_hedge/service.py) — service layer used by the bot.
   - [cli.py](src/ai_hedge/cli.py) — argparse wrapper.
-- [bot/](bot/) — Telegram bot: `telegram_bot.py` (entry), `handlers.py`, `jobs.py`, `worker.py`, `billing.py`.
 - [frontend/](frontend/) — Next.js 16 + React 19 + Tailwind 4 app (public site).
 - [frontend-obs/](frontend-obs/) — Next.js 16 observability admin app. Independent NextAuth (Google), DB-backed admin allowlist via `obs_admins`. No persistent volume — reads from Neon only.
 - [outputs/](outputs/) — run artifacts per ticker (gitignored).
@@ -35,16 +37,13 @@ Deployment target is Fly.io (four apps: `ai-hedge-telegram-bot`, `hedge-in-a-box
 Copy `.env.example` to `.env` and fill in:
 
 - `DEEPSEEK_API_KEY` — **required** for any valuation run (LLM calls).
-- `TELEGRAM_BOT_TOKEN` — required only for running the bot locally.
 - `ANALYSIS_WORKERS`, `LLM_WORKERS`, `VALUATION_BLOCK_WORKERS` — concurrency knobs, default 8 each in `runner.py`.
-- `BOT_MAX_WORKERS` — bot job concurrency.
-- Optional bot billing: `VALUATION_PRICE_STARS`, `SEC_PRICE_STARS`, `BOT_FREE_PASSWORD`.
 
 ## Run locally
 
 CLI:
 ```powershell
-python run.py --ticker AAPL --pdf
+python run.py --ticker AAPL --no-show-plots
 ```
 
 Frontend:
@@ -60,12 +59,8 @@ npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 Local dev bypasses auth on `localhost`/`127.0.0.1` (gated by `AUTH_BYPASS_LOCAL`). For full sign-in testing, set `AUTH_BYPASS_LOCAL=0` and ensure `http://localhost:3001/api/auth/callback/google` is on the Google OAuth client's redirect URIs.
 
-Bot:
-```powershell
-py bot/telegram_bot.py
-```
-
-Outputs land in `outputs/<TICKER>/` (CLI) or `outputs/<job_id>/` (bot).
+Outputs land in `outputs/<TICKER>/` for direct CLI runs and
+`outputs/_site_runs/<job_id>/<TICKER>/` for site-triggered runs.
 
 ## Deploy
 
@@ -83,7 +78,11 @@ Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, `deploy-obs.ps1`,
 
 **Per-PR obs previews.** [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml) creates `pr-<N>-hedge-in-a-box-obs.fly.dev` for any PR that touches `frontend-obs/**`, `Dockerfile.obs`, or `fly.obs.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets admin access, so don't share it externally. The preview's DB is a Neon branch named `pr-<N>` off `production` in the `hedge_obs` Neon project (forked at PR open, deleted on close). No persistent volume; machines auto-stop when idle; app destroyed on PR close.
 
-**Schema drift on previews.** Neon branches inherit prod's schema at fork time. If a PR adds a SQL migration under [src/ai_hedge/db/migrations/](src/ai_hedge/db/migrations/), it must be applied to the branch manually (e.g. `psql "$BRANCH_URL" -f path/to/migration.sql`) before the preview will work — the workflows do not auto-apply migrations.
+**Schema drift on previews.** Neon branches inherit prod's schema at fork time.
+The site-preview workflow runs `python scripts/migrate.py` against the preview
+branch before deployment. A migration PR must still validate the empty-database
+bootstrap and the upgrade path locally/CI; the workflow does not prove that a
+fresh database can be reconstructed.
 
 ## Workflow (PR-first, no direct pushes to main)
 
@@ -98,7 +97,10 @@ The flow:
 5. For **frontend / `Dockerfile.site` / `fly.site.toml`** PRs, the preview workflow auto-deploys `pr-<N>-hedge-in-a-box-site.fly.dev` and posts a sticky comment with the URL. **Verify the change on the preview** before requesting review.
 6. Merge via squash (keeps `main` history linear). Closing the PR tears down the preview.
 
-**Backend-only PRs** (Python under [src/](src/), [bot/](bot/)) do not get a preview environment. Verify locally — `python run.py --ticker AAPL` for valuation changes, `py bot/telegram_bot.py` against a staging Telegram bot for bot changes. State this in the PR's "Test plan" so the reviewer knows what coverage to expect.
+**Python changes under `src/` trigger the site preview environment.** Verify them
+locally first, then verify the affected preview route/API. Changes only under
+tests, docs, or unlisted scripts may not trigger a preview; state the local
+coverage explicitly in the PR's "Test plan".
 
 **Obs PRs** (changes under [frontend-obs/](frontend-obs/), [Dockerfile.obs](Dockerfile.obs), [fly.obs.toml](fly.obs.toml)) get a per-PR preview at `pr-<N>-hedge-in-a-box-obs.fly.dev` via [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml). **Auth is bypassed on previews** — the URL is admin-equivalent for anyone who has it, so don't paste it into public channels. **Verify the change on the preview** before requesting review. **Merging to `main` deploys directly to `observability.hedge-in-a-box.com` via the `deploy-obs` job in [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml).** Treat it like the public site's deploy — small, focused PRs only.
 
@@ -111,12 +113,13 @@ The flow:
 - Python target is 3.11+ (Docker uses 3.12-slim).
 - PowerShell is the assumed local shell on Windows — helper scripts (`deploy-*.ps1`, `push-git.ps1`) are PowerShell-first with `.cmd` shims.
 - Don't edit `legacy_port.py` prompts/parsers unless intentionally changing model behavior — it mirrors the notebook.
-- Frontend reads artifacts directly from disk under `outputs/` — keep JSON schema in `dashboard.py` in sync with the frontend loaders in `frontend/src/`.
+- Frontend reads persisted reports from Neon first and uses `outputs/` for
+  compatibility/local fallbacks. Keep the JSON contract in `dashboard.py`,
+  `db/transform.py`, persisted report columns, and frontend loaders/types in sync.
 - `outputs/`, `logs/`, `.env` are gitignored. Don't commit generated artifacts.
 - **Frontend theming.** The Next.js app supports light + dark via `html[data-theme]`. Color tokens, contrast rules, and the do/don't list live in [frontend/BRAND_COLORS.md](frontend/BRAND_COLORS.md). Read it before adding any color, chart, or theme-sensitive component. Do not introduce hex/rgb literals in `.tsx`/`.ts` — add a token to [frontend/src/app/globals.css](frontend/src/app/globals.css) first and reference it via `var(--token)` or a Tailwind utility.
 
 ## Don't
 
 - Don't bump Python to 3.13+ without checking `weasyprint` / `python-pptx` wheels.
-- Don't swap `python-telegram-bot` off the `[job-queue]` extra — `telegram_bot.py` fails fast if the JobQueue isn't available.
 - Don't run `pip install` in the Docker image's build context expecting to persist `outputs/` — the Fly container symlinks `/app/outputs` → `/data/outputs` at startup.

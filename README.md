@@ -29,6 +29,9 @@ The codebase has evolved far beyond a notebook port. This README documents the c
 - `frontend-obs/`: internal observability admin app (Next.js)
 - `scripts/`: helper scripts used by site APIs (including filing status/PDF generation)
 - `outputs/`: generated local artifacts (gitignored)
+- `docs/architecture/pipeline.md`: current end-to-end runtime order
+- `docs/architecture/data-lifecycle.md`: DB/R2/volume sources of truth
+- `docs/testing.md`: validation scopes and commands
 
 ## Prerequisites
 
@@ -92,7 +95,6 @@ python run.py --ticker AAPL --no-show-plots
 
 Useful flags:
 
-- `--pdf` / `--no-pdf`
 - `--output-root outputs`
 - `--analysis-workers <n>`
 - `--llm-workers <n>`
@@ -126,15 +128,18 @@ Open `http://127.0.0.1:3001`
 
 A full run writes to `outputs/<TICKER>/` and typically includes:
 
-- `<TICKER>_analysis.txt`
-- `<TICKER>_analysis.pdf` (if enabled)
+- `<TICKER>_analysis.md`
+- `<TICKER>_valuation_input.md`
 - `<TICKER>_prices_valuation.png`
 - `<TICKER>_revenue_valuation.png`
 - `<TICKER>_net_income_valuation.png`
 - `<TICKER>_prices_explain.txt`
-- `<TICKER>_prices_explain.pdf` (when generated)
 - `<TICKER>_dashboard.json`
 - `<TICKER>_technical_analysis.json`
+
+Full-report HTML, Markdown, and PDF downloads are composed from saved report
+sources. PDFs are rendered on explicit request and are not persisted by new full
+runs.
 
 ## Filing Source Links (SEC and MAYA)
 
@@ -160,6 +165,19 @@ python dbcli.py --help
 
 This includes schema init, Fly snapshot fetch, scan/push/pull helpers, and report stats workflows.
 
+For a new or disposable database, use the guarded bootstrap command instead of
+calling schema and migration tools separately:
+
+```powershell
+python scripts/bootstrap_db.py --db-url <temporary-or-new-postgres-url>
+```
+
+Read-only audit of the configured database:
+
+```powershell
+python scripts/db_audit.py --strict
+```
+
 ## Deploy
 
 ### Manual Fly deploy
@@ -180,6 +198,7 @@ Status/logs:
 
 ### GitHub Actions
 
+- `.github/workflows/ci.yml`: Python, fresh-DB bootstrap, frontend, and observability checks
 - `.github/workflows/deploy-fly.yml`: deploys `site` and `obs` on push to `main`/`master`
 - `.github/workflows/preview-site.yml`: per-PR site previews
 - `.github/workflows/preview-obs.yml`: per-PR obs previews

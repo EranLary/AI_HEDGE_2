@@ -12,12 +12,12 @@ Never push directly to main. Always merge through a PR.
 ## Preview
 
 <!--
-For frontend / Dockerfile.site / fly.site.toml changes:
+For frontend / src / requirements.txt / Dockerfile.site / fly.site.toml changes:
 The site-preview workflow will deploy pr-<N>-hedge-in-a-box-site.fly.dev
 and edit a sticky comment with the URL. Paste it here once it's up.
 
-For backend-only changes (src/, bot/):
-Write "n/a — backend only" and describe how you verified locally.
+For changes outside the preview paths, write "n/a" and describe how you
+verified locally.
 -->
 
 URL:

@@ -1,5 +1,11 @@
 # AI_HEDGE_2 Dependency Map: Sources -> Text Agents -> Valuators
 
+> This document is the detailed map of the notebook-derived core. The current
+> end-to-end orchestration also includes TradingAgents, SEC/MAYA synthesis, Web
+> Search, dashboard extraction, sidecars, artifact storage, and DB persistence.
+> See `docs/architecture/pipeline.md` for the authoritative runtime order and
+> `docs/architecture/data-lifecycle.md` for persistence boundaries.
+
 ## Scope
 This document maps runtime dependencies in the current pipeline implementation, focused on:
 - raw data sources

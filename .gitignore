@@ -8,6 +8,9 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.pytest-tmp*/
+.pytest_tmp_*/
+.codex-pytest-*/
 
 # Node / Next.js
 frontend/node_modules/
@@ -19,8 +22,11 @@ outputs/
 logs/
 .tmp/
 fly_snapshot/
+outputs_from_fly/
+_perm_check/
 pulled/
 .yfinance_cache/
+.wrangler/
 *.log
 analysis.txt
 *.pdf

@@ -260,6 +260,22 @@ export type WebSearchSource = {
   content_excerpt?: string;
 };
 
+export type ShareCountResolution = {
+  status?: "verified" | "fallback" | "unavailable" | string;
+  selected_shares_outstanding?: number | null;
+  original_yahoo_shares?: number | null;
+  changed_from_yahoo?: boolean | null;
+  source_type?: "official_filing" | "provider_fallback" | "unavailable" | string;
+  basis?: string;
+  as_of_date?: string | null;
+  evidence_excerpt?: string;
+  calculation?: string;
+  confidence?: "High" | "Medium" | "Low" | string;
+  fallback_used?: boolean;
+  validation_note?: string;
+  provider_candidates?: Record<string, number>;
+};
+
 export type DashboardPayload = {
   dashboard_version?: string;
   workspace?: "analysis" | "nasdaq100";
@@ -275,6 +291,7 @@ export type DashboardPayload = {
     current_price?: number | null;
     market_cap?: number | null;
     shares_outstanding?: number | null;
+    share_count_resolution?: ShareCountResolution | null;
     currency?: string;
     display_currency?: "USD" | "ILS" | string;
     is_israeli?: boolean;

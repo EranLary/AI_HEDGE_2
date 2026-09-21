@@ -61,6 +61,8 @@ All values defined in [`globals.css`](src/app/globals.css). WCAG AA targets: **4
 | `--accent-hover` | `#34d399` | `#047857` | CTA hover |
 | `--success` | `#10b981` | `#047857` | Positive status |
 | `--warning` | `#f59e0b` | `#b45309` | Cautions, current-price reference |
+| `--warning-soft` | amber 10% | amber 8% | Subtle changed-value background |
+| `--warning-border` | amber 38% | amber 30% | Changed-value outline |
 | `--info` | `#60a5fa` | `#1d4ed8` | Informational |
 | `--danger` | `#ef4444` | `#b91c1c` | Errors, destructive actions |
 

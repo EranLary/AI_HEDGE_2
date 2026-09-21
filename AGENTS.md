@@ -7,8 +7,21 @@ Guidance for AI coding agents (Codex, etc.) working in this repo.
 This file mirrors the most important cross-cutting rules so Codex doesn't have to chase indirections.
 
 For the current runtime order and persistence boundaries, also read
+[docs/architecture/system-map.md](docs/architecture/system-map.md),
 [docs/architecture/pipeline.md](docs/architecture/pipeline.md) and
 [docs/architecture/data-lifecycle.md](docs/architecture/data-lifecycle.md).
+
+## Current system boundaries
+
+- `src/ai_hedge/` is the shared analysis core used by the CLI, site-triggered
+  runs, and the release-scoped Nasdaq worker.
+- `frontend/` is both the customer-facing site and the server-side control plane
+  for reports, portfolios, Nasdaq orchestration, and Paper trading.
+- `frontend-obs/` is a separate internal app backed by the observability database.
+- `trading_executor/` is the local Windows IBKR Paper agent and the only component
+  allowed to contact IB Gateway; broker credentials must never move to the site.
+- There is no active Telegram bot runtime. Telegram is used only for trading
+  alerts sent by the site.
 
 ## Task mode and existing work
 
@@ -74,8 +87,9 @@ If you find yourself on `main` with uncommitted changes, **stop and switch to a 
 - Paper portfolio snapshots and holdings are immutable. Never update or delete
   Paper history as part of a repair; insert only missing snapshots.
 - Change schema only through a new numbered migration. Never edit an applied
-  migration. Run `python scripts/migrate.py --dry-run` before proposing a DB
-  change, and never run `dbcli.py init --reset` without explicit user approval.
+  migration. Run `python scripts/db/migrate.py --dry-run` before proposing a DB
+  change, and never run `python scripts/db/cli.py init --reset` without explicit
+  user approval.
 
 ## Cross-layer contracts
 
@@ -87,7 +101,8 @@ If you find yourself on `main` with uncommitted changes, **stop and switch to a 
 - Keep task scratch under `.tmp/<task>/`. Do not create new root-level
   `.codex-pytest-*`, `.pytest-tmp*`, snapshot, or ad-hoc output directories.
 - Use [scripts/verify.cmd](scripts/verify.cmd) for the documented validation
-  scopes; the underlying commands are listed in [docs/testing.md](docs/testing.md).
+  scopes; the underlying commands are listed in
+  [docs/development/testing.md](docs/development/testing.md).
 
 ## Frontend theming
 
@@ -114,8 +129,10 @@ These come from [CLAUDE.md](CLAUDE.md) and apply equally here:
 ## Where to look
 
 - Architecture, env, deployment: [CLAUDE.md](CLAUDE.md).
+- System topology: [docs/architecture/system-map.md](docs/architecture/system-map.md).
 - Runtime order: [docs/architecture/pipeline.md](docs/architecture/pipeline.md).
 - Persistence and source-of-truth rules: [docs/architecture/data-lifecycle.md](docs/architecture/data-lifecycle.md).
-- Validation commands: [docs/testing.md](docs/testing.md).
+- Documentation index: [docs/README.md](docs/README.md).
+- Validation commands: [docs/development/testing.md](docs/development/testing.md).
 - Frontend colors / theming: [frontend/BRAND_COLORS.md](frontend/BRAND_COLORS.md).
-- Backend dependency map: [docs/dependency-map.md](docs/dependency-map.md).
+- Backend dependency map: [docs/architecture/dependency-map.md](docs/architecture/dependency-map.md).

@@ -70,15 +70,23 @@ restart/cancellation tests cover the new single-store behavior.
 - `src/ai_hedge/db/schema.sql` is the idempotent core-schema snapshot used to
   initialize a new database.
 - `src/ai_hedge/db/migrations/` is the append-only history for existing databases.
-- `scripts/bootstrap_db.py` applies the snapshot only when the core schema is
+- `scripts/db/bootstrap.py` applies the snapshot only when the core schema is
   completely absent, then applies every pending migration.
-- `scripts/migrate.py` applies pending migrations only and is the production Fly
+- `scripts/db/migrate.py` applies pending migrations only and is the production Fly
   release command.
-- `scripts/db_audit.py` is read-only. It reports pending migrations, unknown
+- `scripts/db/audit.py` is read-only. It reports pending migrations, unknown
   tables, report/artifact integrity, and relation sizes.
 
 Never edit a migration already recorded in `schema_migrations`. Add a new numbered
 migration and verify both upgrade and empty-database bootstrap paths.
+
+### Retired schema
+
+Migration `016_archive_reverted_discovery_tables.sql` moves three tables from a
+reverted Discovery performance feature out of `public` and into the `archive`
+schema. The migration preserves every row and fails rather than overwrite an
+existing archive relation. Current application code does not read or write these
+tables; archived relations are retained only for recovery or historical review.
 
 ## Planned simplification boundary
 

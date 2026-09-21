@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from scripts.bootstrap_db import CORE_TABLES, classify_core_state
-from scripts.db_audit import audit_failures, expected_tables_from_repo
+from scripts.db.bootstrap import CORE_TABLES, classify_core_state
+from scripts.db.audit import audit_failures, expected_tables_from_repo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,26 @@ def test_expected_tables_include_each_persistence_domain() -> None:
         "obs_runs",
     }.issubset(expected)
     assert "discovery_strategy_nav" not in expected
+
+
+def test_reverted_discovery_tables_are_archived_without_drop() -> None:
+    migration = (
+        ROOT
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "016_archive_reverted_discovery_tables.sql"
+    ).read_text(encoding="utf-8")
+
+    for table in (
+        "discovery_strategy_nav",
+        "discovery_strategy_holdings",
+        "discovery_benchmark_nav",
+    ):
+        assert table in migration
+    assert "SET SCHEMA archive" in migration
+    assert "DROP TABLE" not in migration.upper()
 
 
 def test_classify_core_state_refuses_partial_schema() -> None:

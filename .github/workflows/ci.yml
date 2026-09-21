@@ -58,12 +58,50 @@ jobs:
           cache: pip
       - name: Install DB tooling
         run: python -m pip install "psycopg[binary]>=3.2" "python-dotenv>=1.0.1"
+      - name: Seed reverted Discovery tables
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          names = (
+              "discovery_strategy_nav",
+              "discovery_strategy_holdings",
+              "discovery_benchmark_nav",
+          )
+          with psycopg.connect(os.environ["DATABASE_URL_UNPOOLED"]) as conn:
+              with conn.cursor() as cur:
+                  for name in names:
+                      cur.execute(f"CREATE TABLE {name} (id integer PRIMARY KEY)")
+                      cur.execute(f"INSERT INTO {name} (id) VALUES (1)")
+          PY
       - name: Bootstrap empty database
-        run: python scripts/bootstrap_db.py
+        run: python scripts/db/bootstrap.py
+      - name: Verify reverted Discovery data was archived
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          names = (
+              "discovery_strategy_nav",
+              "discovery_strategy_holdings",
+              "discovery_benchmark_nav",
+          )
+          with psycopg.connect(os.environ["DATABASE_URL_UNPOOLED"]) as conn:
+              with conn.cursor() as cur:
+                  for name in names:
+                      cur.execute("SELECT to_regclass(%s), to_regclass(%s)", (f"public.{name}", f"archive.{name}"))
+                      public_relation, archived_relation = cur.fetchone()
+                      assert public_relation is None
+                      assert archived_relation is not None
+                      cur.execute(f"SELECT count(*) FROM archive.{name}")
+                      assert cur.fetchone()[0] == 1
+          PY
       - name: Verify migration convergence
-        run: python scripts/migrate.py --dry-run
+        run: python scripts/db/migrate.py --dry-run
       - name: Audit reconstructed schema
-        run: python scripts/db_audit.py --strict --fail-on-unexpected
+        run: python scripts/db/audit.py --strict --fail-on-unexpected
 
   frontend:
     runs-on: ubuntu-latest

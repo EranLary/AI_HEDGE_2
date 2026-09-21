@@ -15,9 +15,9 @@ For each `<jobId>/` dir under --root:
     legacy persistence-failure error string if present.
 
 Run:
-    python scripts/backfill_orphaned_site_runs.py
-    python scripts/backfill_orphaned_site_runs.py --root /data/outputs/_site_runs
-    python scripts/backfill_orphaned_site_runs.py --dry-run
+    python scripts/db/backfill_orphaned_site_runs.py
+    python scripts/db/backfill_orphaned_site_runs.py --root /data/outputs/_site_runs
+    python scripts/db/backfill_orphaned_site_runs.py --dry-run
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 try:

@@ -205,7 +205,8 @@ def draw_dependency_map(output_path: Path) -> Path:
 
 
 def main() -> None:
-    out = Path(__file__).resolve().parent / "dependency-map-matplotlib.png"
+    root = Path(__file__).resolve().parents[2]
+    out = root / "docs" / "architecture" / "diagrams" / "dependency-map.png"
     saved = draw_dependency_map(out)
     print(f"Saved: {saved}")
 

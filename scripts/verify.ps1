@@ -82,8 +82,8 @@ function Test-Obs {
 }
 
 function Test-Database {
-    Invoke-Checked "Pending migration check" { python scripts/migrate.py --dry-run }
-    Invoke-Checked "Read-only database audit" { python scripts/db_audit.py --strict }
+    Invoke-Checked "Pending migration check" { python scripts/db/migrate.py --dry-run }
+    Invoke-Checked "Read-only database audit" { python scripts/db/audit.py --strict }
 }
 
 Push-Location $repoRoot

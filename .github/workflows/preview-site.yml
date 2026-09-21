@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install flyctl
         run: |
@@ -164,7 +164,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "psycopg[binary]>=3.2" "python-dotenv>=1.0.1"
-          python scripts/migrate.py --db-url "$DATABASE_URL_UNPOOLED"
+          python scripts/db/migrate.py --db-url "$DATABASE_URL_UNPOOLED"
 
       - name: Stage preview secrets
         env:

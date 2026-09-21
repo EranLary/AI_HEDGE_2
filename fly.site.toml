@@ -8,8 +8,8 @@ kill_timeout = "1m0s"
 
 [deploy]
   # Apply any pending SQL migrations before traffic is shifted to the new image.
-  # Runs in a one-off ephemeral machine; idempotent — see scripts/migrate.py.
-  release_command = "python3 /app/scripts/migrate.py"
+  # Runs in a one-off ephemeral machine; idempotent — see scripts/db/migrate.py.
+  release_command = "python3 /app/scripts/db/migrate.py"
 
 [env]
   NEXT_TELEMETRY_DISABLED = "1"

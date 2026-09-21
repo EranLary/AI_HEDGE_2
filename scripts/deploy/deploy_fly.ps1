@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $fly = "$env:USERPROFILE\.fly\bin\flyctl.exe"
-$root = $PSScriptRoot
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 $siteApp = "hedge-in-a-box-site"
 $siteConfig = Join-Path $root "fly.site.toml"
@@ -55,7 +55,7 @@ function Invoke-Deploy([string]$app, [string]$configPath) {
 function Show-Help {
   Write-Host ""
   Write-Host "Fly Deploy Helper"
-  Write-Host "Usage: .\deploy_fly.ps1 <action> [options]"
+  Write-Host "Usage: .\scripts\deploy\deploy_fly.ps1 <action> [options]"
   Write-Host ""
   Write-Host "Actions:"
   Write-Host "  site         Deploy website app (hedge-in-a-box-site)"
@@ -70,9 +70,9 @@ function Show-Help {
   Write-Host "  -NoRemote    Omit --remote-only"
   Write-Host ""
   Write-Host "Examples:"
-  Write-Host "  .\deploy_fly.ps1 site"
-  Write-Host "  .\deploy_fly.ps1 obs"
-  Write-Host "  .\deploy_fly.ps1 logs-obs"
+  Write-Host "  .\scripts\deploy\deploy_fly.ps1 site"
+  Write-Host "  .\scripts\deploy\deploy_fly.ps1 obs"
+  Write-Host "  .\scripts\deploy\deploy_fly.ps1 logs-obs"
   Write-Host ""
 }
 

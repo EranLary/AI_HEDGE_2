@@ -64,7 +64,12 @@ Outputs land in `outputs/<TICKER>/` for direct CLI runs and
 
 ## Deploy
 
-Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, `deploy-obs.ps1`, or unified `deploy_fly.ps1 {site|bot|obs|status-*|logs-*}`. GitHub Actions at [.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml) auto-deploys site and obs on push to `main`/`master` (needs `FLY_API_TOKEN` secret). The obs job no-ops gracefully until `flyctl apps create hedge-in-a-box-obs` has been run once.
+Fly helpers live under `scripts/deploy/`: use
+`scripts/deploy/deploy_fly.ps1 {site|obs|status-*|logs-*}`, or the focused site
+and obs wrappers. GitHub Actions at
+[.github/workflows/deploy-fly.yml](.github/workflows/deploy-fly.yml) auto-deploys
+site, observability, and the Nasdaq worker on pushes to `main`/`master` (needs
+`FLY_API_TOKEN` and the service-specific secrets).
 
 **Observability app first-time setup** (one-shot, manual):
 1. `flyctl apps create hedge-in-a-box-obs --org <org>`
@@ -79,7 +84,7 @@ Fly scripts at repo root: `deploy-site.ps1`, `deploy-bot.ps1`, `deploy-obs.ps1`,
 **Per-PR obs previews.** [.github/workflows/preview-obs.yml](.github/workflows/preview-obs.yml) creates `pr-<N>-hedge-in-a-box-obs.fly.dev` for any PR that touches `frontend-obs/**`, `Dockerfile.obs`, or `fly.obs.toml`. Auth is **bypassed** on these previews (`AUTH_BYPASS_PREVIEW=1`) because Google OAuth doesn't permit wildcard redirect URIs for per-PR hostnames — anyone with the URL gets admin access, so don't share it externally. The preview's DB is a Neon branch named `pr-<N>` off `production` in the `hedge_obs` Neon project (forked at PR open, deleted on close). No persistent volume; machines auto-stop when idle; app destroyed on PR close.
 
 **Schema drift on previews.** Neon branches inherit prod's schema at fork time.
-The site-preview workflow runs `python scripts/migrate.py` against the preview
+The site-preview workflow runs `python scripts/db/migrate.py` against the preview
 branch before deployment. A migration PR must still validate the empty-database
 bootstrap and the upgrade path locally/CI; the workflow does not prove that a
 fresh database can be reconstructed.
@@ -111,7 +116,9 @@ coverage explicitly in the PR's "Test plan".
 ## Conventions
 
 - Python target is 3.11+ (Docker uses 3.12-slim).
-- PowerShell is the assumed local shell on Windows — helper scripts (`deploy-*.ps1`, `push-git.ps1`) are PowerShell-first with `.cmd` shims.
+- PowerShell is the assumed local shell on Windows. Operator helpers live under
+  `scripts/deploy/`, development helpers under `scripts/dev/`, and validation
+  starts at `scripts/verify.cmd`.
 - Don't edit `legacy_port.py` prompts/parsers unless intentionally changing model behavior — it mirrors the notebook.
 - Frontend reads persisted reports from Neon first and uses `outputs/` for
   compatibility/local fallbacks. Keep the JSON contract in `dashboard.py`,

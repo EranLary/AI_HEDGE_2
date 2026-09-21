@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 try:
@@ -76,7 +76,7 @@ def main() -> int:
         if state == "partial":
             print(
                 "[bootstrap-db] refusing partially initialized core schema; "
-                "inspect it with scripts/db_audit.py before making changes.",
+                "inspect it with scripts/db/audit.py before making changes.",
                 file=sys.stderr,
             )
             return 1

@@ -74,8 +74,9 @@ If you find yourself on `main` with uncommitted changes, **stop and switch to a 
 - Paper portfolio snapshots and holdings are immutable. Never update or delete
   Paper history as part of a repair; insert only missing snapshots.
 - Change schema only through a new numbered migration. Never edit an applied
-  migration. Run `python scripts/migrate.py --dry-run` before proposing a DB
-  change, and never run `dbcli.py init --reset` without explicit user approval.
+  migration. Run `python scripts/db/migrate.py --dry-run` before proposing a DB
+  change, and never run `python scripts/db/cli.py init --reset` without explicit
+  user approval.
 
 ## Cross-layer contracts
 
@@ -87,7 +88,8 @@ If you find yourself on `main` with uncommitted changes, **stop and switch to a 
 - Keep task scratch under `.tmp/<task>/`. Do not create new root-level
   `.codex-pytest-*`, `.pytest-tmp*`, snapshot, or ad-hoc output directories.
 - Use [scripts/verify.cmd](scripts/verify.cmd) for the documented validation
-  scopes; the underlying commands are listed in [docs/testing.md](docs/testing.md).
+  scopes; the underlying commands are listed in
+  [docs/development/testing.md](docs/development/testing.md).
 
 ## Frontend theming
 
@@ -116,6 +118,7 @@ These come from [CLAUDE.md](CLAUDE.md) and apply equally here:
 - Architecture, env, deployment: [CLAUDE.md](CLAUDE.md).
 - Runtime order: [docs/architecture/pipeline.md](docs/architecture/pipeline.md).
 - Persistence and source-of-truth rules: [docs/architecture/data-lifecycle.md](docs/architecture/data-lifecycle.md).
-- Validation commands: [docs/testing.md](docs/testing.md).
+- Documentation index: [docs/README.md](docs/README.md).
+- Validation commands: [docs/development/testing.md](docs/development/testing.md).
 - Frontend colors / theming: [frontend/BRAND_COLORS.md](frontend/BRAND_COLORS.md).
-- Backend dependency map: [docs/dependency-map.md](docs/dependency-map.md).
+- Backend dependency map: [docs/architecture/dependency-map.md](docs/architecture/dependency-map.md).

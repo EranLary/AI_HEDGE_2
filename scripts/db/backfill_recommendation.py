@@ -7,8 +7,8 @@ Fallback: normalize legacy LONG/SHORT/HOLD values stored in the column.
 Rows whose source value can't be mapped are left untouched and reported.
 
 Run:
-    python scripts/backfill_recommendation.py            # apply
-    python scripts/backfill_recommendation.py --dry-run  # preview only
+    python scripts/db/backfill_recommendation.py            # apply
+    python scripts/db/backfill_recommendation.py --dry-run  # preview only
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from dotenv import load_dotenv

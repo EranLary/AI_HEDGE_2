@@ -6,6 +6,8 @@
 > See `docs/architecture/pipeline.md` for the authoritative runtime order and
 > `docs/architecture/data-lifecycle.md` for persistence boundaries.
 
+Generated visual: [dependency map](diagrams/dependency-map.png).
+
 ## Scope
 This document maps runtime dependencies in the current pipeline implementation, focused on:
 - raw data sources

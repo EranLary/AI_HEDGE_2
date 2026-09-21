@@ -34,7 +34,7 @@ Local dev bypasses auth on `localhost`/`127.0.0.1` (gated by env `AUTH_BYPASS_LO
 ## Deploy
 
 ```powershell
-.\deploy_fly.ps1 obs
+.\scripts\deploy\deploy_fly.ps1 obs
 ```
 
 GitHub Actions auto-deploys on push to `main`/`master` once the Fly app exists. CI's `deploy-obs` job in [.github/workflows/deploy-fly.yml](../.github/workflows/deploy-fly.yml) skips gracefully if the app hasn't been created yet.

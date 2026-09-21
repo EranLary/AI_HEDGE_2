@@ -27,11 +27,12 @@ The codebase has evolved far beyond a notebook port. This README documents the c
 - `src/ai_hedge/obs/`: observability instrumentation and DB writes
 - `frontend/`: public dashboard site (Next.js)
 - `frontend-obs/`: internal observability admin app (Next.js)
-- `scripts/`: helper scripts used by site APIs (including filing status/PDF generation)
+- `scripts/`: runtime entrypoints plus grouped DB, deploy, development, and docs tooling
 - `outputs/`: generated local artifacts (gitignored)
 - `docs/architecture/pipeline.md`: current end-to-end runtime order
 - `docs/architecture/data-lifecycle.md`: DB/R2/volume sources of truth
-- `docs/testing.md`: validation scopes and commands
+- `docs/README.md`: documentation index
+- `docs/development/testing.md`: validation scopes and commands
 
 ## Prerequisites
 
@@ -160,7 +161,7 @@ Behavior:
 Use:
 
 ```powershell
-python dbcli.py --help
+python scripts/db/cli.py --help
 ```
 
 This includes schema init, Fly snapshot fetch, scan/push/pull helpers, and report stats workflows.
@@ -169,13 +170,13 @@ For a new or disposable database, use the guarded bootstrap command instead of
 calling schema and migration tools separately:
 
 ```powershell
-python scripts/bootstrap_db.py --db-url <temporary-or-new-postgres-url>
+python scripts/db/bootstrap.py --db-url <temporary-or-new-postgres-url>
 ```
 
 Read-only audit of the configured database:
 
 ```powershell
-python scripts/db_audit.py --strict
+python scripts/db/audit.py --strict
 ```
 
 ## Deploy
@@ -183,17 +184,17 @@ python scripts/db_audit.py --strict
 ### Manual Fly deploy
 
 ```powershell
-.\deploy_fly.ps1 site
-.\deploy_fly.ps1 obs
+.\scripts\deploy\deploy_fly.ps1 site
+.\scripts\deploy\deploy_fly.ps1 obs
 ```
 
 Status/logs:
 
 ```powershell
-.\deploy_fly.ps1 status-site
-.\deploy_fly.ps1 logs-site
-.\deploy_fly.ps1 status-obs
-.\deploy_fly.ps1 logs-obs
+.\scripts\deploy\deploy_fly.ps1 status-site
+.\scripts\deploy\deploy_fly.ps1 logs-site
+.\scripts\deploy\deploy_fly.ps1 status-obs
+.\scripts\deploy\deploy_fly.ps1 logs-obs
 ```
 
 ### GitHub Actions

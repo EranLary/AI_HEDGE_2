@@ -168,7 +168,8 @@ def draw_valuation_main_map(output_path: Path) -> Path:
 
 
 def main() -> None:
-    out = Path(__file__).resolve().parent / "valuation-main-map-matplotlib.png"
+    root = Path(__file__).resolve().parents[2]
+    out = root / "docs" / "architecture" / "diagrams" / "valuation-main-map.png"
     saved = draw_valuation_main_map(out)
     print(f"Saved: {saved}")
 

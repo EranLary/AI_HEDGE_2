@@ -64,8 +64,8 @@ lint backlog is being retired.
 ### Database
 
 ```powershell
-python scripts/migrate.py --dry-run
-python scripts/db_audit.py --strict
+python scripts/db/migrate.py --dry-run
+python scripts/db/audit.py --strict
 ```
 
 Unexpected live tables are reported but do not fail the normal audit, because
@@ -76,9 +76,9 @@ bootstrap.
 For a new migration, also validate an empty database with:
 
 ```powershell
-python scripts/bootstrap_db.py --db-url <temporary-postgres-url>
-python scripts/migrate.py --db-url <temporary-postgres-url> --dry-run
-python scripts/db_audit.py --db-url <temporary-postgres-url> --strict
+python scripts/db/bootstrap.py --db-url <temporary-postgres-url>
+python scripts/db/migrate.py --db-url <temporary-postgres-url> --dry-run
+python scripts/db/audit.py --db-url <temporary-postgres-url> --strict
 ```
 
 Never use production for bootstrap testing.

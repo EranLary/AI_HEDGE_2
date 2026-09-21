@@ -2,8 +2,8 @@
 Apply any pending SQL migrations under src/ai_hedge/db/migrations/.
 
 Run:
-    python scripts/migrate.py            # apply pending
-    python scripts/migrate.py --dry-run  # show what would run, no changes
+    python scripts/db/migrate.py            # apply pending
+    python scripts/db/migrate.py --dry-run  # show what would run, no changes
 
 Wired into prod via fly.site.toml's [deploy] release_command, so every
 site deploy reconciles the schema before traffic is shifted to the new
@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 try:

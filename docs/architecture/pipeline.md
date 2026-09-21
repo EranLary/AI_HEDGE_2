@@ -1,7 +1,7 @@
 # Current analysis pipeline
 
 This is the high-level runtime order for a full ticker analysis. The detailed
-legacy-agent dependency map remains in `docs/dependency-map.md`; this document is
+legacy-agent dependency map remains in `docs/architecture/dependency-map.md`; this document is
 the current orchestration contract.
 
 ## Entrypoints
@@ -77,7 +77,7 @@ legacy core analysis -----> TradingAgents (parallel)
 ## Related documents
 
 - Persistence: `docs/architecture/data-lifecycle.md`
-- Detailed legacy dependencies: `docs/dependency-map.md`
-- Nasdaq operations: `docs/nasdaq100-workspace.md`
-- Report rendering: `docs/html-first-reports.md`
-- Validation: `docs/testing.md`
+- Detailed legacy dependencies: `docs/architecture/dependency-map.md`
+- Nasdaq operations: `docs/operations/nasdaq100-workspace.md`
+- Report rendering: `docs/architecture/html-first-reports.md`
+- Validation: `docs/development/testing.md`

@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HedgeDashboard } from "@/components/hedge-dashboard";
 import { TargetPriceChart } from "@/components/target-price-chart";
+import { ValuationShareCount } from "@/components/valuation-share-count";
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { useWorkspace } from "@/components/shell/workspace-context";
 
@@ -89,7 +90,18 @@ export default function DashboardValuationPage({
         hideMainTabBar
         hideScoreFooter
         onReportChange={handleReportChange}
-        postHeaderSlot={<TargetPriceChart data={payload} />}
+        postHeaderSlot={(
+          <>
+            {payload ? (
+              <div className="mb-3 flex justify-end">
+                <div className="w-full sm:w-[22rem]">
+                  <ValuationShareCount data={payload} />
+                </div>
+              </div>
+            ) : null}
+            <TargetPriceChart data={payload} />
+          </>
+        )}
       />
     </div>
   );

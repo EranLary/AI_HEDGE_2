@@ -242,6 +242,50 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _share_count_resolution_summary(variables_dict: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    raw = variables_dict.get("share_count_resolution")
+    if not isinstance(raw, dict):
+        return None
+
+    raw_candidates = raw.get("provider_candidates")
+    candidates: Dict[str, float] = {}
+    if isinstance(raw_candidates, dict):
+        for key in (
+            "current_valuation_denominator",
+            "provider_implied_shares",
+            "market_cap_div_current_price",
+        ):
+            value = _safe_float(raw_candidates.get(key))
+            if value is not None and value > 0:
+                candidates[key] = value
+
+    selected = _safe_float(raw.get("selected_shares_outstanding"))
+    if selected is None:
+        selected = _safe_float(variables_dict.get("shares_outstanding"))
+    original = candidates.get("current_valuation_denominator")
+    changed_from_provider = (
+        not math.isclose(selected, original, rel_tol=0.0, abs_tol=0.5)
+        if selected is not None and original is not None
+        else None
+    )
+
+    return {
+        "status": str(raw.get("status", "") or "").strip() or "unavailable",
+        "selected_shares_outstanding": selected,
+        "original_yahoo_shares": original,
+        "changed_from_yahoo": changed_from_provider,
+        "source_type": str(raw.get("source_type", "") or "").strip() or "unavailable",
+        "basis": str(raw.get("basis", "") or "").strip(),
+        "as_of_date": str(raw.get("as_of_date", "") or "").strip() or None,
+        "evidence_excerpt": str(raw.get("evidence_excerpt", "") or "").strip(),
+        "calculation": str(raw.get("calculation", "") or "").strip(),
+        "confidence": str(raw.get("confidence", "") or "").strip() or "Low",
+        "fallback_used": bool(raw.get("fallback_used")),
+        "validation_note": str(raw.get("validation_note", "") or "").strip(),
+        "provider_candidates": candidates,
+    }
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, float):
         return value if math.isfinite(value) else None
@@ -2215,6 +2259,7 @@ def build_dashboard_payload(
             "current_price": current_price,
             "market_cap": _safe_float(variables_dict.get("market_cap")),
             "shares_outstanding": _safe_float(variables_dict.get("shares_outstanding")),
+            "share_count_resolution": _share_count_resolution_summary(variables_dict),
             "currency": _first_non_empty(info.get("currency"), "USD"),
             "display_currency": currency_context.get("display_currency"),
             "is_israeli": currency_context.get("is_israeli"),

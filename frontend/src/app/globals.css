@@ -36,6 +36,8 @@
   --accent-hover: #34d399;
   --success: #10b981;
   --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.10);
+  --warning-border: rgba(245, 158, 11, 0.38);
   --info: #60a5fa;
   /* --danger reused from legacy */
 
@@ -107,6 +109,8 @@ html[data-theme="light"] {
   --accent-hover: #047857;
   --success: #047857;
   --warning: #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.08);
+  --warning-border: rgba(180, 83, 9, 0.30);
   --info: #1d4ed8;
   --danger: #b91c1c;
 
@@ -173,6 +177,8 @@ html[data-theme="light"] {
   --color-accent-hover: var(--accent-hover);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
   --color-info: var(--info);
   --font-sans: var(--font-space-grotesk);
   --font-mono: var(--font-ibm-plex-mono);

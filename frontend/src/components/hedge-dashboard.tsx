@@ -26,7 +26,6 @@ export type HedgeDashboardProps = {
   hideMainTabBar?: boolean;
   hideScoreFooter?: boolean;
   onReportChange?: (reportId: string) => void;
-  headerMetricSlot?: ReactNode;
   postHeaderSlot?: ReactNode;
 };
 
@@ -1053,7 +1052,6 @@ export function HedgeDashboard({
   hideMainTabBar = false,
   hideScoreFooter = false,
   onReportChange,
-  headerMetricSlot,
   postHeaderSlot,
 }: HedgeDashboardProps = {}) {
   const { workspace, api, href } = useWorkspace();
@@ -1892,7 +1890,7 @@ export function HedgeDashboard({
                   <span className="block sm:inline">Report Date: {reportDateText}</span>
                   <span className="block sm:inline sm:ml-1">Analysis Duration: {analysisDurationText}</span>
                 </p>
-                <div className={`mt-3 grid grid-cols-2 gap-2 text-sm ${headerMetricSlot ? "sm:grid-cols-3" : ""}`}>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-black/35 p-2">
                     <p className="text-zinc-500">
                       <span>Price</span>
@@ -1907,7 +1905,6 @@ export function HedgeDashboard({
                     </p>
                     <p>{fmtMarketCap(data.header.market_cap, currencyContext)}</p>
                   </div>
-                  {headerMetricSlot ? <div className="col-span-2 sm:col-span-1">{headerMetricSlot}</div> : null}
                 </div>
               </article>
             </section>

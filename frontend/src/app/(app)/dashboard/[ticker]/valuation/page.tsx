@@ -90,8 +90,18 @@ export default function DashboardValuationPage({
         hideMainTabBar
         hideScoreFooter
         onReportChange={handleReportChange}
-        headerMetricSlot={payload ? <ValuationShareCount data={payload} /> : null}
-        postHeaderSlot={<TargetPriceChart data={payload} />}
+        postHeaderSlot={(
+          <>
+            {payload ? (
+              <div className="mb-3 flex justify-end">
+                <div className="w-full sm:w-[22rem]">
+                  <ValuationShareCount data={payload} />
+                </div>
+              </div>
+            ) : null}
+            <TargetPriceChart data={payload} />
+          </>
+        )}
       />
     </div>
   );

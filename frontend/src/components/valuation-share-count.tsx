@@ -97,7 +97,7 @@ export function ValuationShareCount({ data }: { data: DashboardPayload | null })
         aria-expanded={open}
         aria-controls={detailsId}
         onClick={() => setOpen((value) => !value)}
-        className={`flex h-full min-h-16 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition ${
+        className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition ${
           changed
             ? "border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] hover:border-[color:var(--warning)]"
             : "border-[color:var(--border-subtle)] bg-[color:var(--surface)] hover:border-[color:var(--border-strong)]"

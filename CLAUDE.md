@@ -33,8 +33,8 @@ Current topology, runtime order, and persistence ownership are documented in
 - [frontend/](frontend/) — Next.js 16 + React 19 + Tailwind 4 app (public site).
 - [frontend-obs/](frontend-obs/) — Next.js 16 observability admin app. Independent NextAuth (Google), DB-backed admin allowlist via `obs_admins`. No persistent volume — reads from Neon only.
 - [trading_executor/](trading_executor/) — local Windows IBKR Paper executor with DPAPI-protected configuration and a durable SQLite outbox.
-- [outputs/](outputs/) — run artifacts per ticker (gitignored).
-- [logs/](logs/) — local/runtime logs (gitignored).
+- `outputs/` — generated run artifacts per ticker (gitignored; created on demand).
+- `logs/` — local/runtime logs (gitignored; created on demand).
 - [Dockerfile.site](Dockerfile.site) / [Dockerfile.obs](Dockerfile.obs) / [Dockerfile.nasdaq-worker](Dockerfile.nasdaq-worker) — Fly images for the three deployed apps. Not needed for local dev.
 
 ## Required env

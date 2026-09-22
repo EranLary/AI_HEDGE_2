@@ -104,7 +104,11 @@ export async function loadPortfolioRefreshRunSummary(args: {
            latest.finished_at::text AS latest_finished_at,
            CASE
              WHEN jsonb_typeof(latest.provider_warnings) = 'array'
-             THEN jsonb_array_length(latest.provider_warnings)
+             THEN (
+               SELECT count(*)
+                 FROM jsonb_array_elements(latest.provider_warnings) AS warning
+                WHERE warning->>'blocking' IS DISTINCT FROM 'false'
+             )
              ELSE 0
            END AS provider_warning_count,
            aggregates.last_successful_at::text AS last_successful_at,

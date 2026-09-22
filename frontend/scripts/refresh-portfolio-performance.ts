@@ -6,6 +6,7 @@ import {
   allDiscoveryLenses,
   prepareDiscoveryUniverse,
   scoreDiscoveryCandidates,
+  selectPositiveTopN,
   type DiscoveryLensSelection,
   type DiscoverySourceReport,
 } from "../src/lib/discovery-engine";
@@ -41,6 +42,7 @@ import {
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
 import {
+  classifyPortfolioProviderWarnings,
   planPaperCutoffs,
   runPortfolioRefreshTasksIndependently,
 } from "../src/lib/portfolio-refresh-policy";
@@ -386,6 +388,11 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       ...Array.from(currencyByTicker.entries()).map(([symbol, currency]) => ({ symbol, currency })),
       { symbol: PORTFOLIO_RISK_FREE_SYMBOL, currency: "USD" },
     ];
+    const requiredPriceSymbols = new Set<string>([
+      workspaceConfig.benchmarkSymbol,
+      PORTFOLIO_RISK_FREE_SYMBOL,
+      ...existing.flatMap((snapshot) => snapshot.holdings.map((holding) => holding.ticker)),
+    ]);
     const priceStart = addDays(earliestCutoff, -10);
     const priceBundle = await runPriceProvider({
       start: priceStart,
@@ -452,6 +459,9 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       for (const lens of knownLenses.values()) {
         if (String(lensFirstCutoff.get(lensMapKey(lens)) || cutoffDate) > cutoffDate) continue;
         const candidates = scoreDiscoveryCandidates(universe, lens);
+        for (const candidate of selectPositiveTopN(candidates)) {
+          requiredPriceSymbols.add(candidate.row.ticker);
+        }
         const executionDate = firstExecutionDateForCandidates({
           candidates,
           cutoffDate,
@@ -489,6 +499,9 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     }
 
     existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
+    for (const snapshot of existing) {
+      for (const holding of snapshot.holdings) requiredPriceSymbols.add(holding.ticker);
+    }
     for (const lensSnapshots of groupSnapshotsByLens(existing)) {
       const first = lensSnapshots[0];
       const nav = computePortfolioNavSeries({
@@ -506,10 +519,20 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         points: nav,
       });
     }
-    if (priceBundle.errors?.length) {
-      console.warn(`[portfolio] provider warnings: ${JSON.stringify(priceBundle.errors)}`);
+    const providerWarnings = classifyPortfolioProviderWarnings(
+      priceBundle.errors || [],
+      [
+        ...requiredPriceSymbols,
+        ...(priceBundle.errors || [])
+          .map((warning) => warning.symbol)
+          .filter((symbol) => symbol.toUpperCase().endsWith("=X")),
+      ],
+    );
+    const blockingProviderWarnings = providerWarnings.filter((warning) => warning.blocking);
+    if (providerWarnings.length) {
+      console.warn(`[portfolio] provider warnings: ${JSON.stringify(providerWarnings)}`);
     }
-    const warningReasons = priceBundle.errors?.length ? ["provider_warnings"] : [];
+    const warningReasons = blockingProviderWarnings.length ? ["provider_warnings"] : [];
     const uniqueSnapshotIds = Array.from(new Set(processedSnapshotIds));
     const snapshotsById = new Map(existing.map((snapshot) => [snapshot.id, snapshot]));
     const tradeEligibleSnapshotIds: string[] = [];
@@ -533,8 +556,8 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     const enqueued = await enqueueArmedStrategiesForSnapshots(tradeEligibleSnapshotIds);
     await finishPortfolioRefreshRun({
       runId: refreshRunId,
-      status: priceBundle.errors?.length ? "partial" : "completed",
-      warnings: priceBundle.errors || [],
+      status: blockingProviderWarnings.length ? "partial" : "completed",
+      warnings: providerWarnings,
     });
     refreshRunId = null;
     if (enqueued) console.log(`[portfolio] enqueued ${enqueued} IBKR Paper rebalance plan(s).`);

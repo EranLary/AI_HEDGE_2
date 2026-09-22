@@ -43,6 +43,28 @@ export type PortfolioRefreshHealth = PortfolioRefreshRunSummary & {
   expectedAfter: string;
 };
 
+export type PortfolioProviderWarning = {
+  symbol: string;
+  error: string;
+};
+
+export type ClassifiedPortfolioProviderWarning = PortfolioProviderWarning & {
+  blocking: boolean;
+};
+
+export function classifyPortfolioProviderWarnings(
+  warnings: readonly PortfolioProviderWarning[],
+  requiredSymbols: Iterable<string>,
+): ClassifiedPortfolioProviderWarning[] {
+  const required = new Set(
+    Array.from(requiredSymbols, (symbol) => String(symbol || "").trim().toUpperCase()).filter(Boolean),
+  );
+  return warnings.map((warning) => ({
+    ...warning,
+    blocking: required.has(String(warning.symbol || "").trim().toUpperCase()),
+  }));
+}
+
 // Mirrors `.github/workflows/portfolio-performance.yml`: 01:30 UTC, Tuesday-Saturday.
 const REFRESH_HOUR_UTC = 1;
 const REFRESH_MINUTE_UTC = 30;

@@ -2,12 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  classifyPortfolioProviderWarnings,
   latestExpectedPortfolioRefreshAt,
   planPaperCutoffs,
   portfolioRefreshHealth,
   runPortfolioRefreshTasksIndependently,
   type PortfolioRefreshRunSummary,
 } from "./portfolio-refresh-policy";
+
+test("provider warnings block only when the missing symbol is required by the portfolio", () => {
+  assert.deepEqual(classifyPortfolioProviderWarnings([
+    { symbol: "MLTM.TA", error: "no_data" },
+    { symbol: "AAPL", error: "timeout" },
+    { symbol: "^SP500TR", error: "no_data" },
+  ], ["aapl", "^SP500TR"]), [
+    { symbol: "MLTM.TA", error: "no_data", blocking: false },
+    { symbol: "AAPL", error: "timeout", blocking: true },
+    { symbol: "^SP500TR", error: "no_data", blocking: true },
+  ]);
+});
 
 test("an explicit Paper cutoff can repair a partially initialized track", () => {
   assert.deepEqual(planPaperCutoffs({

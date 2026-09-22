@@ -43,6 +43,7 @@ import {
 } from "../src/lib/portfolio-performance-engine";
 import {
   classifyPortfolioProviderWarnings,
+  isPortfolioSymbolSelectableAtCutoff,
   planPaperCutoffs,
   runPortfolioRefreshTasksIndependently,
 } from "../src/lib/portfolio-refresh-policy";
@@ -69,6 +70,13 @@ type PriceBundle = {
     }>
   >;
   errors?: Array<{ symbol: string; error: string }>;
+  corporate_actions?: Array<{
+    symbol: string;
+    successor_symbol: string;
+    effective_date: string;
+    shares_per_predecessor_share: number;
+    source: string;
+  }>;
 };
 
 type CliArgs = {
@@ -402,6 +410,9 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       workers: Number(process.env.PORTFOLIO_PRICE_WORKERS || 8),
     });
     const fetchedPoints = flattenPriceBundle(priceBundle);
+    if (priceBundle.corporate_actions?.length) {
+      console.log(`[portfolio] corporate actions: ${JSON.stringify(priceBundle.corporate_actions)}`);
+    }
     await upsertMarketPrices(fetchedPoints, PORTFOLIO_PROVIDER);
     const symbols = Array.from(new Set([
       ...currencyByTicker.keys(),
@@ -434,12 +445,18 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         continue;
       }
       const visibleReports = reportsVisibleAt(reports, cutoffAt, args.track);
-      const discoveryReports: DiscoverySourceReport[] = visibleReports.map((report) => ({
-        ticker: report.ticker,
-        generatedAt: report.generatedAt,
-        payload: normalizeValuationConsensus(report.dashboard),
-        reportId: report.id,
-      }));
+      const discoveryReports: DiscoverySourceReport[] = visibleReports
+        .filter((report) => isPortfolioSymbolSelectableAtCutoff(
+          report.ticker,
+          cutoffDate,
+          priceBundle.corporate_actions || [],
+        ))
+        .map((report) => ({
+          ticker: report.ticker,
+          generatedAt: report.generatedAt,
+          payload: normalizeValuationConsensus(report.dashboard),
+          reportId: report.id,
+        }));
       const localPriceByTicker = new Map<string, number | null>();
       for (const ticker of new Set(discoveryReports.map((report) => report.ticker))) {
         const point = latestPriceOnOrBefore(priceBySymbol.get(ticker) || [], cutoffDate);

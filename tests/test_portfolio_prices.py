@@ -68,3 +68,102 @@ def test_price_bundle_uses_the_requested_workspace_benchmark(monkeypatch, tmp_pa
     assert result["benchmark_symbol"] == "QQQ"
     assert set(result["assets"]) == {"QQQ"}
     assert requested == ["QQQ"]
+
+
+def test_price_bundle_stitches_successor_prices_after_a_share_exchange(monkeypatch, tmp_path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "portfolio_corporate_actions.json").write_text(
+        """{
+          "OLD.TA": {
+            "successor_symbol": "NEW.TA",
+            "effective_date": "2026-07-13",
+            "shares_per_predecessor_share": 0.555,
+            "source": "https://example.test/official-filing"
+          }
+        }""",
+        encoding="utf-8",
+    )
+
+    def fake_history(symbol: str, start: date, end: date):
+        del start, end
+        return {
+            "OLD.TA": {},
+            "NEW.TA": {
+                date(2026, 7, 12): 14_000.0,
+                date(2026, 7, 13): 14_200.0,
+            },
+            "ILS=X": {date(2026, 7, 13): 4.0},
+            "QQQ": {date(2026, 7, 13): 100.0},
+        }[symbol]
+
+    monkeypatch.setattr(portfolio_prices, "fetch_adjusted_closes", fake_history)
+    result = fetch_price_bundle(
+        [{"symbol": "OLD.TA", "currency": "ILS"}],
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 20),
+        repo_root=tmp_path,
+        benchmark_symbol="QQQ",
+        workers=1,
+    )
+
+    assert result["errors"] == []
+    assert result["corporate_actions"] == [
+        {
+            "symbol": "OLD.TA",
+            "successor_symbol": "NEW.TA",
+            "effective_date": "2026-07-13",
+            "shares_per_predecessor_share": 0.555,
+            "source": "https://example.test/official-filing",
+        }
+    ]
+    assert result["assets"]["OLD.TA"] == [
+        {
+            "symbol": "OLD.TA",
+            "date": "2026-07-13",
+            "adjusted_close_local": pytest.approx(7_881.0),
+            "currency": "ILS",
+            "fx_to_usd": pytest.approx(0.25),
+            "adjusted_close_usd": pytest.approx(19.7025),
+            "fx_quote_date": "2026-07-13",
+        }
+    ]
+
+
+def test_price_bundle_warns_when_a_corporate_action_successor_is_unavailable(monkeypatch, tmp_path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "portfolio_corporate_actions.json").write_text(
+        """{
+          "OLD.TA": {
+            "successor_symbol": "NEW.TA",
+            "effective_date": "2026-07-13",
+            "shares_per_predecessor_share": 0.555,
+            "source": "https://example.test/official-filing"
+          }
+        }""",
+        encoding="utf-8",
+    )
+
+    def fake_history(symbol: str, start: date, end: date):
+        del start, end
+        return {
+            "OLD.TA": {date(2026, 7, 9): 7_900.0},
+            "NEW.TA": {},
+            "ILS=X": {date(2026, 7, 9): 4.0},
+            "QQQ": {date(2026, 7, 9): 100.0},
+        }[symbol]
+
+    monkeypatch.setattr(portfolio_prices, "fetch_adjusted_closes", fake_history)
+    result = fetch_price_bundle(
+        [{"symbol": "OLD.TA", "currency": "ILS"}],
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 20),
+        repo_root=tmp_path,
+        benchmark_symbol="QQQ",
+        workers=1,
+    )
+
+    assert result["errors"] == [
+        {"symbol": "OLD.TA", "error": "corporate_action_successor_no_data"}
+    ]

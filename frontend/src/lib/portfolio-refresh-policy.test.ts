@@ -3,12 +3,20 @@ import test from "node:test";
 
 import {
   classifyPortfolioProviderWarnings,
+  isPortfolioSymbolSelectableAtCutoff,
   latestExpectedPortfolioRefreshAt,
   planPaperCutoffs,
   portfolioRefreshHealth,
   runPortfolioRefreshTasksIndependently,
   type PortfolioRefreshRunSummary,
 } from "./portfolio-refresh-policy";
+
+test("a predecessor cannot be selected again after its corporate action", () => {
+  const actions = [{ symbol: "MLTM.TA", effective_date: "2026-07-13" }];
+  assert.equal(isPortfolioSymbolSelectableAtCutoff("mltm.ta", "2026-07-12", actions), true);
+  assert.equal(isPortfolioSymbolSelectableAtCutoff("MLTM.TA", "2026-07-13", actions), false);
+  assert.equal(isPortfolioSymbolSelectableAtCutoff("AAPL", "2026-07-13", actions), true);
+});
 
 test("provider warnings block only when the missing symbol is required by the portfolio", () => {
   assert.deepEqual(classifyPortfolioProviderWarnings([

@@ -52,6 +52,23 @@ export type ClassifiedPortfolioProviderWarning = PortfolioProviderWarning & {
   blocking: boolean;
 };
 
+export type PortfolioCorporateAction = {
+  symbol: string;
+  effective_date: string;
+};
+
+export function isPortfolioSymbolSelectableAtCutoff(
+  symbol: string,
+  cutoffDate: string,
+  corporateActions: readonly PortfolioCorporateAction[],
+): boolean {
+  const normalizedSymbol = String(symbol || "").trim().toUpperCase();
+  const action = corporateActions.find(
+    (candidate) => String(candidate.symbol || "").trim().toUpperCase() === normalizedSymbol,
+  );
+  return !action || cutoffDate < action.effective_date;
+}
+
 export function classifyPortfolioProviderWarnings(
   warnings: readonly PortfolioProviderWarning[],
   requiredSymbols: Iterable<string>,

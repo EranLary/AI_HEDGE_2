@@ -50,36 +50,25 @@ export type PortfolioProviderWarning = {
 
 export type ClassifiedPortfolioProviderWarning = PortfolioProviderWarning & {
   blocking: boolean;
+  visible: boolean;
 };
-
-export type PortfolioCorporateAction = {
-  symbol: string;
-  effective_date: string;
-};
-
-export function isPortfolioSymbolSelectableAtCutoff(
-  symbol: string,
-  cutoffDate: string,
-  corporateActions: readonly PortfolioCorporateAction[],
-): boolean {
-  const normalizedSymbol = String(symbol || "").trim().toUpperCase();
-  const action = corporateActions.find(
-    (candidate) => String(candidate.symbol || "").trim().toUpperCase() === normalizedSymbol,
-  );
-  return !action || cutoffDate < action.effective_date;
-}
 
 export function classifyPortfolioProviderWarnings(
   warnings: readonly PortfolioProviderWarning[],
-  requiredSymbols: Iterable<string>,
+  blockingSymbols: Iterable<string>,
+  visibleSymbols: Iterable<string> = [],
 ): ClassifiedPortfolioProviderWarning[] {
-  const required = new Set(
-    Array.from(requiredSymbols, (symbol) => String(symbol || "").trim().toUpperCase()).filter(Boolean),
+  const blockingSet = new Set(
+    Array.from(blockingSymbols, (symbol) => String(symbol || "").trim().toUpperCase()).filter(Boolean),
   );
-  return warnings.map((warning) => ({
-    ...warning,
-    blocking: required.has(String(warning.symbol || "").trim().toUpperCase()),
-  }));
+  const visibleSet = new Set(
+    Array.from(visibleSymbols, (symbol) => String(symbol || "").trim().toUpperCase()).filter(Boolean),
+  );
+  return warnings.map((warning) => {
+    const symbol = String(warning.symbol || "").trim().toUpperCase();
+    const blocking = blockingSet.has(symbol);
+    return { ...warning, blocking, visible: blocking || visibleSet.has(symbol) };
+  });
 }
 
 // Mirrors `.github/workflows/portfolio-performance.yml`: 01:30 UTC, Tuesday-Saturday.

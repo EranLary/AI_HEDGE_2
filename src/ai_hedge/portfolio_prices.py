@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -20,14 +19,6 @@ MAX_FX_AGE_DAYS = 5
 class FxSpec:
     symbol: str
     operation: str
-
-
-@dataclass(frozen=True)
-class CorporateAction:
-    successor_symbol: str
-    effective_date: date
-    shares_per_predecessor_share: float
-    source: str
 
 
 FX_SPECS: dict[str, FxSpec] = {
@@ -179,28 +170,6 @@ def _configure_cache(repo_root: Path) -> None:
         yf.set_tz_cache_location(str(cache_dir))
 
 
-def _load_corporate_actions(repo_root: Path) -> dict[str, CorporateAction]:
-    config_path = repo_root / "config" / "portfolio_corporate_actions.json"
-    if not config_path.exists():
-        return {}
-    payload = json.loads(config_path.read_text(encoding="utf-8"))
-    actions: dict[str, CorporateAction] = {}
-    for raw_symbol, raw_action in payload.items():
-        symbol = str(raw_symbol or "").strip().upper()
-        successor_symbol = str(raw_action.get("successor_symbol") or "").strip().upper()
-        effective_date = date.fromisoformat(str(raw_action.get("effective_date") or ""))
-        ratio = _safe_float(raw_action.get("shares_per_predecessor_share"))
-        if not symbol or not successor_symbol or ratio is None:
-            raise ValueError(f"Invalid portfolio corporate action for {raw_symbol!r}")
-        actions[symbol] = CorporateAction(
-            successor_symbol=successor_symbol,
-            effective_date=effective_date,
-            shares_per_predecessor_share=ratio,
-            source=str(raw_action.get("source") or "").strip(),
-        )
-    return actions
-
-
 def fetch_price_bundle(
     instruments: Iterable[dict[str, object]],
     *,
@@ -211,7 +180,6 @@ def fetch_price_bundle(
     benchmark_symbol: str = BENCHMARK_SYMBOL,
 ) -> dict[str, object]:
     _configure_cache(repo_root)
-    corporate_actions = _load_corporate_actions(repo_root)
     normalized: list[tuple[str, str]] = []
     for instrument in instruments:
         symbol = str(instrument.get("symbol") or "").strip().upper()
@@ -227,17 +195,9 @@ def fetch_price_bundle(
         for _, currency in normalized
         if currency != "USD" and currency in FX_SPECS
     }
-    requested_actions = {
-        symbol: corporate_actions[symbol]
-        for symbol, _ in normalized
-        if symbol in corporate_actions
-    }
-    successor_symbols = {action.successor_symbol for action in requested_actions.values()}
-    download_symbols = list(dict.fromkeys(
-        [symbol for symbol, _ in normalized] + sorted(fx_symbols | successor_symbols)
-    ))
+    download_symbols = [symbol for symbol, _ in normalized] + sorted(fx_symbols)
     histories: dict[str, dict[date, float]] = {}
-    fetch_errors: dict[str, str] = {}
+    errors: list[dict[str, str]] = []
     max_workers = max(1, min(int(workers or 8), 16))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -249,58 +209,21 @@ def fetch_price_bundle(
             try:
                 histories[symbol] = future.result()
                 if not histories[symbol]:
-                    fetch_errors[symbol] = "no_data"
+                    errors.append({"symbol": symbol, "error": "no_data"})
             except Exception as exc:  # noqa: BLE001
                 histories[symbol] = {}
-                fetch_errors[symbol] = f"{type(exc).__name__}: {exc}"
+                errors.append({"symbol": symbol, "error": f"{type(exc).__name__}: {exc}"})
 
     assets: dict[str, list[dict[str, object]]] = {}
-    errors: list[dict[str, str]] = []
-    resolutions: list[dict[str, object]] = []
     for symbol, currency in normalized:
-        local_closes = dict(histories.get(symbol, {}))
-        action = requested_actions.get(symbol)
-        if action is not None:
-            resolutions.append(
-                {
-                    "symbol": symbol,
-                    "successor_symbol": action.successor_symbol,
-                    "effective_date": action.effective_date.isoformat(),
-                    "shares_per_predecessor_share": action.shares_per_predecessor_share,
-                    "source": action.source,
-                }
-            )
-            successor_closes = {
-                quote_date: quote * action.shares_per_predecessor_share
-                for quote_date, quote in histories.get(action.successor_symbol, {}).items()
-                if quote_date >= action.effective_date
-            }
-            local_closes.update(successor_closes)
-            if not successor_closes and end >= action.effective_date:
-                errors.append(
-                    {
-                        "symbol": symbol,
-                        "error": "corporate_action_successor_no_data",
-                    }
-                )
-            elif not local_closes:
-                errors.append(
-                    {"symbol": symbol, "error": fetch_errors.get(symbol, "no_data")}
-                )
-        elif symbol in fetch_errors:
-            errors.append({"symbol": symbol, "error": fetch_errors[symbol]})
         spec = FX_SPECS.get(currency)
         fx_closes = histories.get(spec.symbol, {}) if spec else None
         assets[symbol] = build_usd_rows(
             symbol,
             currency,
-            local_closes,
+            histories.get(symbol, {}),
             fx_closes,
         )
-
-    for fx_symbol in sorted(fx_symbols):
-        if fx_symbol in fetch_errors:
-            errors.append({"symbol": fx_symbol, "error": fetch_errors[fx_symbol]})
 
     return {
         "provider": PROVIDER_NAME,
@@ -309,5 +232,4 @@ def fetch_price_bundle(
         "end": end.isoformat(),
         "assets": assets,
         "errors": errors,
-        "corporate_actions": resolutions,
     }

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   classifyPortfolioProviderWarnings,
-  isPortfolioSymbolSelectableAtCutoff,
   latestExpectedPortfolioRefreshAt,
   planPaperCutoffs,
   portfolioRefreshHealth,
@@ -11,22 +10,23 @@ import {
   type PortfolioRefreshRunSummary,
 } from "./portfolio-refresh-policy";
 
-test("a predecessor cannot be selected again after its corporate action", () => {
-  const actions = [{ symbol: "MLTM.TA", effective_date: "2026-07-13" }];
-  assert.equal(isPortfolioSymbolSelectableAtCutoff("mltm.ta", "2026-07-12", actions), true);
-  assert.equal(isPortfolioSymbolSelectableAtCutoff("MLTM.TA", "2026-07-13", actions), false);
-  assert.equal(isPortfolioSymbolSelectableAtCutoff("AAPL", "2026-07-13", actions), true);
-});
-
-test("provider warnings block only when the missing symbol is required by the portfolio", () => {
+test("provider warnings distinguish blocking stale data from visible fallbacks", () => {
   assert.deepEqual(classifyPortfolioProviderWarnings([
     { symbol: "MLTM.TA", error: "no_data" },
     { symbol: "AAPL", error: "timeout" },
     { symbol: "^SP500TR", error: "no_data" },
-  ], ["aapl", "^SP500TR"]), [
-    { symbol: "MLTM.TA", error: "no_data", blocking: false },
-    { symbol: "AAPL", error: "timeout", blocking: true },
-    { symbol: "^SP500TR", error: "no_data", blocking: true },
+  ], ["aapl", "^SP500TR"], ["mltm.ta", "aapl", "^SP500TR"]), [
+    { symbol: "MLTM.TA", error: "no_data", blocking: false, visible: true },
+    { symbol: "AAPL", error: "timeout", blocking: true, visible: true },
+    { symbol: "^SP500TR", error: "no_data", blocking: true, visible: true },
+  ]);
+});
+
+test("provider warnings stay hidden when the ticker is neither required nor selected", () => {
+  assert.deepEqual(classifyPortfolioProviderWarnings([
+    { symbol: "MLTM.TA", error: "no_data" },
+  ], ["AAPL"], ["MSFT"]), [
+    { symbol: "MLTM.TA", error: "no_data", blocking: false, visible: false },
   ]);
 });
 

@@ -107,7 +107,11 @@ export async function loadPortfolioRefreshRunSummary(args: {
              THEN (
                SELECT count(*)
                  FROM jsonb_array_elements(latest.provider_warnings) AS warning
-                WHERE warning->>'blocking' IS DISTINCT FROM 'false'
+                WHERE CASE
+                        WHEN warning ? 'visible' THEN warning->>'visible' = 'true'
+                        WHEN warning ? 'blocking' THEN warning->>'blocking' IS DISTINCT FROM 'false'
+                        ELSE true
+                      END
              )
              ELSE 0
            END AS provider_warning_count,

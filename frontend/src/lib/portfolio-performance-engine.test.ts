@@ -74,6 +74,21 @@ test("snapshot construction selects at most 20 positive names with equal 1/N wei
   assert.deepEqual(cash, []);
 });
 
+test("snapshot construction drops unpriced candidates and renormalizes the remaining weights", () => {
+  const candidates = [candidate("AAA", 10), candidate("MISSING", 9), candidate("BBB", 8)];
+  const holdings = buildHoldingsForSnapshot({
+    candidates,
+    executionDate: "2026-05-04",
+    priceBySymbol: new Map([
+      ["AAA", [price("AAA", "2026-05-04", 100)]],
+      ["BBB", [price("BBB", "2026-05-04", 50)]],
+    ]),
+    currencyByTicker: new Map(candidates.map((item) => [item.row.ticker, "USD"])),
+  });
+  assert.deepEqual(holdings.map((holding) => holding.ticker), ["AAA", "BBB"]);
+  assert.deepEqual(holdings.map((holding) => holding.weight), [0.5, 0.5]);
+});
+
 test("60/40 score blend sums to one and follows score proportions below the cap", () => {
   const methodology = resolvePortfolioMethodology(PORTFOLIO_SCORE_BLEND_METHODOLOGY_VERSION);
   assert.ok(methodology);
@@ -209,6 +224,50 @@ test("benchmark execution is the first session after cutoff and stale points tai
   assert.equal(summarizePortfolioPeriod(nav, "3m").status, "insufficient_history");
 });
 
+test("a stale holding is frozen while priced holdings continue updating", () => {
+  const base = snapshot({ id: "s1", executionDate: "2026-05-01", ticker: "AAA", entryPrice: 100 });
+  base.candidateCount = 2;
+  base.holdings = [
+    { ...base.holdings[0], weight: 0.5 },
+    {
+      ...base.holdings[0], rank: 2, ticker: "STALE", weight: 0.5, entryPriceUsd: 100,
+    },
+  ];
+  const nav = computePortfolioNavSeries({
+    snapshots: [base],
+    priceBySymbol: new Map([
+      ["AAA", [price("AAA", "2026-05-01", 100), price("AAA", "2026-05-08", 110)]],
+      ["STALE", [price("STALE", "2026-05-01", 100)]],
+    ]),
+    benchmarkPoints: [
+      price("^SP500TR", "2026-05-01", 100),
+      price("^SP500TR", "2026-05-08", 101),
+    ],
+  });
+  assert.equal(nav[1].status, "stale_market_data");
+  assert.ok(Math.abs(nav[1].nav - 105) < 1e-9);
+});
+
+test("a rebalance is skipped when an outgoing holding has no current price", () => {
+  const nav = computePortfolioNavSeries({
+    snapshots: [
+      snapshot({ id: "old", executionDate: "2026-05-01", ticker: "STALE", entryPrice: 100 }),
+      snapshot({ id: "new", executionDate: "2026-05-08", ticker: "BBB", entryPrice: 50 }),
+    ],
+    priceBySymbol: new Map([
+      ["STALE", [price("STALE", "2026-05-01", 100)]],
+      ["BBB", [price("BBB", "2026-05-08", 50)]],
+    ]),
+    benchmarkPoints: [
+      price("^SP500TR", "2026-05-01", 100),
+      price("^SP500TR", "2026-05-08", 101),
+    ],
+  });
+  assert.equal(nav[1].status, "stale_market_data");
+  assert.equal(nav[1].snapshotId, "old");
+  assert.equal(nav[1].nav, 100);
+});
+
 test("risk summary annualizes daily volatility and Sharpe against matched Treasury yields", () => {
   const portfolioReturns = Array.from({ length: PORTFOLIO_RISK_MIN_OBSERVATIONS }, (_, index) => (
     index % 2 === 0 ? 0.01 : -0.005
@@ -291,6 +350,38 @@ test("execution waits for a common valid session across different market holiday
     ]),
   });
   assert.equal(executionDate, "2026-05-05");
+});
+
+test("execution ignores a selected candidate with no price in the execution window", () => {
+  const candidates = [candidate("AAA", 10), candidate("MISSING", 9)];
+  const benchmark = [
+    price("^SP500TR", "2026-05-04", 100),
+    price("^SP500TR", "2026-05-05", 101),
+  ];
+  const executionDate = firstExecutionDateForCandidates({
+    candidates,
+    cutoffDate: "2026-05-01",
+    benchmarkPoints: benchmark,
+    priceBySymbol: new Map([["AAA", [price("AAA", "2026-05-04", 50)]]]),
+  });
+  assert.equal(executionDate, "2026-05-04");
+});
+
+test("execution uses the session with the most priceable candidates", () => {
+  const executionDate = firstExecutionDateForCandidates({
+    candidates: [candidate("AAA", 10), candidate("BBB", 9), candidate("CCC", 8)],
+    cutoffDate: "2026-05-01",
+    benchmarkPoints: [
+      price("^SP500TR", "2026-05-04", 100),
+      price("^SP500TR", "2026-05-05", 101),
+    ],
+    priceBySymbol: new Map([
+      ["AAA", [price("AAA", "2026-05-04", 50), price("AAA", "2026-05-05", 51)]],
+      ["BBB", [price("BBB", "2026-05-05", 60)]],
+      ["CCC", [price("CCC", "2026-05-04", 70)]],
+    ]),
+  });
+  assert.equal(executionDate, "2026-05-04");
 });
 
 test("NAV recomputation uses one current adjusted-price basis after a split revision", () => {

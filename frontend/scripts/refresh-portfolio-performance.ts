@@ -43,7 +43,6 @@ import {
 } from "../src/lib/portfolio-performance-engine";
 import {
   classifyPortfolioProviderWarnings,
-  isPortfolioSymbolSelectableAtCutoff,
   planPaperCutoffs,
   runPortfolioRefreshTasksIndependently,
 } from "../src/lib/portfolio-refresh-policy";
@@ -70,13 +69,6 @@ type PriceBundle = {
     }>
   >;
   errors?: Array<{ symbol: string; error: string }>;
-  corporate_actions?: Array<{
-    symbol: string;
-    successor_symbol: string;
-    effective_date: string;
-    shares_per_predecessor_share: number;
-    source: string;
-  }>;
 };
 
 type CliArgs = {
@@ -399,8 +391,8 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     const requiredPriceSymbols = new Set<string>([
       workspaceConfig.benchmarkSymbol,
       PORTFOLIO_RISK_FREE_SYMBOL,
-      ...existing.flatMap((snapshot) => snapshot.holdings.map((holding) => holding.ticker)),
     ]);
+    const selectedCandidateSymbols = new Set<string>();
     const priceStart = addDays(earliestCutoff, -10);
     const priceBundle = await runPriceProvider({
       start: priceStart,
@@ -410,9 +402,6 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       workers: Number(process.env.PORTFOLIO_PRICE_WORKERS || 8),
     });
     const fetchedPoints = flattenPriceBundle(priceBundle);
-    if (priceBundle.corporate_actions?.length) {
-      console.log(`[portfolio] corporate actions: ${JSON.stringify(priceBundle.corporate_actions)}`);
-    }
     await upsertMarketPrices(fetchedPoints, PORTFOLIO_PROVIDER);
     const symbols = Array.from(new Set([
       ...currencyByTicker.keys(),
@@ -445,18 +434,12 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         continue;
       }
       const visibleReports = reportsVisibleAt(reports, cutoffAt, args.track);
-      const discoveryReports: DiscoverySourceReport[] = visibleReports
-        .filter((report) => isPortfolioSymbolSelectableAtCutoff(
-          report.ticker,
-          cutoffDate,
-          priceBundle.corporate_actions || [],
-        ))
-        .map((report) => ({
-          ticker: report.ticker,
-          generatedAt: report.generatedAt,
-          payload: normalizeValuationConsensus(report.dashboard),
-          reportId: report.id,
-        }));
+      const discoveryReports: DiscoverySourceReport[] = visibleReports.map((report) => ({
+        ticker: report.ticker,
+        generatedAt: report.generatedAt,
+        payload: normalizeValuationConsensus(report.dashboard),
+        reportId: report.id,
+      }));
       const localPriceByTicker = new Map<string, number | null>();
       for (const ticker of new Set(discoveryReports.map((report) => report.ticker))) {
         const point = latestPriceOnOrBefore(priceBySymbol.get(ticker) || [], cutoffDate);
@@ -477,7 +460,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         if (String(lensFirstCutoff.get(lensMapKey(lens)) || cutoffDate) > cutoffDate) continue;
         const candidates = scoreDiscoveryCandidates(universe, lens);
         for (const candidate of selectPositiveTopN(candidates)) {
-          requiredPriceSymbols.add(candidate.row.ticker);
+          selectedCandidateSymbols.add(candidate.row.ticker);
         }
         const executionDate = firstExecutionDateForCandidates({
           candidates,
@@ -486,7 +469,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
           priceBySymbol,
         });
         if (!executionDate) {
-          console.warn(`[portfolio] ${lens.type}:${lens.key || "overall"} has no common execution session after ${cutoffDate}; snapshot deferred.`);
+          console.warn(`[portfolio] ${lens.type}:${lens.key || "overall"} has no executable candidates in the post-cutoff execution window; snapshot deferred.`);
           continue;
         }
         const holdings = buildHoldingsForSnapshot({
@@ -516,9 +499,13 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     }
 
     existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
-    for (const snapshot of existing) {
-      for (const holding of snapshot.holdings) requiredPriceSymbols.add(holding.ticker);
-    }
+    const activeSnapshotIds = new Set<string>();
+    const currentSnapshots = groupSnapshotsByLens(existing).flatMap((snapshots) => (
+      snapshots
+        .slice()
+        .sort((a, b) => Date.parse(b.cutoffAt) - Date.parse(a.cutoffAt))
+        .slice(0, 1)
+    ));
     for (const lensSnapshots of groupSnapshotsByLens(existing)) {
       const first = lensSnapshots[0];
       const nav = computePortfolioNavSeries({
@@ -527,6 +514,8 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         benchmarkPoints,
         throughDate: args.throughDate,
       });
+      const activeSnapshotId = nav.at(-1)?.snapshotId;
+      if (activeSnapshotId) activeSnapshotIds.add(activeSnapshotId);
       await upsertPortfolioNav({
         workspace: args.workspace,
         track: args.track,
@@ -536,14 +525,32 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         points: nav,
       });
     }
+    for (const snapshot of existing) {
+      if (!activeSnapshotIds.has(snapshot.id) && !currentSnapshots.some((current) => current.id === snapshot.id)) {
+        continue;
+      }
+      for (const holding of snapshot.holdings) requiredPriceSymbols.add(holding.ticker);
+    }
+    const staleRequiredPriceSymbols = new Set(
+      Array.from(requiredPriceSymbols).filter((symbol) => (
+        latestPriceOnOrBefore(priceBySymbol.get(symbol) || [], args.throughDate) === null
+      )),
+    );
+    const fxWarningSymbols = (priceBundle.errors || [])
+      .map((warning) => warning.symbol)
+      .filter((symbol) => symbol.toUpperCase().endsWith("=X"));
+    if (staleRequiredPriceSymbols.size) {
+      for (const symbol of fxWarningSymbols) staleRequiredPriceSymbols.add(symbol);
+    }
+    const visibleWarningSymbols = new Set([
+      ...requiredPriceSymbols,
+      ...selectedCandidateSymbols,
+      ...fxWarningSymbols,
+    ]);
     const providerWarnings = classifyPortfolioProviderWarnings(
       priceBundle.errors || [],
-      [
-        ...requiredPriceSymbols,
-        ...(priceBundle.errors || [])
-          .map((warning) => warning.symbol)
-          .filter((symbol) => symbol.toUpperCase().endsWith("=X")),
-      ],
+      staleRequiredPriceSymbols,
+      visibleWarningSymbols,
     );
     const blockingProviderWarnings = providerWarnings.filter((warning) => warning.blocking);
     if (providerWarnings.length) {

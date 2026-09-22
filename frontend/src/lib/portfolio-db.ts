@@ -8,9 +8,12 @@ import type {
   PortfolioSnapshotDefinition,
   PortfolioTrack,
 } from "@/lib/portfolio-performance-engine";
-import type {
-  PortfolioRefreshRunStatus,
-  PortfolioRefreshRunSummary,
+import {
+  observePortfolioPriceMissing,
+  observePortfolioPriceRecovery,
+  type PortfolioPriceIncidentState,
+  type PortfolioRefreshRunStatus,
+  type PortfolioRefreshRunSummary,
 } from "@/lib/portfolio-refresh-policy";
 import type { Workspace } from "@/lib/workspace";
 
@@ -24,6 +27,24 @@ export type PortfolioReportInput = {
   sourceRunId: string | null;
   currency: string;
   dashboard: DashboardPayload;
+};
+
+export type PortfolioPriceIncidentWatch = {
+  id: string;
+  symbol: string;
+  currency: string;
+  status: "monitoring" | "quarantined";
+  firstMissingOn: string;
+  quarantinedOn: string | null;
+  missingStreak: number;
+  recoveryStreak: number;
+};
+
+export type PortfolioPriceMissingObservation = {
+  symbol: string;
+  currency: string;
+  error: string;
+  blocking: boolean;
 };
 
 export type StoredPortfolioNavPoint = PortfolioNavPoint & {
@@ -69,6 +90,220 @@ function requireSql() {
   const sql = getSql();
   if (!sql) throw new Error("DATABASE_URL is required for portfolio performance.");
   return sql;
+}
+
+export async function loadPortfolioPriceIncidentWatchlist(
+  workspace: Workspace,
+): Promise<PortfolioPriceIncidentWatch[]> {
+  const sql = requireSql();
+  const rows = (await sql`
+    SELECT id::text AS id, symbol, currency, status,
+           first_missing_on::text AS first_missing_on,
+           quarantined_on::text AS quarantined_on,
+           missing_streak, recovery_streak
+      FROM portfolio_price_incidents
+     WHERE workspace = ${workspace}
+       AND status IN ('monitoring', 'quarantined')
+     ORDER BY first_missing_on, symbol;
+  `) as Array<{
+    id: string;
+    symbol: string;
+    currency: string;
+    status: "monitoring" | "quarantined";
+    first_missing_on: string;
+    quarantined_on: string | null;
+    missing_streak: number;
+    recovery_streak: number;
+  }>;
+  return rows.map((row) => ({
+    id: row.id,
+    symbol: row.symbol,
+    currency: row.currency,
+    status: row.status,
+    firstMissingOn: row.first_missing_on,
+    quarantinedOn: row.quarantined_on,
+    missingStreak: Number(row.missing_streak || 0),
+    recoveryStreak: Number(row.recovery_streak || 0),
+  }));
+}
+
+export async function recordPortfolioPriceIncidentObservations(args: {
+  workspace: Workspace;
+  track: PortfolioTrack;
+  methodology: string;
+  observedOn: string;
+  missing: PortfolioPriceMissingObservation[];
+  recoveredSymbols: string[];
+}): Promise<void> {
+  const sql = requireSql();
+  type IncidentRow = {
+    id: string;
+    status: "monitoring" | "quarantined" | "resolved" | "ignored";
+    last_observed_on: string;
+    last_observation_missing: boolean;
+    missing_streak: number;
+    recovery_streak: number;
+    affected_tracks: string[] | null;
+    affected_methodologies: string[] | null;
+    quarantined_on: string | null;
+    quarantined_at: string | null;
+  };
+  const mergeValue = (values: string[] | null, value: string) => Array.from(new Set([...(values || []), value]));
+  const missingBySymbol = new Map(
+    args.missing.map((warning) => {
+      const symbol = warning.symbol.trim().toUpperCase();
+      return [symbol, { ...warning, symbol }] as const;
+    }),
+  );
+  const incidentState = (row: IncidentRow): PortfolioPriceIncidentState => ({
+    status: row.status,
+    lastObservedOn: row.last_observed_on,
+    lastObservationMissing: row.last_observation_missing,
+    missingStreak: Number(row.missing_streak || 0),
+    recoveryStreak: Number(row.recovery_streak || 0),
+  });
+
+  for (const warning of missingBySymbol.values()) {
+    const rows = (await sql`
+      SELECT id::text AS id, status, last_observed_on::text AS last_observed_on,
+             last_observation_missing, missing_streak, recovery_streak,
+             affected_tracks, affected_methodologies,
+             quarantined_on::text AS quarantined_on,
+             quarantined_at::text AS quarantined_at
+        FROM portfolio_price_incidents
+       WHERE workspace = ${args.workspace} AND symbol = ${warning.symbol}
+       LIMIT 1;
+    `) as IncidentRow[];
+    let existing = rows[0];
+    if (!existing) {
+      const transition = observePortfolioPriceMissing(null, args.observedOn);
+      const inserted = (await sql`
+        INSERT INTO portfolio_price_incidents (
+          workspace, symbol, currency, status, first_missing_on, last_missing_on,
+          last_observed_on, last_observation_missing, missing_streak, recovery_streak,
+          affected_tracks, affected_methodologies, quarantined_at
+        ) VALUES (
+          ${args.workspace}, ${warning.symbol}, ${warning.currency}, ${transition.status},
+          ${args.observedOn}::date, ${args.observedOn}::date, ${args.observedOn}::date,
+          true, ${transition.missingStreak}, 0,
+          ${[args.track]}::text[], ${[args.methodology]}::text[], NULL
+        )
+        ON CONFLICT (workspace, symbol) DO NOTHING
+        RETURNING id::text AS id;
+      `) as Array<{ id: string }>;
+      if (inserted[0]) {
+        await sql`
+          INSERT INTO portfolio_price_incident_events (incident_id, event_type, effective_on, details)
+          VALUES (
+            ${inserted[0].id}::uuid, 'price_missing', ${args.observedOn}::date,
+            ${JSON.stringify({
+              error: warning.error,
+              blocking: warning.blocking,
+              missing_streak: transition.missingStreak,
+            })}::jsonb
+          );
+        `;
+        continue;
+      }
+      const concurrentRows = (await sql`
+        SELECT id::text AS id, status, last_observed_on::text AS last_observed_on,
+               last_observation_missing, missing_streak, recovery_streak,
+               affected_tracks, affected_methodologies,
+               quarantined_on::text AS quarantined_on,
+               quarantined_at::text AS quarantined_at
+          FROM portfolio_price_incidents
+         WHERE workspace = ${args.workspace} AND symbol = ${warning.symbol}
+         LIMIT 1;
+      `) as IncidentRow[];
+      existing = concurrentRows[0];
+    }
+    if (!existing) throw new Error(`Could not create or load price incident for ${warning.symbol}.`);
+    if (existing.status === "ignored") continue;
+    const transition = observePortfolioPriceMissing(incidentState(existing), args.observedOn);
+    const quarantinedAt = transition.status === "quarantined"
+      ? existing.quarantined_at || new Date().toISOString()
+      : null;
+    await sql`
+      UPDATE portfolio_price_incidents
+         SET currency = ${warning.currency}, status = ${transition.status},
+             first_missing_on = CASE
+               WHEN ${transition.newCycle} THEN ${args.observedOn}::date
+               ELSE first_missing_on
+             END,
+             last_missing_on = ${args.observedOn}::date,
+             last_observed_on = ${args.observedOn}::date,
+             last_observation_missing = true,
+             missing_streak = ${transition.missingStreak}, recovery_streak = 0,
+             affected_tracks = ${mergeValue(existing.affected_tracks, args.track)}::text[],
+             affected_methodologies = ${mergeValue(existing.affected_methodologies, args.methodology)}::text[],
+             quarantined_on = CASE
+               WHEN ${transition.status} = 'quarantined'
+               THEN COALESCE(quarantined_on, ${args.observedOn}::date)
+               ELSE NULL
+             END,
+             quarantined_at = ${quarantinedAt}::timestamptz,
+             resolved_at = NULL, resolution_kind = NULL,
+             resolution_effective_on = NULL, resolution_note = NULL,
+             updated_at = now()
+       WHERE id = ${existing.id}::uuid;
+    `;
+    if (transition.changed) {
+      await sql`
+        INSERT INTO portfolio_price_incident_events (incident_id, event_type, effective_on, details)
+        VALUES (
+          ${existing.id}::uuid, ${transition.event},
+          ${args.observedOn}::date,
+          ${JSON.stringify({
+            error: warning.error,
+            blocking: warning.blocking,
+            missing_streak: transition.missingStreak,
+          })}::jsonb
+        );
+      `;
+    }
+  }
+
+  for (const rawSymbol of args.recoveredSymbols) {
+    const symbol = rawSymbol.trim().toUpperCase();
+    if (!symbol || missingBySymbol.has(symbol)) continue;
+    const rows = (await sql`
+      SELECT id::text AS id, status, last_observed_on::text AS last_observed_on,
+             last_observation_missing, missing_streak, recovery_streak,
+             affected_tracks, affected_methodologies,
+             quarantined_on::text AS quarantined_on,
+             quarantined_at::text AS quarantined_at
+        FROM portfolio_price_incidents
+       WHERE workspace = ${args.workspace} AND symbol = ${symbol}
+         AND status IN ('monitoring', 'quarantined')
+       LIMIT 1;
+    `) as IncidentRow[];
+    const existing = rows[0];
+    if (!existing) continue;
+    const transition = observePortfolioPriceRecovery(incidentState(existing), args.observedOn);
+    if (!transition.changed) continue;
+    const resolved = transition.status === "resolved";
+    await sql`
+      UPDATE portfolio_price_incidents
+         SET status = ${transition.status},
+             last_observed_on = ${args.observedOn}::date,
+             last_observation_missing = false,
+             missing_streak = 0, recovery_streak = ${transition.recoveryStreak},
+             resolved_at = ${resolved ? new Date().toISOString() : null}::timestamptz,
+             resolution_kind = ${resolved ? "provider_recovered" : null},
+             resolution_effective_on = ${resolved ? args.observedOn : null}::date,
+             resolution_note = ${resolved ? "Price provider returned current data." : null},
+             updated_at = now()
+       WHERE id = ${existing.id}::uuid;
+    `;
+    await sql`
+      INSERT INTO portfolio_price_incident_events (incident_id, event_type, effective_on, details)
+      VALUES (
+        ${existing.id}::uuid, ${transition.event},
+        ${args.observedOn}::date,
+        ${JSON.stringify({ recovery_streak: transition.recoveryStreak, automatic: true })}::jsonb
+      );
+    `;
+  }
 }
 
 export async function acquirePortfolioRefreshLock(lockKey: string, owner: string): Promise<boolean> {

@@ -53,6 +53,82 @@ export type ClassifiedPortfolioProviderWarning = PortfolioProviderWarning & {
   visible: boolean;
 };
 
+export type PortfolioPriceIncidentStatus = "monitoring" | "quarantined" | "resolved" | "ignored";
+
+export type PortfolioPriceIncidentState = {
+  status: PortfolioPriceIncidentStatus;
+  lastObservedOn: string | null;
+  lastObservationMissing: boolean;
+  missingStreak: number;
+  recoveryStreak: number;
+};
+
+export type PortfolioPriceIncidentTransition = PortfolioPriceIncidentState & {
+  changed: boolean;
+  event: "price_missing" | "quarantined" | "price_recovered" | "resolved" | null;
+  newCycle: boolean;
+};
+
+export function observePortfolioPriceMissing(
+  current: PortfolioPriceIncidentState | null,
+  observedOn: string,
+): PortfolioPriceIncidentTransition {
+  if (current?.status === "ignored") {
+    return { ...current, changed: false, event: null, newCycle: false };
+  }
+  if (current?.lastObservedOn === observedOn && current.lastObservationMissing) {
+    return { ...current, changed: false, event: null, newCycle: false };
+  }
+  const newCycle = current === null || current.status === "resolved";
+  const missingStreak = !newCycle && current.lastObservationMissing
+    ? current.missingStreak + 1
+    : 1;
+  const status = current?.status === "quarantined" || missingStreak >= 3
+    ? "quarantined"
+    : "monitoring";
+  return {
+    status,
+    lastObservedOn: observedOn,
+    lastObservationMissing: true,
+    missingStreak,
+    recoveryStreak: 0,
+    changed: true,
+    event: status === "quarantined" && current?.status !== "quarantined"
+      ? "quarantined"
+      : "price_missing",
+    newCycle,
+  };
+}
+
+export function observePortfolioPriceRecovery(
+  current: PortfolioPriceIncidentState,
+  observedOn: string,
+): PortfolioPriceIncidentTransition {
+  if (current.status === "ignored" || current.status === "resolved" || current.lastObservedOn === observedOn) {
+    return { ...current, changed: false, event: null, newCycle: false };
+  }
+  const recoveryStreak = current.lastObservationMissing ? 1 : current.recoveryStreak + 1;
+  const resolved = current.status === "monitoring" || recoveryStreak >= 3;
+  return {
+    status: resolved ? "resolved" : "quarantined",
+    lastObservedOn: observedOn,
+    lastObservationMissing: false,
+    missingStreak: 0,
+    recoveryStreak,
+    changed: true,
+    event: resolved ? "resolved" : "price_recovered",
+    newCycle: false,
+  };
+}
+
+export function isPortfolioPriceQuarantinedOn(
+  status: PortfolioPriceIncidentStatus,
+  quarantinedOn: string | null,
+  date: string,
+): boolean {
+  return status === "quarantined" && quarantinedOn !== null && date >= quarantinedOn;
+}
+
 export function classifyPortfolioProviderWarnings(
   warnings: readonly PortfolioProviderWarning[],
   blockingSymbols: Iterable<string>,
@@ -67,7 +143,7 @@ export function classifyPortfolioProviderWarnings(
   return warnings.map((warning) => {
     const symbol = String(warning.symbol || "").trim().toUpperCase();
     const blocking = blockingSet.has(symbol);
-    return { ...warning, blocking, visible: blocking || visibleSet.has(symbol) };
+    return { ...warning, symbol, blocking, visible: blocking || visibleSet.has(symbol) };
   });
 }
 

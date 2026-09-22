@@ -3,12 +3,76 @@ import test from "node:test";
 
 import {
   classifyPortfolioProviderWarnings,
+  isPortfolioPriceQuarantinedOn,
   latestExpectedPortfolioRefreshAt,
+  observePortfolioPriceMissing,
+  observePortfolioPriceRecovery,
   planPaperCutoffs,
   portfolioRefreshHealth,
   runPortfolioRefreshTasksIndependently,
   type PortfolioRefreshRunSummary,
 } from "./portfolio-refresh-policy";
+
+test("three distinct missing observations quarantine a symbol without double-counting reruns", () => {
+  const first = observePortfolioPriceMissing(null, "2026-09-21");
+  const repeated = observePortfolioPriceMissing(first, "2026-09-21");
+  const second = observePortfolioPriceMissing(repeated, "2026-09-22");
+  const third = observePortfolioPriceMissing(second, "2026-09-23");
+
+  assert.equal(first.status, "monitoring");
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.missingStreak, 1);
+  assert.equal(second.missingStreak, 2);
+  assert.equal(third.status, "quarantined");
+  assert.equal(third.event, "quarantined");
+});
+
+test("a quarantined symbol requires three distinct recoveries and never downgrades on a renewed miss", () => {
+  const quarantined = observePortfolioPriceMissing({
+    status: "monitoring",
+    lastObservedOn: "2026-09-22",
+    lastObservationMissing: true,
+    missingStreak: 2,
+    recoveryStreak: 0,
+  }, "2026-09-23");
+  const firstRecovery = observePortfolioPriceRecovery(quarantined, "2026-09-24");
+  const missingAgain = observePortfolioPriceMissing(firstRecovery, "2026-09-25");
+  const recoveryOne = observePortfolioPriceRecovery(missingAgain, "2026-09-26");
+  const recoveryTwo = observePortfolioPriceRecovery(recoveryOne, "2026-09-29");
+  const recoveryThree = observePortfolioPriceRecovery(recoveryTwo, "2026-09-30");
+
+  assert.equal(firstRecovery.status, "quarantined");
+  assert.equal(missingAgain.status, "quarantined");
+  assert.equal(missingAgain.missingStreak, 1);
+  assert.equal(recoveryTwo.status, "quarantined");
+  assert.equal(recoveryThree.status, "resolved");
+  assert.equal(recoveryThree.event, "resolved");
+});
+
+test("a monitored one-off gap resolves after the next successful observation", () => {
+  const missing = observePortfolioPriceMissing(null, "2026-09-21");
+  const recovered = observePortfolioPriceRecovery(missing, "2026-09-22");
+
+  assert.equal(recovered.status, "resolved");
+  assert.equal(recovered.recoveryStreak, 1);
+});
+
+test("a missing observation wins over a conflicting recovery on the same date", () => {
+  const monitoring = observePortfolioPriceMissing(null, "2026-09-21");
+  const recovered = observePortfolioPriceRecovery(monitoring, "2026-09-22");
+  const missingAgain = observePortfolioPriceMissing(recovered, "2026-09-22");
+
+  assert.equal(missingAgain.status, "monitoring");
+  assert.equal(missingAgain.lastObservationMissing, true);
+  assert.equal(missingAgain.missingStreak, 1);
+  assert.equal(missingAgain.changed, true);
+});
+
+test("quarantine blocks only cutoffs on or after its effective date", () => {
+  assert.equal(isPortfolioPriceQuarantinedOn("quarantined", "2026-09-23", "2026-09-22"), false);
+  assert.equal(isPortfolioPriceQuarantinedOn("quarantined", "2026-09-23", "2026-09-23"), true);
+  assert.equal(isPortfolioPriceQuarantinedOn("resolved", "2026-09-23", "2026-09-24"), false);
+});
 
 test("provider warnings distinguish blocking stale data from visible fallbacks", () => {
   assert.deepEqual(classifyPortfolioProviderWarnings([

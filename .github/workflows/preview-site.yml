@@ -248,7 +248,7 @@ jobs:
           set -euo pipefail
           if ! gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --paginate --jq '.[].filename' \
-            | grep -Eq '^(src/ai_hedge/db/migrations/006_portfolio_performance\.sql|frontend/scripts/refresh-portfolio-performance\.ts|frontend/src/app/api/portfolio-performance/route\.ts|frontend/src/components/portfolio-returns-section\.tsx|frontend/src/lib/portfolio-(db|performance-engine|refresh-policy)(\.test)?\.ts)$'; then
+            | grep -Eq '^(src/ai_hedge/db/migrations/(006_portfolio_performance|017_portfolio_price_incidents)\.sql|frontend/scripts/refresh-portfolio-performance\.ts|frontend/src/app/api/portfolio-performance/route\.ts|frontend/src/components/portfolio-returns-section\.tsx|frontend/src/lib/portfolio-(db|performance-engine|refresh-policy)(\.test)?\.ts)$'; then
             echo "Portfolio performance code is not part of this PR; skipping preview backfill."
             exit 0
           fi

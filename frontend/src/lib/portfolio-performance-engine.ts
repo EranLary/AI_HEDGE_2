@@ -199,9 +199,18 @@ export function firstExecutionDateForCandidates(args: {
     .filter((date) => date > args.cutoffDate)
     .sort((a, b) => a.localeCompare(b));
   if (!selected.length) return benchmarkDates[0] || null;
-  return benchmarkDates.find((date) => selected.every((candidate) => (
-    priceOnDate(args.priceBySymbol.get(candidate.row.ticker) || [], date) !== null
-  ))) || null;
+  const executableDates = benchmarkDates.filter(
+    (date) => ageDays(date, args.cutoffDate) <= MAX_MARKET_DATA_AGE_DAYS,
+  );
+  return executableDates
+    .map((date) => ({
+      date,
+      pricedCount: selected.filter((candidate) => (
+        priceOnDate(args.priceBySymbol.get(candidate.row.ticker) || [], date) !== null
+      )).length,
+    }))
+    .filter((row) => row.pricedCount > 0)
+    .sort((a, b) => b.pricedCount - a.pricedCount || a.date.localeCompare(b.date))[0]?.date || null;
 }
 
 export function buildHoldingsForSnapshot(args: {
@@ -218,9 +227,7 @@ export function buildHoldingsForSnapshot(args: {
     const ticker = candidate.row.ticker;
     const price = priceOnDate(args.priceBySymbol.get(ticker) || [], args.executionDate);
     const currency = String(args.currencyByTicker.get(ticker) || "").trim().toUpperCase();
-    if (!price || !currency) {
-      throw new Error(`Missing execution price or currency for ${ticker} on ${args.executionDate}.`);
-    }
+    if (!price || !currency) continue;
     selected.push({
       ticker,
       score: Number(candidate.row.points_score),
@@ -340,27 +347,34 @@ export function computePortfolioNavSeries(args: {
         const currentPrice = latestPriceOnOrBefore(args.priceBySymbol.get(holding.ticker) || [], date);
         const previousPrice = lastHoldingPrices.get(holding.ticker);
         const previousValue = holdingValues.get(holding.ticker);
-        if (!currentPrice || !previousPrice || previousValue === undefined) {
+        if (!previousPrice || previousValue === undefined) {
           stale = true;
           break;
+        }
+        if (!currentPrice) {
+          stale = true;
+          nextValues.set(holding.ticker, previousValue);
+          nextPrices.set(holding.ticker, previousPrice);
+          continue;
         }
         nextValues.set(holding.ticker, previousValue * (currentPrice.adjustedCloseUsd / previousPrice));
         nextPrices.set(holding.ticker, currentPrice.adjustedCloseUsd);
       }
-      if (!stale) {
+      if (nextValues.size === activeSnapshot.holdings.length) {
         holdingValues = nextValues;
         lastHoldingPrices = nextPrices;
         nav = Array.from(holdingValues.values()).reduce((sum, value) => sum + value, 0);
-      } else {
+      }
+      if (stale) {
         pointStatus = "stale_market_data";
       }
     }
 
     const pendingSnapshot = snapshots[snapshotIndex];
     if (pendingSnapshot && pendingSnapshot.executionDate === date) {
-      activate(pendingSnapshot);
       snapshotIndex += 1;
       if (pointStatus !== "stale_market_data") {
+        activate(pendingSnapshot);
         pointStatus = activeSnapshot.holdings.length ? "ok" : "no_positions";
       }
     }

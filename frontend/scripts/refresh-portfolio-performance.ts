@@ -6,6 +6,7 @@ import {
   allDiscoveryLenses,
   prepareDiscoveryUniverse,
   scoreDiscoveryCandidates,
+  selectPositiveTopN,
   type DiscoveryLensSelection,
   type DiscoverySourceReport,
 } from "../src/lib/discovery-engine";
@@ -17,7 +18,9 @@ import {
   insertPortfolioSnapshot,
   listPortfolioReportInputs,
   loadMarketPrices,
+  loadPortfolioPriceIncidentWatchlist,
   loadPortfolioSnapshots,
+  recordPortfolioPriceIncidentObservations,
   releasePortfolioRefreshLock,
   upsertMarketPrices,
   upsertPortfolioNav,
@@ -41,6 +44,8 @@ import {
   type PortfolioTrack,
 } from "../src/lib/portfolio-performance-engine";
 import {
+  classifyPortfolioProviderWarnings,
+  isPortfolioPriceQuarantinedOn,
   planPaperCutoffs,
   runPortfolioRefreshTasksIndependently,
 } from "../src/lib/portfolio-refresh-policy";
@@ -317,6 +322,13 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       await deletePortfolioTrack(args.workspace, "backtest", methodology.version);
     }
     let existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
+    const incidentWatchlist = await loadPortfolioPriceIncidentWatchlist(args.workspace);
+    const incidentSymbols = new Set(incidentWatchlist.map((incident) => incident.symbol));
+    const quarantinedOnBySymbol = new Map(
+      incidentWatchlist
+        .filter((incident) => incident.status === "quarantined" && incident.quarantinedOn)
+        .map((incident) => [incident.symbol, incident.quarantinedOn as string]),
+    );
     const now = new Date();
     let cutoffs: string[];
     if (args.track === "backtest") {
@@ -382,10 +394,16 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     for (const snapshot of existing) {
       for (const holding of snapshot.holdings) currencyByTicker.set(holding.ticker, holding.currency);
     }
+    for (const incident of incidentWatchlist) currencyByTicker.set(incident.symbol, incident.currency);
     const instruments = [
       ...Array.from(currencyByTicker.entries()).map(([symbol, currency]) => ({ symbol, currency })),
       { symbol: PORTFOLIO_RISK_FREE_SYMBOL, currency: "USD" },
     ];
+    const requiredPriceSymbols = new Set<string>([
+      workspaceConfig.benchmarkSymbol,
+      PORTFOLIO_RISK_FREE_SYMBOL,
+    ]);
+    const selectedCandidateSymbols = new Set<string>();
     const priceStart = addDays(earliestCutoff, -10);
     const priceBundle = await runPriceProvider({
       start: priceStart,
@@ -426,7 +444,10 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         console.warn(`[portfolio] no benchmark session after ${cutoffDate}; snapshot deferred.`);
         continue;
       }
-      const visibleReports = reportsVisibleAt(reports, cutoffAt, args.track);
+      const visibleReports = reportsVisibleAt(reports, cutoffAt, args.track).filter((report) => {
+        const quarantinedOn = quarantinedOnBySymbol.get(report.ticker);
+        return !isPortfolioPriceQuarantinedOn("quarantined", quarantinedOn || null, cutoffDate);
+      });
       const discoveryReports: DiscoverySourceReport[] = visibleReports.map((report) => ({
         ticker: report.ticker,
         generatedAt: report.generatedAt,
@@ -452,6 +473,9 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       for (const lens of knownLenses.values()) {
         if (String(lensFirstCutoff.get(lensMapKey(lens)) || cutoffDate) > cutoffDate) continue;
         const candidates = scoreDiscoveryCandidates(universe, lens);
+        for (const candidate of selectPositiveTopN(candidates)) {
+          selectedCandidateSymbols.add(candidate.row.ticker);
+        }
         const executionDate = firstExecutionDateForCandidates({
           candidates,
           cutoffDate,
@@ -459,7 +483,7 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
           priceBySymbol,
         });
         if (!executionDate) {
-          console.warn(`[portfolio] ${lens.type}:${lens.key || "overall"} has no common execution session after ${cutoffDate}; snapshot deferred.`);
+          console.warn(`[portfolio] ${lens.type}:${lens.key || "overall"} has no executable candidates in the post-cutoff execution window; snapshot deferred.`);
           continue;
         }
         const holdings = buildHoldingsForSnapshot({
@@ -489,6 +513,13 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     }
 
     existing = await loadPortfolioSnapshots(args.workspace, args.track, methodology.version);
+    const activeSnapshotIds = new Set<string>();
+    const currentSnapshots = groupSnapshotsByLens(existing).flatMap((snapshots) => (
+      snapshots
+        .slice()
+        .sort((a, b) => Date.parse(b.cutoffAt) - Date.parse(a.cutoffAt))
+        .slice(0, 1)
+    ));
     for (const lensSnapshots of groupSnapshotsByLens(existing)) {
       const first = lensSnapshots[0];
       const nav = computePortfolioNavSeries({
@@ -497,6 +528,8 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         benchmarkPoints,
         throughDate: args.throughDate,
       });
+      const activeSnapshotId = nav.at(-1)?.snapshotId;
+      if (activeSnapshotId) activeSnapshotIds.add(activeSnapshotId);
       await upsertPortfolioNav({
         workspace: args.workspace,
         track: args.track,
@@ -506,10 +539,72 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
         points: nav,
       });
     }
-    if (priceBundle.errors?.length) {
-      console.warn(`[portfolio] provider warnings: ${JSON.stringify(priceBundle.errors)}`);
+    for (const snapshot of existing) {
+      if (!activeSnapshotIds.has(snapshot.id) && !currentSnapshots.some((current) => current.id === snapshot.id)) {
+        continue;
+      }
+      for (const holding of snapshot.holdings) requiredPriceSymbols.add(holding.ticker);
     }
-    const warningReasons = priceBundle.errors?.length ? ["provider_warnings"] : [];
+    const staleRequiredPriceSymbols = new Set(
+      Array.from(requiredPriceSymbols).filter((symbol) => (
+        latestPriceOnOrBefore(priceBySymbol.get(symbol) || [], args.throughDate) === null
+      )),
+    );
+    const fxWarningSymbols = (priceBundle.errors || [])
+      .map((warning) => warning.symbol)
+      .filter((symbol) => symbol.toUpperCase().endsWith("=X"));
+    if (staleRequiredPriceSymbols.size) {
+      for (const symbol of fxWarningSymbols) staleRequiredPriceSymbols.add(symbol);
+    }
+    const visibleWarningSymbols = new Set([
+      ...requiredPriceSymbols,
+      ...selectedCandidateSymbols,
+      ...fxWarningSymbols,
+    ]);
+    const providerWarnings = classifyPortfolioProviderWarnings(
+      priceBundle.errors || [],
+      staleRequiredPriceSymbols,
+      visibleWarningSymbols,
+    );
+    const blockingProviderWarnings = providerWarnings.filter((warning) => warning.blocking);
+    if (providerWarnings.length) {
+      console.warn(`[portfolio] provider warnings: ${JSON.stringify(providerWarnings)}`);
+    }
+    const rawWarningSymbols = new Set(
+      (priceBundle.errors || []).map((warning) => warning.symbol.trim().toUpperCase()),
+    );
+    const missingPriceObservations = providerWarnings
+      .filter((warning) => (
+        (warning.visible || incidentSymbols.has(warning.symbol))
+        && !warning.symbol.startsWith("^")
+        && !warning.symbol.endsWith("=X")
+      ))
+      .map((warning) => ({
+        symbol: warning.symbol,
+        currency: currencyByTicker.get(warning.symbol) || "USD",
+        error: warning.error,
+        blocking: warning.blocking,
+      }));
+    const recoveredIncidentSymbols = incidentWatchlist
+      .map((incident) => incident.symbol)
+      .filter((symbol) => (
+        !rawWarningSymbols.has(symbol)
+        && latestPriceOnOrBefore(priceBySymbol.get(symbol) || [], args.throughDate) !== null
+      ));
+    await recordPortfolioPriceIncidentObservations({
+      workspace: args.workspace,
+      track: args.track,
+      methodology: methodology.key,
+      observedOn: args.throughDate,
+      missing: missingPriceObservations,
+      recoveredSymbols: recoveredIncidentSymbols,
+    });
+    const quarantinedSymbolsAfterObservation = new Set(
+      (await loadPortfolioPriceIncidentWatchlist(args.workspace))
+        .filter((incident) => incident.status === "quarantined")
+        .map((incident) => incident.symbol),
+    );
+    const warningReasons = blockingProviderWarnings.length ? ["provider_warnings"] : [];
     const uniqueSnapshotIds = Array.from(new Set(processedSnapshotIds));
     const snapshotsById = new Map(existing.map((snapshot) => [snapshot.id, snapshot]));
     const tradeEligibleSnapshotIds: string[] = [];
@@ -520,6 +615,9 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
       if (!methodology.tradeExecutionReleased) reasons.push("methodology_execution_not_released");
       if (args.workspace !== "nasdaq100") reasons.push("analysis_execution_not_released");
       if (snapshot?.status !== "ready") reasons.push("empty_target_requires_confirmation");
+      if (snapshot?.holdings.some((holding) => quarantinedSymbolsAfterObservation.has(holding.ticker))) {
+        reasons.push("quarantined_price_symbol");
+      }
       const eligible = reasons.length === 0;
       await recordSnapshotTradeEligibility({
         snapshotIds: [snapshotId],
@@ -533,8 +631,8 @@ async function refreshMethodology(args: CliArgs, methodology: PortfolioMethodolo
     const enqueued = await enqueueArmedStrategiesForSnapshots(tradeEligibleSnapshotIds);
     await finishPortfolioRefreshRun({
       runId: refreshRunId,
-      status: priceBundle.errors?.length ? "partial" : "completed",
-      warnings: priceBundle.errors || [],
+      status: blockingProviderWarnings.length ? "partial" : "completed",
+      warnings: providerWarnings,
     });
     refreshRunId = null;
     if (enqueued) console.log(`[portfolio] enqueued ${enqueued} IBKR Paper rebalance plan(s).`);

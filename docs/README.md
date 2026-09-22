@@ -17,6 +17,7 @@ can find the authoritative guide without scanning the project root.
 
 - [Nasdaq 100 workspace](operations/nasdaq100-workspace.md)
 - [IBKR Paper trading](operations/ibkr-paper-trading.md)
+- [Portfolio price incidents](operations/portfolio-price-incidents.md)
 - [DNS setup](operations/dns-setup.md)
 
 ## Development

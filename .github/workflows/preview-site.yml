@@ -276,6 +276,36 @@ jobs:
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
             "sh -lc 'cd /app/frontend && npm run portfolio:incidents -- list --json'"
 
+      - name: Bootstrap Jev preview forecasts
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' \
+            | grep -Eq '^(src/ai_hedge/jev\.py|src/ai_hedge/db/migrations/018_report_jev_forecasts\.sql|scripts/db/(backfill_jev_forecasts|refresh_jev_outcomes)\.py|frontend/src/(app/\(app\)/dashboard/\[ticker\]/jev/.*|lib/jev-(db|metrics)(\.test)?\.ts))$'; then
+            echo "Jev forecast code is not part of this PR; skipping preview seed."
+            exit 0
+          fi
+          read -r PREVIEW_MACHINE_ID PREVIEW_MACHINE_STATE < <(
+            flyctl machine list --app "${{ env.PREVIEW_APP }}" --json \
+              | jq -r '.[0] | [.id, .state] | @tsv'
+          )
+          if [ -z "${PREVIEW_MACHINE_ID:-}" ]; then
+            echo "::error::Preview app has no machine to seed."
+            exit 1
+          fi
+          if [ "$PREVIEW_MACHINE_STATE" != "started" ]; then
+            flyctl machine start "$PREVIEW_MACHINE_ID" --app "${{ env.PREVIEW_APP }}"
+          fi
+          flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace analysis --limit 1"
+          flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace nasdaq100 --limit 1"
+          flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
+            "python3 /app/scripts/db/refresh_jev_outcomes.py --workspace all"
+
       - name: Diagnostics on deploy failure
         if: failure() && steps.deploy.conclusion == 'failure'
         env:

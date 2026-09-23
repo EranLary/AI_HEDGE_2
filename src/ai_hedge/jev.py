@@ -126,7 +126,9 @@ def _questions() -> dict[str, dict[str, str]]:
 
 
 def evaluate_state(state: str, *, timeout_seconds: float = 90.0) -> dict[str, Any]:
-    api_key = str(os.environ.get("AI_GATEWAY_API_KEY", "")).strip()
+    # Some Windows/PowerShell secret pipelines can prefix a UTF-8 BOM. It is
+    # invisible in dashboards but invalid in an HTTP Authorization header.
+    api_key = str(os.environ.get("AI_GATEWAY_API_KEY", "")).strip().lstrip("\ufeff")
     if not api_key:
         raise RuntimeError("AI_GATEWAY_API_KEY is not configured")
 

@@ -76,6 +76,21 @@ def test_evaluate_state_enforces_no_training_without_zdr_by_default(monkeypatch:
     assert captured["json"]["providerOptions"]["gateway"] == {"disallowPromptTraining": True}
 
 
+def test_evaluate_state_strips_an_invisible_bom_from_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["authorization"] = headers["Authorization"]
+        return _FakeResponse()
+
+    monkeypatch.setenv("AI_GATEWAY_API_KEY", "\ufeffclean-key")
+    monkeypatch.setattr(jev.requests, "post", fake_post)
+
+    jev.evaluate_state("state")
+
+    assert captured["authorization"] == "Bearer clean-key"
+
+
 def test_evaluate_state_rejects_missing_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
     class MissingAnswerResponse(_FakeResponse):
         def json(self):

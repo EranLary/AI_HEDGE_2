@@ -300,9 +300,9 @@ jobs:
             flyctl machine start "$PREVIEW_MACHINE_ID" --app "${{ env.PREVIEW_APP }}"
           fi
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace analysis --limit 1"
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace analysis --limit 1 --retry-failed"
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace nasdaq100 --limit 1"
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace nasdaq100 --limit 1 --retry-failed"
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
             "python3 /app/scripts/db/refresh_jev_outcomes.py --workspace all"
 

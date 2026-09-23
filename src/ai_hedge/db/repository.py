@@ -17,6 +17,8 @@ DROP TRIGGER IF EXISTS reports_after_change ON reports;
 DROP FUNCTION IF EXISTS trg_reports_after_change();
 DROP TABLE IF EXISTS nasdaq_universe_run_items;
 DROP TABLE IF EXISTS nasdaq_universe_runs;
+DROP TABLE IF EXISTS report_jev_predictions;
+DROP TABLE IF EXISTS report_jev_runs;
 DROP TABLE IF EXISTS report_artifacts;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS report_releases;

@@ -58,15 +58,24 @@ jobs:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
           NASDAQ_WORKER_TOKEN: ${{ secrets.NASDAQ_WORKER_TOKEN }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
         run: |
+          args=()
           if [ -z "$NASDAQ_WORKER_TOKEN" ] || [ -z "$R2_PUBLIC_BASE_URL" ]; then
             echo "::warning::Nasdaq worker connection is not fully configured; site will keep the one-worker fallback."
-            exit 0
+          else
+            args+=("NASDAQ_WORKER_URL=https://hedge-in-a-box-nasdaq-worker.fly.dev")
+            args+=("NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN")
+            args+=("R2_PUBLIC_BASE_URL=$R2_PUBLIC_BASE_URL")
           fi
-          flyctl secrets set --stage --app hedge-in-a-box-site \
-            "NASDAQ_WORKER_URL=https://hedge-in-a-box-nasdaq-worker.fly.dev" \
-            "NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN" \
-            "R2_PUBLIC_BASE_URL=$R2_PUBLIC_BASE_URL"
+          if [ -z "$AI_GATEWAY_API_KEY" ]; then
+            echo "::warning::AI_GATEWAY_API_KEY is not configured; new reports will skip Jev enrichment."
+          else
+            args+=("AI_GATEWAY_API_KEY=$AI_GATEWAY_API_KEY")
+          fi
+          if [ "${#args[@]}" -gt 0 ]; then
+            flyctl secrets set --stage --app hedge-in-a-box-site "${args[@]}"
+          fi
 
       - name: Deploy site app
         run: |
@@ -178,6 +187,7 @@ jobs:
         id: worker_config
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           NASDAQ_WORKER_TOKEN: ${{ secrets.NASDAQ_WORKER_TOKEN }}
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
@@ -253,6 +263,7 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           OBS_DATABASE_URL: ${{ secrets.OBS_DATABASE_URL }}
@@ -263,17 +274,24 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
         run: |
-          flyctl secrets set --stage --app hedge-in-a-box-nasdaq-worker \
-            "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" \
-            "DATABASE_URL=$DATABASE_URL" \
-            "DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED" \
-            "OBS_DATABASE_URL=$OBS_DATABASE_URL" \
-            "NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN" \
-            "R2_ENDPOINT_URL=$R2_ENDPOINT_URL" \
-            "R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID" \
-            "R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY" \
-            "R2_BUCKET=$R2_BUCKET" \
+          args=(
+            "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY"
+            "DATABASE_URL=$DATABASE_URL"
+            "DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED"
+            "OBS_DATABASE_URL=$OBS_DATABASE_URL"
+            "NASDAQ_WORKER_TOKEN=$NASDAQ_WORKER_TOKEN"
+            "R2_ENDPOINT_URL=$R2_ENDPOINT_URL"
+            "R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID"
+            "R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY"
+            "R2_BUCKET=$R2_BUCKET"
             "R2_PUBLIC_BASE_URL=$R2_PUBLIC_BASE_URL"
+          )
+          if [ -n "$AI_GATEWAY_API_KEY" ]; then
+            args+=("AI_GATEWAY_API_KEY=$AI_GATEWAY_API_KEY")
+          else
+            echo "::warning::AI_GATEWAY_API_KEY is not configured; Nasdaq reports will skip Jev enrichment."
+          fi
+          flyctl secrets set --stage --app hedge-in-a-box-nasdaq-worker "${args[@]}"
 
       - name: Deploy Nasdaq worker
         if: steps.worker_config.outputs.ready == 'true'

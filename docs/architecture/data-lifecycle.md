@@ -10,6 +10,7 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 | --- | --- | --- | --- |
 | Report catalog and list fields | Site Neon: `reports`, `tickers`, `report_releases` | Denormalized fields inside dashboard JSON | `src/ai_hedge/db/`, `frontend/src/lib/reports-db.ts` |
 | Structured dashboard and report text | Site Neon: `report_artifacts` | Run directory under `outputs/`; selected objects in R2 | `src/ai_hedge/db/writer.py`, `src/ai_hedge/db/transform.py` |
+| Jev forecasts and realized outcomes | Site Neon: `report_jev_runs`, `report_jev_predictions` | Vercel AI Gateway request logs and transient yfinance responses | `src/ai_hedge/jev.py`, `scripts/db/refresh_jev_outcomes.py` |
 | Downloadable/generated documents | Rendered from the saved report sources on request | Legacy files or R2 objects when a historical report points to them | artifact API route, `frontend/src/lib/report-document.tsx` |
 | Site analysis status | `site_runs` for shared status/progress fields | `_status.json` for process-local fields and terminal fallback | `src/ai_hedge/io/status.py`, `frontend/src/lib/site-runs-db.ts` |
 | Nasdaq universe orchestration | `nasdaq_universe_runs`, run items/attempts, releases | Worker-local run directory; R2 artifacts | `frontend/src/lib/nasdaq-runs-db.ts`, `scripts/nasdaq_universe_run.py` |

@@ -2409,6 +2409,19 @@ def _run_ticker_valuation_impl(
         )
         if _db_err:
             print(f"[runner] DB write failed: {_db_err}", file=sys.stderr)
+        elif _rid and os.environ.get("AI_GATEWAY_API_KEY"):
+            try:
+                from ai_hedge.jev import generate_and_store_report_forecast
+
+                _jev_result = generate_and_store_report_forecast(_rid, mode="forward")
+                print(
+                    f"[runner] Jev forecast for {_rid}: {_jev_result.get('status')}",
+                    file=sys.stderr,
+                )
+            except Exception as _jev_exc:  # noqa: BLE001
+                # Forecasting is an enrichment. A provider or schema problem must
+                # never turn an otherwise complete research report into a failure.
+                print(f"[runner] Jev forecast skipped: {_jev_exc}", file=sys.stderr)
     except Exception as _db_exc:  # noqa: BLE001
         print(f"[runner] DB write skipped: {_db_exc}", file=sys.stderr)
 

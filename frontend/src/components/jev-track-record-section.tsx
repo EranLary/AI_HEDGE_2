@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import {
   JEV_HORIZON_ORDER,
-  type JevForecastMode,
   type JevHorizon,
   type JevMetrics,
   type JevPredictionScope,
@@ -72,7 +71,6 @@ function LoadingState() {
 
 export function JevTrackRecordSection() {
   const { api, label: workspaceLabel, workspace } = useWorkspace();
-  const [mode, setMode] = useState<JevForecastMode>("retrospective");
   const [scope, setScope] = useState<JevPredictionScope>("positive_only");
   const [data, setData] = useState<JevTrackRecordPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,7 +84,7 @@ export function JevTrackRecordSection() {
       setError("");
       try {
         const response = await fetch(
-          api(`/api/jev-track-record?mode=${mode}&scope=${scope}&refresh=${refreshToken}`),
+          api(`/api/jev-track-record?scope=${scope}&refresh=${refreshToken}`),
           { cache: "no-store" },
         );
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -105,7 +103,7 @@ export function JevTrackRecordSection() {
     return () => {
       cancelled = true;
     };
-  }, [api, mode, refreshToken, scope, workspace]);
+  }, [api, refreshToken, scope, workspace]);
 
   const lastTimelineDate = useMemo(() => data?.timeline.at(-1)?.date || null, [data]);
 
@@ -121,7 +119,8 @@ export function JevTrackRecordSection() {
             <h2 className="mt-1 font-display text-2xl text-[color:var(--text-primary)]">Jev Track Record</h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[color:var(--text-muted)]">
               Direction accuracy and probability calibration for every matured Jev forecast in {workspaceLabel}.
-              Hit rate says whether YES/NO was right; Brier and calibration show whether the confidence was honest.
+              Historical backfill and live forward forecasts are measured together. Hit rate says whether YES/NO was right;
+              Brier and calibration show whether the confidence was honest.
             </p>
           </div>
         </div>
@@ -143,22 +142,6 @@ export function JevTrackRecordSection() {
               </button>
             ))}
           </div>
-          <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Jev track-record mode">
-            {(["forward", "retrospective"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setMode(item)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
-                  mode === item
-                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
-                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
-                }`}
-              >
-                {item === "forward" ? "Forward" : "Backtest"}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             onClick={() => setRefreshToken((value) => value + 1)}
@@ -170,12 +153,6 @@ export function JevTrackRecordSection() {
           </button>
         </div>
       </div>
-
-      {mode === "retrospective" ? (
-        <p className="mt-4 rounded-lg border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-3 text-xs leading-relaxed text-[color:var(--warning)]">
-          Backtest forecasts were generated from historical Combined reports with the publication date withheld. They remain separate from live forward forecasts because indirect period clues can still exist in the report.
-        </p>
-      ) : null}
 
       <p className="mt-3 text-xs leading-relaxed text-[color:var(--text-muted)]">
         {scope === "positive_only"

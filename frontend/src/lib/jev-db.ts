@@ -163,11 +163,10 @@ export async function getJevReportForecast(
 
 export async function getJevMetrics(
   workspace: Workspace,
-  mode: JevForecastMode,
   scope: JevPredictionScope,
 ): Promise<JevMetrics> {
   const sql = getSql();
-  if (!sql) return computeJevMetrics([], mode, scope);
+  if (!sql) return computeJevMetrics([], "combined", scope);
   const raw = (await sql`
     SELECT p.run_id::text AS run_id, p.report_id::text AS report_id,
            p.horizon, p.horizon_days,
@@ -183,13 +182,12 @@ export async function getJevMetrics(
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE j.status = 'completed'
        AND j.question_version = ${JEV_QUESTION_VERSION}
-       AND j.forecast_mode = ${mode}
        AND r.workspace = ${workspace}
        AND r.deleted_at IS NULL
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'));
   `) as unknown as Array<Record<string, unknown>>;
   const rows = raw.map(normalizePrediction);
-  return computeJevMetrics(rows, mode, scope);
+  return computeJevMetrics(rows, "combined", scope);
 }
 
 function normalizeDiscoveryRow(row: Record<string, unknown>): JevDiscoveryRow {

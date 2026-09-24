@@ -54,6 +54,15 @@ type PredictionRow = JevPrediction & {
   report_id: string;
 };
 
+function normalizeDateOnly(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString().slice(0, 10);
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null;
+}
+
 function normalizePrediction(row: Record<string, unknown>): PredictionRow {
   return {
     run_id: String(row.run_id || ""),
@@ -66,9 +75,9 @@ function normalizePrediction(row: Record<string, unknown>): PredictionRow {
     target_at: new Date(String(row.target_at)).toISOString(),
     outcome_status: String(row.outcome_status || "pending") as JevOutcomeStatus,
     baseline_price: row.baseline_price === null ? null : Number(row.baseline_price),
-    baseline_at: row.baseline_at ? String(row.baseline_at).slice(0, 10) : null,
+    baseline_at: normalizeDateOnly(row.baseline_at),
     outcome_price: row.outcome_price === null ? null : Number(row.outcome_price),
-    outcome_at: row.outcome_at ? String(row.outcome_at).slice(0, 10) : null,
+    outcome_at: normalizeDateOnly(row.outcome_at),
     realized_up: typeof row.realized_up === "boolean" ? row.realized_up : null,
     was_correct: typeof row.was_correct === "boolean" ? row.was_correct : null,
     brier_score: row.brier_score === null ? null : Number(row.brier_score),

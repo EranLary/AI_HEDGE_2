@@ -153,8 +153,8 @@ function SectionPills({
   const suffix = reportParam ? `?report=${encodeURIComponent(reportParam)}` : "";
 
   return (
-    <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 px-1 sm:gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:gap-2">
+    <nav aria-label="Report sections" className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 px-1 sm:gap-2">
+      <div className="hib-report-tabs flex min-w-0 flex-1 scroll-smooth items-center gap-1.5 overflow-x-auto sm:gap-2">
         {SECTIONS.map((s) => {
           const active = activeSection === s.slug;
           const href = `${workspacePath(workspace, `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}`)}${suffix}`;

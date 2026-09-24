@@ -815,6 +815,30 @@ html[data-theme="light"] .hib-bear-prob-value {
   display: none;
 }
 
+/* Keep report navigation swipe-friendly on touch screens, while giving mouse
+   users a visible handle for reaching the final tabs on narrower desktops. */
+@media (hover: hover) and (pointer: fine) {
+  .hib-report-tabs {
+    padding-bottom: 0.25rem;
+    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  .hib-report-tabs::-webkit-scrollbar {
+    display: block;
+    height: 0.375rem;
+  }
+
+  .hib-report-tabs::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .hib-report-tabs::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: var(--border-strong);
+  }
+}
+
 /* ---------- Dream Team gallery ---------- */
 .dream-team-scroll {
   scrollbar-width: none;

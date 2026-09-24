@@ -1,7 +1,7 @@
 # Jev forecasts
 
-Jev reads the persisted Analysis and Valuation Markdown after a report is saved
-and returns seven boolean probabilities: 1 week, 1 month, 3 months, 6 months,
+Jev reads a deterministic evidence pack from the persisted Analysis Markdown
+after a report is saved and returns seven boolean probabilities: 1 week, 1 month, 3 months, 6 months,
 1 year, 3 years, and 5 years. The site converts each probability into YES/NO at
 the 50% threshold while retaining the original probability for calibration.
 
@@ -22,13 +22,21 @@ ZDR; unsupported plans reject those requests.
 - The report publication timestamp is omitted and its exact textual forms are
   redacted from the model input. Fiscal-period dates remain because they are
   material research evidence.
-- Inputs below 60,000 characters use the complete persisted Analysis and
-  Valuation Markdown. Longer inputs preserve the beginning and valuation tail
-  with an explicit deterministic omission marker. This ceiling reflects live
-  HTTP API probes: 60,000 characters succeeded at about 16,000 input tokens,
-  while 80,000 and 100,000 character requests repeatedly returned HTTP 503.
-  It leaves headroom for all seven typed questions inside the catalog's
-  advertised 32K-token context window.
+- The evidence pack contains complete copies of these Analysis sections when
+  present: company description, general information, news, all-reports insight,
+  analyst expectations, Bull vs Bear, Dashboard Extraction Pack, Wall Street,
+  Technical Analysis, and Financials. It never includes `prices_explain_md` or
+  other valuation sections.
+- Some historical Analysis artifacts contain an exact embedded copy of their
+  separate Prices Explain artifact. That legacy copy is removed before section
+  extraction.
+- The pack has a measured 60,000-character ceiling. If a future report exceeds
+  it, Wall Street, analyst expectations, and general information are removed in
+  that order as complete sections. Required sections are never cut mid-text;
+  an unexpectedly oversized required pack fails only the optional enrichment.
+  Live HTTP API probes found 60,000 characters successful at about 16,000 input
+  tokens, while 80,000 and 100,000 character requests repeatedly returned HTTP
+  503.
 - New-run forecasts are labeled `forward`. Historical backfills are labeled
   `retrospective` and are never silently mixed into forward track-record data.
 - Outcomes use split-adjusted daily closes. The baseline is the first available

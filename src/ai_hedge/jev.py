@@ -24,6 +24,51 @@ GATEWAY_EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 # 100K repeatedly returned 503. Keep measured headroom for seven typed answers.
 MAX_STATE_CHARS = 60_000
 
+_MARKDOWN_HEADING_RE = re.compile(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*$")
+_ANALYSIS_SECTION_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("company", ("what the company is doing",)),
+    ("general", ("general information insights",)),
+    ("news", ("news review",)),
+    ("competitors", ("competitor market review",)),
+    ("annual", ("annual reports insights",)),
+    ("quarterly", ("quarterly reports insights",)),
+    ("all_reports", ("all reports insights",)),
+    ("multiples", ("multiple analysis",)),
+    ("analyst_expectations", ("analyst expectations insights",)),
+    ("holders", ("holders analysis",)),
+    ("market", ("market analysis",)),
+    ("swot", ("swot analysis",)),
+    ("bull_bear", ("bull vs bear thesis",)),
+    ("valuation_insights", ("key insights for valuation",)),
+    ("filing_qa", ("sec pre-score questions & answers", "maya pre-score questions & answers")),
+    ("filing_summary", ("sec summary", "maya summary")),
+    ("share_count", ("verified share count for valuation",)),
+    ("multi_agent", ("independent multi-agent research lens",)),
+    ("web_search", ("web search",)),
+    ("dashboard", ("dashboard extraction pack",)),
+    ("wall_st", ("wall st analyst read",)),
+    ("technical", ("technical analysis",)),
+    ("financials", ("financials",)),
+    ("sources", ("sec section sources", "maya section sources")),
+)
+_JEV_ANALYSIS_SECTIONS: tuple[str, ...] = (
+    "company",
+    "general",
+    "news",
+    "all_reports",
+    "analyst_expectations",
+    "bull_bear",
+    "dashboard",
+    "wall_st",
+    "technical",
+    "financials",
+)
+_JEV_BUDGET_DROP_ORDER: tuple[str, ...] = (
+    "wall_st",
+    "analyst_expectations",
+    "general",
+)
+
 ForecastMode = Literal["forward", "retrospective"]
 
 HORIZONS: tuple[tuple[str, str, int], ...] = (
@@ -81,6 +126,69 @@ def redact_report_dates(markdown: str, *date_values: Any) -> str:
     return redacted
 
 
+def _analysis_section_key(title: str) -> str | None:
+    normalized = str(title or "").strip().rstrip(":").strip().casefold()
+    if normalized.endswith("prices explain"):
+        return "embedded_valuation"
+    for key, prefixes in _ANALYSIS_SECTION_PREFIXES:
+        if any(normalized.startswith(prefix) for prefix in prefixes):
+            return key
+    return None
+
+
+def _analysis_sections(markdown: str) -> dict[str, str]:
+    """Extract logical pipeline sections across legacy Markdown heading levels."""
+    text = str(markdown or "")
+    recognized: list[tuple[int, str]] = []
+    for match in _MARKDOWN_HEADING_RE.finditer(text):
+        key = _analysis_section_key(match.group(2))
+        if key:
+            recognized.append((match.start(), key))
+
+    sections: dict[str, str] = {}
+    index = 0
+    while index < len(recognized):
+        start, key = recognized[index]
+        next_index = index + 1
+        while next_index < len(recognized) and recognized[next_index][1] == key:
+            next_index += 1
+        end = recognized[next_index][0] if next_index < len(recognized) else len(text)
+        body = text[start:end].strip()
+        if len(body) > len(sections.get(key, "")):
+            sections[key] = body
+        index = next_index
+    return sections
+
+
+def _without_embedded_valuation(analysis_md: str, prices_explain_md: str | None) -> str:
+    """Remove the exact legacy valuation copy found in some historical analysis artifacts."""
+    analysis = str(analysis_md or "")
+    valuation = str(prices_explain_md or "").strip()
+    if valuation and valuation in analysis:
+        analysis = analysis.replace(valuation, "")
+    return analysis
+
+
+def _render_analysis_evidence_pack(
+    *,
+    ticker: str,
+    sections: dict[str, str],
+    keys: list[str],
+) -> str:
+    excerpts = [sections[key] for key in keys if sections.get(key)]
+    return "\n\n---\n\n".join(
+        (
+            f"# {ticker} Analysis Evidence Pack",
+            (
+                "The report publication date is intentionally withheld. Evaluate only the unedited "
+                "analysis sections below as if making the decision at publication time. No valuation "
+                "report or price-target model is included."
+            ),
+            *excerpts,
+        )
+    ).strip()
+
+
 def build_jev_state(
     *,
     ticker: str,
@@ -90,30 +198,31 @@ def build_jev_state(
     available_at: Any,
     max_chars: int = MAX_STATE_CHARS,
 ) -> tuple[str, bool]:
-    combined = "\n\n".join(
-        part
-        for part in (
-            f"# {ticker} Combined Investment Report",
-            "The report publication date is intentionally withheld. Evaluate only the information contained in this report as if making the decision at publication time.",
-            "## Analysis\n\n" + str(analysis_md or "").strip(),
-            "## Valuation\n\n" + str(prices_explain_md or "").strip(),
-        )
-        if part.strip()
-    ).strip()
-    combined = redact_report_dates(combined, generated_at, available_at)
-    if len(combined) <= max_chars:
-        return combined, False
+    analysis_only = _without_embedded_valuation(analysis_md, prices_explain_md)
+    sections = _analysis_sections(analysis_only)
+    selected_keys = [key for key in _JEV_ANALYSIS_SECTIONS if sections.get(key)]
+    if not selected_keys:
+        raise ValueError("Jev analysis evidence pack found no recognized report sections")
 
-    marker = (
-        "\n\n---\n\n[Middle of report omitted deterministically to fit Jev's context window. "
-        "The beginning and valuation conclusion are preserved.]\n\n---\n\n"
-    )
-    usable_chars = max_chars - len(marker)
-    if usable_chars <= 0:
-        return combined[:max_chars], True
-    head_chars = int(usable_chars * 0.68)
-    tail_chars = usable_chars - head_chars
-    return combined[:head_chars] + marker + combined[-tail_chars:], True
+    state = _render_analysis_evidence_pack(ticker=ticker, sections=sections, keys=selected_keys)
+    state = redact_report_dates(state, generated_at, available_at)
+    dropped_for_budget = False
+    for key in _JEV_BUDGET_DROP_ORDER:
+        if len(state) <= max_chars:
+            break
+        if key not in selected_keys:
+            continue
+        selected_keys.remove(key)
+        dropped_for_budget = True
+        state = _render_analysis_evidence_pack(ticker=ticker, sections=sections, keys=selected_keys)
+        state = redact_report_dates(state, generated_at, available_at)
+
+    if len(state) > max_chars:
+        raise ValueError(
+            f"Jev analysis evidence pack is {len(state)} characters after whole-section fallbacks; "
+            f"budget is {max_chars}"
+        )
+    return state, dropped_for_budget
 
 
 def _questions() -> dict[str, dict[str, str]]:

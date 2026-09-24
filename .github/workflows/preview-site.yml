@@ -299,12 +299,19 @@ jobs:
           if [ "$PREVIEW_MACHINE_STATE" != "started" ]; then
             flyctl machine start "$PREVIEW_MACHINE_ID" --app "${{ env.PREVIEW_APP }}"
           fi
+          jev_seed_failures=0
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace analysis --limit 1 --retry-failed"
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace analysis --limit 1 --retry-failed" \
+            || jev_seed_failures=$((jev_seed_failures + 1))
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace nasdaq100 --limit 1 --retry-failed"
+            "python3 /app/scripts/db/backfill_jev_forecasts.py --workspace nasdaq100 --limit 1 --retry-failed" \
+            || jev_seed_failures=$((jev_seed_failures + 1))
           flyctl ssh console --app "${{ env.PREVIEW_APP }}" --command \
-            "python3 /app/scripts/db/refresh_jev_outcomes.py --workspace all"
+            "python3 /app/scripts/db/refresh_jev_outcomes.py --workspace all" \
+            || jev_seed_failures=$((jev_seed_failures + 1))
+          if [ "$jev_seed_failures" -gt 0 ]; then
+            echo "::warning::Jev preview seeding had $jev_seed_failures provider/data failure(s). Failed runs remain recorded for retry."
+          fi
 
       - name: Diagnostics on deploy failure
         if: failure() && steps.deploy.conclusion == 'failure'

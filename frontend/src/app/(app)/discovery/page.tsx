@@ -348,33 +348,33 @@ export default function DiscoveryPage() {
   useEffect(() => {
     if (initializedFromQueryRef.current) return;
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const rawType = String(params.get("lens_type") || "").trim().toLowerCase();
-    const rawKey = String(params.get("lens_key") || "").trim();
-    const rawHorizon = String(params.get("horizon") || "").trim().toLowerCase();
-    if (rawType === "jev") {
-      setActiveView("jev");
-      if (JEV_HORIZONS.some((option) => option.value === rawHorizon)) {
-        setJevHorizon(rawHorizon as JevHorizonFilter);
+    let cancelled = false;
+    const search = window.location.search;
+    queueMicrotask(() => {
+      if (cancelled || initializedFromQueryRef.current) return;
+      const params = new URLSearchParams(search);
+      const rawType = String(params.get("lens_type") || "").trim().toLowerCase();
+      const rawKey = String(params.get("lens_key") || "").trim();
+      const rawHorizon = String(params.get("horizon") || "").trim().toLowerCase();
+      if (rawType === "jev") {
+        setActiveView("jev");
+        if (JEV_HORIZONS.some((option) => option.value === rawHorizon)) {
+          setJevHorizon(rawHorizon as JevHorizonFilter);
+        }
+      } else if (rawType === "model" || rawType === "valuator") {
+        setActiveView(rawType);
+        setLensType(rawType);
+        setLensKey(rawKey);
+      } else if (rawType === "overall") {
+        setActiveView("overall");
+        setLensType("overall");
+        setLensKey("");
       }
       initializedFromQueryRef.current = true;
-      return;
-    }
-    if (rawType === "model" || rawType === "valuator") {
-      setActiveView(rawType);
-      setLensType(rawType);
-      setLensKey(rawKey);
-      initializedFromQueryRef.current = true;
-      return;
-    }
-    if (rawType === "overall") {
-      setActiveView("overall");
-      setLensType("overall");
-      setLensKey("");
-      initializedFromQueryRef.current = true;
-      return;
-    }
-    initializedFromQueryRef.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

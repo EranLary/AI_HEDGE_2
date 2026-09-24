@@ -39,10 +39,8 @@ function score(value: number | null): string {
 }
 
 function dateLabel(value: string): string {
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return Number.isFinite(parsed.getTime())
-    ? parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" })
-    : value;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 }
 
 function clampPct(value: number | null): number {

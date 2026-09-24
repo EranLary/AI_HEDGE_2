@@ -16,13 +16,13 @@ from ai_hedge.db.connection import get_conn
 
 
 JEV_MODEL_ID = "typesafe-ai/jev"
-QUESTION_VERSION = "stock-direction-v2"
+QUESTION_VERSION = "stock-direction-v3"
 REDACTION_VERSION = "report-date-v1"
 GATEWAY_EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
-# Although the Gateway catalog advertises a larger context window, real Jev
-# evaluation requests currently become unreliable well below it. Keep enough
-# headroom for the seven questions and their typed answers.
-MAX_STATE_CHARS = 10_000
+# Vercel's TypeSafe catalog advertises a 32K-token window. Live HTTP API probes
+# on 2026-09-24 succeeded at 60K characters (~16K input tokens) while 80K and
+# 100K repeatedly returned 503. Keep measured headroom for seven typed answers.
+MAX_STATE_CHARS = 60_000
 
 ForecastMode = Literal["forward", "retrospective"]
 

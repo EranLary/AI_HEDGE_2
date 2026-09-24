@@ -42,6 +42,10 @@ def test_build_jev_state_preserves_head_and_tail_when_truncated() -> None:
     assert len(state) <= 600
 
 
+def test_default_state_budget_is_the_measured_60k_limit() -> None:
+    assert jev.MAX_STATE_CHARS == 60_000
+
+
 class _FakeResponse:
     ok = True
     status_code = 200

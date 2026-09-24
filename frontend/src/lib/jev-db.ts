@@ -7,14 +7,15 @@ import {
   type JevForecastMode,
   type JevMetrics,
   type JevOutcomeStatus,
+  type JevPredictionScope,
 } from "@/lib/jev-metrics";
 import type { Workspace } from "@/lib/workspace";
 
-export type { JevForecastMode, JevMetric, JevMetrics, JevOutcomeStatus } from "@/lib/jev-metrics";
+export type { JevForecastMode, JevMetric, JevMetrics, JevOutcomeStatus, JevPredictionScope } from "@/lib/jev-metrics";
 
 // Keep aligned with QUESTION_VERSION in src/ai_hedge/jev.py. Metrics must not
 // mix predictions produced by materially different question wording.
-export const JEV_QUESTION_VERSION = "stock-direction-v2";
+export const JEV_QUESTION_VERSION = "stock-direction-v3";
 
 export type JevPrediction = {
   horizon: "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";
@@ -143,9 +144,10 @@ export async function getJevReportForecast(
 export async function getJevMetrics(
   workspace: Workspace,
   mode: JevForecastMode,
+  scope: JevPredictionScope,
 ): Promise<JevMetrics> {
   const sql = getSql();
-  if (!sql) return computeJevMetrics([], mode);
+  if (!sql) return computeJevMetrics([], mode, scope);
   const raw = (await sql`
     SELECT p.run_id::text AS run_id, p.report_id::text AS report_id,
            p.horizon, p.horizon_days,
@@ -167,5 +169,5 @@ export async function getJevMetrics(
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'));
   `) as unknown as Array<Record<string, unknown>>;
   const rows = raw.map(normalizePrediction);
-  return computeJevMetrics(rows, mode);
+  return computeJevMetrics(rows, mode, scope);
 }

@@ -49,6 +49,7 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
   const result = computeJevMetrics(rows, "forward");
 
   assert.equal(result.reports, 2);
+  assert.equal(result.scope, "all");
   assert.equal(result.overall.predictions, 4);
   assert.equal(result.overall.resolved, 3);
   assert.equal(result.overall.pending, 1);
@@ -66,4 +67,65 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
   assert.equal(result.timeline[0]?.hit_rate_pct, 100);
   assert.equal(result.timeline[1]?.date, "2026-02-01");
   assert.ok(Math.abs(Number(result.timeline[1]?.hit_rate_pct) - 66.6666667) < 1e-6);
+  assert.equal(result.calibration[0]?.observed_up_count, 0);
+  assert.equal(result.calibration[1]?.observed_up_count, 1);
+});
+
+test("Jev positive-only scope measures only YES calls and uses honest calibration bins", () => {
+  const rows: JevMetricPrediction[] = [
+    {
+      report_id: "r1",
+      horizon: "1w",
+      probability_up: 0.2,
+      outcome_status: "realized",
+      outcome_at: "2026-01-08",
+      realized_up: false,
+      was_correct: true,
+      brier_score: 0.04,
+    },
+    {
+      report_id: "r1",
+      horizon: "1m",
+      probability_up: 0.55,
+      outcome_status: "realized",
+      outcome_at: "2026-02-01",
+      realized_up: true,
+      was_correct: true,
+      brier_score: 0.2025,
+    },
+    {
+      report_id: "r2",
+      horizon: "1w",
+      probability_up: 0.7,
+      outcome_status: "realized",
+      outcome_at: "2026-01-08",
+      realized_up: false,
+      was_correct: false,
+      brier_score: 0.49,
+    },
+    {
+      report_id: "r3",
+      horizon: "5y",
+      probability_up: 0.9,
+      outcome_status: "pending",
+      realized_up: null,
+      was_correct: null,
+      brier_score: null,
+    },
+  ];
+
+  const result = computeJevMetrics(rows, "forward", "positive_only");
+
+  assert.equal(result.scope, "positive_only");
+  assert.equal(result.reports, 3);
+  assert.equal(result.overall.predictions, 3);
+  assert.equal(result.overall.resolved, 2);
+  assert.equal(result.overall.hits, 1);
+  assert.equal(result.overall.misses, 1);
+  assert.equal(result.overall.hit_rate_pct, 50);
+  assert.deepEqual(result.calibration.map((bucket) => bucket.label), ["50–60%", "60–80%", "80–100%"]);
+  assert.equal(result.calibration[0]?.count, 1);
+  assert.equal(result.calibration[0]?.observed_up_count, 1);
+  assert.equal(result.calibration[1]?.count, 1);
+  assert.equal(result.calibration[1]?.observed_up_count, 0);
 });

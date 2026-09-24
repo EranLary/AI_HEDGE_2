@@ -12,6 +12,10 @@ import type { Workspace } from "@/lib/workspace";
 
 export type { JevForecastMode, JevMetric, JevMetrics, JevOutcomeStatus } from "@/lib/jev-metrics";
 
+// Keep aligned with QUESTION_VERSION in src/ai_hedge/jev.py. Metrics must not
+// mix predictions produced by materially different question wording.
+export const JEV_QUESTION_VERSION = "stock-direction-v2";
+
 export type JevPrediction = {
   horizon: "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";
   horizon_days: number;
@@ -86,6 +90,7 @@ export async function getJevReportForecast(
       JOIN reports r ON r.id = j.report_id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE j.report_id = ${reportId}::uuid
+       AND j.question_version = ${JEV_QUESTION_VERSION}
        AND r.workspace = ${workspace}
        AND r.deleted_at IS NULL
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
@@ -146,6 +151,7 @@ export async function getJevMetrics(
       JOIN reports r ON r.id = p.report_id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE j.status = 'completed'
+       AND j.question_version = ${JEV_QUESTION_VERSION}
        AND j.forecast_mode = ${mode}
        AND r.workspace = ${workspace}
        AND r.deleted_at IS NULL

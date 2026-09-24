@@ -23,6 +23,7 @@ except ImportError:
     pass
 
 from ai_hedge.db.connection import get_conn  # noqa: E402
+from ai_hedge.jev import QUESTION_VERSION  # noqa: E402
 
 
 def _safe_float(value: Any) -> float | None:
@@ -50,12 +51,13 @@ def _pending_rows(workspace: str, limit: int) -> list[dict[str, Any]]:
                  WHERE p.outcome_status = 'pending'
                    AND p.target_at <= now()
                    AND j.status = 'completed'
+                   AND j.question_version = %s
                    AND r.deleted_at IS NULL
                    {workspace_filter}
                  ORDER BY r.ticker, r.available_at, p.target_at
                  LIMIT %s;
                 """,
-                params,
+                [QUESTION_VERSION, *params],
             )
             columns = [item.name for item in cur.description]
             return [dict(zip(columns, row)) for row in cur.fetchall()]

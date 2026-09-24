@@ -16,7 +16,7 @@ from ai_hedge.db.connection import get_conn
 
 
 JEV_MODEL_ID = "typesafe-ai/jev"
-QUESTION_VERSION = "stock-direction-v1"
+QUESTION_VERSION = "stock-direction-v2"
 REDACTION_VERSION = "report-date-v1"
 GATEWAY_EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 # Although the Gateway catalog advertises a larger context window, real Jev

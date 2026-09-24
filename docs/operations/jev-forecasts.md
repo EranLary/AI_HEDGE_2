@@ -1,7 +1,7 @@
 # Jev forecasts
 
-Jev reads the persisted Analysis and Valuation Markdown after a report is saved
-and returns seven boolean probabilities: 1 week, 1 month, 3 months, 6 months,
+Jev reads a deterministic evidence pack from the persisted Analysis Markdown
+after a report is saved and returns seven boolean probabilities: 1 week, 1 month, 3 months, 6 months,
 1 year, 3 years, and 5 years. The site converts each probability into YES/NO at
 the 50% threshold while retaining the original probability for calibration.
 
@@ -22,19 +22,33 @@ ZDR; unsupported plans reject those requests.
 - The report publication timestamp is omitted and its exact textual forms are
   redacted from the model input. Fiscal-period dates remain because they are
   material research evidence.
-- Inputs below 10,000 characters use the complete persisted Analysis and
-  Valuation Markdown. Longer inputs preserve the beginning and valuation tail
-  with an explicit deterministic omission marker. This conservative ceiling
-  reflects measured HTTP API behavior and leaves headroom for all seven typed
-  questions even though the Gateway catalog advertises a larger context.
+- The evidence pack contains complete copies of these Analysis sections when
+  present: company description, general information, news, all-reports insight,
+  analyst expectations, Bull vs Bear, Dashboard Extraction Pack, Wall Street,
+  Technical Analysis, and Financials. It never includes `prices_explain_md` or
+  other valuation sections.
+- Some historical Analysis artifacts contain an exact embedded copy of their
+  separate Prices Explain artifact. That legacy copy is removed before section
+  extraction.
+- The pack has a measured 60,000-character ceiling. If a future report exceeds
+  it, Wall Street, analyst expectations, and general information are removed in
+  that order as complete sections. Required sections are never cut mid-text;
+  an unexpectedly oversized required pack fails only the optional enrichment.
+  Live HTTP API probes found 60,000 characters successful at about 16,000 input
+  tokens, while 80,000 and 100,000 character requests repeatedly returned HTTP
+  503.
 - New-run forecasts are labeled `forward`. Historical backfills are labeled
   `retrospective` and are never silently mixed into forward track-record data.
 - Outcomes use split-adjusted daily closes. The baseline is the first available
   close on or after report availability; the outcome is the first available
   close on or after the calendar target date.
-- Hit rate measures the YES/NO direction. Brier score measures probability
-  quality. Calibration compares mean predicted probability with observed up
-  frequency in five fixed buckets.
+- Hit rate measures the YES/NO direction. The track record defaults to
+  `Positive only`, which includes only YES calls (`probability_up >= 50%`), and
+  can be switched to all calls. Brier score measures probability quality.
+  Calibration groups resolved calls into probability ranges, then compares the
+  mean predicted probability with the actual share that rose. The displayed N
+  is the bucket sample size and the calibration error is the sample-weighted
+  average absolute gap across populated buckets.
 - The report-level Jev tab shows the seven answers for that report. The main
   Track Record page also shows workspace-wide Jev hit rate, Brier score,
   calibration buckets, horizon detail, and a cumulative timeline keyed to the

@@ -1,4 +1,5 @@
 export type JevForecastMode = "forward" | "retrospective";
+export type JevPredictionScope = "all" | "positive_only";
 export type JevHorizon = "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";
 export type JevOutcomeStatus = "pending" | "realized" | "unavailable";
 
@@ -27,6 +28,7 @@ export type JevCalibrationBucket = {
   key: string;
   label: string;
   count: number;
+  observed_up_count: number;
   mean_probability_up: number | null;
   observed_up_rate: number | null;
   absolute_gap: number | null;
@@ -44,6 +46,7 @@ export type JevTimelinePoint = {
 
 export type JevMetrics = {
   mode: JevForecastMode;
+  scope: JevPredictionScope;
   reports: number;
   overall: JevMetric;
   expected_calibration_error: number | null;
@@ -72,26 +75,46 @@ function metric(rows: JevMetricPrediction[]): JevMetric {
   };
 }
 
-function calibrationBuckets(rows: JevMetricPrediction[]): JevCalibrationBucket[] {
+type CalibrationRange = {
+  lower: number;
+  upper: number;
+  label: string;
+};
+
+const ALL_CALIBRATION_RANGES: CalibrationRange[] = Array.from({ length: 5 }, (_unused, index) => ({
+  lower: index * 0.2,
+  upper: index === 4 ? 1.0000001 : (index + 1) * 0.2,
+  label: `${index * 20}–${(index + 1) * 20}%`,
+}));
+
+const POSITIVE_CALIBRATION_RANGES: CalibrationRange[] = [
+  { lower: 0.5, upper: 0.6, label: "50–60%" },
+  { lower: 0.6, upper: 0.8, label: "60–80%" },
+  { lower: 0.8, upper: 1.0000001, label: "80–100%" },
+];
+
+function calibrationBuckets(
+  rows: JevMetricPrediction[],
+  scope: JevPredictionScope,
+): JevCalibrationBucket[] {
   const realized = rows.filter(
     (row) => row.outcome_status === "realized" && typeof row.realized_up === "boolean",
   );
-  return Array.from({ length: 5 }, (_unused, index) => {
-    const lower = index * 0.2;
-    const upper = index === 4 ? 1.0000001 : (index + 1) * 0.2;
+  const ranges = scope === "positive_only" ? POSITIVE_CALIBRATION_RANGES : ALL_CALIBRATION_RANGES;
+  return ranges.map(({ lower, upper, label }) => {
     const bucketRows = realized.filter(
       (row) => row.probability_up >= lower && row.probability_up < upper,
     );
     const meanProbability = bucketRows.length
       ? bucketRows.reduce((sum, row) => sum + row.probability_up, 0) / bucketRows.length
       : null;
-    const observedRate = bucketRows.length
-      ? bucketRows.filter((row) => row.realized_up === true).length / bucketRows.length
-      : null;
+    const observedUpCount = bucketRows.filter((row) => row.realized_up === true).length;
+    const observedRate = bucketRows.length ? observedUpCount / bucketRows.length : null;
     return {
-      key: `${index * 20}-${(index + 1) * 20}`,
-      label: `${index * 20}–${(index + 1) * 20}%`,
+      key: `${Math.round(lower * 100)}-${Math.round(Math.min(upper, 1) * 100)}`,
+      label,
       count: bucketRows.length,
+      observed_up_count: observedUpCount,
       mean_probability_up: meanProbability,
       observed_up_rate: observedRate,
       absolute_gap:
@@ -100,8 +123,11 @@ function calibrationBuckets(rows: JevMetricPrediction[]): JevCalibrationBucket[]
   });
 }
 
-function expectedCalibrationError(rows: JevMetricPrediction[]): number | null {
-  const populatedBuckets = calibrationBuckets(rows).filter(
+function expectedCalibrationError(
+  rows: JevMetricPrediction[],
+  scope: JevPredictionScope,
+): number | null {
+  const populatedBuckets = calibrationBuckets(rows, scope).filter(
     (bucket) => bucket.count > 0 && bucket.absolute_gap !== null,
   );
   const count = populatedBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
@@ -113,7 +139,10 @@ function expectedCalibrationError(rows: JevMetricPrediction[]): number | null {
     : null;
 }
 
-function timelinePoints(rows: JevMetricPrediction[]): JevTimelinePoint[] {
+function timelinePoints(
+  rows: JevMetricPrediction[],
+  scope: JevPredictionScope,
+): JevTimelinePoint[] {
   const realized = rows
     .filter(
       (row) =>
@@ -134,7 +163,7 @@ function timelinePoints(rows: JevMetricPrediction[]): JevTimelinePoint[] {
       misses: summary.misses,
       hit_rate_pct: summary.hit_rate_pct,
       mean_brier_score: summary.mean_brier_score,
-      expected_calibration_error: expectedCalibrationError(cumulative),
+      expected_calibration_error: expectedCalibrationError(cumulative, scope),
     };
   });
   if (points.length <= 24) return points;
@@ -148,18 +177,23 @@ function timelinePoints(rows: JevMetricPrediction[]): JevTimelinePoint[] {
 export function computeJevMetrics(
   rows: JevMetricPrediction[],
   mode: JevForecastMode,
+  scope: JevPredictionScope = "all",
 ): JevMetrics {
-  const calibration = calibrationBuckets(rows);
+  const scopedRows = scope === "positive_only"
+    ? rows.filter((row) => row.probability_up >= 0.5)
+    : rows;
+  const calibration = calibrationBuckets(scopedRows, scope);
   return {
     mode,
-    reports: new Set(rows.map((row) => row.report_id)).size,
-    overall: metric(rows),
-    expected_calibration_error: expectedCalibrationError(rows),
+    scope,
+    reports: new Set(scopedRows.map((row) => row.report_id)).size,
+    overall: metric(scopedRows),
+    expected_calibration_error: expectedCalibrationError(scopedRows, scope),
     by_horizon: JEV_HORIZON_ORDER.map((horizon) => ({
       horizon,
-      ...metric(rows.filter((row) => row.horizon === horizon)),
+      ...metric(scopedRows.filter((row) => row.horizon === horizon)),
     })),
     calibration,
-    timeline: timelinePoints(rows),
+    timeline: timelinePoints(scopedRows, scope),
   };
 }

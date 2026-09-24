@@ -11,7 +11,13 @@ def test_build_jev_state_redacts_report_date_but_keeps_other_periods() -> None:
     report_time = datetime(2026, 9, 24, 10, 30, tzinfo=timezone.utc)
     state, truncated = jev.build_jev_state(
         ticker="TEST",
-        analysis_md="Generated 2026-09-24. Fiscal year ended 2025-12-31.",
+        analysis_md=(
+            "# TEST Analysis\n\n"
+            "## What the company is doing\nGenerated 2026-09-24. Fiscal year ended 2025-12-31.\n\n"
+            "## News Review\nA product launch is approaching.\n\n"
+            "## Bull vs Bear Thesis\nBalanced evidence.\n\n"
+            "## Dashboard Extraction Pack\nDecision-grade summary."
+        ),
         prices_explain_md="Current price 100; valuation conclusion 125.",
         generated_at=report_time,
         available_at=report_time,
@@ -21,25 +27,85 @@ def test_build_jev_state_redacts_report_date_but_keeps_other_periods() -> None:
     assert "2026-09-24" not in state
     assert "[REPORT DATE WITHHELD]" in state
     assert "2025-12-31" in state
-    assert "## Analysis" in state
-    assert "## Valuation" in state
+    assert "# TEST Analysis Evidence Pack" in state
+    assert "## News Review" in state
+    assert "valuation conclusion 125" not in state
+    assert "No valuation report" in state
 
 
-def test_build_jev_state_preserves_head_and_tail_when_truncated() -> None:
+def test_build_jev_state_selects_whole_analysis_sections_and_removes_legacy_valuation() -> None:
+    embedded_valuation = "# TEST Prices Explain\nVALUATION-MUST-NOT-LEAK"
     state, truncated = jev.build_jev_state(
         ticker="TEST",
-        analysis_md="HEAD-ANCHOR\n" + ("a" * 400),
-        prices_explain_md=("b" * 400) + "\nTAIL-ANCHOR",
+        analysis_md=(
+            "# TEST Analysis\n\n"
+            "## What the company is doing\nKEEP-COMPANY\n\n"
+            "## Competitor Market Review\nDROP-COMPETITORS\n\n"
+            "## All Reports Insights\nKEEP-FILINGS\n\n"
+            "## Bull vs Bear Thesis\nKEEP-BALANCE\n\n"
+            "## SEC Summary\nDROP-RAW-FILING\n\n"
+            "## Dashboard Extraction Pack\nKEEP-DASHBOARD\n\n"
+            f"{embedded_valuation}\n\n"
+            "## Technical Analysis\nKEEP-TECHNICAL"
+        ),
+        prices_explain_md=embedded_valuation,
         generated_at="2026-09-24T00:00:00Z",
         available_at="2026-09-24T00:00:00Z",
-        max_chars=600,
+    )
+
+    assert truncated is False
+    assert "KEEP-COMPANY" in state
+    assert "KEEP-FILINGS" in state
+    assert "KEEP-BALANCE" in state
+    assert "KEEP-DASHBOARD" in state
+    assert "KEEP-TECHNICAL" in state
+    assert "DROP-COMPETITORS" not in state
+    assert "DROP-RAW-FILING" not in state
+    assert "VALUATION-MUST-NOT-LEAK" not in state
+
+
+def test_build_jev_state_drops_only_complete_optional_sections_for_budget() -> None:
+    state, truncated = jev.build_jev_state(
+        ticker="TEST",
+        analysis_md=(
+            "# TEST Analysis\n\n"
+            "## General Information Insights\nGENERAL-ANCHOR " + ("g" * 500) + "\n\n"
+            "## News Review\nNEWS-ANCHOR\n\n"
+            "## Analyst Expectations Insights\nANALYST-ANCHOR " + ("a" * 500) + "\n\n"
+            "## Bull vs Bear Thesis\nBALANCE-ANCHOR\n\n"
+            "## Dashboard Extraction Pack\nDASHBOARD-ANCHOR\n\n"
+            "## Wall ST Analyst Read\nWALL-ST-ANCHOR " + ("w" * 500)
+        ),
+        prices_explain_md=None,
+        generated_at="2026-09-24T00:00:00Z",
+        available_at="2026-09-24T00:00:00Z",
+        max_chars=500,
     )
 
     assert truncated is True
-    assert "HEAD-ANCHOR" in state
-    assert "TAIL-ANCHOR" in state
-    assert "Middle of report omitted deterministically" in state
-    assert len(state) <= 600
+    assert "NEWS-ANCHOR" in state
+    assert "BALANCE-ANCHOR" in state
+    assert "DASHBOARD-ANCHOR" in state
+    assert "GENERAL-ANCHOR" not in state
+    assert "ANALYST-ANCHOR" not in state
+    assert "WALL-ST-ANCHOR" not in state
+    assert len(state) <= 500
+
+
+def test_build_jev_state_fails_instead_of_cutting_a_required_section() -> None:
+    with pytest.raises(ValueError, match="after whole-section fallbacks"):
+        jev.build_jev_state(
+            ticker="TEST",
+            analysis_md="## Dashboard Extraction Pack\n" + ("x" * 1_000),
+            prices_explain_md=None,
+            generated_at="2026-09-24T00:00:00Z",
+            available_at="2026-09-24T00:00:00Z",
+            max_chars=300,
+        )
+
+
+def test_default_state_budget_is_the_measured_60k_limit() -> None:
+    assert jev.MAX_STATE_CHARS == 60_000
 
 
 class _FakeResponse:

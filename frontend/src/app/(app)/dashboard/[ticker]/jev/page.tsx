@@ -141,7 +141,7 @@ export default async function DashboardJevPage({
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">Probabilistic forecast</p>
             <h1 className="mt-1 font-display text-2xl">Jev Direction Forecasts</h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[color:var(--text-muted)]">
-              Jev read this Combined report without its publication date and answered seven independent price-direction questions. YES/NO is derived at 50%; confidence is the probability assigned to the displayed answer.
+              Jev read a date-redacted evidence pack built from complete, high-signal Analysis sections and answered seven independent price-direction questions. Valuation models and price targets are excluded. YES/NO is derived at 50%; confidence is the probability assigned to the displayed answer.
             </p>
           </div>
           {forecast ? (
@@ -152,7 +152,7 @@ export default async function DashboardJevPage({
         </div>
         {forecast?.input_truncated ? (
           <p className="mt-3 text-xs text-[color:var(--warning)]">
-            This report exceeded the context budget; the beginning and valuation conclusion were preserved and the middle was deterministically shortened.
+            This Analysis exceeded the context budget; lower-priority sections were removed in full. No section was cut mid-text.
           </p>
         ) : null}
       </header>

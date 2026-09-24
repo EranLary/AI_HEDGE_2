@@ -9,6 +9,7 @@ import {
   type JevForecastMode,
   type JevHorizon,
   type JevMetrics,
+  type JevPredictionScope,
 } from "@/lib/jev-metrics";
 
 type JevTrackRecordPayload = JevMetrics & {
@@ -72,6 +73,7 @@ function LoadingState() {
 export function JevTrackRecordSection() {
   const { api, label: workspaceLabel, workspace } = useWorkspace();
   const [mode, setMode] = useState<JevForecastMode>("retrospective");
+  const [scope, setScope] = useState<JevPredictionScope>("positive_only");
   const [data, setData] = useState<JevTrackRecordPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -84,7 +86,7 @@ export function JevTrackRecordSection() {
       setError("");
       try {
         const response = await fetch(
-          api(`/api/jev-track-record?mode=${mode}&refresh=${refreshToken}`),
+          api(`/api/jev-track-record?mode=${mode}&scope=${scope}&refresh=${refreshToken}`),
           { cache: "no-store" },
         );
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -103,7 +105,7 @@ export function JevTrackRecordSection() {
     return () => {
       cancelled = true;
     };
-  }, [api, mode, refreshToken, workspace]);
+  }, [api, mode, refreshToken, scope, workspace]);
 
   const lastTimelineDate = useMemo(() => data?.timeline.at(-1)?.date || null, [data]);
 
@@ -125,6 +127,22 @@ export function JevTrackRecordSection() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Jev prediction scope">
+            {(["positive_only", "all"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setScope(item)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                  scope === item
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
+                }`}
+              >
+                {item === "positive_only" ? "Positive only" : "All calls"}
+              </button>
+            ))}
+          </div>
           <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Jev track-record mode">
             {(["forward", "retrospective"] as const).map((item) => (
               <button
@@ -158,6 +176,12 @@ export function JevTrackRecordSection() {
           Backtest forecasts were generated from historical Combined reports with the publication date withheld. They remain separate from live forward forecasts because indirect period clues can still exist in the report.
         </p>
       ) : null}
+
+      <p className="mt-3 text-xs leading-relaxed text-[color:var(--text-muted)]">
+        {scope === "positive_only"
+          ? "Positive only measures Jev's YES calls: forecasts with at least a 50% probability of a price increase."
+          : "All calls measures both Jev YES and NO direction forecasts."}
+      </p>
 
       <div className="mt-5">
         {loading ? <LoadingState /> : null}
@@ -293,29 +317,41 @@ export function JevTrackRecordSection() {
 
               <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
                 <h3 className="font-semibold text-[color:var(--text-primary)]">Calibration map</h3>
-                <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">Predicted probability of an increase versus the percentage that actually increased.</p>
+                <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
+                  Each row groups resolved forecasts by Jev&apos;s probability of a rise. “Average forecast” is the mean probability Jev assigned; “Actually rose” is the share of those stocks that went up. Closer values mean better calibration.
+                </p>
                 <div className="mt-4 space-y-4">
                   {data.calibration.map((bucket) => (
                     <div key={bucket.key}>
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span className="font-semibold text-[color:var(--text-secondary)]">{bucket.label}</span>
-                        <span className="tabular-nums text-[color:var(--text-muted)]">N {bucket.count}</span>
+                        <span className="tabular-nums text-[color:var(--text-muted)]">
+                          {bucket.count ? `${bucket.observed_up_count} of ${bucket.count} rose` : "No resolved forecasts"}
+                        </span>
                       </div>
-                      <div className="mt-2 grid grid-cols-[70px_1fr_44px] items-center gap-2 text-[11px]">
-                        <span className="text-[color:var(--text-muted)]">Predicted</span>
+                      <div className="mt-2 grid grid-cols-[92px_1fr_44px] items-center gap-2 text-[11px]">
+                        <span className="text-[color:var(--text-muted)]">Avg. forecast</span>
                         <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface)]">
                           <div className="h-full rounded-full bg-[color:var(--info)]" style={{ width: `${clampPct((bucket.mean_probability_up ?? 0) * 100)}%` }} />
                         </div>
                         <span className="text-right tabular-nums text-[color:var(--text-secondary)]">{probabilityPct(bucket.mean_probability_up)}</span>
-                        <span className="text-[color:var(--text-muted)]">Observed</span>
+                        <span className="text-[color:var(--text-muted)]">Actually rose</span>
                         <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface)]">
                           <div className="h-full rounded-full bg-[color:var(--success)]" style={{ width: `${clampPct((bucket.observed_up_rate ?? 0) * 100)}%` }} />
                         </div>
                         <span className="text-right tabular-nums text-[color:var(--text-secondary)]">{probabilityPct(bucket.observed_up_rate)}</span>
                       </div>
+                      {bucket.absolute_gap !== null ? (
+                        <p className="mt-1 text-right text-[10px] tabular-nums text-[color:var(--text-muted)]">
+                          Gap {(bucket.absolute_gap * 100).toFixed(0)} percentage points
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
+                <p className="mt-4 border-t border-[color:var(--border-subtle)] pt-3 text-[11px] leading-relaxed text-[color:var(--text-muted)]">
+                  Calibration error is the absolute gap in each populated row, weighted by its sample size. 0% is perfect; smaller is better.
+                </p>
               </div>
             </div>
 

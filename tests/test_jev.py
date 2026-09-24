@@ -74,7 +74,9 @@ def test_build_jev_state_drops_only_complete_optional_sections_for_budget() -> N
             "## Analyst Expectations Insights\nANALYST-ANCHOR " + ("a" * 500) + "\n\n"
             "## Bull vs Bear Thesis\nBALANCE-ANCHOR\n\n"
             "## Dashboard Extraction Pack\nDASHBOARD-ANCHOR\n\n"
-            "## Wall ST Analyst Read\nWALL-ST-ANCHOR " + ("w" * 500)
+            "## Wall ST Analyst Read\nWALL-ST-ANCHOR " + ("w" * 500) + "\n\n"
+            "## Technical Analysis\nTECHNICAL-ANCHOR " + ("t" * 500) + "\n\n"
+            "## Financials\nFINANCIALS-ANCHOR " + ("f" * 500)
         ),
         prices_explain_md=None,
         generated_at="2026-09-24T00:00:00Z",
@@ -89,6 +91,8 @@ def test_build_jev_state_drops_only_complete_optional_sections_for_budget() -> N
     assert "GENERAL-ANCHOR" not in state
     assert "ANALYST-ANCHOR" not in state
     assert "WALL-ST-ANCHOR" not in state
+    assert "TECHNICAL-ANCHOR" not in state
+    assert "FINANCIALS-ANCHOR" not in state
     assert len(state) <= 500
 
 
@@ -104,8 +108,8 @@ def test_build_jev_state_fails_instead_of_cutting_a_required_section() -> None:
         )
 
 
-def test_default_state_budget_is_the_measured_60k_limit() -> None:
-    assert jev.MAX_STATE_CHARS == 60_000
+def test_default_state_budget_is_the_production_stable_31k_limit() -> None:
+    assert jev.MAX_STATE_CHARS == 31_000
 
 
 class _FakeResponse:

@@ -15,7 +15,7 @@ export type { JevForecastMode, JevMetric, JevMetrics, JevOutcomeStatus, JevPredi
 
 // Keep aligned with QUESTION_VERSION in src/ai_hedge/jev.py. Metrics must not
 // mix predictions produced by materially different question wording.
-export const JEV_QUESTION_VERSION = "stock-direction-v3";
+export const JEV_QUESTION_VERSION = "stock-direction-v4";
 
 export type JevPrediction = {
   horizon: "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";

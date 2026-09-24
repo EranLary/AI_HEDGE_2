@@ -16,13 +16,13 @@ from ai_hedge.db.connection import get_conn
 
 
 JEV_MODEL_ID = "typesafe-ai/jev"
-QUESTION_VERSION = "stock-direction-v3"
+QUESTION_VERSION = "stock-direction-v4"
 REDACTION_VERSION = "report-date-v1"
 GATEWAY_EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
-# Vercel's TypeSafe catalog advertises a 32K-token window. Live HTTP API probes
-# on 2026-09-24 succeeded at 60K characters (~16K input tokens) while 80K and
-# 100K repeatedly returned 503. Keep measured headroom for seven typed answers.
-MAX_STATE_CHARS = 60_000
+# Production backfill measurements on 2026-09-24 showed sharply higher 503/429
+# rates above roughly 30K characters despite the larger advertised token window.
+# Keep the evidence pack below the empirically stable operating range.
+MAX_STATE_CHARS = 31_000
 
 _MARKDOWN_HEADING_RE = re.compile(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*$")
 _ANALYSIS_SECTION_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -65,8 +65,10 @@ _JEV_ANALYSIS_SECTIONS: tuple[str, ...] = (
 )
 _JEV_BUDGET_DROP_ORDER: tuple[str, ...] = (
     "wall_st",
-    "analyst_expectations",
     "general",
+    "technical",
+    "analyst_expectations",
+    "financials",
 )
 
 ForecastMode = Literal["forward", "retrospective"]

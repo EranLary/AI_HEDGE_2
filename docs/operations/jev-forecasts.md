@@ -30,13 +30,15 @@ ZDR; unsupported plans reject those requests.
 - Some historical Analysis artifacts contain an exact embedded copy of their
   separate Prices Explain artifact. That legacy copy is removed before section
   extraction.
-- The pack has a measured 60,000-character ceiling. If a future report exceeds
-  it, Wall Street, analyst expectations, and general information are removed in
-  that order as complete sections. Required sections are never cut mid-text;
-  an unexpectedly oversized required pack fails only the optional enrichment.
-  Live HTTP API probes found 60,000 characters successful at about 16,000 input
-  tokens, while 80,000 and 100,000 character requests repeatedly returned HTTP
-  503.
+- The pack has a production-measured 31,000-character ceiling. If a report
+  exceeds it, Wall Street, general information, Technical Analysis, analyst
+  expectations, and Financials are removed in that order as complete sections.
+  The company description, news, all-reports insight, Bull vs Bear, and
+  Dashboard Extraction Pack remain the required core and are never cut
+  mid-text. A 597-report audit produced a median 26,234-character final pack,
+  p95 of 30,695, and maximum of 30,971 with no errors. This lower ceiling
+  reflects the production backfill, where provider 503/429 rates rose sharply
+  above roughly 30,000 characters despite the larger advertised token window.
 - New-run forecasts are labeled `forward`. Historical backfills are labeled
   `retrospective` and are never silently mixed into forward track-record data.
 - Outcomes use split-adjusted daily closes. The baseline is the first available

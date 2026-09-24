@@ -10,6 +10,7 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
       horizon: "1w",
       probability_up: 0.1,
       outcome_status: "realized",
+      outcome_at: "2026-01-08",
       realized_up: false,
       was_correct: true,
       brier_score: 0.01,
@@ -19,6 +20,7 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
       horizon: "1m",
       probability_up: 0.3,
       outcome_status: "realized",
+      outcome_at: "2026-02-01",
       realized_up: true,
       was_correct: false,
       brier_score: 0.49,
@@ -28,6 +30,7 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
       horizon: "1w",
       probability_up: 0.7,
       outcome_status: "realized",
+      outcome_at: "2026-01-08",
       realized_up: true,
       was_correct: true,
       brier_score: 0.09,
@@ -58,4 +61,9 @@ test("Jev metrics keep hit rate, Brier score, and calibration mathematically dis
   const oneWeek = result.by_horizon.find((row) => row.horizon === "1w");
   assert.equal(oneWeek?.resolved, 2);
   assert.equal(oneWeek?.hit_rate_pct, 100);
+  assert.equal(result.timeline.length, 2);
+  assert.equal(result.timeline[0]?.date, "2026-01-08");
+  assert.equal(result.timeline[0]?.hit_rate_pct, 100);
+  assert.equal(result.timeline[1]?.date, "2026-02-01");
+  assert.ok(Math.abs(Number(result.timeline[1]?.hit_rate_pct) - 66.6666667) < 1e-6);
 });

@@ -35,6 +35,11 @@ ZDR; unsupported plans reject those requests.
 - Hit rate measures the YES/NO direction. Brier score measures probability
   quality. Calibration compares mean predicted probability with observed up
   frequency in five fixed buckets.
+- The report-level Jev tab shows the seven answers for that report. The main
+  Track Record page also shows workspace-wide Jev hit rate, Brier score,
+  calibration buckets, horizon detail, and a cumulative timeline keyed to the
+  dates on which outcomes matured. Forward and retrospective tracks remain
+  separate on both surfaces.
 
 ## Backfill
 

@@ -7,6 +7,7 @@ export type JevMetricPrediction = {
   horizon: JevHorizon;
   probability_up: number;
   outcome_status: JevOutcomeStatus;
+  outcome_at?: string | null;
   realized_up: boolean | null;
   was_correct: boolean | null;
   brier_score: number | null;
@@ -31,6 +32,16 @@ export type JevCalibrationBucket = {
   absolute_gap: number | null;
 };
 
+export type JevTimelinePoint = {
+  date: string;
+  resolved: number;
+  hits: number;
+  misses: number;
+  hit_rate_pct: number | null;
+  mean_brier_score: number | null;
+  expected_calibration_error: number | null;
+};
+
 export type JevMetrics = {
   mode: JevForecastMode;
   reports: number;
@@ -38,6 +49,7 @@ export type JevMetrics = {
   expected_calibration_error: number | null;
   by_horizon: Array<JevMetric & { horizon: JevHorizon }>;
   calibration: JevCalibrationBucket[];
+  timeline: JevTimelinePoint[];
 };
 
 export const JEV_HORIZON_ORDER: JevHorizon[] = ["1w", "1m", "3m", "6m", "1y", "3y", "5y"];
@@ -88,26 +100,66 @@ function calibrationBuckets(rows: JevMetricPrediction[]): JevCalibrationBucket[]
   });
 }
 
+function expectedCalibrationError(rows: JevMetricPrediction[]): number | null {
+  const populatedBuckets = calibrationBuckets(rows).filter(
+    (bucket) => bucket.count > 0 && bucket.absolute_gap !== null,
+  );
+  const count = populatedBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  return count
+    ? populatedBuckets.reduce(
+        (sum, bucket) => sum + Number(bucket.absolute_gap) * bucket.count,
+        0,
+      ) / count
+    : null;
+}
+
+function timelinePoints(rows: JevMetricPrediction[]): JevTimelinePoint[] {
+  const realized = rows
+    .filter(
+      (row) =>
+        row.outcome_status === "realized" &&
+        row.was_correct !== null &&
+        typeof row.outcome_at === "string" &&
+        row.outcome_at.length >= 10,
+    )
+    .sort((a, b) => String(a.outcome_at).localeCompare(String(b.outcome_at)));
+  const dates = Array.from(new Set(realized.map((row) => String(row.outcome_at).slice(0, 10))));
+  const points = dates.map((date) => {
+    const cumulative = realized.filter((row) => String(row.outcome_at).slice(0, 10) <= date);
+    const summary = metric(cumulative);
+    return {
+      date,
+      resolved: summary.resolved,
+      hits: summary.hits,
+      misses: summary.misses,
+      hit_rate_pct: summary.hit_rate_pct,
+      mean_brier_score: summary.mean_brier_score,
+      expected_calibration_error: expectedCalibrationError(cumulative),
+    };
+  });
+  if (points.length <= 24) return points;
+  const selected = new Set<number>();
+  for (let index = 0; index < 24; index += 1) {
+    selected.add(Math.round((index * (points.length - 1)) / 23));
+  }
+  return points.filter((_point, index) => selected.has(index));
+}
+
 export function computeJevMetrics(
   rows: JevMetricPrediction[],
   mode: JevForecastMode,
 ): JevMetrics {
   const calibration = calibrationBuckets(rows);
-  const populatedBuckets = calibration.filter((bucket) => bucket.count > 0 && bucket.absolute_gap !== null);
-  const calibrationCount = populatedBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  const expectedCalibrationError = calibrationCount
-    ? populatedBuckets.reduce((sum, bucket) => sum + Number(bucket.absolute_gap) * bucket.count, 0) /
-      calibrationCount
-    : null;
   return {
     mode,
     reports: new Set(rows.map((row) => row.report_id)).size,
     overall: metric(rows),
-    expected_calibration_error: expectedCalibrationError,
+    expected_calibration_error: expectedCalibrationError(rows),
     by_horizon: JEV_HORIZON_ORDER.map((horizon) => ({
       horizon,
       ...metric(rows.filter((row) => row.horizon === horizon)),
     })),
     calibration,
+    timeline: timelinePoints(rows),
   };
 }

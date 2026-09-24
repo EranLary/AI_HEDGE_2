@@ -58,6 +58,7 @@ function emptyMetrics(mode: JevForecastMode): JevMetrics {
     expected_calibration_error: null,
     by_horizon: [],
     calibration: [],
+    timeline: [],
   };
 }
 

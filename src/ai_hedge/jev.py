@@ -121,8 +121,11 @@ def _questions() -> dict[str, dict[str, str]]:
         horizon: {
             "type": "boolean",
             "instructions": (
-                f"Will this company's common-stock market price be strictly higher {label} after "
-                "the report was published than the current stock price stated in the report?"
+                "Using only the evidence in the report, estimate this exact event: will the company's "
+                "split-adjusted common-stock closing price on the first trading session on or after "
+                f"{label} following publication be strictly higher than its split-adjusted closing price "
+                "on the first trading session on or after publication? Treat the withheld publication "
+                "date as unknown and do not infer it."
             ),
         }
         for horizon, label, _days in HORIZONS

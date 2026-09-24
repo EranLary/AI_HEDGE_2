@@ -95,7 +95,9 @@ function fmtProbability(value: number): string {
 function fmtDate(value: string): string {
   const dt = new Date(value);
   if (!Number.isFinite(dt.getTime())) return "N/A";
-  return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
+  const day = String(dt.getUTCDate()).padStart(2, "0");
+  const month = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${dt.getUTCFullYear()}`;
 }
 
 function fmtScore(value: number | null | undefined): string {

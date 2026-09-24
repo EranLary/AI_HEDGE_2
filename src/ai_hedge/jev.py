@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -125,7 +126,12 @@ def _questions() -> dict[str, dict[str, str]]:
     }
 
 
-def evaluate_state(state: str, *, timeout_seconds: float = 90.0) -> dict[str, Any]:
+def evaluate_state(
+    state: str,
+    *,
+    timeout_seconds: float = 90.0,
+    max_attempts: int = 3,
+) -> dict[str, Any]:
     # Some Windows/PowerShell secret pipelines can prefix a UTF-8 BOM. It is
     # invisible in dashboards but invalid in an HTTP Authorization header.
     api_key = str(os.environ.get("AI_GATEWAY_API_KEY", "")).strip().lstrip("\ufeff")
@@ -136,17 +142,26 @@ def evaluate_state(state: str, *, timeout_seconds: float = 90.0) -> dict[str, An
     if _truthy_env("JEV_ZERO_DATA_RETENTION"):
         gateway_options["zeroDataRetention"] = True
 
-    response = requests.post(
-        GATEWAY_EVALUATE_URL,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
+    request_kwargs = {
+        "headers": {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        "json": {
             "model": JEV_MODEL_ID,
             "state": state,
             "questions": _questions(),
             "providerOptions": {"gateway": gateway_options},
         },
-        timeout=timeout_seconds,
-    )
+        "timeout": timeout_seconds,
+    }
+    for attempt in range(1, max_attempts + 1):
+        response = requests.post(GATEWAY_EVALUATE_URL, **request_kwargs)
+        retryable = response.status_code == 429 or response.status_code >= 500
+        if response.ok or not retryable or attempt == max_attempts:
+            break
+        time.sleep(2 ** (attempt - 1))
+
     if not response.ok:
         detail = response.text.strip()
         raise RuntimeError(f"Jev gateway returned HTTP {response.status_code}: {detail[:500]}")

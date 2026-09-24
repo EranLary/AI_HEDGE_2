@@ -101,3 +101,44 @@ def test_evaluate_state_rejects_missing_horizon(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(RuntimeError, match="missing a valid probability"):
         jev.evaluate_state("state")
+
+
+def test_evaluate_state_retries_temporary_gateway_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    class TemporaryFailureResponse:
+        ok = False
+        status_code = 503
+        text = "temporarily unavailable"
+
+    responses = [TemporaryFailureResponse(), _FakeResponse()]
+    sleeps: list[int] = []
+
+    monkeypatch.setenv("AI_GATEWAY_API_KEY", "secret-value")
+    monkeypatch.setattr(jev.requests, "post", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr(jev.time, "sleep", sleeps.append)
+
+    payload = jev.evaluate_state("state")
+
+    assert len(payload["answers"]) == 7
+    assert sleeps == [1]
+
+
+def test_evaluate_state_does_not_retry_client_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ClientErrorResponse:
+        ok = False
+        status_code = 401
+        text = "unauthorized"
+
+    calls = 0
+
+    def fake_post(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return ClientErrorResponse()
+
+    monkeypatch.setenv("AI_GATEWAY_API_KEY", "secret-value")
+    monkeypatch.setattr(jev.requests, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        jev.evaluate_state("state")
+
+    assert calls == 1

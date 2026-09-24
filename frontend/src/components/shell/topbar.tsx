@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link, { useLinkStatus } from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, BrainCircuit, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -27,6 +27,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "wall-st", label: "WALL ST.", icon: Landmark },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
+  { slug: "jev", label: "Jev", icon: BrainCircuit },
   { slug: "download", label: "Download", icon: Download },
 ];
 

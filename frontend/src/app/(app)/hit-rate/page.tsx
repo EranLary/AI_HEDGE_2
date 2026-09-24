@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { JevTrackRecordSection } from "@/components/jev-track-record-section";
 import { PortfolioReturnsSection } from "@/components/portfolio-returns-section";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { WORKSPACE_CONFIG } from "@/lib/workspace";
@@ -384,9 +385,9 @@ export default function HitRatePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">Measurement</p>
         <h1 className="mt-1 font-display text-2xl">Our Track Record</h1>
         <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">
-          Two simple views of how our analysis performs over time.
+          Three complementary views of how our analysis and probabilistic forecasts perform over time.
         </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
             <h2 className="font-semibold text-[color:var(--text-primary)]">Portfolio Returns</h2>
             <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
@@ -397,6 +398,12 @@ export default function HitRatePage() {
             <h2 className="font-semibold text-[color:var(--text-primary)]">Hit Rate</h2>
             <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
               Shows how often our targets, allocations, and signals pointed in the right direction after each report.
+            </p>
+          </article>
+          <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+            <h2 className="font-semibold text-[color:var(--text-primary)]">Jev Calibration</h2>
+            <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-muted)]">
+              Audits each future-direction probability by horizon, resolution date, and confidence quality.
             </p>
           </article>
         </div>
@@ -471,6 +478,8 @@ export default function HitRatePage() {
           <SignalHitRateTable title="By Signal" rows={data.by_signal || []} />
         </div>
       )}
+
+      <JevTrackRecordSection />
     </div>
   );
 }

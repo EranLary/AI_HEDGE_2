@@ -16,6 +16,7 @@ const SECTION_LABELS: Record<string, string> = {
   "wall-st": "Wall St.",
   "technical-analysis": "Technical Analysis",
   "dream-team": "Dream Team",
+  jev: "Jev",
   download: "Download",
   artifacts: "Artifacts",
 };

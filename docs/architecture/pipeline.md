@@ -33,6 +33,10 @@ portfolio, and trading topology, see `docs/architecture/system-map.md`.
 11. Build and write the final dashboard JSON.
 12. Upload available artifacts through the configured Local/R2 artifact store.
 13. Persist the report catalog, dashboard/text sources, and R2 keys to Neon.
+14. When `AI_GATEWAY_API_KEY` is configured, submit the persisted Combined
+    report context to Jev and store seven probabilistic direction forecasts.
+    Jev failure is enrichment-only and never changes a successful report into a
+    failed run.
 
 ```text
 Providers + filings
@@ -60,6 +64,9 @@ legacy core analysis -----> TradingAgents (parallel)
         |                   |
         v                   v
   Local/R2 artifacts    Neon report rows
+                              |
+                              v
+                    Jev forecast enrichment
 ```
 
 ## Contract-sensitive boundaries

@@ -3,12 +3,50 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Gem, Radar, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Gem, Radar, ShieldAlert, Sparkles, Star, TrendingDown, TrendingUp } from "lucide-react";
 
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 import { useWorkspace } from "@/components/shell/workspace-context";
 
 type DiscoveryLensType = "overall" | "model" | "valuator";
+type DiscoveryView = DiscoveryLensType | "jev";
+type JevHorizonFilter = "all" | "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";
+
+type JevDiscoveryRow = {
+  report_id: string;
+  ticker: string;
+  company_name: string;
+  report_generated_at: string;
+  horizon: Exclude<JevHorizonFilter, "all">;
+  horizon_days: number;
+  probability_up: number;
+  predicted_up: boolean;
+  confidence: number;
+  forecast_mode: "forward" | "retrospective";
+};
+
+type JevDiscoveryPayload = {
+  generated_at: string;
+  horizon: JevHorizonFilter;
+  yes: JevDiscoveryRow[];
+  no: JevDiscoveryRow[];
+  counts: { yes: number; no: number; total: number };
+};
+
+const JEV_HORIZONS: Array<{ value: JevHorizonFilter; label: string }> = [
+  { value: "all", label: "All periods" },
+  { value: "1w", label: "1 Week" },
+  { value: "1m", label: "1 Month" },
+  { value: "3m", label: "3 Months" },
+  { value: "6m", label: "6 Months" },
+  { value: "1y", label: "1 Year" },
+  { value: "3y", label: "3 Years" },
+  { value: "5y", label: "5 Years" },
+];
+
+const JEV_HORIZON_LABELS = Object.fromEntries(
+  JEV_HORIZONS.filter((option) => option.value !== "all").map((option) => [option.value, option.label]),
+) as Record<JevDiscoveryRow["horizon"], string>;
 
 type DiscoveryPayload = {
   generated_at: string;
@@ -48,6 +86,16 @@ function fmtDateTimeNoSeconds(value: string): string {
 
 function fmtPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function fmtProbability(value: number): string {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "N/A";
+}
+
+function fmtDate(value: string): string {
+  const dt = new Date(value);
+  if (!Number.isFinite(dt.getTime())) return "N/A";
+  return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
 }
 
 function fmtScore(value: number | null | undefined): string {
@@ -175,12 +223,126 @@ function SectionCard({
   );
 }
 
+function JevRankingCard({ row, rank, direction }: { row: JevDiscoveryRow; rank: number; direction: "yes" | "no" }) {
+  const { href } = useWorkspace();
+  const positive = direction === "yes";
+  return (
+    <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-[color:var(--text-muted)]">#{rank}</span>
+            <p className="font-semibold text-[color:var(--text-primary)]">{row.ticker}</p>
+            <span className="rounded-full border border-[color:var(--border-subtle)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[color:var(--text-secondary)]">
+              {JEV_HORIZON_LABELS[row.horizon]}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-xs text-[color:var(--text-muted)]">{row.company_name}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`font-mono text-xl font-bold ${positive ? "text-[color:var(--success)]" : "text-[color:var(--danger)]"}`}>
+            {fmtProbability(row.confidence)}
+          </p>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">confidence</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[color:var(--border-subtle)] pt-3 text-xs">
+        <div>
+          <p className="text-[color:var(--text-muted)]">Probability up</p>
+          <p className="mt-0.5 font-mono font-semibold text-[color:var(--text-secondary)]">{fmtProbability(row.probability_up)}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[color:var(--text-muted)]">Report date</p>
+          <p className="mt-0.5 font-medium text-[color:var(--text-secondary)]">{fmtDate(row.report_generated_at)}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+          {row.forecast_mode === "forward" ? "Live forecast" : "Historical backfill"}
+        </span>
+        <Link
+          href={`${href(`/dashboard/${encodeURIComponent(row.ticker)}/jev`)}?report=${encodeURIComponent(row.report_id)}`}
+          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--text-primary)]"
+        >
+          Open report
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+function JevRankingSection({
+  direction,
+  rows,
+}: {
+  direction: "yes" | "no";
+  rows: JevDiscoveryRow[];
+}) {
+  const positive = direction === "yes";
+  const [topN, setTopN] = useState<10 | 20>(10);
+  const shownRows = rows.slice(0, topN);
+  return (
+    <section className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 rounded-lg border border-[color:var(--border-subtle)] p-2 ${positive ? "text-[color:var(--success)]" : "text-[color:var(--danger)]"}`}>
+            {positive ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+          </div>
+          <div>
+            <h2 className="font-display text-lg text-[color:var(--text-primary)]">Top-confidence {positive ? "YES" : "NO"}</h2>
+            <p className="text-xs text-[color:var(--text-muted)]">
+              Highest confidence assigned to a {positive ? "price increase" : "non-increase"}.
+            </p>
+          </div>
+        </div>
+        {rows.length > 10 ? (
+          <div className="inline-flex rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]">
+            {([10, 20] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTopN(value)}
+                className={`rounded-md px-2 py-1 transition ${
+                  topN === value
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+                }`}
+              >
+                Top {value}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="space-y-2.5">
+        {shownRows.length ? shownRows.map((row, index) => (
+          <JevRankingCard
+            key={`${row.report_id}-${row.horizon}`}
+            row={row}
+            rank={index + 1}
+            direction={direction}
+          />
+        )) : (
+          <p className="rounded-xl border border-[color:var(--border-subtle)] p-4 text-sm text-[color:var(--text-muted)]">
+            No {positive ? "YES" : "NO"} forecasts are available for this period.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function DiscoveryPage() {
   const { workspace, api } = useWorkspace();
   const [data, setData] = useState<DiscoveryPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState<DiscoveryView>("overall");
   const [lensType, setLensType] = useState<DiscoveryLensType>("overall");
   const [lensKey, setLensKey] = useState("");
+  const [jevHorizon, setJevHorizon] = useState<JevHorizonFilter>("all");
+  const [jevData, setJevData] = useState<JevDiscoveryPayload | null>(null);
+  const [jevLoading, setJevLoading] = useState(false);
+  const [jevError, setJevError] = useState("");
   const initializedFromQueryRef = useRef(false);
 
   useEffect(() => {
@@ -189,13 +351,24 @@ export default function DiscoveryPage() {
     const params = new URLSearchParams(window.location.search);
     const rawType = String(params.get("lens_type") || "").trim().toLowerCase();
     const rawKey = String(params.get("lens_key") || "").trim();
+    const rawHorizon = String(params.get("horizon") || "").trim().toLowerCase();
+    if (rawType === "jev") {
+      setActiveView("jev");
+      if (JEV_HORIZONS.some((option) => option.value === rawHorizon)) {
+        setJevHorizon(rawHorizon as JevHorizonFilter);
+      }
+      initializedFromQueryRef.current = true;
+      return;
+    }
     if (rawType === "model" || rawType === "valuator") {
+      setActiveView(rawType);
       setLensType(rawType);
       setLensKey(rawKey);
       initializedFromQueryRef.current = true;
       return;
     }
     if (rawType === "overall") {
+      setActiveView("overall");
       setLensType("overall");
       setLensKey("");
       initializedFromQueryRef.current = true;
@@ -231,11 +404,36 @@ export default function DiscoveryPage() {
     };
   }, [api, lensType, lensKey, workspace]);
 
+  useEffect(() => {
+    if (activeView !== "jev") return;
+    let cancelled = false;
+    async function run() {
+      setJevLoading(true);
+      setJevError("");
+      try {
+        const params = new URLSearchParams({ horizon: jevHorizon });
+        const res = await fetch(api(`/api/discovery/jev?${params.toString()}`), { cache: "no-store" });
+        if (!res.ok) throw new Error(`Jev discovery request failed (${res.status})`);
+        const json = (await res.json()) as JevDiscoveryPayload;
+        if (!cancelled) setJevData(json);
+      } catch (error) {
+        if (!cancelled) setJevError(error instanceof Error ? error.message : "Failed to load Jev rankings.");
+      } finally {
+        if (!cancelled) setJevLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, api, jevHorizon, workspace]);
+
   const modelOptions = data?.lens_options.models || [];
   const valuatorOptions = data?.lens_options.valuators || [];
   const selectedOptions = lensType === "model" ? modelOptions : lensType === "valuator" ? valuatorOptions : [];
 
   const onLensTypeChange = (next: DiscoveryLensType) => {
+    setActiveView(next);
     setLensType(next);
     if (next === "overall") {
       setLensKey("");
@@ -245,12 +443,18 @@ export default function DiscoveryPage() {
     setLensKey(pool[0] || "");
   };
 
+  const onJevView = () => {
+    setActiveView("jev");
+  };
+
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6 text-zinc-100 sm:px-8">
       <div>
         <header className="mb-6 rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-xl">
           <h1 className="font-display text-2xl">Market Discovery</h1>
-          <p className="text-xs tracking-[0.2em] text-zinc-500">Based On Reports From the Last 3 Months</p>
+          <p className="text-xs tracking-[0.2em] text-zinc-500">
+            {activeView === "jev" ? "Report-Level Probabilistic Forecast Rankings" : "Based On Reports From the Last 3 Months"}
+          </p>
         </header>
 
         {loading || !data ? (
@@ -265,15 +469,17 @@ export default function DiscoveryPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Discovery Lens</p>
-                  <p className="text-sm font-semibold text-zinc-100">{data.lens.label}</p>
+                  <p className="text-sm font-semibold text-zinc-100">
+                    {activeView === "jev" ? "Jev confidence rankings" : data.lens.label}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-2 sm:items-end">
-                  <div className="inline-flex rounded-xl border border-white/15 bg-white/5 p-1 text-xs uppercase tracking-[0.12em]">
+                  <div className="inline-flex flex-wrap rounded-xl border border-white/15 bg-white/5 p-1 text-xs uppercase tracking-[0.12em]">
                     <button
                       type="button"
                       onClick={() => onLensTypeChange("overall")}
                       className={`rounded-lg px-3 py-1.5 transition ${
-                        lensType === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                        activeView === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
                       }`}
                     >
                       Consensus
@@ -282,8 +488,8 @@ export default function DiscoveryPage() {
                       type="button"
                       onClick={() => onLensTypeChange("model")}
                       className={`rounded-lg px-3 py-1.5 transition ${
-                        lensType === "model" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      } disabled:cursor-not-allowed disabled:opacity-45`}
+                        activeView === "model" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      } disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-45`}
                       disabled={!modelOptions.length}
                     >
                       Model
@@ -292,14 +498,23 @@ export default function DiscoveryPage() {
                       type="button"
                       onClick={() => onLensTypeChange("valuator")}
                       className={`rounded-lg px-3 py-1.5 transition ${
-                        lensType === "valuator" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      } disabled:cursor-not-allowed disabled:opacity-45`}
+                        activeView === "valuator" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      } disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-45`}
                       disabled={!valuatorOptions.length}
                     >
                       Valuator
                     </button>
+                    <button
+                      type="button"
+                      onClick={onJevView}
+                      className={`rounded-lg px-3 py-1.5 transition ${
+                        activeView === "jev" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                      }`}
+                    >
+                      Jev
+                    </button>
                   </div>
-                  {lensType !== "overall" ? (
+                  {activeView !== "jev" && lensType !== "overall" ? (
                     <select
                       value={lensKey}
                       onChange={(e) => setLensKey(String(e.target.value || ""))}
@@ -315,6 +530,60 @@ export default function DiscoveryPage() {
                 </div>
               </div>
             </section>
+            {activeView === "jev" ? (
+              <div>
+                <section className="mb-4 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+                  <div className="flex items-start gap-3">
+                    <Sparkles size={18} className="mt-0.5 shrink-0 text-[color:var(--accent)]" />
+                    <div>
+                      <h2 className="font-semibold text-[color:var(--text-primary)]">One forecast, one report, one horizon</h2>
+                      <p className="mt-1 max-w-3xl text-sm text-[color:var(--text-muted)]">
+                        Rankings use the confidence of each individual Jev answer. They do not average reports, horizons, or tickers.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2" aria-label="Forecast period filter">
+                    {JEV_HORIZONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setJevHorizon(option.value)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          jevHorizon === option.value
+                            ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                            : "border-[color:var(--border-subtle)] text-[color:var(--text-secondary)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {jevLoading ? (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {Array.from({ length: 2 }).map((_, index) => (
+                      <div key={index} className="h-96 animate-pulse rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)]" />
+                    ))}
+                  </div>
+                ) : jevError ? (
+                  <div className="rounded-2xl border border-[color:var(--danger)] bg-[color:var(--surface-elevated)] p-5 text-sm text-[color:var(--danger)]">
+                    {jevError}
+                  </div>
+                ) : jevData ? (
+                  <>
+                    <p className="mb-4 text-sm text-[color:var(--text-muted)]">
+                      Ranked {jevData.counts.total.toLocaleString()} report forecasts: {jevData.counts.yes.toLocaleString()} YES and {jevData.counts.no.toLocaleString()} NO.
+                    </p>
+                    <div className="grid items-start gap-4 lg:grid-cols-2">
+                      <JevRankingSection direction="yes" rows={jevData.yes} />
+                      <JevRankingSection direction="no" rows={jevData.no} />
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <>
             <p className="mb-4 text-sm text-zinc-400">
               Scanned {data.count} tickers for this lens. Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
             </p>
@@ -387,6 +656,8 @@ export default function DiscoveryPage() {
                 </>
               ) : null}
             </div>
+              </>
+            )}
           </>
         )}
       </div>

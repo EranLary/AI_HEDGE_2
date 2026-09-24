@@ -10,6 +10,7 @@ import {
   type JevPredictionScope,
 } from "@/lib/jev-metrics";
 import type { Workspace } from "@/lib/workspace";
+import { filterExcludedTickers } from "@/lib/excluded-tickers";
 
 export type { JevForecastMode, JevMetric, JevMetrics, JevOutcomeStatus, JevPredictionScope } from "@/lib/jev-metrics";
 
@@ -48,6 +49,25 @@ export type JevReportForecast = {
   created_at: string;
   completed_at: string | null;
   predictions: JevPrediction[];
+};
+
+export type JevDiscoveryRow = {
+  report_id: string;
+  ticker: string;
+  company_name: string;
+  report_generated_at: string;
+  horizon: JevPrediction["horizon"];
+  horizon_days: number;
+  probability_up: number;
+  predicted_up: boolean;
+  confidence: number;
+  forecast_mode: JevForecastMode;
+};
+
+export type JevDiscoveryRankings = {
+  yes: JevDiscoveryRow[];
+  no: JevDiscoveryRow[];
+  counts: { yes: number; no: number; total: number };
 };
 
 type PredictionRow = JevPrediction & {
@@ -170,4 +190,87 @@ export async function getJevMetrics(
   `) as unknown as Array<Record<string, unknown>>;
   const rows = raw.map(normalizePrediction);
   return computeJevMetrics(rows, mode, scope);
+}
+
+function normalizeDiscoveryRow(row: Record<string, unknown>): JevDiscoveryRow {
+  return {
+    report_id: String(row.report_id || ""),
+    ticker: String(row.ticker || "").trim().toUpperCase(),
+    company_name: String(row.company_name || row.ticker || "").trim(),
+    report_generated_at: new Date(String(row.report_generated_at)).toISOString(),
+    horizon: String(row.horizon || "1w") as JevDiscoveryRow["horizon"],
+    horizon_days: Number(row.horizon_days),
+    probability_up: Number(row.probability_up),
+    predicted_up: Boolean(row.predicted_up),
+    confidence: Number(row.confidence),
+    forecast_mode: String(row.forecast_mode) as JevForecastMode,
+  };
+}
+
+export async function getJevDiscoveryRankings(
+  workspace: Workspace,
+  horizon: JevPrediction["horizon"] | null,
+  limit = 20,
+): Promise<JevDiscoveryRankings> {
+  const sql = getSql();
+  if (!sql) return { yes: [], no: [], counts: { yes: 0, no: 0, total: 0 } };
+  const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const queryLimit = safeLimit + 10;
+
+  const rankedQuery = (predictedUp: boolean) => sql`
+    SELECT p.report_id::text AS report_id, r.ticker, r.company_name,
+           r.generated_at AS report_generated_at,
+           p.horizon, p.horizon_days,
+           p.probability_up::float8 AS probability_up,
+           p.predicted_up, p.confidence::float8 AS confidence,
+           j.forecast_mode
+      FROM report_jev_predictions p
+      JOIN report_jev_runs j ON j.id = p.run_id
+      JOIN reports r ON r.id = p.report_id
+      LEFT JOIN report_releases rel ON rel.id = r.release_id
+     WHERE j.status = 'completed'
+       AND j.question_version = ${JEV_QUESTION_VERSION}
+       AND p.predicted_up = ${predictedUp}
+       AND (${horizon}::text IS NULL OR p.horizon = ${horizon})
+       AND r.workspace = ${workspace}
+       AND r.deleted_at IS NULL
+       AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
+     ORDER BY p.confidence DESC, r.generated_at DESC, r.ticker ASC, p.horizon_days ASC
+     LIMIT ${queryLimit};
+  `;
+
+  const [yesRaw, noRaw, countRaw] = await Promise.all([
+    rankedQuery(true),
+    rankedQuery(false),
+    sql`
+      SELECT count(*) FILTER (WHERE p.predicted_up)::int AS yes,
+             count(*) FILTER (WHERE NOT p.predicted_up)::int AS no,
+             count(*)::int AS total
+        FROM report_jev_predictions p
+        JOIN report_jev_runs j ON j.id = p.run_id
+        JOIN reports r ON r.id = p.report_id
+        LEFT JOIN report_releases rel ON rel.id = r.release_id
+       WHERE j.status = 'completed'
+         AND j.question_version = ${JEV_QUESTION_VERSION}
+         AND (${horizon}::text IS NULL OR p.horizon = ${horizon})
+         AND r.workspace = ${workspace}
+         AND r.deleted_at IS NULL
+         AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'));
+    `,
+  ]);
+
+  const clean = (rows: unknown) => filterExcludedTickers(
+    (rows as Array<Record<string, unknown>>).map(normalizeDiscoveryRow),
+    (row) => row.ticker,
+  ).slice(0, safeLimit);
+  const count = (countRaw as unknown as Array<Record<string, unknown>>)[0] || {};
+  return {
+    yes: clean(yesRaw),
+    no: clean(noRaw),
+    counts: {
+      yes: Number(count.yes || 0),
+      no: Number(count.no || 0),
+      total: Number(count.total || 0),
+    },
+  };
 }

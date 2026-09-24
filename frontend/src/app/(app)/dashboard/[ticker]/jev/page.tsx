@@ -174,7 +174,8 @@ export default async function DashboardJevPage({
   const search = (await searchParams) ?? {};
   const requestedReportId = typeof search.report === "string" ? search.report : undefined;
   const workspace = parseWorkspace(search.workspace);
-  const metricMode: JevForecastMode = search.track === "retrospective" ? "retrospective" : "forward";
+  const requestedMetricMode: JevForecastMode | null =
+    search.track === "retrospective" ? "retrospective" : search.track === "forward" ? "forward" : null;
 
   let resolved;
   try {
@@ -186,10 +187,9 @@ export default async function DashboardJevPage({
   const { ticker: upper, data, reportsForTicker, resolvedReportId } = resolved;
   if (!data || !resolvedReportId) return <DashboardError error="No report data" ticker={upper} />;
 
-  const [forecast, metrics] = await Promise.all([
-    getJevReportForecast(resolvedReportId, workspace).catch(() => null),
-    getJevMetrics(workspace, metricMode).catch(() => emptyMetrics(metricMode)),
-  ]);
+  const forecast = await getJevReportForecast(resolvedReportId, workspace).catch(() => null);
+  const metricMode: JevForecastMode = requestedMetricMode ?? forecast?.forecast_mode ?? "forward";
+  const metrics = await getJevMetrics(workspace, metricMode).catch(() => emptyMetrics(metricMode));
   const reportQuery = `report=${encodeURIComponent(resolvedReportId)}`;
   const base = workspacePath(workspace, `/dashboard/${encodeURIComponent(upper)}/jev`);
 

@@ -19,7 +19,10 @@ JEV_MODEL_ID = "typesafe-ai/jev"
 QUESTION_VERSION = "stock-direction-v1"
 REDACTION_VERSION = "report-date-v1"
 GATEWAY_EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
-MAX_STATE_CHARS = 80_000
+# Although the Gateway catalog advertises a larger context window, real Jev
+# evaluation requests currently become unreliable well below it. Keep enough
+# headroom for the seven questions and their typed answers.
+MAX_STATE_CHARS = 10_000
 
 ForecastMode = Literal["forward", "retrospective"]
 

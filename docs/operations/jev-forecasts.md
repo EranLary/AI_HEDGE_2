@@ -22,9 +22,11 @@ ZDR; unsupported plans reject those requests.
 - The report publication timestamp is omitted and its exact textual forms are
   redacted from the model input. Fiscal-period dates remain because they are
   material research evidence.
-- Inputs below 80,000 characters use the complete persisted Analysis and
+- Inputs below 10,000 characters use the complete persisted Analysis and
   Valuation Markdown. Longer inputs preserve the beginning and valuation tail
-  with an explicit deterministic omission marker.
+  with an explicit deterministic omission marker. This conservative ceiling
+  reflects measured HTTP API behavior and leaves headroom for all seven typed
+  questions even though the Gateway catalog advertises a larger context.
 - New-run forecasts are labeled `forward`. Historical backfills are labeled
   `retrospective` and are never silently mixed into forward track-record data.
 - Outcomes use split-adjusted daily closes. The baseline is the first available

@@ -421,17 +421,6 @@ export default function HitRatePage() {
             <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Hit rate mode">
               <button
                 type="button"
-                onClick={() => setMode("all")}
-                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                  mode === "all"
-                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
-                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
-                }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
                 onClick={() => setMode("positive_only")}
                 className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
                   mode === "positive_only"
@@ -440,6 +429,17 @@ export default function HitRatePage() {
                 }`}
               >
                 Positive Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("all")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                  mode === "all"
+                    ? "bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
+                }`}
+              >
+                All
               </button>
             </div>
             <button

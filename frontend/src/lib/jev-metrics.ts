@@ -1,4 +1,5 @@
 export type JevForecastMode = "forward" | "retrospective";
+export type JevMetricMode = JevForecastMode | "combined";
 export type JevPredictionScope = "all" | "positive_only";
 export type JevHorizon = "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y";
 export type JevOutcomeStatus = "pending" | "realized" | "unavailable";
@@ -45,7 +46,7 @@ export type JevTimelinePoint = {
 };
 
 export type JevMetrics = {
-  mode: JevForecastMode;
+  mode: JevMetricMode;
   scope: JevPredictionScope;
   reports: number;
   overall: JevMetric;
@@ -176,7 +177,7 @@ function timelinePoints(
 
 export function computeJevMetrics(
   rows: JevMetricPrediction[],
-  mode: JevForecastMode,
+  mode: JevMetricMode,
   scope: JevPredictionScope = "all",
 ): JevMetrics {
   const scopedRows = scope === "positive_only"

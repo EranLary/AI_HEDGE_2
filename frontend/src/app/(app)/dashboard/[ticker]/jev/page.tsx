@@ -78,17 +78,22 @@ function ForecastCard({ prediction }: { prediction: JevPrediction }) {
       </div>
 
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--surface)]" aria-hidden>
-        <div className="h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${probabilityPct}%` }} />
+        <div
+          className={`h-full rounded-full ${
+            prediction.predicted_up ? "bg-[color:var(--success)]" : "bg-[color:var(--danger)]"
+          }`}
+          style={{ width: `${probabilityPct}%` }}
+        />
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
         <div>
-          <dt className="text-[color:var(--text-muted)]">Probability up</dt>
+          <dt className="flex min-h-10 items-end text-[color:var(--text-muted)]">Probability up</dt>
           <dd className="mt-1 font-mono text-base font-semibold text-[color:var(--text-primary)]">
             {pct(prediction.probability_up)}
           </dd>
         </div>
         <div>
-          <dt className="text-[color:var(--text-muted)]">Decision confidence</dt>
+          <dt className="flex min-h-10 items-end text-[color:var(--text-muted)]">Decision confidence</dt>
           <dd className="mt-1 font-mono text-base font-semibold text-[color:var(--text-primary)]">
             {pct(prediction.confidence)}
           </dd>

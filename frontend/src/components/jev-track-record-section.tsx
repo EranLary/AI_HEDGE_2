@@ -136,7 +136,7 @@ export function JevTrackRecordSection() {
                     : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
                 }`}
               >
-                {item === "positive_only" ? "Positive only" : "All calls"}
+                {item === "positive_only" ? "Positive Only" : "All"}
               </button>
             ))}
           </div>

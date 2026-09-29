@@ -11,7 +11,7 @@
     "test:reports": "tsx --test src/lib/report-document.test.tsx src/lib/target-price-comparison.test.ts src/lib/share-count-display.test.ts src/lib/jev-metrics.test.ts src/lib/report-list-filters.test.ts",
     "portfolio:refresh": "tsx scripts/refresh-portfolio-performance.ts",
     "portfolio:incidents": "tsx scripts/manage-portfolio-price-incidents.ts",
-    "test:portfolio": "tsx --test src/lib/discovery-engine.test.ts src/lib/nasdaq-execution-policy.test.ts src/lib/nasdaq-run-policy.test.ts src/lib/portfolio-performance-engine.test.ts src/lib/portfolio-performance-route.test.ts src/lib/portfolio-refresh-policy.test.ts src/lib/trading-access-policy.test.ts src/lib/trading-db.test.ts src/lib/trading-signature.test.ts src/lib/workspace.test.ts"
+    "test:portfolio": "tsx --test src/lib/discovery-engine.test.ts src/lib/hit-rate-aggregate.test.ts src/lib/nasdaq-execution-policy.test.ts src/lib/nasdaq-run-policy.test.ts src/lib/portfolio-performance-engine.test.ts src/lib/portfolio-performance-route.test.ts src/lib/portfolio-refresh-policy.test.ts src/lib/trading-access-policy.test.ts src/lib/trading-db.test.ts src/lib/trading-signature.test.ts src/lib/workspace.test.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

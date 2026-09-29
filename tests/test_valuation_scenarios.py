@@ -309,3 +309,23 @@ def test_method_metric_snapshot_reads_sotp_scenario_activity_sums():
     assert abs(snapshot["base_probability"] - 0.5) < 1e-9
     assert abs(snapshot["bear_probability"] - 0.3) < 1e-9
     assert abs(snapshot["target_market_cap"] - 77.0) < 1e-9
+
+
+def test_method_metric_snapshot_reads_pb_inputs_and_derived_market_cap():
+    items = [
+        {
+            "raw_json": {
+                "representative_book_equity": 500_000_000,
+                "pb_multiple": 1.4,
+                "target_market_cap": 700_000_000,
+            }
+        }
+    ]
+
+    snapshot = dashboard._method_metric_snapshot("P/B Valuation", items)
+
+    assert snapshot == {
+        "representative_book_equity": 500_000_000.0,
+        "pb_multiple": 1.4,
+        "target_market_cap": 700_000_000.0,
+    }

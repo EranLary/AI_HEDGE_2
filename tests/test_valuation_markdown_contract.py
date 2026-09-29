@@ -185,6 +185,45 @@ def test_valuation_report_uses_clear_sections_and_position_labels() -> None:
     assert "####" not in text
 
 
+def test_valuation_report_renders_pb_inputs_and_rationales() -> None:
+    text = runner._build_prices_explain_text(
+        "BANK",
+        {
+            "current_price": 50,
+            "methods": {
+                "P/B Valuation": [
+                    {
+                        "target_price": 70,
+                        "investment_amount": 10_000,
+                        "raw_json": {
+                            "step_by_step_analysis": "[REPORTED FACT] Started from reported common equity.",
+                            "representative_book_equity": 1_000_000_000,
+                            "representative_book_equity_rationale": "[CALCULATION] Reported equity plus supported normalization.",
+                            "pb_multiple": 1.4,
+                            "pb_multiple_rationale": "[ANALYST ESTIMATE] Sustainable ROE supports 1.4 times book.",
+                            "target_market_cap": 1_400_000_000,
+                            "investment_amount": 10_000,
+                            "investment_rationale": "Positive asymmetry supports a measured long.",
+                        },
+                    }
+                ]
+            },
+            "aggregate_targets": {"P/B Valuation": 70},
+            "aggregate_investments": {"P/B Valuation": 10_000},
+        },
+        final_dict={"Prices": {"Mean": [70, 70, 70], "LMIL Mean Investment": 10_000}},
+        analysis_text="# BANK - Analysis file\n\nCurrent Price: 50",
+        variables_dict={"price": 50},
+    )
+
+    assert "| P/B Valuation | $70.00 | +40.00% | Long |" in text
+    assert "Representative Book Equity" in text
+    assert "P/B Multiple" in text
+    assert "Target Market Cap" in text
+    assert "**Representative Book Equity Rationale:**" in text
+    assert "**P/B Multiple Rationale:**" in text
+
+
 def test_position_formatter_distinguishes_long_short_and_no_position() -> None:
     assert runner._fmt_allocation(15_000) == "Long — 15.0% of $100,000 notional ($15,000.00)"
     assert runner._fmt_allocation(-15_000) == "Short — 15.0% of $100,000 notional ($15,000.00)"

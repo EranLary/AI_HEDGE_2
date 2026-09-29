@@ -137,6 +137,43 @@ test("positive_only mode counts only positive target/allocation predictions", ()
   assert.equal(dcf.allocations.hit_rate_pct, null);
 });
 
+test("P/B track record starts with reports that contain P/B and ignores older reports", () => {
+  const historical = basePayload();
+  historical.valuation_hub.method_tabs = [{
+    name: "DCF",
+    target_price: 120,
+    investment_amount: 10_000,
+    key_metric_means: {},
+    outputs: [],
+  }];
+  const withPb = basePayload();
+  withPb.valuation_hub.method_tabs = [{
+    name: "P/B Valuation",
+    target_price: 140,
+    investment_amount: 15_000,
+    key_metric_means: {
+      representative_book_equity: 1_000_000,
+      pb_multiple: 1.4,
+      target_market_cap: 1_400_000,
+    },
+    outputs: [],
+  }];
+  const reports: HitRateSourceReport[] = [
+    { ticker: "TEST", payload: historical },
+    { ticker: "TEST", payload: withPb },
+  ];
+  const live = new Map<string, number | null>([["TEST", 120]]);
+
+  const agg = computeHitRateAggregation(reports, live);
+  const pb = agg.by_model.find((row) => row.key === "P/B Valuation");
+
+  assert.ok(pb);
+  assert.equal(pb.targets.hits, 1);
+  assert.equal(pb.targets.considered, 1);
+  assert.equal(pb.allocations.hits, 1);
+  assert.equal(pb.allocations.considered, 1);
+});
+
 test("technical analysis bearish signal hits when price direction moves down", () => {
   const payload = basePayload();
   payload.technical_analysis = {

@@ -1,4 +1,5 @@
 import os
+import math
 import random
 import time
 from contextlib import contextmanager
@@ -3514,6 +3515,69 @@ Rules:
 8) ZERO POLITENESS: DO NOT output any conversational text, pleasantries, or markdown formatting before or after the JSON.
 """
 
+PB_VALUATION_METHOD_NAME = "P/B Valuation"
+PB_ELIGIBLE_SECTORS = frozenset(
+    {
+        "financial services",
+        "real estate",
+        "utilities",
+        "industrials",
+        "basic materials",
+    }
+)
+
+
+def _normalized_sector_name(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def pb_valuation_sector(info_dict: Dict[str, Any]) -> Optional[str]:
+    """Return the original Yahoo Finance sector when it is P/B eligible."""
+
+    info = info_dict.get("info") if isinstance(info_dict, dict) else None
+    if not isinstance(info, dict):
+        return None
+    raw_sector = str(info.get("sector") or "").strip()
+    if _normalized_sector_name(raw_sector) not in PB_ELIGIBLE_SECTORS:
+        return None
+    return raw_sector
+
+
+instructions_pb_valuation = """Based on the input you receive, produce one normalized price-to-book valuation for the company's common equity as a professional equity analyst would.
+
+This method is used only for a company whose Yahoo Finance sector is suitable for P/B analysis.
+
+Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
+
+Output schema (must match exactly):
+{
+  "step_by_step_analysis": "string",
+  "representative_book_equity": number,
+  "representative_book_equity_rationale": "string",
+  "pb_multiple": number,
+  "pb_multiple_rationale": "string",
+  "investment_amount": number,
+  "investment_rationale": "string"
+}
+
+Definitions:
+- representative_book_equity is one normalized, through-cycle amount of book equity attributable to common shareholders today. It is not a three-year forecast, tangible book value by default, enterprise value, market capitalization, or per-share value.
+- representative_book_equity must be expressed in absolute full U.S. dollar units because the supplied financial statements are normalized to U.S. dollars.
+- pb_multiple is one positive, carefully underwritten long-term Price-to-Book multiple for the business.
+- investment_amount is capital allocated out of a $100,000 notional budget in [-100000, 100000].
+
+Rules:
+1) Start from the latest reported common shareholders' equity available in the supplied statements and explicitly show the numeric bridge to representative_book_equity.
+2) Normalize only adjustments supported by the supplied evidence. Do not silently substitute tangible book value, market capitalization, enterprise value, or an equity value inferred from the current share price.
+3) Explain the multiple using sustainable ROE, growth, cost of equity, asset quality, leverage, cyclicality, regulation, capital intensity, and balance-sheet risk as applicable to the company.
+4) representative_book_equity and pb_multiple must each be a single finite number greater than zero. Do not output ranges, formatted numbers, scale abbreviations, null, NaN, or percentages.
+5) The code will calculate target market capitalization and target price deterministically. Do NOT output target market capitalization, target price, or shares outstanding.
+6) representative_book_equity_rationale and pb_multiple_rationale must each be non-empty single comprehensive strings with evidence classifications and the concrete figures used.
+7) investment_amount must be a single finite number in [-100000, 100000]. investment_rationale must justify position size using valuation asymmetry, downside risk, and conviction.
+8) If evidence is incomplete, make only a clearly labeled analyst estimate grounded in the supplied figures; never invent a reported value.
+9) ZERO POLITENESS: output raw JSON only.
+"""
+
 instructions_target_market_cap = """Based on the input you receive, estimate a reasonable TARGET MARKET CAPITALIZATION for the company's common equity, as a professional equity analyst would, and return it in STRICT JSON.
 Return EXACTLY one JSON object and nothing else (no markdown, no explanations, no extra keys).
 
@@ -3898,12 +3962,78 @@ def _extract_investment_fields(data: Dict[str, Any]) -> Tuple[float, str] | None
     if not isinstance(amount, (int, float)) or isinstance(amount, bool):
         return None
     amount_f = float(amount)
+    if not math.isfinite(amount_f):
+        return None
     if amount_f < -100000 or amount_f > 100000:
         return None
     rationale = str(data["investment_rationale"] or "").strip()
     if not rationale:
         return None
     return amount_f, rationale
+
+
+def extract_pb_valuation_json(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        data = json.loads(match.group(0))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
+    required_keys = {
+        "step_by_step_analysis",
+        "representative_book_equity",
+        "representative_book_equity_rationale",
+        "pb_multiple",
+        "pb_multiple_rationale",
+        "investment_amount",
+        "investment_rationale",
+    }
+    if set(data.keys()) != required_keys:
+        return {}
+
+    investment_fields = _extract_investment_fields(data)
+    if not investment_fields:
+        return {}
+    investment_amount, investment_rationale = investment_fields
+
+    book_equity_raw = data.get("representative_book_equity")
+    pb_multiple_raw = data.get("pb_multiple")
+    if (
+        not isinstance(book_equity_raw, (int, float))
+        or isinstance(book_equity_raw, bool)
+        or not isinstance(pb_multiple_raw, (int, float))
+        or isinstance(pb_multiple_raw, bool)
+    ):
+        return {}
+    representative_book_equity = float(book_equity_raw)
+    pb_multiple = float(pb_multiple_raw)
+    if (
+        not math.isfinite(representative_book_equity)
+        or representative_book_equity <= 0
+        or not math.isfinite(pb_multiple)
+        or pb_multiple <= 0
+    ):
+        return {}
+
+    step_by_step_analysis = str(data.get("step_by_step_analysis") or "").strip()
+    book_equity_rationale = str(data.get("representative_book_equity_rationale") or "").strip()
+    pb_multiple_rationale = str(data.get("pb_multiple_rationale") or "").strip()
+    if not step_by_step_analysis or not book_equity_rationale or not pb_multiple_rationale:
+        return {}
+
+    return {
+        "step_by_step_analysis": step_by_step_analysis,
+        "representative_book_equity": representative_book_equity,
+        "representative_book_equity_rationale": book_equity_rationale,
+        "pb_multiple": pb_multiple,
+        "pb_multiple_rationale": pb_multiple_rationale,
+        "investment_amount": investment_amount,
+        "investment_rationale": investment_rationale,
+    }
 
 def _normalize_decimal_ratio(x: float) -> float:
     xf = float(x)
@@ -4634,6 +4764,37 @@ def calculate_bbb_ni_pe(variable_dict, scenarios_dict, pe_multiple):
     return 0, ni
   return share_price, ni
 
+
+def calculate_pb_valuation(variable_dict, representative_book_equity, pb_multiple):
+  book_equity = float(representative_book_equity)
+  multiple = float(pb_multiple)
+  shares_outstanding = float(variable_dict["shares_outstanding"])
+  if (
+      not math.isfinite(book_equity)
+      or book_equity <= 0
+      or not math.isfinite(multiple)
+      or multiple <= 0
+      or not math.isfinite(shares_outstanding)
+      or shares_outstanding <= 0
+  ):
+    return {
+        "target_market_cap": 0.0,
+        "target_price": 0.0,
+        "representative_book_equity": book_equity,
+        "pb_multiple": multiple,
+    }
+  target_market_cap = book_equity * multiple
+  target_price = target_market_cap / shares_outstanding
+  if not math.isfinite(target_market_cap) or not math.isfinite(target_price) or target_price <= 0:
+    target_market_cap = 0.0
+    target_price = 0.0
+  return {
+      "target_market_cap": target_market_cap,
+      "target_price": target_price,
+      "representative_book_equity": book_equity,
+      "pb_multiple": multiple,
+  }
+
 def calculate_revenue_scenario(variable_dict, scenarios_dict, ev_sales_multiple, representative_ev_current=None):
   expected_revenue = 0.0
   per_scenario_prices: Dict[str, float] = {}
@@ -4813,6 +4974,18 @@ def get_bbb_ni_pe(bbb_ni_pe_json, variables_dict):
   else:
     return [], [ni], [pe]
 
+
+def get_pb_valuation(pb_valuation_json, variables_dict):
+  calc = calculate_pb_valuation(
+      variables_dict,
+      pb_valuation_json["representative_book_equity"],
+      pb_valuation_json["pb_multiple"],
+  )
+  target_price = float(calc["target_price"])
+  if target_price > 0:
+    return [target_price], calc
+  return [], calc
+
 def get_revenue_scenario(revenue_scenario_json, variables_dict):
   calc = calculate_revenue_scenario(
       variables_dict,
@@ -4954,7 +5127,8 @@ def make_short_list_prices(list_of_all_results, price_currency):
         mean_val = np.mean(final_list)
         median_val = np.median(final_list)
         p25, p75 = np.quantile(final_list, [0.25, 0.75])
-        # Each of the seven valuation families gets exactly one vote.  The
+        # Each available valuation family gets exactly one vote. The sector-gated
+        # P/B family is absent when it is ineligible or has no valid output. The
         # Dream Team is already condensed to one family mean above, so neither
         # the mean nor the median can be dominated by its ten personas.
         price_dict["Mean"] = [mean_val, p25, p75]
@@ -5444,6 +5618,60 @@ def bbb_ni_pe_full(
     return [], ni_results, pe_results, summary_text, details
   return [], ni_results, pe_results, summary_text
 
+def pb_valuation_full(
+    financial_dict,
+    text,
+    num_iterations=3,
+    llm_workers=6,
+    runtime_context=None,
+    variables_dict_input=None,
+    ticker_input=None,
+    model="deepseek-chat",
+    collect_details: bool = False,
+):
+  tk, vdict = _resolve_runtime_context(runtime_context, variables_dict_input, ticker_input)
+  prompt = build_prompt(tk, financial_dict, instructions_pb_valuation, text)
+  answers = llm_n_answers_parallel(
+      api_key=DEEPSEEK_API_KEY,
+      prompt=prompt,
+      n=num_iterations,
+      max_workers=llm_workers,
+      model=model,
+  )
+  all_results = []
+  details = []
+  name_of_eval = PB_VALUATION_METHOD_NAME
+  for answer in answers:
+    raw_json_text = _extract_raw_json_text(answer)
+    parsed = extract_pb_valuation_json(answer)
+    if not parsed:
+      continue
+    prices, calc = get_pb_valuation(parsed, vdict)
+    all_results.extend(prices)
+    if collect_details:
+      raw_for_detail = dict(parsed)
+      raw_for_detail["target_market_cap"] = float(calc.get("target_market_cap", 0.0))
+      details.append(
+          {
+              "target_price": float(prices[0]) if prices else None,
+              "investment_amount": float(parsed["investment_amount"]),
+              "raw_json_text": raw_json_text,
+              "raw_json": raw_for_detail,
+          }
+      )
+
+  if all_results:
+    summary_text = plot_results(all_results, name_of_eval)
+    if collect_details:
+      return all_results, summary_text, details
+    return all_results, summary_text
+
+  summary_text = ("\nNo results\n\n", name_of_eval)
+  if collect_details:
+    return [], summary_text, details
+  return [], summary_text
+
+
 def revenue_scenario_full(
     financial_dict,
     text,
@@ -5759,7 +5987,7 @@ def run_valuations(
     text,
     n=3,
     llm_workers_each_block=6,
-    blocks_workers=7,
+    blocks_workers=8,
     add_text = True,
     sec_short_text=None,
     valuation_contexts=None,
@@ -5770,6 +5998,8 @@ def run_valuations(
     if not info_dict.get("short_name"):
         print("No valid ticker")
         return final_dict
+
+    eligible_pb_sector = pb_valuation_sector(info_dict)
 
     # Preserve notebook behavior: several valuation helpers rely on module-level
     # globals (`ticker`, `variables_dict`) instead of explicit arguments.
@@ -5811,6 +6041,10 @@ def run_valuations(
     }
     print("price_currency:", price_currency)
     print("financial_currency:", financial_currency)
+    if eligible_pb_sector:
+        print(f"P/B valuation eligible sector: {eligible_pb_sector}")
+    else:
+        print("P/B valuation skipped: Yahoo Finance sector is not eligible")
     # Backward compatibility: these are intentionally ignored now.
     _ = n
     _ = sec_short_text
@@ -5924,6 +6158,36 @@ def run_valuations(
                 pe_results.extend(ctx_pe)
                 summary_name = ctx_summary[1]
         return all_results, ni_results, pe_results, _plot_summary_or_empty(all_results, summary_name), details
+
+    def _run_pb_mixed():
+        all_results = []
+        summary_name = PB_VALUATION_METHOD_NAME
+        details = []
+        with _obs_llm_context(stage="valuation.pb"):
+            for ctx_text, iter_count, model_name in _context_runs():
+                if collect_details_for_metrics:
+                    ctx_results, ctx_summary, ctx_details = pb_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                        collect_details=True,
+                    )
+                    details.extend(ctx_details)
+                else:
+                    ctx_results, ctx_summary = pb_valuation_full(
+                        financial_dict,
+                        ctx_text,
+                        num_iterations=iter_count,
+                        llm_workers=llm_workers_each_block,
+                        model=model_name,
+                        runtime_context=runtime_context,
+                    )
+                all_results.extend(ctx_results)
+                summary_name = ctx_summary[1]
+        return all_results, _plot_summary_or_empty(all_results, summary_name), details
 
     def _run_revenue_scenario_mixed():
         all_results = []
@@ -6095,6 +6359,7 @@ def run_valuations(
         fut_dcf = ex.submit(_run_dcf_mixed)
         fut_target_scenario = ex.submit(_run_target_scenario_mixed)
         fut_earnings_scenario = ex.submit(_run_earnings_scenario_mixed)
+        fut_pb = ex.submit(_run_pb_mixed) if eligible_pb_sector else None
         fut_revenue_scenario = ex.submit(_run_revenue_scenario_mixed)
         fut_composite_scenario = ex.submit(_run_composite_scenario_mixed)
         fut_sotp_scenario = ex.submit(_run_sotp_scenario_mixed)
@@ -6133,6 +6398,19 @@ def run_valuations(
             text_earnings_scenario,
             details_earnings_scenario,
         ) = earnings_result
+
+        if fut_pb is not None:
+            pb_result = _safe_future_result(
+                fut_pb,
+                ([], ("\nNo results\n\n", PB_VALUATION_METHOD_NAME), []),
+                "P/B Valuation block",
+            )
+            pb_result = _retry_block_once_if_empty(pb_result, _run_pb_mixed, "P/B Valuation block")
+            all_results_pb, text_pb, details_pb = pb_result
+        else:
+            all_results_pb = []
+            text_pb = ("\nNo results\n\n", PB_VALUATION_METHOD_NAME)
+            details_pb = []
 
         revenue_result = _safe_future_result(
             fut_revenue_scenario,
@@ -6194,6 +6472,8 @@ def run_valuations(
     method_details["Composite Scenario"] = details_composite_scenario
     method_details["SOTP Scenario"] = details_sotp_scenario
     method_details["Dream Team"] = details_dream
+    if eligible_pb_sector and details_pb:
+        method_details[PB_VALUATION_METHOD_NAME] = details_pb
 
     # Use one equally weighted vote per valuation family. In particular, the
     # ten Dream Team personas are averaged first and count as one family, just
@@ -6228,6 +6508,7 @@ def run_valuations(
         (all_results_revenue_scenario, "Revenue Scenario"),
         (all_results_composite_scenario, "Composite Scenario"),
         (all_results_sotp_scenario, "SOTP Scenario"),
+        (all_results_pb, PB_VALUATION_METHOD_NAME),
         (all_results_dream, "Dream Team"),
     ]
 
@@ -6282,6 +6563,8 @@ def run_valuations(
       append_text_to_file(text = text_revenue_scenario[0], header = text_revenue_scenario[1])
       append_text_to_file(text = text_composite_scenario[0], header = text_composite_scenario[1])
       append_text_to_file(text = text_sotp_scenario[0], header = text_sotp_scenario[1])
+      if all_results_pb:
+        append_text_to_file(text = text_pb[0], header = text_pb[1])
       append_text_to_file(text = text_dream[0], header = text_dream[1])
 
       # If you still want the "overall_valuation" sections written to file, keep it here (sequential)
@@ -6309,6 +6592,11 @@ def run_valuations(
                   "Composite Scenario": float(all_results_composite_scenario[0]) if all_results_composite_scenario else None,
                   "SOTP Scenario": float(all_results_sotp_scenario[0]) if all_results_sotp_scenario else None,
                   "Dream Team": float(all_results_dream[0]) if all_results_dream else None,
+                  **(
+                      {PB_VALUATION_METHOD_NAME: float(all_results_pb[0])}
+                      if all_results_pb
+                      else {}
+                  ),
               },
               "aggregate_investments": aggregate_investments,
               "aggregate_investment_percents": aggregate_investment_percents,
@@ -7419,6 +7707,7 @@ def plot_all_three(
             "Revenue Scenario",
             "Composite Scenario",
             "SOTP Scenario",
+            "P/B Valuation",
             "Dream Team",
             "Scenario DCF",
             "Mean",

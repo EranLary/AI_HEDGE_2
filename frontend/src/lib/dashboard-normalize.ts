@@ -19,6 +19,7 @@ const LEGACY_METHOD_FAMILIES = [
   "Revenue Scenario",
   "Composite Scenario",
   "SOTP Scenario",
+  "P/B Valuation",
   "Dream Team",
 ];
 const VALUATION_NOTIONAL = 100000;

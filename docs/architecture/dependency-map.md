@@ -154,6 +154,7 @@ Core requirements:
 - `dcf_range_full` -> needs parsed JSON keys `fcf_next_year`, `g`, `WACC`, `TERMINAL`
 - `profit_pe_range_full` -> needs `net_income_3y`, `pe_multiple`
 - `revenue_ps_range_full` -> needs `revenue_3y`, `ev_sales_multiple`
+- `pb_valuation_full` -> sector-gated from Yahoo Finance; needs `representative_book_equity`, `pb_multiple`, and verified total-company shares
 - `dream_valuation_full` -> uses persona prompts and `target_market_cap`
 - `bbb_tp_full` -> needs `bull/base/bear` probability + target market cap scenarios
 - `bbb_ni_pe_full` -> needs `bull/base/bear` probability + net income scenarios + `pe_multiple`
@@ -166,6 +167,7 @@ Notes:
 ### Aggregation dependencies
 After block outputs:
 - Price summary: `make_short_list_prices(...)`
+- Eligible successful P/B outputs count as one additional equal-weight valuation family; ineligible, invalid, and historical reports retain the prior family set.
 - Revenue summary: revenue from `revenue_ps` + `forest_logic`
 - Net income summary: NI from `profit_pe` + `bbb_ni_pe` + `forest_logic`
 - P/E summary: PE from `profit_pe` + `bbb_ni_pe` + `forest_logic`

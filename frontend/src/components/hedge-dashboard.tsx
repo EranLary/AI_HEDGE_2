@@ -1,5 +1,7 @@
 ﻿"use client";
 
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization -- Existing prop-sync effects and memo boundaries in this legacy dashboard predate these React compiler lint rules. */
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Copy, Download } from "lucide-react";
@@ -49,6 +51,8 @@ const METHOD_METRIC_LABELS: Record<string, string> = {
   pe_multiple: "P/E Multiple",
   revenue_3y: "Revenue (3Y)",
   ev_sales_multiple: "EV/Sales Multiple",
+  representative_book_equity: "Representative Book Equity",
+  pb_multiple: "P/B Multiple",
   representative_ev_current: "Representative EV",
   target_market_cap: "Target Market Cap",
   bull_probability: "Bull Probability",
@@ -68,6 +72,7 @@ const MODEL_EXPLANATIONS: Record<string, string> = {
   "Revenue Scenario": "This scenario model underwrites Bull/Base/Bear revenue outcomes with explicit probabilities, then applies one shared long-term EV/S multiple to convert weighted operating reality into target price.",
   "Composite Scenario": "Composite Scenario is a full Bull/Base/Bear synthesis of growth, margin, financing, tax, and valuation multiple assumptions, producing a probability-weighted target that stress-tests execution and cycle risk.",
   "SOTP Scenario": "SOTP Scenario values each business segment separately in Bull/Base/Bear configurations, then combines scenario probabilities to produce a weighted equity value target.",
+  "P/B Valuation": "P/B Valuation estimates one normalized through-cycle common book-equity base and applies a carefully underwritten Price-to-Book multiple. Market capitalization and per-share value are then calculated deterministically from that output and the verified total-company share count.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -81,6 +86,7 @@ const MONEY_METRIC_KEYS = new Set([
   "net_income_3y",
   "revenue_3y",
   "representative_ev_current",
+  "representative_book_equity",
   "fcf_next_year",
 ]);
 
@@ -150,6 +156,11 @@ const METHOD_METRIC_ORDER: Record<string, string[]> = {
     "bear_probability",
     "target_market_cap",
   ],
+  "P/B Valuation": [
+    "representative_book_equity",
+    "pb_multiple",
+    "target_market_cap",
+  ],
   "Dream Team": [
     "target_market_cap",
   ],
@@ -162,6 +173,7 @@ const ACTIVE_SCENARIO_METHOD_NAMES = new Set([
   "Revenue Scenario",
   "Composite Scenario",
   "SOTP Scenario",
+  "P/B Valuation",
   "Dream Team",
 ]);
 
@@ -1266,6 +1278,7 @@ export function HedgeDashboard({
       "Revenue Scenario",
       "Composite Scenario",
       "SOTP Scenario",
+      "P/B Valuation",
       "Dream Team",
     ];
     return Array.from(deduped.values()).sort((a, b) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { Crown, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -34,8 +34,6 @@ export function ReportsTabs({
   const search = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
   const [isPending, startTransition] = useTransition();
-  const [pendingFilter, setPendingFilter] = useState<{ key: "gold" | "score"; value: string } | null>(null);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const currentQuery = String(search?.get("q") || "").trim();
   const searchString = search?.toString() || "";
 
@@ -48,7 +46,6 @@ export function ReportsTabs({
     if (normalized) params.set("q", normalized);
     else params.delete("q");
     const qs = params.toString();
-    setPendingFilter(null);
     startTransition(() => {
       const base = workspacePath(workspace, "/reports");
       router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
@@ -72,22 +69,15 @@ export function ReportsTabs({
     navigateToQuery("");
   }
 
-  const navigateToFilter = (key: "gold" | "score", value: string) => {
+  const filterHref = (key: "gold" | "score", value: string) => {
     const params = new URLSearchParams(searchString);
     params.delete("workspace");
     if (value === "all") params.delete(key);
     else params.set(key, value);
     const qs = params.toString();
     const base = workspacePath(workspace, "/reports");
-    const destination = qs ? `${base}?${qs}` : base;
-    setPendingFilter({ key, value });
-    setMobileFiltersOpen(false);
-    startTransition(() => {
-      router.replace(destination, { scroll: false });
-    });
+    return qs ? `${base}?${qs}` : base;
   };
-
-  const activePendingFilter = isPending ? pendingFilter : null;
 
   return (
     <div className="mb-6 space-y-3">
@@ -153,7 +143,7 @@ export function ReportsTabs({
               className="w-full min-w-0 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] py-2 pl-10 pr-10 text-base text-[color:var(--text-primary)] outline-none transition placeholder:text-[color:var(--text-muted)] focus:border-[color:var(--accent)] sm:text-sm"
             />
             <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center">
-              {isPending && !activePendingFilter ? (
+              {isPending ? (
                 <Loader2 aria-label="Searching reports" size={16} className="animate-spin text-[color:var(--accent)]" />
               ) : query ? (
                 <button
@@ -174,75 +164,7 @@ export function ReportsTabs({
           >
             Search
           </button>
-          <div className="relative sm:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileFiltersOpen((open) => !open)}
-              aria-expanded={mobileFiltersOpen}
-              aria-controls="mobile-report-filters"
-              aria-label={activePendingFilter ? "Updating report filters" : "Open report filters"}
-              className="relative inline-flex h-full min-h-9 w-10 items-center justify-center rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--text-primary)]"
-            >
-              {activePendingFilter ? (
-                <Loader2 size={16} className="animate-spin text-[color:var(--accent)]" aria-hidden />
-              ) : (
-                <SlidersHorizontal size={16} aria-hidden />
-              )}
-              {gold !== "all" || score !== "all" ? (
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" aria-hidden />
-              ) : null}
-            </button>
-            {mobileFiltersOpen ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setMobileFiltersOpen(false)}
-                  className="fixed inset-0 z-30 cursor-default"
-                  aria-label="Close report filters"
-                />
-                <div
-                  id="mobile-report-filters"
-                  className="absolute right-0 top-full z-40 mt-2 w-64 rounded-xl border border-[color:var(--border-strong)] bg-[color:var(--surface-overlay)] p-3 shadow-2xl backdrop-blur-xl"
-                >
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-primary)]">Report filters</p>
-                    <button
-                      type="button"
-                      onClick={() => setMobileFiltersOpen(false)}
-                      aria-label="Close report filters"
-                      className="rounded p-1 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
-                    >
-                      <X size={14} aria-hidden />
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    <FilterGroup
-                      label="Target outlook"
-                      active={gold}
-                      pendingValue={activePendingFilter?.key === "gold" ? activePendingFilter.value : null}
-                      disabled={isPending}
-                      options={[
-                        { value: "all", label: "All" },
-                        { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
-                      ]}
-                      onSelect={(value) => navigateToFilter("gold", value)}
-                    />
-                    <FilterGroup
-                      label="Score"
-                      active={score}
-                      pendingValue={activePendingFilter?.key === "score" ? activePendingFilter.value : null}
-                      disabled={isPending}
-                      options={[
-                        { value: "all", label: "All" },
-                        { value: "positive", label: "Positive" },
-                      ]}
-                      onSelect={(value) => navigateToFilter("score", value)}
-                    />
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </div>
+          <MobileFilters key={searchString} gold={gold} score={score} hrefFor={filterHref} />
         </form>
       </div>
 
@@ -254,31 +176,21 @@ export function ReportsTabs({
         <FilterGroup
           label="Target outlook"
           active={gold}
-          pendingValue={activePendingFilter?.key === "gold" ? activePendingFilter.value : null}
-          disabled={isPending}
           options={[
             { value: "all", label: "All" },
             { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
           ]}
-          onSelect={(value) => navigateToFilter("gold", value)}
+          hrefFor={(value) => filterHref("gold", value)}
         />
         <FilterGroup
           label="Score"
           active={score}
-          pendingValue={activePendingFilter?.key === "score" ? activePendingFilter.value : null}
-          disabled={isPending}
           options={[
             { value: "all", label: "All" },
             { value: "positive", label: "Positive" },
           ]}
-          onSelect={(value) => navigateToFilter("score", value)}
+          hrefFor={(value) => filterHref("score", value)}
         />
-        {activePendingFilter ? (
-          <span className="ml-auto inline-flex items-center gap-1.5 px-1 text-xs font-medium text-[color:var(--accent)]" role="status" aria-live="polite">
-            <Loader2 size={13} className="animate-spin" aria-hidden />
-            Updating reports
-          </span>
-        ) : null}
       </div>
     </div>
   );
@@ -287,17 +199,13 @@ export function ReportsTabs({
 function FilterGroup({
   label,
   active,
-  pendingValue,
-  disabled,
   options,
-  onSelect,
+  hrefFor,
 }: {
   label: string;
   active: string;
-  pendingValue: string | null;
-  disabled: boolean;
   options: Array<{ value: string; label: string; icon?: ReactNode }>;
-  onSelect: (value: string) => void;
+  hrefFor: (value: string) => string;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center">
@@ -305,18 +213,13 @@ function FilterGroup({
       <div className="flex min-w-0 flex-wrap gap-1" role="group" aria-label={`${label} filter`}>
         {options.map((option) => {
           const selected = active === option.value;
-          const pending = pendingValue === option.value;
           return (
-            <button
+            <Link
               key={option.value}
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                if (!selected) onSelect(option.value);
-              }}
+              href={hrefFor(option.value)}
+              scroll={false}
               aria-current={selected ? "page" : undefined}
-              aria-busy={pending || undefined}
-              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-wait disabled:text-[color:var(--text-disabled)] ${
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition ${
                 selected
                   ? option.value === "golden"
                     ? "border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] text-[color:var(--warning)]"
@@ -324,13 +227,99 @@ function FilterGroup({
                   : "border-transparent text-[color:var(--text-secondary)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
               }`}
             >
-              {pending ? <Loader2 size={12} className="animate-spin" aria-hidden /> : option.icon}
-              {option.label}
-              {pending ? <span className="sr-only"> loading</span> : null}
-            </button>
+              <FilterOptionContent option={option} />
+            </Link>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function FilterOptionContent({ option }: { option: { label: string; icon?: ReactNode } }) {
+  const { pending } = useLinkStatus();
+
+  return (
+    <span className="inline-flex items-center gap-1" aria-busy={pending || undefined}>
+      {pending ? <Loader2 size={12} className="animate-spin" aria-hidden /> : option.icon}
+      {option.label}
+      {pending ? <span className="sr-only"> loading reports</span> : null}
+    </span>
+  );
+}
+
+function MobileFilters({
+  gold,
+  score,
+  hrefFor,
+}: {
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
+  hrefFor: (key: "gold" | "score", value: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative sm:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-controls="mobile-report-filters"
+        aria-label="Open report filters"
+        className="relative inline-flex h-full min-h-9 w-10 items-center justify-center rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--text-primary)]"
+      >
+        <SlidersHorizontal size={16} aria-hidden />
+        {gold !== "all" || score !== "all" ? (
+          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" aria-hidden />
+        ) : null}
+      </button>
+      {open ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-30 cursor-default"
+            aria-label="Close report filters"
+          />
+          <div
+            id="mobile-report-filters"
+            className="absolute right-0 top-full z-40 mt-2 w-64 rounded-xl border border-[color:var(--border-strong)] bg-[color:var(--surface-overlay)] p-3 shadow-2xl backdrop-blur-xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-primary)]">Report filters</p>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close report filters"
+                className="rounded p-1 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+              >
+                <X size={14} aria-hidden />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <FilterGroup
+                label="Target outlook"
+                active={gold}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
+                ]}
+                hrefFor={(value) => hrefFor("gold", value)}
+              />
+              <FilterGroup
+                label="Score"
+                active={score}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "positive", label: "Positive" },
+                ]}
+                hrefFor={(value) => hrefFor("score", value)}
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

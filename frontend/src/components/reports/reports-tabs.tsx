@@ -1,11 +1,12 @@
 "use client";
 
-import { Loader2, Search, X } from "lucide-react";
+import { Crown, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { workspacePath, type Workspace } from "@/lib/workspace";
+import type { ReportGoldFilter, ReportScoreFilter } from "@/lib/report-list-filters";
 
 export type ReportsTabKey = "mine" | "community";
 
@@ -19,11 +20,15 @@ export function ReportsTabs({
   signedIn,
   initialQuery,
   workspace,
+  gold,
+  score,
 }: {
   active: ReportsTabKey;
   signedIn: boolean;
   initialQuery: string;
   workspace: Workspace;
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -64,9 +69,20 @@ export function ReportsTabs({
     navigateToQuery("");
   }
 
+  const filterHref = (key: "gold" | "score", value: string) => {
+    const params = new URLSearchParams(searchString);
+    params.delete("workspace");
+    if (value === "all") params.delete(key);
+    else params.set(key, value);
+    const qs = params.toString();
+    const base = workspacePath(workspace, "/reports");
+    return qs ? `${base}?${qs}` : base;
+  };
+
   return (
-    <div className={`mb-6 grid gap-3 sm:items-center ${workspace === "nasdaq100" ? "sm:grid-cols-1" : "sm:grid-cols-[auto_minmax(0,1fr)]"}`}>
-      {workspace === "analysis" ? (
+    <div className="mb-6 space-y-3">
+      <div className={`grid gap-3 sm:items-center ${workspace === "nasdaq100" ? "sm:grid-cols-1" : "sm:grid-cols-[auto_minmax(0,1fr)]"}`}>
+        {workspace === "analysis" ? (
         <nav className="flex w-full rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-1 sm:w-auto">
           {TAB_ORDER.map((t) => {
             const params = new URLSearchParams(searchString);
@@ -101,9 +117,9 @@ export function ReportsTabs({
             );
           })}
         </nav>
-      ) : null}
+        ) : null}
 
-      <form
+        <form
         role="search"
         aria-label="Search reports"
         aria-busy={isPending}
@@ -148,7 +164,74 @@ export function ReportsTabs({
         >
           Search
         </button>
-      </form>
+        </form>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-2.5 lg:flex-row lg:items-center">
+        <div className="flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+          <SlidersHorizontal size={14} aria-hidden />
+          Filters
+        </div>
+        <FilterGroup
+          label="Target outlook"
+          active={gold}
+          options={[
+            { value: "all", label: "All" },
+            { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
+          ]}
+          hrefFor={(value) => filterHref("gold", value)}
+        />
+        <FilterGroup
+          label="Score"
+          active={score}
+          options={[
+            { value: "all", label: "All" },
+            { value: "positive", label: "Positive" },
+          ]}
+          hrefFor={(value) => filterHref("score", value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FilterGroup({
+  label,
+  active,
+  options,
+  hrefFor,
+}: {
+  label: string;
+  active: string;
+  options: Array<{ value: string; label: string; icon?: ReactNode }>;
+  hrefFor: (value: string) => string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center">
+      <span className="shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">{label}</span>
+      <div className="flex min-w-0 flex-wrap gap-1" role="group" aria-label={`${label} filter`}>
+        {options.map((option) => {
+          const selected = active === option.value;
+          return (
+            <Link
+              key={option.value}
+              href={hrefFor(option.value)}
+              scroll={false}
+              aria-current={selected ? "page" : undefined}
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition ${
+                selected
+                  ? option.value === "golden"
+                    ? "border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] text-[color:var(--warning)]"
+                    : "border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--text-on-accent)]"
+                  : "border-transparent text-[color:var(--text-secondary)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-primary)]"
+              }`}
+            >
+              {option.icon}
+              {option.label}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }

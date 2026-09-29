@@ -1,3 +1,4 @@
+import { Crown } from "lucide-react";
 import Link from "next/link";
 
 import type { DbReportSummary } from "@/lib/reports-db";
@@ -54,9 +55,16 @@ export function ReportCard({
   const allocation = signedMetricTone("Allocation", report.allocation_pct, "%");
   const company = report.company_name || report.ticker;
   const metrics = [score, target, allocation];
+  const isGolden = Boolean(report.is_golden);
 
   return (
-    <article className="group relative flex h-full flex-col rounded-2xl border border-white/10 bg-zinc-950/70 transition hover:border-emerald-400/50 hover:bg-emerald-500/5">
+    <article
+      className={`group relative flex h-full flex-col rounded-2xl border transition ${
+        isGolden
+          ? "border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] hover:border-[color:var(--warning)]"
+          : "border-white/10 bg-zinc-950/70 hover:border-emerald-400/50 hover:bg-emerald-500/5"
+      }`}
+    >
       {showVisibilityToggle ? (
         <div className="absolute right-3 top-3 z-10">
           <VisibilityToggle reportId={report.id} variant="icon" />
@@ -69,7 +77,20 @@ export function ReportCard({
       ) : null}
       <Link href={href} className="flex h-full flex-col justify-between p-5">
         <div>
-          <p className="font-display text-3xl text-zinc-100">{report.ticker}</p>
+          <div className="flex items-center gap-2">
+            <p className={`font-display text-3xl ${isGolden ? "text-[color:var(--warning)]" : "text-zinc-100"}`}>
+              {report.ticker}
+            </p>
+            {isGolden ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[color:var(--warning)]"
+                title="Every valuation model target, including Dream Team, is above the report-date share price"
+              >
+                <Crown size={11} aria-hidden />
+                Golden
+              </span>
+            ) : null}
+          </div>
           <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{company}</p>
         </div>
         <div className="mt-6 flex items-end justify-between gap-3">

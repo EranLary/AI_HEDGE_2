@@ -1,6 +1,7 @@
 "use client";
 
-import { BrainCircuit, CalendarClock, RefreshCw } from "lucide-react";
+import { ArrowUpRight, BrainCircuit, CalendarClock, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useWorkspace } from "@/components/shell/workspace-context";
@@ -68,7 +69,7 @@ function LoadingState() {
 }
 
 export function JevTrackRecordSection() {
-  const { api, label: workspaceLabel, workspace } = useWorkspace();
+  const { api, href, label: workspaceLabel, workspace } = useWorkspace();
   const [scope, setScope] = useState<JevPredictionScope>("positive_only");
   const [data, setData] = useState<JevTrackRecordPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,6 +125,13 @@ export function JevTrackRecordSection() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`${href("/discovery")}?lens_type=jev`}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[color:var(--accent)] underline-offset-2 transition hover:text-[color:var(--accent-hover)] hover:underline"
+          >
+            View Jev&apos;s Highest-Confidence Forecasts
+            <ArrowUpRight size={13} aria-hidden />
+          </Link>
           <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Jev prediction scope">
             {(["positive_only", "all"] as const).map((item) => (
               <button

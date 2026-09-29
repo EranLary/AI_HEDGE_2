@@ -2,6 +2,14 @@ import { getSql } from "@/lib/db";
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
+import {
+  isGoldenReport,
+  normalizeReportGoldFilter,
+  normalizeReportScoreFilter,
+  reportMatchesListFilters,
+  type ReportGoldFilter,
+  type ReportScoreFilter,
+} from "@/lib/report-list-filters";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import type { Workspace } from "@/lib/workspace";
 
@@ -27,6 +35,7 @@ export interface DbReportSummary {
   visibility: ReportVisibility;
   workspace: Workspace;
   release_id: string | null;
+  is_golden?: boolean;
   valuation_dashboard?: DashboardPayload | null;
 }
 
@@ -408,6 +417,7 @@ function fallbackCommunityReportsFromOutputs(
       visibility: "public",
       workspace: "analysis",
       release_id: null,
+      is_golden: isGoldenReport(dashboard, dashboard.valuation_hub?.consensus?.current_price),
       valuation_dashboard: dashboard,
     });
   }
@@ -510,6 +520,24 @@ export async function listUserReports(userId: string, workspace: Workspace = "an
            r.consensus_allocation_pct::float8 AS allocation_pct,
            r.consensus_score::float8 AS score,
            r.consensus_basis,
+           CASE
+             WHEN r.current_price::float8 > 0
+              AND jsonb_array_length(CASE
+                    WHEN jsonb_typeof(a.dashboard->'valuation_hub'->'method_blocks') = 'array'
+                    THEN a.dashboard->'valuation_hub'->'method_blocks'
+                    ELSE '[]'::jsonb
+                  END) > 0
+             THEN NOT EXISTS (
+               SELECT 1
+                 FROM jsonb_array_elements(a.dashboard->'valuation_hub'->'method_blocks') AS method
+                WHERE CASE
+                        WHEN jsonb_typeof(method->'target_price') = 'number'
+                        THEN (method->>'target_price')::float8 <= r.current_price::float8
+                        ELSE TRUE
+                      END
+             )
+             ELSE FALSE
+           END AS is_golden,
            CASE WHEN r.consensus_basis IS NULL THEN
              jsonb_build_object(
                'header', a.dashboard->'header',
@@ -595,25 +623,33 @@ export async function listCommunityReportsPaged(opts: {
   limit: number;
   offset: number;
   workspace?: Workspace;
+  gold?: ReportGoldFilter;
+  score?: ReportScoreFilter;
 }): Promise<PagedCommunityReports> {
   const rawLimit = Number(opts.limit);
   const rawOffset = Number(opts.offset);
   const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 16));
   const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0);
   const workspace = opts.workspace || "analysis";
+  const gold = normalizeReportGoldFilter(opts.gold);
+  const scoreFilter = normalizeReportScoreFilter(opts.score);
   const sql = getSql();
   if (!sql) {
-    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query);
+    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query)
+      .filter((report) => reportMatchesListFilters(report, gold, scoreFilter));
     const pageRows = all.slice(offset, offset + limit + 1);
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
   }
-  const fetchN = limit + 1;
+  const filtersActive = gold !== "all" || scoreFilter !== "all";
+  const fetchN = filtersActive ? 1_000_000 : limit + 1;
+  const fetchOffset = filtersActive ? 0 : offset;
   const q = String(opts.query || "").trim();
   const like = q ? `%${q}%` : "";
 
   try {
     const rows = ((await sql`
+        WITH report_candidates AS (
         SELECT r.id::text AS id, r.ticker, r.generated_at,
                r.company_name,
                r.current_price::float8 AS current_price,
@@ -624,8 +660,26 @@ export async function listCommunityReportsPaged(opts: {
                 r.median_target_price::float8 AS median_target_price,
                 r.consensus_target_price::float8 AS consensus_target_price,
                 r.consensus_allocation_pct::float8 AS allocation_pct,
-                r.consensus_score::float8 AS score,
-                r.consensus_basis,
+                 r.consensus_score::float8 AS score,
+                 r.consensus_basis,
+                CASE
+                  WHEN r.current_price::float8 > 0
+                   AND jsonb_array_length(CASE
+                         WHEN jsonb_typeof(a.dashboard->'valuation_hub'->'method_blocks') = 'array'
+                         THEN a.dashboard->'valuation_hub'->'method_blocks'
+                         ELSE '[]'::jsonb
+                       END) > 0
+                  THEN NOT EXISTS (
+                    SELECT 1
+                      FROM jsonb_array_elements(a.dashboard->'valuation_hub'->'method_blocks') AS method
+                     WHERE CASE
+                             WHEN jsonb_typeof(method->'target_price') = 'number'
+                             THEN (method->>'target_price')::float8 <= r.current_price::float8
+                             ELSE TRUE
+                           END
+                  )
+                  ELSE FALSE
+                END AS is_golden,
                CASE WHEN r.consensus_basis IS NULL THEN
                  jsonb_build_object(
                    'header', a.dashboard->'header',
@@ -647,16 +701,25 @@ export async function listCommunityReportsPaged(opts: {
            AND r.workspace = ${workspace}
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
            AND (${like} = '' OR r.ticker ILIKE ${like} OR COALESCE(r.company_name, '') ILIKE ${like})
-         ORDER BY r.generated_at DESC
+        )
+        SELECT *
+          FROM report_candidates
+          ORDER BY generated_at DESC
          LIMIT ${fetchN}
-        OFFSET ${offset};
+        OFFSET ${fetchOffset};
       `) as unknown as DbReportSummary[]);
 
-    const filteredRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
-    const hasMore = filteredRows.length > limit;
-    return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
+    const normalizedRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
+    const pageRows = filtersActive
+      ? normalizedRows
+        .filter((report) => reportMatchesListFilters(report, gold, scoreFilter))
+        .slice(offset, offset + limit + 1)
+      : normalizedRows;
+    const hasMore = pageRows.length > limit;
+    return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
   } catch {
-    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query, await deletedReportPredicate(workspace));
+    const all = fallbackCommunityReportsFromOutputs(workspace, opts.query, await deletedReportPredicate(workspace))
+      .filter((report) => reportMatchesListFilters(report, gold, scoreFilter));
     const pageRows = all.slice(offset, offset + limit + 1);
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };

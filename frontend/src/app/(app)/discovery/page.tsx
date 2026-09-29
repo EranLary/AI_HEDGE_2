@@ -393,6 +393,9 @@ export default function DiscoveryPage() {
         const json = (await res.json()) as DiscoveryPayload;
         if (!cancelled) {
           setData(json);
+          if (json.lens.type !== "overall" && json.lens.key && json.lens.key !== lensKey) {
+            setLensKey(json.lens.key);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -459,7 +462,76 @@ export default function DiscoveryPage() {
           </p>
         </header>
 
-        {loading || !data ? (
+        <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Discovery Lens</p>
+              <p className="text-sm font-semibold text-zinc-100">
+                {activeView === "jev"
+                  ? "Jev confidence rankings"
+                  : data?.lens.label || (activeView === "overall" ? "Consensus" : activeView === "model" ? "Model" : "Valuator")}
+              </p>
+              {loading && activeView !== "jev" ? (
+                <p className="mt-1 text-xs text-[color:var(--text-muted)]">Loading this lens in the background...</p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <div className="inline-flex flex-wrap rounded-xl border border-white/15 bg-white/5 p-1 text-xs uppercase tracking-[0.12em]">
+                <button
+                  type="button"
+                  onClick={() => onLensTypeChange("overall")}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    activeView === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                  }`}
+                >
+                  Consensus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLensTypeChange("model")}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    activeView === "model" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                  }`}
+                >
+                  Model
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLensTypeChange("valuator")}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    activeView === "valuator" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                  }`}
+                >
+                  Valuator
+                </button>
+                <button
+                  type="button"
+                  onClick={onJevView}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    activeView === "jev" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
+                  }`}
+                >
+                  Jev
+                </button>
+              </div>
+              {activeView !== "jev" && lensType !== "overall" && selectedOptions.length ? (
+                <select
+                  value={lensKey}
+                  onChange={(e) => setLensKey(String(e.target.value || ""))}
+                  className="w-full min-w-[260px] rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2 text-base text-zinc-100 outline-none focus:border-emerald-400/60 sm:w-auto sm:text-sm"
+                >
+                  {selectedOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {activeView !== "jev" && (loading || !data) ? (
           <div className="grid gap-4 md:grid-cols-3">
             {Array.from({ length: 6 }).map((_, idx) => (
               <div key={idx} className="h-40 animate-pulse rounded-xl border border-white/10 bg-white/5" />
@@ -467,71 +539,6 @@ export default function DiscoveryPage() {
           </div>
         ) : (
           <>
-            <section className="mb-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Discovery Lens</p>
-                  <p className="text-sm font-semibold text-zinc-100">
-                    {activeView === "jev" ? "Jev confidence rankings" : data.lens.label}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 sm:items-end">
-                  <div className="inline-flex flex-wrap rounded-xl border border-white/15 bg-white/5 p-1 text-xs uppercase tracking-[0.12em]">
-                    <button
-                      type="button"
-                      onClick={() => onLensTypeChange("overall")}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeView === "overall" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      }`}
-                    >
-                      Consensus
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLensTypeChange("model")}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeView === "model" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      } disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-45`}
-                      disabled={!modelOptions.length}
-                    >
-                      Model
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLensTypeChange("valuator")}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeView === "valuator" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      } disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-45`}
-                      disabled={!valuatorOptions.length}
-                    >
-                      Valuator
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onJevView}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeView === "jev" ? "bg-emerald-500/20 text-emerald-100" : "text-zinc-300 hover:text-zinc-100"
-                      }`}
-                    >
-                      Jev
-                    </button>
-                  </div>
-                  {activeView !== "jev" && lensType !== "overall" ? (
-                    <select
-                      value={lensKey}
-                      onChange={(e) => setLensKey(String(e.target.value || ""))}
-                      className="w-full min-w-[260px] rounded-lg border border-white/15 bg-zinc-950/80 px-3 py-2 text-base text-zinc-100 outline-none focus:border-emerald-400/60 sm:w-auto sm:text-sm"
-                    >
-                      {selectedOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                </div>
-              </div>
-            </section>
             {activeView === "jev" ? (
               <div>
                 <section className="mb-4 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
@@ -584,7 +591,7 @@ export default function DiscoveryPage() {
                   </>
                 ) : null}
               </div>
-            ) : (
+            ) : data ? (
               <>
             <p className="mb-4 text-sm text-zinc-400">
               Scanned {data.count} tickers for this lens. Generated at {fmtDateTimeNoSeconds(String(data.generated_at || ""))}.
@@ -659,7 +666,7 @@ export default function DiscoveryPage() {
               ) : null}
             </div>
               </>
-            )}
+            ) : null}
           </>
         )}
       </div>

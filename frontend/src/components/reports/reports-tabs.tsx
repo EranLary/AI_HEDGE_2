@@ -178,7 +178,6 @@ export function ReportsTabs({
           options={[
             { value: "all", label: "All" },
             { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
-            { value: "standard", label: "Not Golden" },
           ]}
           hrefFor={(value) => filterHref("gold", value)}
         />
@@ -186,9 +185,8 @@ export function ReportsTabs({
           label="Score"
           active={score}
           options={[
-            { value: "all", label: "Any" },
+            { value: "all", label: "All" },
             { value: "positive", label: "Positive" },
-            { value: "negative", label: "Negative" },
           ]}
           hrefFor={(value) => filterHref("score", value)}
         />

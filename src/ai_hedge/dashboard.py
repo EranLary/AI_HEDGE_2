@@ -641,6 +641,8 @@ def _metric_label(metric_key: str) -> str:
         "fcf_next_year": "FCF Next Year",
         "pe_multiple": "P/E Multiple",
         "ev_sales_multiple": "EV/S Multiple",
+        "representative_book_equity": "Representative Book Equity",
+        "pb_multiple": "P/B Multiple",
         "net_income_3y": "Net Income (3Y)",
         "revenue_3y": "Revenue (3Y)",
         "target_market_cap": "Target Market Cap",
@@ -885,6 +887,12 @@ def _method_metric_snapshot(method_name: str, items: List[Dict[str, Any]]) -> Di
         }
         for activity_metric_key, activity_metric_value in avg_weighted_activity_values().items():
             metrics[activity_metric_key] = activity_metric_value
+    elif method_name == "P/B Valuation":
+        metrics = {
+            "representative_book_equity": avg_num("representative_book_equity"),
+            "pb_multiple": avg_num("pb_multiple"),
+            "target_market_cap": avg_num("target_market_cap"),
+        }
     elif method_name == "Dream Team":
         metrics = {
             "target_market_cap": avg_num("target_market_cap"),
@@ -2097,6 +2105,7 @@ def build_dashboard_payload(
         "Revenue Scenario",
         "Composite Scenario",
         "SOTP Scenario",
+        "P/B Valuation",
         "Dream Team",
     ]
 

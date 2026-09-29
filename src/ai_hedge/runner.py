@@ -970,6 +970,10 @@ def _method_specific_numeric_pairs(method_name: str, raw_json: Dict[str, Any]) -
         if isinstance(weighted_activities, dict):
             for activity_name, activity_value in weighted_activities.items():
                 pairs.append((f"Weighted Activity Market Cap - {activity_name}", _numeric_text(activity_value)))
+    elif method_name == "P/B Valuation":
+        pairs.append(("Representative Book Equity", _numeric_text(raw_json.get("representative_book_equity"))))
+        pairs.append(("P/B Multiple", _numeric_text(raw_json.get("pb_multiple"))))
+        pairs.append(("Target Market Cap", _numeric_text(raw_json.get("target_market_cap"))))
 
     out: List[tuple[str, str]] = []
     for label, value in pairs:
@@ -1496,6 +1500,8 @@ def _rationale_label(key: str) -> str:
     labels = {
         "step_by_step_analysis": "Analysis Summary",
         "target_market_cap_rationale": "Target Market Cap Rationale",
+        "representative_book_equity_rationale": "Representative Book Equity Rationale",
+        "pb_multiple_rationale": "P/B Multiple Rationale",
         "investment_rationale": "Position Sizing Rationale",
         "bull_rationale": "Bull Case Rationale",
         "base_rationale": "Base Case Rationale",

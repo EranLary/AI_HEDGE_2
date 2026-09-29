@@ -1,4 +1,5 @@
 import type { DiscoveryRow } from "@/lib/dashboard-types";
+import { canonicalModelName } from "@/lib/method-display";
 import {
   computeTickerSummaryAggregation,
   filterReportsByWindow,
@@ -25,6 +26,7 @@ export type PreparedDiscoveryTicker = {
   latestUpdatedAt: string;
   companyName: string;
   sourceReportIds: string[];
+  sourceReportIdsByLens: Record<string, string[]>;
 };
 
 export type PreparedDiscoveryUniverse = {
@@ -77,6 +79,69 @@ function meanCurrentPrice(reports: SummarySourceReport[]): number | null {
     .map((report) => safeNumOrNull(report.payload.valuation_hub?.consensus?.current_price))
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
   return values.length ? average(values) : null;
+}
+
+function lensSourceKey(type: DiscoveryLensType, key: string | null): string {
+  return type === "overall" ? "overall" : `${type}:${String(key || "").trim()}`;
+}
+
+function reportModelNames(report: DiscoverySourceReport): Set<string> {
+  const tabs = Array.isArray(report.payload.valuation_hub?.method_tabs)
+    ? report.payload.valuation_hub.method_tabs
+    : [];
+  const blocks = Array.isArray(report.payload.valuation_hub?.method_blocks)
+    ? report.payload.valuation_hub.method_blocks
+    : [];
+  const rows = tabs.length ? tabs : blocks;
+  return new Set(
+    rows
+      .map((row) => canonicalModelName(String(row.name || "").trim()))
+      .filter((name) => name && name !== "Unknown Model"),
+  );
+}
+
+function reportValuatorNames(report: DiscoverySourceReport): Set<string> {
+  const tabs = Array.isArray(report.payload.valuation_hub?.method_tabs)
+    ? report.payload.valuation_hub.method_tabs
+    : [];
+  const names = new Set<string>();
+  for (const tab of tabs) {
+    for (const output of Array.isArray(tab.outputs) ? tab.outputs : []) {
+      const persona = String(output.persona || "").trim();
+      if (persona && !/^output\s+\d+$/i.test(persona)) names.add(persona);
+    }
+  }
+  const hasDreamTeamOutputs = tabs.some(
+    (tab) => canonicalModelName(String(tab.name || "")) === "Dream Team" && Array.isArray(tab.outputs) && tab.outputs.length > 0,
+  );
+  if (!hasDreamTeamOutputs) {
+    for (const member of Array.isArray(report.payload.dream_team) ? report.payload.dream_team : []) {
+      const persona = String(member.persona || "").trim();
+      if (persona) names.add(persona);
+    }
+  }
+  return names;
+}
+
+function reportIdsForLens(
+  reports: DiscoverySourceReport[],
+  type: DiscoveryLensType,
+  key: string | null,
+): string[] {
+  return Array.from(
+    new Set(
+      reports
+        .filter((report) => {
+          if (type === "overall") return true;
+          if (!key) return false;
+          return type === "model"
+            ? reportModelNames(report).has(key)
+            : reportValuatorNames(report).has(key);
+        })
+        .map((report) => String(report.reportId || "").trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function combinedScore(investmentPct?: number | null, targetReturnPct?: number | null): number | null {
@@ -185,15 +250,30 @@ export function prepareDiscoveryUniverse(args: {
     if (!current) continue;
 
     const latest = windowReports.slice().sort((a, b) => reportMs(b.generatedAt) - reportMs(a.generatedAt))[0];
+    const sourceReportIds = reportIdsForLens(windowReports, "overall", null);
+    const sourceReportIdsByLens: Record<string, string[]> = {
+      [lensSourceKey("overall", null)]: sourceReportIds,
+    };
+    for (const row of summary.by_model) {
+      const label = String(row.label || "").trim();
+      if (label && !["overall", "consensus"].includes(label.toLowerCase())) {
+        sourceReportIdsByLens[lensSourceKey("model", label)] = reportIdsForLens(windowReports, "model", label);
+      }
+    }
+    for (const row of summary.by_valuator) {
+      const label = String(row.label || "").trim();
+      if (label) {
+        sourceReportIdsByLens[lensSourceKey("valuator", label)] = reportIdsForLens(windowReports, "valuator", label);
+      }
+    }
     tickers.push({
       ticker,
       summary,
       current,
       latestUpdatedAt: latest?.generatedAt || new Date(args.asOfMs).toISOString(),
       companyName: latest?.payload?.header?.company_name || ticker,
-      sourceReportIds: Array.from(
-        new Set(windowReports.map((report) => String((report as DiscoverySourceReport).reportId || "").trim()).filter(Boolean)),
-      ),
+      sourceReportIds,
+      sourceReportIdsByLens,
     });
   }
 
@@ -240,7 +320,8 @@ export function scoreDiscoveryCandidates(
         points_score: adjustedScore,
         updated_at: prepared.latestUpdatedAt,
       },
-      sourceReportIds: prepared.sourceReportIds,
+      sourceReportIds:
+        prepared.sourceReportIdsByLens[lensSourceKey(lens.type, lens.key)] || prepared.sourceReportIds,
     });
   }
   return candidates;

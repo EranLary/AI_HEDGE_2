@@ -88,6 +88,47 @@ test("historical discovery excludes future reports and anchors the 90-day window
   assert.ok(Math.abs(Number(persona[0].row.points_score) - 18.2) < 1e-9);
 });
 
+test("P/B discovery lens uses only reports that actually contain the new model", () => {
+  const oldPayload = payload("AAA", 110, 5);
+  const newPayload = payload("AAA", 120, 10);
+  newPayload.valuation_hub.method_tabs = [
+    ...(newPayload.valuation_hub.method_tabs || []),
+    {
+      name: "P/B Valuation",
+      target_price: 150,
+      investment_amount: 20_000,
+      key_metric_means: {
+        representative_book_equity: 1_000_000,
+        pb_multiple: 1.5,
+        target_market_cap: 1_500_000,
+      },
+      outputs: [],
+    },
+  ];
+  const universe = prepareDiscoveryUniverse({
+    reports: [
+      { ticker: "AAA", generatedAt: "2026-07-01T12:00:00Z", payload: oldPayload, reportId: "pre-pb" },
+      { ticker: "AAA", generatedAt: "2026-08-01T12:00:00Z", payload: newPayload, reportId: "with-pb" },
+      { ticker: "BBB", generatedAt: "2026-08-01T12:00:00Z", payload: payload("BBB", 130, 10), reportId: "other-sector" },
+    ],
+    priceByTicker: new Map([["AAA", 100], ["BBB", 100]]),
+    asOfMs: Date.parse("2026-08-02T00:00:00Z"),
+  });
+
+  assert.ok(universe.models.includes("P/B Valuation"));
+  const rows = scoreDiscoveryCandidates(universe, {
+    type: "model",
+    key: "P/B Valuation",
+    label: "P/B Valuation",
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].row.ticker, "AAA");
+  assert.equal(rows[0].row.return_pct, 50);
+  assert.equal(rows[0].row.investment_allocation_pct, 20);
+  assert.deepEqual(rows[0].sourceReportIds, ["with-pb"]);
+});
+
 function candidate(ticker: string, score: number, disagreement: number = 0): ScoredDiscoveryCandidate {
   return {
     sourceReportIds: [],

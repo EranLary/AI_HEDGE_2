@@ -39,6 +39,11 @@ const MODEL_NAME_ALIASES: Record<string, string> = {
   "target scenario valuation": "Target Scenario",
   "earnings scenario valuation": "Earnings Scenario",
   "revenue scenario valuation": "Revenue Scenario",
+  pb: "P/B Valuation",
+  "p b": "P/B Valuation",
+  "p b valuation": "P/B Valuation",
+  "price to book": "P/B Valuation",
+  "price to book valuation": "P/B Valuation",
   overall: "Consensus",
 };
 

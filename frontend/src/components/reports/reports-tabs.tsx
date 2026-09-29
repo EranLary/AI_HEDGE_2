@@ -178,7 +178,7 @@ export function ReportsTabs({
           options={[
             { value: "all", label: "All" },
             { value: "golden", label: "Golden", icon: <Crown size={12} aria-hidden /> },
-            { value: "standard", label: "Not golden" },
+            { value: "standard", label: "Not Golden" },
           ]}
           hrefFor={(value) => filterHref("gold", value)}
         />

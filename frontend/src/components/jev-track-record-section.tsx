@@ -127,9 +127,9 @@ export function JevTrackRecordSection() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`${href("/discovery")}?lens_type=jev`}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[color:var(--text-muted)] transition hover:text-[color:var(--accent)]"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[color:var(--accent)] underline-offset-2 transition hover:text-[color:var(--accent-hover)] hover:underline"
           >
-            View list in Discovery
+            View Jev&apos;s Highest-Confidence Forecasts
             <ArrowUpRight size={13} aria-hidden />
           </Link>
           <div className="inline-flex rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--surface)] p-1" aria-label="Jev prediction scope">

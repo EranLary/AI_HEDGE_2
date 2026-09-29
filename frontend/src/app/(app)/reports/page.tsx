@@ -13,6 +13,13 @@ import {
 import { ReportsTabs, type ReportsTabKey } from "@/components/reports/reports-tabs";
 import { summarizeNasdaqIssuerCoverage } from "@/lib/nasdaq-run-policy";
 import { loadNasdaqUniverse } from "@/lib/nasdaq-universe";
+import {
+  normalizeReportGoldFilter,
+  normalizeReportScoreFilter,
+  reportMatchesListFilters,
+  type ReportGoldFilter,
+  type ReportScoreFilter,
+} from "@/lib/report-list-filters";
 import { parseWorkspace, type Workspace } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +66,7 @@ function filterByQuery(rows: DbReportSummary[], query: string): DbReportSummary[
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string; workspace?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; workspace?: string; gold?: string; score?: string }>;
 }) {
   const params = await searchParams;
   const workspace = parseWorkspace(params.workspace);
@@ -72,6 +79,8 @@ export default async function ReportsPage({
 
   const tab = workspace === "nasdaq100" ? "community" : resolveTab(params.tab, signedIn);
   const query = String(params.q || "");
+  const gold = normalizeReportGoldFilter(params.gold);
+  const score = normalizeReportScoreFilter(params.score);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
@@ -91,12 +100,20 @@ export default async function ReportsPage({
         </p>
       </header>
 
-      <ReportsTabs key={workspace} active={tab} signedIn={signedIn} initialQuery={query} workspace={workspace} />
+      <ReportsTabs
+        key={workspace}
+        active={tab}
+        signedIn={signedIn}
+        initialQuery={query}
+        workspace={workspace}
+        gold={gold}
+        score={score}
+      />
 
       {workspace === "nasdaq100" || tab === "community" ? (
-        <CommunityTabContent query={query} signedIn={signedIn} workspace={workspace} />
+        <CommunityTabContent query={query} signedIn={signedIn} workspace={workspace} gold={gold} score={score} />
       ) : (
-        <MineTabContent userId={userId} signedIn={signedIn} query={query} workspace={workspace} />
+        <MineTabContent userId={userId} signedIn={signedIn} query={query} workspace={workspace} gold={gold} score={score} />
       )}
     </div>
   );
@@ -106,10 +123,14 @@ async function CommunityTabContent({
   query,
   signedIn,
   workspace,
+  gold,
+  score,
 }: {
   query: string;
   signedIn: boolean;
   workspace: Workspace;
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
 }) {
   let rows: DbReportSummary[] = [];
   let hasMore = false;
@@ -119,6 +140,8 @@ async function CommunityTabContent({
       limit: COMMUNITY_PAGE_SIZE,
       offset: 0,
       workspace,
+      gold,
+      score,
     });
     rows = page.rows;
     hasMore = page.hasMore;
@@ -127,16 +150,25 @@ async function CommunityTabContent({
   }
 
   if (!rows.length) {
-    return <EmptyState tab="community" signedIn={signedIn} hasQuery={Boolean(query)} workspace={workspace} />;
+    return (
+      <EmptyState
+        tab="community"
+        signedIn={signedIn}
+        hasQuery={Boolean(query) || gold !== "all" || score !== "all"}
+        workspace={workspace}
+      />
+    );
   }
 
   return (
     <CommunityList
-      key={`${workspace}:${query.trim().toLowerCase() || "all-reports"}`}
+      key={`${workspace}:${query.trim().toLowerCase() || "all-reports"}:${gold}:${score}`}
       initialRows={rows}
       initialHasMore={hasMore}
       query={query}
       workspace={workspace}
+      gold={gold}
+      score={score}
     />
   );
 }
@@ -146,11 +178,15 @@ async function MineTabContent({
   signedIn,
   query,
   workspace,
+  gold,
+  score,
 }: {
   userId: string | null;
   signedIn: boolean;
   query: string;
   workspace: Workspace;
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
 }) {
   let rows: DbReportSummary[] = [];
   try {
@@ -158,10 +194,17 @@ async function MineTabContent({
   } catch (err) {
     console.warn("[reports] DB read failed:", err);
   }
-  const filtered = filterByQuery(rows, query);
+  const filtered = filterByQuery(rows, query).filter((report) => reportMatchesListFilters(report, gold, score));
 
   if (!filtered.length) {
-    return <EmptyState tab="mine" signedIn={signedIn} hasQuery={Boolean(query)} workspace={workspace} />;
+    return (
+      <EmptyState
+        tab="mine"
+        signedIn={signedIn}
+        hasQuery={Boolean(query) || gold !== "all" || score !== "all"}
+        workspace={workspace}
+      />
+    );
   }
 
   return (
@@ -189,7 +232,7 @@ function EmptyState({
   if (hasQuery) {
     return (
       <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-10 text-center">
-        <p className="text-sm text-zinc-300">No reports match your search.</p>
+        <p className="text-sm text-zinc-300">No reports match the current search and filters.</p>
       </div>
     );
   }

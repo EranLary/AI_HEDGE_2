@@ -6,6 +6,7 @@ import type { DbReportSummary } from "@/lib/reports-db";
 import { loadMoreCommunity } from "@/app/(app)/reports/actions";
 
 import { ReportCard } from "./report-card";
+import type { ReportGoldFilter, ReportScoreFilter } from "@/lib/report-list-filters";
 import type { Workspace } from "@/lib/workspace";
 
 export const COMMUNITY_PAGE_SIZE = 16;
@@ -16,12 +17,16 @@ export function CommunityList({
   query,
   pageSize = COMMUNITY_PAGE_SIZE,
   workspace,
+  gold,
+  score,
 }: {
   initialRows: DbReportSummary[];
   initialHasMore: boolean;
   query: string;
   pageSize?: number;
   workspace: Workspace;
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
 }) {
   const [rows, setRows] = useState<DbReportSummary[]>(initialRows);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -37,6 +42,8 @@ export function CommunityList({
           limit: pageSize,
           query,
           workspace,
+          gold,
+          score,
         });
         setRows((prev) => [...prev, ...next.rows]);
         setHasMore(next.hasMore);

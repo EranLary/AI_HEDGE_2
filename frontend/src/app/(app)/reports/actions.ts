@@ -5,6 +5,7 @@ import {
   listCommunityReportsPaged,
   type DbReportSummary,
 } from "@/lib/reports-db";
+import type { ReportGoldFilter, ReportScoreFilter } from "@/lib/report-list-filters";
 import type { Workspace } from "@/lib/workspace";
 
 export type LoadMoreCommunityResult = {
@@ -17,6 +18,8 @@ export async function loadMoreCommunity(input: {
   limit: number;
   query: string;
   workspace: Workspace;
+  gold: ReportGoldFilter;
+  score: ReportScoreFilter;
 }): Promise<LoadMoreCommunityResult> {
   await auth();
   try {
@@ -25,6 +28,8 @@ export async function loadMoreCommunity(input: {
       limit: input.limit,
       offset: input.offset,
       workspace: input.workspace,
+      gold: input.gold,
+      score: input.score,
     });
   } catch (err) {
     console.warn("[reports] loadMoreCommunity failed:", err);

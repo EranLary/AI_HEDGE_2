@@ -9,6 +9,7 @@ can find the authoritative guide without scanning the project root.
 - [Runtime pipeline](architecture/pipeline.md)
 - [Data lifecycle and sources of truth](architecture/data-lifecycle.md)
 - [Legacy-core dependency map](architecture/dependency-map.md)
+- [Valuation methods and proposed sector weights](architecture/valuation-methods-and-sector-weights.md)
 - [HTML-first reports](architecture/html-first-reports.md)
 - [Dependency diagram](architecture/diagrams/dependency-map.png)
 - [Main valuation diagram](architecture/diagrams/valuation-main-map.png)

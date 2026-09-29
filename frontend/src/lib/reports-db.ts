@@ -641,7 +641,9 @@ export async function listCommunityReportsPaged(opts: {
     const hasMore = pageRows.length > limit;
     return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
   }
-  const fetchN = limit + 1;
+  const filtersActive = gold !== "all" || scoreFilter !== "all";
+  const fetchN = filtersActive ? 1_000_000 : limit + 1;
+  const fetchOffset = filtersActive ? 0 : offset;
   const q = String(opts.query || "").trim();
   const like = q ? `%${q}%` : "";
 
@@ -658,11 +660,7 @@ export async function listCommunityReportsPaged(opts: {
                 r.median_target_price::float8 AS median_target_price,
                 r.consensus_target_price::float8 AS consensus_target_price,
                 r.consensus_allocation_pct::float8 AS allocation_pct,
-                 COALESCE(
-                   r.consensus_score::float8,
-                   (a.dashboard->'score_card'->>'adjusted_score')::float8,
-                   (a.dashboard->'decision_card'->>'adjusted_score')::float8
-                 ) AS score,
+                 r.consensus_score::float8 AS score,
                  r.consensus_basis,
                 CASE
                   WHEN r.current_price::float8 > 0
@@ -706,20 +704,19 @@ export async function listCommunityReportsPaged(opts: {
         )
         SELECT *
           FROM report_candidates
-         WHERE (${gold} = 'all'
-                OR (${gold} = 'golden' AND is_golden)
-                OR (${gold} = 'standard' AND NOT is_golden))
-           AND (${scoreFilter} = 'all'
-                OR (${scoreFilter} = 'positive' AND score > 0)
-                OR (${scoreFilter} = 'negative' AND score < 0))
           ORDER BY generated_at DESC
          LIMIT ${fetchN}
-        OFFSET ${offset};
+        OFFSET ${fetchOffset};
       `) as unknown as DbReportSummary[]);
 
-    const filteredRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
-    const hasMore = filteredRows.length > limit;
-    return { rows: hasMore ? filteredRows.slice(0, limit) : filteredRows, hasMore };
+    const normalizedRows = withConsensusMetrics(filterExcludedTickers(rows, (row) => row.ticker));
+    const pageRows = filtersActive
+      ? normalizedRows
+        .filter((report) => reportMatchesListFilters(report, gold, scoreFilter))
+        .slice(offset, offset + limit + 1)
+      : normalizedRows;
+    const hasMore = pageRows.length > limit;
+    return { rows: hasMore ? pageRows.slice(0, limit) : pageRows, hasMore };
   } catch {
     const all = fallbackCommunityReportsFromOutputs(workspace, opts.query, await deletedReportPredicate(workspace))
       .filter((report) => reportMatchesListFilters(report, gold, scoreFilter));

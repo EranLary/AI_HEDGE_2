@@ -3503,6 +3503,13 @@ Definitions:
 - representative_ev_current must be a single positive full-unit enterprise value (EV) anchor for the company today.
 - investment_amount is capital allocated out of a $100,000 notional budget in [-100000, 100000].
 
+Deterministic target-price calculation after your JSON:
+- For scenario s and years t = 1..5: FCF_s,t = fcf_next_year_s * (1 + g_s) ** t.
+- DCF_EV_s = sum(FCF_s,t / (1 + WACC_s) ** t) + (FCF_s,5 * (1 + TERMINAL_s) / (WACC_s - TERMINAL_s)) / (1 + WACC_s) ** 5.
+- EV_to_equity_adjustment = representative_ev_current - current_market_cap; scenario_price_s = (DCF_EV_s - EV_to_equity_adjustment) / S; final_target_price = max(0, sum(probability_s * scenario_price_s)).
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the assumptions you return economically and dimensionally coherent; the backend, not you, performs the calculation.
+
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
 2) bull/base/bear must each be present exactly once and each must be a 5-item numeric array:
@@ -3566,6 +3573,11 @@ Definitions:
 - pb_multiple is one positive, carefully underwritten long-term Price-to-Book multiple for the business.
 - investment_amount is capital allocated out of a $100,000 notional budget in [-100000, 100000].
 
+Deterministic target-price calculation after your JSON:
+- target_market_cap = representative_book_equity * pb_multiple; final_target_price = target_market_cap / S.
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the inputs you return economically and dimensionally coherent; the backend, not you, performs the calculation.
+
 Rules:
 1) Start from the latest reported common shareholders' equity available in the supplied statements and explicitly show the numeric bridge to representative_book_equity.
 2) Normalize only adjustments supported by the supplied evidence. Do not silently substitute tangible book value, market capitalization, enterprise value, or an equity value inferred from the current share price.
@@ -3599,6 +3611,11 @@ Definitions:
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
 - "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
+
+Deterministic target-price calculation after your JSON:
+- final_target_price = target_market_cap / S.
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the target_market_cap you return economically and dimensionally coherent; the backend, not you, performs the calculation.
 
 Rules:
 1) "step_by_step_analysis" and "target_market_cap_rationale" fields must be single comprehensive strings.
@@ -3650,6 +3667,11 @@ Definitions:
   It must be a single number in the range [-100000, 100000].
   Negative values mean a short position, 0 means no position, positive values mean a long position.
 - "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
+
+Deterministic target-price calculation after your JSON:
+- final_target_price = max(0, sum(probability_s * target_market_cap_s / S)) across Bull, Base, and Bear.
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the scenario market capitalizations you return economically and dimensionally coherent; the backend, not you, performs the calculation.
 
 Rules:
 1) "step_by_step_analysis" and all "*_rationale" fields must be single comprehensive strings.
@@ -3706,6 +3728,12 @@ Definitions:
   Negative values mean a short position, 0 means no position, positive values mean a long position.
 - "investment_rationale" must justify the position size (not only valuation), including conviction, upside potential, downside risk, and expected-value asymmetry.
 
+Deterministic target-price calculation after your JSON:
+- expected_net_income_3y = sum(probability_s * net_income_3y_normalized_s) across Bull, Base, and Bear.
+- target_market_cap = expected_net_income_3y * pe_multiple; final_target_price = max(0, target_market_cap / S).
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the earnings and multiple you return economically and dimensionally coherent; the backend, not you, performs the calculation.
+
 P/E definition and underwriting requirements:
 - "pe_multiple" represents a carefully underwritten, long-term P/E (Price to Earnings) multiple that reflects the company's true business quality and earnings power.
 - It must be derived with deep investor judgment and incorporate: earnings quality and sustainability, growth durability, competitive position and moat (including the intensity and trajectory of competition), cyclicality and downside risk, capital intensity and reinvestment requirements, capital allocation and return profile, and the overall risk profile (including macro, regulatory, and execution risk).
@@ -3759,6 +3787,12 @@ Definitions:
 - "step_by_step_analysis" should justify scenario separation, probability weights, revenue normalization, and multiple discipline.
 - "investment_amount" must be in [-100000, 100000], and "investment_rationale" must explain the position size.
 
+Deterministic target-price calculation after your JSON:
+- expected_revenue_3y = sum(probability_s * revenue_3y_normalized_s) across Bull, Base, and Bear.
+- target_EV = expected_revenue_3y * ev_sales_multiple; EV_to_equity_adjustment = representative_ev_current - current_market_cap; final_target_price = max(0, (target_EV - EV_to_equity_adjustment) / S).
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the revenue, multiple, and EV anchor you return economically and dimensionally coherent; the backend, not you, performs the calculation.
+
 Rules:
 1) Keep all rationale fields and step_by_step_analysis as single complete strings.
 2) Do not output null/NaN/strings in numeric arrays (except rationale fields).
@@ -3787,6 +3821,13 @@ Output schema (must match exactly):
 
 Scenario tuple definition (fixed order):
 [probability, revenue_growth_3y_avg, operating_profitability_margin, net_financing_result, tax_rate, pe_multiple]
+
+Deterministic target-price calculation after your JSON:
+- For each scenario s: revenue_3y_s = representative_revenue_current_year * (1 + revenue_growth_3y_avg_s) ** 3; operating_earnings_s = revenue_3y_s * operating_profitability_margin_s.
+- net_income_s = (operating_earnings_s + net_financing_result_s) * (1 - tax_rate_s); scenario_price_s = max(0, net_income_s * pe_multiple_s / S).
+- final_target_price = sum(probability_s * scenario_price_s) across Bull, Base, and Bear.
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep every returned scenario input economically and dimensionally coherent; the backend, not you, performs the calculation.
 
 Rules:
 1) Probabilities must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
@@ -3825,6 +3866,12 @@ Output schema (must match exactly):
   "investment_amount": number,
   "investment_rationale": "string"
 }
+
+Deterministic target-price calculation after your JSON:
+- For each scenario s: scenario_equity_value_s = sum(all activity values in that scenario, including "Equity Adjustments"); scenario_price_s = max(0, scenario_equity_value_s / S).
+- final_target_price = sum(probability_s * scenario_price_s) across Bull, Base, and Bear.
+- S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+- Use this formula to keep the activity values and equity bridge you return economically and dimensionally coherent; the backend, not you, performs the calculation.
 
 Rules:
 1) bull/base/bear probability values must be decimals in [0,1] and sum to 1.0 (+/-0.001 tolerance).
@@ -3930,6 +3977,11 @@ def build_prompt_dream_valuation(name):
       It must be a single number in the range [-100000, 100000].
       Negative values mean a short position, 0 means no position, positive values mean a long position.
     - "investment_rationale" must justify the position size (not only valuation), including conviction, downside risk, and asymmetry.
+
+    Deterministic target-price calculation after your JSON:
+    - persona_target_price = target_market_cap / S. Each valid persona target price is then included in the arithmetic mean that forms the single Dream Team family target.
+    - S is the backend's separately resolved total-company valuation share count. Its numeric value is intentionally not provided: do not estimate, request, or return it. S may differ from a currently quoted share count because it is resolved independently and may reflect all share classes plus supported dilution, issuance, buybacks, or other share-count changes.
+    - Use this formula to keep the target_market_cap you return economically and dimensionally coherent; the backend, not you, performs the calculation.
 
     Rules:
     1) "step_by_step_analysis" and "target_market_cap_rationale" fields must be single comprehensive strings.
@@ -4478,12 +4530,48 @@ VALUATION_EVIDENCE_DISCIPLINE = """
 """.strip()
 
 
+VALUATION_SHARE_COUNT_SECTION_HEADING = "Verified Share Count for Valuation"
+
+
+def prepare_valuation_prompt_markdown(text: Any) -> str:
+  """Keep the report intact except for the resolved valuation denominator.
+
+  The share-count resolution remains in the saved Analysis report and its
+  dedicated artifact, but valuation models receive only the denominator
+  convention and formulas in their output instructions, never the selected S.
+  """
+  lines = str(text or "").splitlines(keepends=True)
+  output: List[str] = []
+  skipping_share_count_section = False
+  target_heading = VALUATION_SHARE_COUNT_SECTION_HEADING.casefold()
+
+  for line in lines:
+    heading_match = re.match(r"^##\s+(.+?)\s*$", line.rstrip("\r\n"))
+    if heading_match:
+      heading = heading_match.group(1).strip().casefold()
+      if heading == target_heading:
+        skipping_share_count_section = True
+        continue
+      if skipping_share_count_section:
+        skipping_share_count_section = False
+    if not skipping_share_count_section:
+      output.append(line)
+
+  return "".join(output).strip()
+
+
 def build_prompt(ticker, financial_dict, instruction, text):
   financial_data = financial_dict["All Reports"]
   info = safe_company_profile(
       financial_dict.get("info"),
       include_market_context=True,
   )
+  # Provider share fields can equal the separately resolved denominator. Keep
+  # price and market cap available, but do not directly disclose any candidate
+  # or selected share count to a valuation model.
+  info.pop("sharesOutstanding", None)
+  info.pop("impliedSharesOutstanding", None)
+  valuation_text = prepare_valuation_prompt_markdown(text)
   currency_statement = financial_dict["currency_statement"]
   today_date = dt.date.today().strftime("%Y-%m-%d")
   rate = financial_dict.get("rate", 0)
@@ -4509,7 +4597,7 @@ def build_prompt(ticker, financial_dict, instruction, text):
 
   Analysis document (full Markdown, not summarized or shortened):
   <Analysis_Document format="markdown">
-  {text}
+  {valuation_text}
   </Analysis_Document>
 
   Financial data:

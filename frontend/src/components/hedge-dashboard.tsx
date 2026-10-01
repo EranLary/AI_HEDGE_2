@@ -768,7 +768,7 @@ function SectorWeightTables({
 }) {
   const families: EffectiveWeightRow[] = familyRows.map((row) => ({
     key: row.family,
-    label: row.family,
+    label: row.family === "Dream Team" ? "Dream Team (Sector-Weighted)" : row.family,
     status: row.status,
     target: row.target_price,
     allocation: row.investment_amount,
@@ -803,8 +803,8 @@ function SectorWeightTables({
       />
       {personas.length ? (
         <EffectiveWeightsTable
-          title="Sector-Weighted Dream Team"
-          subtitle="Persona contributions inside the sector-weighted Dream Team component, before any missing-family redistribution."
+          title="Dream Team weights"
+          subtitle="Persona weights inside the Dream Team family, which contributes 10% before any missing-family redistribution."
           rows={personas}
           currentPrice={currentPrice}
           currencyContext={currencyContext}

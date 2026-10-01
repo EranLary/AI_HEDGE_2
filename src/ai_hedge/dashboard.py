@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import yfinance as yf
 
+from .company_profile import resolve_company_profile
+
 
 INSTRUCTION_EXECUTIVE_SUMMARY = """
 Create a clean, well-written executive summary of the company, based only on the analysis document and financial data.
@@ -2047,6 +2049,7 @@ def build_dashboard_payload(
     enable_llm_extractions: bool = True,
 ) -> Dict[str, Any]:
     info = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
+    company_profile = resolve_company_profile(info_dict)
     currency_context = _currency_context(ticker=ticker, info=info if isinstance(info, dict) else {})
     price_performance_pct = _compute_price_performance_pct(ticker)
     prices = final_dict.get("Prices", {}) if isinstance(final_dict.get("Prices"), dict) else {}
@@ -2263,6 +2266,7 @@ def build_dashboard_payload(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "analysis_duration_minutes": analysis_duration_minutes,
         "ticker": ticker,
+        "company_profile": company_profile,
         "header": {
             "company_name": _first_non_empty(info.get("shortName"), info.get("longName"), ticker),
             "current_price": current_price,

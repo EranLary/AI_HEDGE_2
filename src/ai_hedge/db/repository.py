@@ -36,18 +36,47 @@ def apply_schema(conn: psycopg.Connection, *, reset: bool = False) -> None:
 
 
 _UPSERT_TICKER_SQL = """
-INSERT INTO tickers (symbol, company_name, exchange, currency)
-VALUES (%(symbol)s, %(company_name)s, %(exchange)s, %(currency)s)
+INSERT INTO tickers (
+    symbol, company_name, exchange, currency,
+    sector, industry, profile_source, profile_updated_at
+)
+VALUES (
+    %(symbol)s, %(company_name)s, %(exchange)s, %(currency)s,
+    nullif(btrim(%(sector)s::text), ''), nullif(btrim(%(industry)s::text), ''),
+    nullif(btrim(%(profile_source)s::text), ''), %(profile_updated_at)s
+)
 ON CONFLICT (symbol) DO UPDATE SET
     company_name = coalesce(EXCLUDED.company_name, tickers.company_name),
     exchange     = coalesce(EXCLUDED.exchange,     tickers.exchange),
-    currency     = coalesce(EXCLUDED.currency,     tickers.currency);
+    currency     = coalesce(EXCLUDED.currency,     tickers.currency),
+    sector       = coalesce(EXCLUDED.sector,        tickers.sector),
+    industry     = coalesce(EXCLUDED.industry,      tickers.industry),
+    profile_source = CASE
+        WHEN EXCLUDED.sector IS NOT NULL OR EXCLUDED.industry IS NOT NULL
+        THEN coalesce(EXCLUDED.profile_source, tickers.profile_source)
+        ELSE tickers.profile_source
+    END,
+    profile_updated_at = CASE
+        WHEN EXCLUDED.sector IS NOT NULL OR EXCLUDED.industry IS NOT NULL
+        THEN coalesce(EXCLUDED.profile_updated_at, now())
+        ELSE tickers.profile_updated_at
+    END;
 """
 
 
 def upsert_ticker(conn: psycopg.Connection, ticker_row: dict) -> None:
+    params = {
+        "company_name": None,
+        "exchange": None,
+        "currency": None,
+        "sector": None,
+        "industry": None,
+        "profile_source": None,
+        "profile_updated_at": None,
+        **ticker_row,
+    }
     with conn.cursor() as cur:
-        cur.execute(_UPSERT_TICKER_SQL, ticker_row)
+        cur.execute(_UPSERT_TICKER_SQL, params)
 
 
 _INSERT_REPORT_SQL = """

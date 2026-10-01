@@ -10,7 +10,14 @@ def test_dashboard_scores_and_allocates_from_equal_mean_median_views(monkeypatch
 
     payload = dashboard.build_dashboard_payload(
         ticker="TEST",
-        info_dict={"info": {"shortName": "Test Company", "currency": "USD"}},
+        info_dict={
+            "info": {
+                "shortName": "Test Company",
+                "currency": "USD",
+                "sector": "Industrials",
+                "industry": "Specialty Industrial Machinery",
+            }
+        },
         financial_dict={},
         variables_dict={"price": 100, "market_cap": 10_000, "shares_outstanding": 100},
         final_dict={
@@ -48,6 +55,11 @@ def test_dashboard_scores_and_allocates_from_equal_mean_median_views(monkeypatch
 
     consensus = payload["valuation_hub"]["consensus"]
     score = payload["score_card"]
+    assert payload["company_profile"] == {
+        "sector": "Industrials",
+        "industry": "Specialty Industrial Machinery",
+        "source": "yfinance.info",
+    }
     assert consensus["mean_target_price"] == 130
     assert consensus["median_target_price"] == 110
     assert consensus["decision_target_price"] == 120

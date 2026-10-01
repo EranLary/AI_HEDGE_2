@@ -11,7 +11,7 @@ import {
   type SummarySourceReport,
   type SummaryWindow,
 } from "@/lib/ticker-summary-aggregate";
-import { listDashboardsForTicker } from "@/lib/reports-db";
+import { getTickerCompanyProfile, listDashboardsForTicker, type TickerCompanyProfile } from "@/lib/reports-db";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 
@@ -47,6 +47,23 @@ function safeNumber(value: unknown): number | null {
   if (typeof value !== "number") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function savedProfileFromReports(reports: SummarySourceReport[]): TickerCompanyProfile | null {
+  for (const report of reports) {
+    const profile = report.payload?.company_profile;
+    if (!profile || typeof profile !== "object") continue;
+    const sector = String(profile.sector || "").trim();
+    const industry = String(profile.industry || "").trim();
+    if (!sector && !industry) continue;
+    return {
+      sector: sector || null,
+      industry: industry || null,
+      source: String(profile.source || "saved-report").trim() || "saved-report",
+      updated_at: String(report.generatedAt || "").trim() || null,
+    };
+  }
+  return null;
 }
 
 async function loadTickerDashboards(ticker: string, workspace: Workspace): Promise<SummarySourceReport[]> {
@@ -120,9 +137,10 @@ export async function GET(
   const reports = await loadTickerDashboards(tk, workspace);
   const window = requestedWindow ?? resolveDefaultSummaryWindow(reports);
   const aggregation = computeTickerSummaryAggregation(reports, window);
-  const [livePriceMap, liveFundamentals] = await Promise.all([
+  const [livePriceMap, liveFundamentals, tickerProfile] = await Promise.all([
     getLiveCurrentPricesBatch([tk]),
     getLiveFundamentals(tk),
+    getTickerCompanyProfile(tk).catch(() => null),
   ]);
   const liveCurrentPrice = typeof livePriceMap[tk] === "number" ? Number(livePriceMap[tk]) : null;
   const currentAssumptions = liveFundamentals.assumption_current_values || {};
@@ -138,6 +156,7 @@ export async function GET(
     generated_at: new Date().toISOString(),
     ticker: tk,
     window,
+    company_profile: tickerProfile || savedProfileFromReports(reports),
     currency_context: {
       financial_currency: String(liveFundamentals.financial_currency || "USD").toUpperCase(),
     },

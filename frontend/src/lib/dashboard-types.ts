@@ -286,6 +286,11 @@ export type DashboardPayload = {
   report_file?: string;
   report_mtime?: string;
   ticker: string;
+  company_profile?: {
+    sector?: string;
+    industry?: string;
+    source?: string;
+  };
   header: {
     company_name?: string;
     current_price?: number | null;

@@ -221,12 +221,19 @@ def ticker_dir_to_row(
         origin_path = str(ticker_dir.resolve())
 
     plucked = _pluck_dashboard_fields(dashboard)
+    company_profile = dashboard.get("company_profile") or {}
+    profile_sector = str(company_profile.get("sector") or "").strip() or None
+    profile_industry = str(company_profile.get("industry") or "").strip() or None
 
     ticker_row = {
         "symbol": ticker,
         "company_name": plucked["company_name"],
         "exchange": (dashboard.get("header") or {}).get("exchange"),
         "currency": plucked["currency"],
+        "sector": profile_sector,
+        "industry": profile_industry,
+        "profile_source": company_profile.get("source"),
+        "profile_updated_at": generated_at if profile_sector or profile_industry else None,
     }
 
     report_row = {

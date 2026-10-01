@@ -216,7 +216,11 @@ def _average_recent(records: List[Dict[str, Any]], limit: int = 4) -> Dict[str, 
     return averages
 
 
-def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
+def fetch_yahooquery_snapshot(
+    ticker: str,
+    *,
+    include_company_profile: bool = True,
+) -> Dict[str, Any]:
     symbol = str(ticker or "").strip().upper()
     if not symbol:
         return {"status": "error", "ticker": symbol, "error": "Missing ticker"}
@@ -245,7 +249,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
     earning_history = _fetch_attr(ticker_obj, "earning_history")
     corporate_events = _fetch_attr(ticker_obj, "corporate_events")
     share_purchase_activity = _fetch_attr(ticker_obj, "share_purchase_activity")
-    asset_profile = _fetch_attr(ticker_obj, "asset_profile")
+    asset_profile = _fetch_attr(ticker_obj, "asset_profile") if include_company_profile else None
     live_quote = _fetch_live_quote(symbol)
 
     valuation_rows = _df_records(valuation_measures)
@@ -260,7 +264,7 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
     latest_by_period = _latest_records(valuation_rows)
     latest = _latest_preferred(valuation_rows)
 
-    return {
+    payload = {
         "status": "success",
         "ticker": symbol,
         "generated_at": report_date.isoformat(),
@@ -273,7 +277,6 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
             "recent_average": _average_recent(valuation_rows),
         },
         "live_quote": live_quote,
-        "company_profile": _company_profile_payload(asset_profile, symbol),
         "financial_data": financial_data_clean,
         "earnings_surprise": {
             "rows": earning_history_rows,
@@ -293,3 +296,6 @@ def fetch_yahooquery_snapshot(ticker: str) -> Dict[str, Any]:
         },
         "share_purchase_activity": share_purchase_clean,
     }
+    if include_company_profile:
+        payload["company_profile"] = _company_profile_payload(asset_profile, symbol)
+    return payload

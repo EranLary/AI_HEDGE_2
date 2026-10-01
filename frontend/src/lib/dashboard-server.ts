@@ -489,7 +489,7 @@ function runLiveYahooqueryInfoScript(ticker: string): Promise<YahooqueryInfo> {
     const scriptPath = path.resolve(root, "scripts", "live_yahooquery_info.py");
     const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
 
-    const child = spawn(pythonExe, [scriptPath, "--ticker", ticker], {
+    const child = spawn(pythonExe, [scriptPath, "--ticker", ticker, "--skip-company-profile"], {
       cwd: root,
       env: {
         ...process.env,
@@ -581,7 +581,7 @@ export const getLiveYahooqueryInfo = unstable_cache(
       };
     }
   },
-  ["live-yahooquery-info-v1"],
+  ["live-yahooquery-info-v2-no-profile"],
   { revalidate: 180 },
 );
 

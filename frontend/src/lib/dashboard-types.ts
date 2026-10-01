@@ -26,6 +26,27 @@ export type DashboardMethodOutput = {
   }>;
 };
 
+export type DashboardWeightBreakdownRow = {
+  family: string;
+  configured_weight: number;
+  effective_target_weight?: number | null;
+  effective_allocation_weight?: number | null;
+  target_price?: number | null;
+  investment_amount?: number | null;
+  aliases?: string[];
+  status?: "included" | "missing" | "zero_weight" | string;
+};
+
+export type DashboardWeightedPersona = {
+  persona?: string;
+  status?: "included" | "missing" | "zero_weight" | string;
+  target_price?: number | null;
+  investment_amount?: number | null;
+  configured_weight?: number | null;
+  effective_target_weight?: number | null;
+  effective_allocation_weight?: number | null;
+};
+
 export type DashboardMethodTab = {
   name: string;
   target_price: number | null;
@@ -34,16 +55,7 @@ export type DashboardMethodTab = {
   outputs: DashboardMethodOutput[];
   policy_version?: string;
   sector?: string;
-  weight_breakdown?: Array<{
-    family: string;
-    configured_weight: number;
-    effective_target_weight?: number | null;
-    effective_allocation_weight?: number | null;
-    target_price?: number | null;
-    investment_amount?: number | null;
-    aliases?: string[];
-    status?: "included" | "missing" | "zero_weight" | string;
-  }>;
+  weight_breakdown?: DashboardWeightBreakdownRow[];
 };
 
 export type ConsensusBasis =
@@ -451,7 +463,7 @@ export type DashboardPayload = {
       dream_team?: {
         target_price?: number | null;
         investment_amount?: number | null;
-        personas?: Array<Record<string, unknown>>;
+        personas?: DashboardWeightedPersona[];
       };
       backfill_metadata?: Record<string, unknown>;
     };

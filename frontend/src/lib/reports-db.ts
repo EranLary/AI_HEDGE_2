@@ -863,8 +863,9 @@ export async function listDashboardsForDiscovery(workspace: Workspace = "analysi
 }
 
 /**
- * Full historical dashboard payloads (no DISTINCT) for site-level analytics
- * pages like Hit Rate.
+ * Compact historical valuation projections (no DISTINCT) for site-level
+ * analytics pages. Avoid loading narrative-heavy dashboard JSON for every
+ * report; Discovery, Hit Rate, and screeners use only these fields.
  */
 export async function listAllDashboardsForHitRate(workspace: Workspace = "analysis"): Promise<
   { id: string; ticker: string; generated_at: string; available_at: string; dashboard: unknown; source_run_id: string | null }[]
@@ -874,7 +875,57 @@ export async function listAllDashboardsForHitRate(workspace: Workspace = "analys
   const rows = (await sql`
     SELECT r.id::text AS id, r.ticker, r.generated_at,
            r.available_at,
-           r.source_run_id, a.dashboard
+           r.source_run_id,
+           jsonb_build_object(
+             'ticker', a.dashboard->'ticker',
+             'generated_at', a.dashboard->'generated_at',
+             'header', a.dashboard->'header',
+             'company_profile', a.dashboard->'company_profile',
+             'valuation_hub', jsonb_build_object(
+               'consensus', a.dashboard #> '{valuation_hub,consensus}',
+               'sector_weighted_valuation', a.dashboard #> '{valuation_hub,sector_weighted_valuation}',
+               'method_blocks', (
+                 SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'name', block->'name',
+                   'target_price', block->'target_price',
+                   'investment_amount', block->'investment_amount'
+                 )), '[]'::jsonb)
+                 FROM jsonb_array_elements(CASE
+                   WHEN jsonb_typeof(a.dashboard #> '{valuation_hub,method_blocks}') = 'array'
+                   THEN a.dashboard #> '{valuation_hub,method_blocks}'
+                   ELSE '[]'::jsonb
+                 END) AS block
+               ),
+               'method_tabs', (
+                 SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'name', tab->'name',
+                   'target_price', tab->'target_price',
+                   'investment_amount', tab->'investment_amount',
+                   'outputs', (
+                     SELECT coalesce(jsonb_agg(jsonb_build_object(
+                       'output_id', output->'output_id',
+                       'persona', output->'persona',
+                       'target_price', output->'target_price',
+                       'investment_amount', output->'investment_amount'
+                     )), '[]'::jsonb)
+                     FROM jsonb_array_elements(CASE
+                       WHEN jsonb_typeof(tab->'outputs') = 'array' THEN tab->'outputs'
+                       ELSE '[]'::jsonb
+                     END) AS output
+                   )
+                 )), '[]'::jsonb)
+                 FROM jsonb_array_elements(CASE
+                   WHEN jsonb_typeof(a.dashboard #> '{valuation_hub,method_tabs}') = 'array'
+                   THEN a.dashboard #> '{valuation_hub,method_tabs}'
+                   ELSE '[]'::jsonb
+                 END) AS tab
+               )
+             ),
+             'dream_team', a.dashboard->'dream_team',
+             'score_card', a.dashboard->'score_card',
+             'decision_card', a.dashboard->'decision_card',
+             'technical_analysis', a.dashboard->'technical_analysis'
+           ) AS dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id

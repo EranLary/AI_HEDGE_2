@@ -18,8 +18,13 @@ import type { DashboardPayload } from "@/lib/dashboard-types";
 import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
 import { targetPriceTone, type TargetPriceTone } from "@/lib/target-price-comparison";
 import { useThemeTokens } from "@/lib/theme-tokens";
+import {
+  consensusBlendLabel,
+  effectiveConsensusWeights,
+  formatConsensusWeight,
+} from "@/lib/consensus-components";
 
-const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear", "--chart-sector-weighted"] as const;
+const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear", "--chart-consensus"] as const;
 
 const TARGET_TONE_CLASS: Record<TargetPriceTone, string> = {
   positive: "text-[color:var(--success)]",
@@ -33,6 +38,16 @@ type ChartHoverState = {
   offset?: { top?: number; left?: number; width?: number; height?: number };
   yAxisMap?: Record<string, { scale?: (value: number) => number }>;
 };
+
+function targetChangePct(target: number | null, current: number | null): number | null {
+  if (typeof target !== "number" || typeof current !== "number" || Math.abs(current) <= 1e-9) return null;
+  return ((target - current) / current) * 100;
+}
+
+function fmtChangePct(value: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
 
 function ChartHoverTooltip({
   active,
@@ -76,12 +91,23 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       : consensusMean;
   const sectorWeighted = data?.valuation_hub?.sector_weighted_valuation;
   const sectorWeightedTarget =
-    typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
-      ? Number(sectorWeighted.target_price)
-      : null;
+    typeof consensus?.sector_weighted_target_price === "number" && Number.isFinite(consensus.sector_weighted_target_price)
+      ? Number(consensus.sector_weighted_target_price)
+      : typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
+        ? Number(sectorWeighted.target_price)
+        : null;
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
+  const sectorWeightedTone = targetPriceTone(sectorWeightedTarget, consensusCurrent);
   const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
+  const targetWeights = effectiveConsensusWeights(consensus?.component_weights, {
+    mean: typeof consensusMean === "number",
+    median: typeof consensusMedian === "number",
+    sector_weighted: typeof sectorWeightedTarget === "number",
+  });
+  const targetWeight = (key: "mean" | "median" | "sector_weighted") =>
+    targetWeights.find((component) => component.key === key)?.weight ?? null;
+  const blendLabel = consensusBlendLabel(targetWeights);
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -99,7 +125,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     return map;
   }, [methodTabs]);
 
-  const chartData = useMemo(() => {
+  const chartData = (() => {
     const blocks = data?.valuation_hub?.method_blocks || [];
     const rows = blocks
       .filter((b) => typeof b.target_price === "number" && Number.isFinite(Number(b.target_price)))
@@ -110,14 +136,79 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
         performer: methodPerformerByName.get(b.name) || "Model Aggregate",
         investment: b.investment_amount,
       }));
-    if (rows.length) return rows;
+    if (rows.length) {
+      if (typeof consensusDecision === "number" && !rows.some((row) => row.name === "Consensus")) {
+        rows.push({
+          name: "Consensus",
+          target: consensusDecision,
+          aboveCurrent: typeof consensusCurrent === "number" ? consensusDecision >= consensusCurrent : true,
+          performer: blendLabel || "Consensus blend",
+          investment: data?.score_card?.decision_investment_amount ?? null,
+        });
+      }
+      return rows;
+    }
     return [
       { name: "Mean", target: consensusMean, aboveCurrent: true, performer: "Consensus", investment: null },
       { name: "Median", target: consensusMedian, aboveCurrent: true, performer: "Consensus", investment: null },
+      { name: "Consensus", target: consensusDecision, aboveCurrent: true, performer: "Consensus", investment: null },
     ].filter((row): row is typeof row & { target: number } => typeof row.target === "number");
-  }, [consensusCurrent, consensusMean, consensusMedian, data?.valuation_hub?.method_blocks, methodPerformerByName]);
+  })();
 
-  const chartScale = useMemo(() => {
+  const priceSummary = [
+    {
+      key: "current",
+      label: "Current Price",
+      value: consensusCurrent,
+      changePct: null,
+      detail: "Report reference",
+      detailEmphasis: null,
+      valueClass: "text-[color:var(--warning)]",
+      featured: false,
+    },
+    {
+      key: "mean",
+      label: "Mean",
+      value: consensusMean,
+      changePct: targetChangePct(consensusMean, consensusCurrent),
+      detail: targetWeight("mean") !== null ? `${formatConsensusWeight(targetWeight("mean")!)} consensus weight` : "Consensus component",
+      detailEmphasis: null,
+      valueClass: TARGET_TONE_CLASS[meanTone],
+      featured: false,
+    },
+    {
+      key: "median",
+      label: "Median",
+      value: consensusMedian,
+      changePct: targetChangePct(consensusMedian, consensusCurrent),
+      detail: targetWeight("median") !== null ? `${formatConsensusWeight(targetWeight("median")!)} consensus weight` : "Consensus component",
+      detailEmphasis: null,
+      valueClass: TARGET_TONE_CLASS[medianTone],
+      featured: false,
+    },
+    {
+      key: "sector",
+      label: "Sector-Weighted",
+      value: sectorWeightedTarget,
+      changePct: targetChangePct(sectorWeightedTarget, consensusCurrent),
+      detail: targetWeight("sector_weighted") !== null ? `${formatConsensusWeight(targetWeight("sector_weighted")!)} consensus weight` : "Consensus component",
+      detailEmphasis: sectorWeighted?.sector || "Sector policy",
+      valueClass: TARGET_TONE_CLASS[sectorWeightedTone],
+      featured: false,
+    },
+    {
+      key: "consensus",
+      label: "Consensus",
+      value: consensusDecision,
+      changePct: targetChangePct(consensusDecision, consensusCurrent),
+      detail: blendLabel ? `${blendLabel} final blend` : "Final consensus blend",
+      detailEmphasis: null,
+      valueClass: TARGET_TONE_CLASS[consensusTone],
+      featured: true,
+    },
+  ].filter((item) => typeof item.value === "number" && Number.isFinite(item.value));
+
+  const chartScale = (() => {
     const values = chartData.map((x) => Number(x.target)).filter((x) => Number.isFinite(x));
     if (typeof consensusCurrent === "number") values.push(consensusCurrent);
     if (typeof consensusMean === "number") values.push(consensusMean);
@@ -143,7 +234,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       new Set(ticks.map((t) => Number(t.toFixed(6))).filter((t) => Number.isFinite(t))),
     ).sort((a, b) => a - b);
     return { min, max, ticks: uniqueTicks, currentEpsilon: Math.max((max - min) * 0.002, 1e-6) };
-  }, [chartData, consensusCurrent, consensusDecision, consensusMean, consensusMedian]);
+  })();
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const [chartReady, setChartReady] = useState(false);
@@ -215,39 +306,57 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   if (!chartData.length) return null;
 
   return (
-    <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-      <div className="mb-3">
-        <div className="flex flex-wrap items-center gap-2 text-zinc-200">
-          <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
-            <Gauge size={14} /> Target Price by Model
-          </span>
-          <span className="text-xs text-[color:var(--text-muted)]">
-            Current {fmtMoney(consensusCurrent, currencyContext, "price")} <span aria-hidden="true">·</span>{" "}
-            <span className={TARGET_TONE_CLASS[meanTone]}>Mean {fmtMoney(consensusMean, currencyContext, "price")}</span>{" "}
-            <span aria-hidden="true">·</span>{" "}
-            <span className={TARGET_TONE_CLASS[medianTone]}>Median {fmtMoney(consensusMedian, currencyContext, "price")}</span>{" "}
-            <span aria-hidden="true">·</span>{" "}
-            <span className={TARGET_TONE_CLASS[consensusTone]}>Consensus {fmtMoney(consensusDecision, currencyContext, "price")}</span>
-          </span>
-          <span className="hidden">
-            Mean {fmtMoney(consensusMean, currencyContext, "price")} · Median {fmtMoney(consensusMedian, currencyContext, "price")}
-          </span>
-        </div>
+    <section className="mb-6 rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-secondary)]">
+          <Gauge size={14} /> Target Price Overview
+        </span>
+        <span className="text-xs text-[color:var(--text-muted)]">Changes are measured against the report price</span>
       </div>
-      {typeof sectorWeightedTarget === "number" ? (
-        <div className="mb-4 grid gap-3 rounded-xl border border-[color:var(--sector-weighted-border)] bg-[color:var(--sector-weighted-soft)] p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--sector-weighted-text)]">Sector-Weighted Valuation</p>
-            <p className="text-xs text-[color:var(--text-muted)]">{sectorWeighted?.sector || "Sector policy"} · {sectorWeighted?.policy_version || "sector-weighted-v1"}</p>
-          </div>
-          <p className={`text-xl font-bold ${TARGET_TONE_CLASS[targetPriceTone(sectorWeightedTarget, consensusCurrent)]}`}>
-            {fmtMoney(sectorWeightedTarget, currencyContext, "price")}
-          </p>
-          <span className="w-fit rounded-full border border-[color:var(--sector-weighted-border)] px-2 py-1 text-xs font-semibold text-[color:var(--sector-weighted-text)]">
-            40% Consensus Weight
-          </span>
-        </div>
-      ) : null}
+      <div className="mb-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+        {priceSummary.map((item) => (
+          <article
+            key={item.key}
+            className={`flex min-w-0 flex-col rounded-xl border p-3 ${
+              item.featured
+                ? "border-[color:var(--consensus-border)] bg-[color:var(--consensus-soft)]"
+                : "border-[color:var(--border-subtle)] bg-[color:var(--surface)]"
+            }`}
+          >
+            <div className="flex min-h-5 flex-wrap items-start justify-between gap-2">
+              <p className={`text-[11px] font-semibold uppercase leading-4 tracking-[0.13em] ${item.featured ? "text-[color:var(--consensus-text)]" : "text-[color:var(--text-secondary)]"}`}>
+                {item.label}
+              </p>
+              {item.featured ? (
+                <span className="rounded-full border border-[color:var(--consensus-border)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[color:var(--consensus-text)]">
+                  Final
+                </span>
+              ) : null}
+            </div>
+            <p className={`mt-2 break-words text-xl font-bold tabular-nums ${item.valueClass}`}>
+              {fmtMoney(item.value, currencyContext, "price")}
+            </p>
+            <div className="mt-2 min-h-4 text-[11px] leading-4">
+              {typeof item.changePct === "number" ? (
+                <span className={`block font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>
+                  {fmtChangePct(item.changePct)} vs current
+                </span>
+              ) : (
+                <span className="block font-semibold text-[color:var(--text-muted)]">Baseline</span>
+              )}
+            </div>
+            <div className="mt-2 min-h-9 text-[11px] leading-4">
+              {item.detailEmphasis ? (
+                <span className="block font-semibold text-[color:var(--text-secondary)]">{item.detailEmphasis}</span>
+              ) : null}
+              <span className="block text-[color:var(--text-muted)]">{item.detail}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+        Target price by model
+      </p>
       <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">
         {chartReady ? (
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
@@ -282,7 +391,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               {chartData.map((entry) => (
                 <Cell
                   key={`target-${entry.name}`}
-                  fill={entry.name === "Sector-Weighted Valuation" ? tokens["--chart-sector-weighted"] : entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
+                  fill={entry.name === "Consensus" ? tokens["--chart-consensus"] : entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
                   style={{ cursor: "pointer" }}
                 />
               ))}

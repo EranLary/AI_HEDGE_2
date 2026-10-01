@@ -123,6 +123,9 @@ def test_dashboard_adds_model_without_changing_mean_median_and_blends_30_30_40()
     assert consensus["decision_target_price"] == pytest.approx(0.3 * 120 + 0.3 * 110 + 0.4 * sector_target)
     assert consensus["consensus_basis"] == "mean_median_sector_weighted"
     assert consensus["component_weights"] == {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    assert result["score_card"]["mean_score"] == pytest.approx(16.0)
+    assert result["score_card"]["median_score"] == pytest.approx(14.0)
+    assert result["score_card"]["sector_weighted_score"] == pytest.approx(16.0)
     assert result["score_card"]["combined_score"] == pytest.approx(15.4)
     assert result["score_card"]["adjusted_score"] == pytest.approx(12.32)
     assert [row["name"] for row in result["valuation_hub"]["method_blocks"]].count(MODEL_NAME) == 1

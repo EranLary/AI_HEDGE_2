@@ -133,6 +133,21 @@ function markdownCell(value: string): string {
   return String(value || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
+function consensusBasisLabel(consensus: Record<string, unknown>, hasMedian: boolean): string {
+  const weights = asObject(consensus.component_weights);
+  const entries = [
+    ["mean", "Mean"],
+    ["median", "Median"],
+    ["sector_weighted", "Sector-Weighted"],
+  ] as const;
+  const parts = entries.flatMap(([key, label]) => {
+    const weight = finiteNumber(weights?.[key]);
+    return weight === null ? [] : [`${formatPercent(weight)} ${label}`];
+  });
+  if (parts.length) return parts.join(" / ");
+  return hasMedian ? "50% Mean / 50% Median" : "Mean only (Median unavailable)";
+}
+
 function textValue(value: unknown): string {
   return String(value || "").trim();
 }
@@ -230,6 +245,8 @@ export function buildStructuredLegacyValuationMarkdown(
   const medianValues = numericArray(prices?.Median);
   const meanTarget = finiteNumber(consensus?.mean_target_price) ?? overall[0] ?? null;
   const medianTarget = finiteNumber(consensus?.median_target_price) ?? medianValues[0] ?? null;
+  const sectorWeighted = asObject(hub?.sector_weighted_valuation);
+  const sectorWeightedTarget = finiteNumber(consensus?.sector_weighted_target_price ?? sectorWeighted?.target_price);
   const consensusTarget = finiteNumber(consensus?.decision_target_price) ?? meanTarget;
   const targetMin = overall.length ? Math.min(...overall) : null;
   const targetMax = overall.length ? Math.max(...overall) : null;
@@ -242,9 +259,18 @@ export function buildStructuredLegacyValuationMarkdown(
   const allocationIsNotional = finiteNumber(decision?.position_size_pct_of_notional) !== null;
   const meanAllocation = finiteNumber(decision?.mean_investment_amount_raw);
   const medianAllocation = finiteNumber(decision?.median_investment_amount);
-  const consensusBasis = medianTarget !== null && medianAllocation !== null
-    ? "50% Mean / 50% Median"
-    : "Mean only (Median unavailable)";
+  const sectorWeightedAllocation = finiteNumber(
+    decision?.sector_weighted_investment_amount ?? sectorWeighted?.investment_amount,
+  );
+  const consensusBasis = consensusBasisLabel(consensus || {}, medianTarget !== null && medianAllocation !== null);
+  const allocationBasis = consensusBasisLabel(
+    { component_weights: asObject(decision?.allocation_component_weights) },
+    medianTarget !== null && medianAllocation !== null,
+  );
+  const scoreBasis = consensusBasisLabel(
+    { component_weights: asObject(decision?.component_weights) },
+    medianTarget !== null && medianAllocation !== null,
+  );
   const investmentPercents = asObject(prices?.["Investment Percents"]);
 
   const excludedKeys = new Set([
@@ -278,6 +304,7 @@ export function buildStructuredLegacyValuationMarkdown(
     ["Current price", formatPrice(currentPrice, currency)],
     ["Mean target price", formatPrice(meanTarget, currency)],
     ["Median target price", formatPrice(medianTarget, currency)],
+    ["Sector-weighted target price", formatPrice(sectorWeightedTarget, currency)],
     ["Consensus target price", formatPrice(consensusTarget, currency)],
     ["Stored target range", targetMin !== null && targetMax !== null
       ? `${formatPrice(targetMin, currency)} – ${formatPrice(targetMax, currency)}`
@@ -288,11 +315,15 @@ export function buildStructuredLegacyValuationMarkdown(
     ["Upside / downside to median", currentPrice && medianTarget !== null
       ? formatPercent(medianTarget / currentPrice - 1)
       : "Not available"],
+    ["Upside / downside to sector-weighted", currentPrice && sectorWeightedTarget !== null
+      ? formatPercent(sectorWeightedTarget / currentPrice - 1)
+      : "Not available"],
     ["Upside / downside to consensus", currentPrice && consensusTarget !== null
       ? formatPercent(consensusTarget / currentPrice - 1)
       : "Not available"],
     ["Mean allocation", meanAllocation !== null ? formatPercent(meanAllocation / 100000, false) : "Not available"],
     ["Median allocation", medianAllocation !== null ? formatPercent(medianAllocation / 100000, false) : "Not available"],
+    ["Sector-weighted allocation", sectorWeightedAllocation !== null ? formatPercent(sectorWeightedAllocation / 100000, false) : "Not available"],
     ["Cross-method coefficient of variation", formatNumber(cv, 3)],
     ["Cross-method standard deviation", formatPrice(std, currency)],
     ["Stored recommendation", recommendation || "Not available"],
@@ -302,7 +333,9 @@ export function buildStructuredLegacyValuationMarkdown(
         ? formatNumber(allocation)
         : "Not available"],
     ["Consensus score", formatNumber(finiteNumber(decision?.adjusted_score))],
-    ["Consensus basis", consensusBasis],
+    ["Target consensus basis", consensusBasis],
+    ["Allocation consensus basis", allocationBasis],
+    ["Score consensus basis", scoreBasis],
   ];
 
   return [
@@ -328,12 +361,81 @@ export function buildStructuredLegacyValuationMarkdown(
   ].join("\n");
 }
 
+function currentStructuredConsensusMarkdown(dashboard: unknown, ticker: string): string {
+  if (!hasStructuredLegacyValuation(dashboard)) return "";
+  const reconstructed = buildStructuredLegacyValuationMarkdown(dashboard, ticker).split(/\r?\n/);
+  const start = reconstructed.findIndex((line) => /^##\s+Consensus snapshot\s*$/i.test(line.trim()));
+  if (start < 0) return "";
+  const endOffset = reconstructed
+    .slice(start + 1)
+    .findIndex((line) => /^##\s+/.test(line.trim()));
+  const end = endOffset < 0 ? reconstructed.length : start + 1 + endOffset;
+  const section = reconstructed.slice(start, end);
+  section[0] = "## Current Structured Consensus";
+  section.splice(
+    2,
+    0,
+    "> This canonical snapshot is rendered from the report's structured dashboard. It supersedes any historical Mean/Median decision snapshot in the original narrative below without rewriting the stored artifact.",
+    "",
+  );
+  return section.join("\n").trim();
+}
+
+function stripGeneratedConsensusSections(markdown: string): string {
+  const generatedTitles = new Set([
+    "valuation decision snapshot",
+    "dashboard signal snapshot",
+    "consensus snapshot",
+    "current structured consensus",
+  ]);
+  const output: string[] = [];
+  let skipping = false;
+  for (const line of String(markdown || "").split(/\r?\n/)) {
+    const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line.trim());
+    if (heading && heading[1].length <= 2) {
+      const title = heading[2].trim().toLowerCase();
+      if (heading[1].length === 2 && generatedTitles.has(title)) {
+        skipping = true;
+        continue;
+      }
+      if (skipping) skipping = false;
+    }
+    if (!skipping) output.push(line);
+  }
+  return output.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function injectCurrentStructuredConsensus(markdown: string, snapshot: string): string {
+  if (!snapshot) return markdown;
+  const lines = stripGeneratedConsensusSections(markdown).split(/\r?\n/);
+  const titleIndex = lines.findIndex((line) => /^#\s+/.test(line.trim()));
+  const insertAt = titleIndex >= 0 ? titleIndex + 1 : 0;
+  lines.splice(
+    insertAt,
+    0,
+    "",
+    snapshot,
+    "",
+    "## Original Valuation Narrative",
+    "",
+    "> The analysis below is preserved from the original report generation. The structured consensus snapshot above is authoritative for target, allocation, score, and component weights.",
+    "",
+  );
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function valuationMarkdown(source: ReportDocumentSource): {
   markdown: string;
   usedFallback: boolean;
 } {
   const native = String(source.pricesExplainMd || "").trim();
-  if (native) return { markdown: labelFamousValuatorPersonas(native), usedFallback: false };
+  if (native) {
+    const snapshot = currentStructuredConsensusMarkdown(source.dashboard, source.ticker);
+    return {
+      markdown: labelFamousValuatorPersonas(injectCurrentStructuredConsensus(native, snapshot)),
+      usedFallback: false,
+    };
+  }
   if (hasStructuredLegacyValuation(source.dashboard)) {
     return {
       markdown: labelFamousValuatorPersonas(

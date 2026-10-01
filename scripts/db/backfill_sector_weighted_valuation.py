@@ -94,8 +94,40 @@ def _load_dashboards(conn, report_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _already_current(dashboard: dict[str, Any]) -> bool:
-    weighted = ((dashboard.get("valuation_hub") or {}).get("sector_weighted_valuation") or {})
-    return weighted.get("policy_version") == POLICY_VERSION
+    hub = dashboard.get("valuation_hub") or {}
+    weighted = hub.get("sector_weighted_valuation") or {}
+    consensus = hub.get("consensus") or {}
+    card = dashboard.get("score_card") or {}
+    return (
+        weighted.get("policy_version") == POLICY_VERSION
+        and all(
+            key in consensus
+            for key in (
+                "sector_weighted_target_price",
+                "decision_target_price",
+                "component_weights",
+                "configured_component_weights",
+                "consensus_basis",
+            )
+        )
+        and all(
+            key in card
+            for key in (
+                "mean_target_return_pct",
+                "median_target_return_pct",
+                "sector_weighted_target_return_pct",
+                "mean_score",
+                "median_score",
+                "sector_weighted_score",
+                "combined_score",
+                "adjusted_score",
+                "component_weights",
+                "allocation_component_weights",
+                "configured_component_weights",
+                "consensus_basis",
+            )
+        )
+    )
 
 
 def _persist_batch(conn, updates: list[tuple[dict[str, Any], str]]) -> None:

@@ -224,6 +224,79 @@ def test_valuation_report_renders_pb_inputs_and_rationales() -> None:
     assert "**P/B Multiple Rationale:**" in text
 
 
+def test_valuation_report_uses_sector_weighted_consensus_components() -> None:
+    text = runner._build_prices_explain_text(
+        "TEST",
+        {
+            "current_price": 100,
+            "methods": {
+                "Scenario DCF": [{"target_price": 100, "investment_amount": 10_000}],
+                "Target Scenario": [{"target_price": 120, "investment_amount": 20_000}],
+            },
+            "aggregate_targets": {
+                "Scenario DCF": 100,
+                "Target Scenario": 120,
+                "Sector-Weighted Valuation": 150,
+            },
+            "aggregate_investments": {
+                "Scenario DCF": 10_000,
+                "Target Scenario": 20_000,
+                "Sector-Weighted Valuation": 30_000,
+            },
+            "sector_weighted_valuation": {
+                "target_price": 150,
+                "investment_amount": 30_000,
+            },
+        },
+        final_dict={
+            "Prices": {
+                "Mean": [120, 120, 120],
+                "Median": [110, 110, 110],
+                "Sector-Weighted Valuation": [150, 150, 150],
+                "LMIL Mean Investment": 10_000,
+                "LMIL Median Investment": 20_000,
+            }
+        },
+        analysis_text="# TEST - Analysis file\n\nCurrent Price: 100",
+        variables_dict={"price": 100},
+    )
+
+    assert "| Sector-Weighted Target Price | $150.00 |" in text
+    assert "| Consensus Target Price | $129.00 |" in text
+    assert "| Sector-Weighted Allocation | Long" in text
+    assert "| Consensus Allocation | Long — 21.0%" in text
+    assert "| Consensus Score | 25.8000 |" in text
+    assert "| Consensus Basis | 30% Mean / 30% Median / 40% Sector-Weighted |" in text
+    assert "| Allocation Basis | 30% Mean / 30% Median / 40% Sector-Weighted |" in text
+
+
+def test_dashboard_signal_snapshot_labels_sector_weighted_basis() -> None:
+    text = runner._build_dashboard_signal_snapshot_text(
+        {
+            "header": {"currency": "USD", "current_price": 100},
+            "valuation_hub": {
+                "consensus": {
+                    "current_price": 100,
+                    "mean_target_price": 120,
+                    "median_target_price": 110,
+                    "sector_weighted_target_price": 150,
+                    "decision_target_price": 129,
+                    "component_weights": {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4},
+                }
+            },
+            "score_card": {
+                "median_investment_amount": 20_000,
+                "position_size_pct_of_notional": 21,
+                "adjusted_score": 12.3,
+            },
+        }
+    )
+
+    assert "Sector-Weighted Target Price: $150.00" in text
+    assert "Consensus Basis: 30% Mean / 30% Median / 40% Sector-Weighted" in text
+    assert "50% Mean / 50% Median" not in text
+
+
 def test_position_formatter_distinguishes_long_short_and_no_position() -> None:
     assert runner._fmt_allocation(15_000) == "Long — 15.0% of $100,000 notional ($15,000.00)"
     assert runner._fmt_allocation(-15_000) == "Short — 15.0% of $100,000 notional ($15,000.00)"

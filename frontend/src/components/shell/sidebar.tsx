@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
@@ -10,6 +10,7 @@ import {
   Compass,
   FileText,
   GitCompareArrows,
+  LoaderCircle,
   ScanSearch,
   Target,
   Plus,
@@ -29,7 +30,7 @@ import { useWorkspace } from "@/components/shell/workspace-context";
 type NavItem = {
   path: string;
   label: string;
-  icon: ComponentType<{ size?: number }>;
+  icon: ComponentType<{ size?: number; className?: string }>;
 };
 
 const GLOBAL_NAV: NavItem[] = [
@@ -47,6 +48,34 @@ type SidebarProps = {
   mobile?: boolean;
   onMobileClose?: () => void;
 };
+
+function SidebarNavItemContent({
+  item,
+  collapsed,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+}) {
+  const { pending } = useLinkStatus();
+  const Icon = item.icon;
+
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3" aria-busy={pending || undefined}>
+      {pending ? <LoaderCircle size={14} className="shrink-0 animate-spin" aria-hidden /> : <Icon size={14} className="shrink-0" />}
+      {!collapsed ? (
+        <>
+          <span className="truncate">{item.label}</span>
+          {pending ? (
+            <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+              Loading
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {pending ? <span className="sr-only"> loading</span> : null}
+    </span>
+  );
+}
 
 export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname() || "/";
@@ -146,19 +175,18 @@ export function Sidebar({ collapsed, onToggle, mobile = false, onMobileClose }: 
             {GLOBAL_NAV.filter((item) => workspace === "analysis" || item.path !== "/compare").map((item) => {
               const itemHref = href(item.path);
               const active = pathname === itemHref || pathname.startsWith(`${itemHref}/`);
-              const Icon = item.icon;
               return (
                 <Link
                   key={item.path}
                   href={itemHref}
                   onClick={closeIfMobile}
+                  aria-current={active ? "page" : undefined}
                   className={`hib-sidebar-item flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
                     active ? "hib-sidebar-item-active" : ""
                   }`}
                   title={item.label}
                 >
-                  <Icon size={14} />
-                  {!collapsedDesktop ? <span className="truncate">{item.label}</span> : null}
+                  <SidebarNavItemContent item={item} collapsed={collapsedDesktop} />
                 </Link>
               );
             })}

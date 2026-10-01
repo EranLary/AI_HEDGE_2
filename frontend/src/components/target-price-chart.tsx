@@ -302,8 +302,8 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
                 : "border-[color:var(--border-subtle)] bg-[color:var(--surface)]"
             }`}
           >
-            <div className="flex items-center justify-between gap-2">
-              <p className={`truncate text-[11px] font-semibold uppercase tracking-[0.13em] ${item.featured ? "text-[color:var(--consensus-text)]" : "text-[color:var(--text-secondary)]"}`}>
+            <div className="flex min-h-5 flex-wrap items-start justify-between gap-2">
+              <p className={`text-[11px] font-semibold uppercase leading-4 tracking-[0.13em] ${item.featured ? "text-[color:var(--consensus-text)]" : "text-[color:var(--text-secondary)]"}`}>
                 {item.label}
               </p>
               {item.featured ? (
@@ -312,10 +312,10 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
                 </span>
               ) : null}
             </div>
-            <p className={`mt-2 truncate text-xl font-bold tabular-nums ${item.valueClass}`}>
+            <p className={`mt-2 break-words text-xl font-bold tabular-nums ${item.valueClass}`}>
               {fmtMoney(item.value, currencyContext, "price")}
             </p>
-            <div className="mt-1 flex min-h-8 flex-col justify-end text-[11px]">
+            <div className="mt-1 flex min-h-10 flex-col justify-end text-[11px]">
               {typeof item.changePct === "number" ? (
                 <span className={`font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>
                   {fmtChangePct(item.changePct)} vs current
@@ -323,7 +323,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               ) : (
                 <span className="font-semibold text-[color:var(--text-muted)]">Baseline</span>
               )}
-              <span className="truncate text-[color:var(--text-muted)]">{item.detail}</span>
+              <span className="leading-4 text-[color:var(--text-muted)]">{item.detail}</span>
             </div>
           </article>
         ))}

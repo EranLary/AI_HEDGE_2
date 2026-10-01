@@ -630,8 +630,7 @@ type EffectiveWeightRow = {
   status?: string;
   target?: number | null;
   allocation?: number | null;
-  targetWeight?: number | null;
-  allocationWeight?: number | null;
+  weight?: number | null;
 };
 
 function effectiveWeightStatus(status?: string): { label: string; className: string } {
@@ -657,6 +656,12 @@ function EffectiveWeightsTable({
   currentPrice: number | null;
   currencyContext: CurrencyContext;
 }) {
+  const sortedRows = [...rows].sort((left, right) => {
+    const leftWeight = typeof left.weight === "number" && Number.isFinite(left.weight) ? left.weight : -1;
+    const rightWeight = typeof right.weight === "number" && Number.isFinite(right.weight) ? right.weight : -1;
+    return rightWeight - leftWeight || left.label.localeCompare(right.label);
+  });
+
   return (
     <section>
       <div className="mb-3">
@@ -664,7 +669,7 @@ function EffectiveWeightsTable({
         <p className="text-xs text-[color:var(--text-muted)]">{subtitle}</p>
       </div>
       <div className="space-y-2 sm:hidden">
-        {rows.map((row) => {
+        {sortedRows.map((row) => {
           const status = effectiveWeightStatus(row.status);
           const changePct = targetChangePctFromCurrent(row.target, currentPrice);
           return (
@@ -686,21 +691,15 @@ function EffectiveWeightsTable({
                   </p>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-[color:var(--border-subtle)] pt-3 text-xs">
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[color:var(--border-subtle)] pt-3 text-xs">
                 <div>
                   <p className="text-[color:var(--text-muted)]">Allocation</p>
                   <p className={`font-semibold ${toneClassFromSign(row.allocation)}`}>{fmtNotionalPct(row.allocation)}</p>
                 </div>
                 <div>
-                  <p className="text-[color:var(--text-muted)]">Target weight</p>
-                  <p className={`font-semibold ${typeof row.targetWeight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
-                    {fmtWeightPct(row.targetWeight)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[color:var(--text-muted)]">Allocation weight</p>
-                  <p className={`font-semibold ${typeof row.allocationWeight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
-                    {fmtWeightPct(row.allocationWeight)}
+                  <p className="text-[color:var(--text-muted)]">Actual weight</p>
+                  <p className={`font-semibold ${typeof row.weight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
+                    {fmtWeightPct(row.weight)}
                   </p>
                 </div>
               </div>
@@ -709,19 +708,18 @@ function EffectiveWeightsTable({
         })}
       </div>
       <div className="hidden overflow-x-auto rounded-lg border border-[color:var(--border-subtle)] sm:block">
-        <table className="w-full min-w-[760px] text-xs">
+        <table className="w-full min-w-[620px] text-xs">
           <thead className="border-b border-[color:var(--border-subtle)] text-[color:var(--text-muted)]">
             <tr>
               <th className="px-3 py-2 text-left">Model</th>
               <th className="px-3 py-2 text-right">Target Price</th>
               <th className="px-3 py-2 text-right">Change</th>
               <th className="px-3 py-2 text-right">Allocation</th>
-              <th className="px-3 py-2 text-right">Actual Target Weight</th>
-              <th className="px-3 py-2 text-right">Actual Allocation Weight</th>
+              <th className="px-3 py-2 text-right">Actual Weight</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const status = effectiveWeightStatus(row.status);
               const changePct = targetChangePctFromCurrent(row.target, currentPrice);
               return (
@@ -742,11 +740,8 @@ function EffectiveWeightsTable({
                   <td className={`px-3 py-2 text-right font-semibold tabular-nums ${toneClassFromSign(row.allocation)}`}>
                     {typeof row.allocation === "number" ? fmtNotionalPct(row.allocation) : "—"}
                   </td>
-                  <td className={`px-3 py-2 text-right font-semibold tabular-nums ${typeof row.targetWeight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
-                    {fmtWeightPct(row.targetWeight)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-semibold tabular-nums ${typeof row.allocationWeight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
-                    {fmtWeightPct(row.allocationWeight)}
+                  <td className={`px-3 py-2 text-right font-semibold tabular-nums ${typeof row.weight === "number" ? "text-[color:var(--success)]" : "text-[color:var(--text-muted)]"}`}>
+                    {fmtWeightPct(row.weight)}
                   </td>
                 </tr>
               );
@@ -777,8 +772,7 @@ function SectorWeightTables({
     status: row.status,
     target: row.target_price,
     allocation: row.investment_amount,
-    targetWeight: row.effective_target_weight,
-    allocationWeight: row.effective_allocation_weight,
+    weight: row.effective_target_weight ?? row.effective_allocation_weight,
   }));
   const personas: EffectiveWeightRow[] = dreamRows.map((row, index) => ({
     key: row.persona || `persona-${index}`,
@@ -786,8 +780,7 @@ function SectorWeightTables({
     status: row.status,
     target: row.target_price,
     allocation: row.investment_amount,
-    targetWeight: row.effective_target_weight,
-    allocationWeight: row.effective_allocation_weight,
+    weight: row.effective_target_weight ?? row.effective_allocation_weight,
   }));
 
   return (
@@ -2149,9 +2142,9 @@ export function HedgeDashboard({
               <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
                 <div className="rounded-xl border border-white/10 bg-black/30 p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-100">Main Results</p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Target</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
+                      <p className="min-h-9 text-[11px] font-semibold uppercase leading-4 tracking-[0.12em] text-zinc-200">Consensus Target</p>
                       <AutoFitMetric
                         text={consensusDecisionText}
                         maxPx={42}
@@ -2162,18 +2155,18 @@ export function HedgeDashboard({
                         {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
                       <div className="mt-auto border-t border-white/10 pt-3">
-                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
-                        <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]">
-                          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Mean 30%</span>
-                          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Median 30%</span>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
+                        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                          <span>Mean · 30%</span>
+                          <span>Median · 30%</span>
                           {typeof consensusSectorWeighted === "number" ? (
-                            <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Sector 40%</span>
+                            <span>Sector · 40%</span>
                           ) : null}
-                        </div>
+                        </p>
                       </div>
                     </div>
-                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Report Price</p>
+                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
+                      <p className="min-h-9 text-[11px] font-semibold uppercase leading-4 tracking-[0.12em] text-zinc-200">Report Price</p>
                       <AutoFitMetric
                         text={consensusCurrentText}
                         maxPx={42}
@@ -2184,8 +2177,8 @@ export function HedgeDashboard({
                         As of <span className="whitespace-nowrap text-zinc-300">{reportDateIso}</span>
                       </p>
                     </div>
-                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Allocation</p>
+                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
+                      <p className="min-h-9 text-[11px] font-semibold uppercase leading-4 tracking-[0.12em] text-zinc-200">Consensus Allocation</p>
                       <AutoFitMetric
                         text={fmtScoreInputPctOnly(decisionAllocationPct)}
                         maxPx={32}
@@ -2193,18 +2186,18 @@ export function HedgeDashboard({
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
                       <div className="mt-auto border-t border-white/10 pt-3">
-                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
-                        <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]">
-                          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Mean 30%</span>
-                          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Median 30%</span>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
+                        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                          <span>Mean · 30%</span>
+                          <span>Median · 30%</span>
                           {typeof sectorWeightedAllocationPct === "number" ? (
-                            <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[color:var(--text-secondary)]">Sector 40%</span>
+                            <span>Sector · 40%</span>
                           ) : null}
-                        </div>
+                        </p>
                       </div>
                     </div>
-                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Consensus Score</p>
+                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
+                      <p className="min-h-9 text-[11px] font-semibold uppercase leading-4 tracking-[0.12em] text-zinc-200">Consensus Score</p>
                       <AutoFitMetric
                         text={typeof finalAdjustedScore === "number" ? finalAdjustedScore.toFixed(2) : "N/A"}
                         maxPx={32}
@@ -2215,8 +2208,8 @@ export function HedgeDashboard({
                         Confidence-adjusted valuation score
                       </p>
                     </div>
-                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">Disagreement</p>
+                    <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
+                      <p className="min-h-9 text-[11px] font-semibold uppercase leading-4 tracking-[0.12em] text-zinc-200">Disagreement</p>
                       <AutoFitMetric
                         text={typeof overallDisagreement === "number" ? fmtNum(overallDisagreement) : "N/A"}
                         maxPx={32}

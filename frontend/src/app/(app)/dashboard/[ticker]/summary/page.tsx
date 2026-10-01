@@ -3,6 +3,8 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/components/shell/workspace-context";
+import { CompanyClassification, CompanyMarketDetails } from "@/components/ticker-company-info";
+import type { YahooqueryInfo } from "@/lib/dashboard-server";
 
 type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
 
@@ -464,6 +466,8 @@ export default function DashboardSummaryPage({
   const [refreshToken, setRefreshToken] = useState(0);
   const [data, setData] = useState<SummaryPayload | null>(null);
   const [returnsMap, setReturnsMap] = useState<ReturnsMap | null>(null);
+  const [companyInfoLoading, setCompanyInfoLoading] = useState(true);
+  const [companyInfo, setCompanyInfo] = useState<YahooqueryInfo | null>(null);
   const [filingsLoading, setFilingsLoading] = useState(true);
   const [filingsError, setFilingsError] = useState("");
   const [filings, setFilings] = useState<{
@@ -527,6 +531,35 @@ export default function DashboardSummaryPage({
       cancelled = true;
     };
   }, [upper, refreshToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setCompanyInfoLoading(true);
+      try {
+        const res = await fetch(
+          api(`/api/dashboard/${encodeURIComponent(upper)}/company-info?refresh=${Date.now()}-${refreshToken}`),
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as YahooqueryInfo;
+        if (!cancelled) {
+          setCompanyInfo(res.ok ? json : { ticker: upper, status: "error", error: String(json?.error || "Failed to load company data.") });
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanyInfo({ ticker: upper, status: "error", error: "Failed to load company data." });
+        }
+      } finally {
+        if (!cancelled) {
+          setCompanyInfoLoading(false);
+        }
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, upper, refreshToken, workspace]);
 
   useEffect(() => {
     let cancelled = false;
@@ -640,10 +673,10 @@ export default function DashboardSummaryPage({
             <button
               type="button"
               onClick={() => setRefreshToken((v) => v + 1)}
-              disabled={loading || filingsLoading}
-              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={loading || filingsLoading || companyInfoLoading}
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >
-              {loading || filingsLoading ? "Refreshing..." : "Refresh"}
+              {loading || filingsLoading || companyInfoLoading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </div>
@@ -706,6 +739,7 @@ export default function DashboardSummaryPage({
           <p className="text-sm text-zinc-400">
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
+          <CompanyClassification info={companyInfo} loading={companyInfoLoading} />
           <ReturnsGrid rows={returnsMap} loading={performanceLoading} />
 
           <section className="grid gap-4 md:grid-cols-5">
@@ -766,6 +800,7 @@ export default function DashboardSummaryPage({
             ticker={upper}
           />
           <AssumptionsTable rows={data.assumptions} financialCurrency={financialCurrency} />
+          <CompanyMarketDetails ticker={upper} info={companyInfo} loading={companyInfoLoading} />
         </>
       )}
     </div>

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link, { useLinkStatus } from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, BrainCircuit, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Info, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, BrainCircuit, Calculator, CandlestickChart, Download, FileQuestion, FileText, Globe2, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -16,7 +16,6 @@ import { workspacePath, type Workspace } from "@/lib/workspace";
 type SectionItem = { slug: string; label: string; icon: ComponentType<{ size?: number }> };
 
 const SECTIONS: SectionItem[] = [
-  { slug: "info", label: "Info", icon: Info },
   { slug: "overview", label: "Overview", icon: FileText },
   { slug: "valuation", label: "Valuation", icon: BarChart3 },
   { slug: "scenarios", label: "Bull vs Bear", icon: Scale },

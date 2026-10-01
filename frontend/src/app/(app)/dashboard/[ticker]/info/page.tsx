@@ -1,8 +1,6 @@
-import { DashboardError } from "@/components/dashboard-chrome";
-import { getLivePerformance, getLiveYahooqueryInfo, loadTickerData } from "@/lib/dashboard-server";
-import { parseWorkspace } from "@/lib/workspace";
+import { redirect } from "next/navigation";
 
-import { InfoClient } from "./info-client";
+import { parseWorkspace, workspacePath } from "@/lib/workspace";
 
 export default async function DashboardInfoPage({
   params,
@@ -15,30 +13,7 @@ export default async function DashboardInfoPage({
   const search = (await searchParams) ?? {};
   const reportId = typeof search.report === "string" ? search.report : undefined;
   const workspace = parseWorkspace(search.workspace);
-
-  let resolved;
-  try {
-    resolved = await loadTickerData(ticker, reportId, workspace);
-  } catch (err) {
-    const upper = decodeURIComponent(String(ticker || "")).toUpperCase();
-    return <DashboardError error={(err as Error)?.message || "Failed to load dashboard"} ticker={upper} />;
-  }
-
-  const { ticker: upper, reportsForTicker, resolvedReportId } = resolved;
-  const [info, performance] = await Promise.all([
-    getLiveYahooqueryInfo(upper),
-    getLivePerformance(upper).catch(() => null),
-  ]);
-
-  return (
-    <InfoClient
-      ticker={upper}
-      info={info}
-      returnsPct={performance?.returns_pct || {}}
-      liveCurrentPrice={typeof performance?.current_price === "number" ? performance.current_price : null}
-      reportsForTicker={reportsForTicker}
-      resolvedReportId={resolvedReportId}
-    />
-  );
+  const suffix = reportId ? `?report=${encodeURIComponent(reportId)}` : "";
+  redirect(`${workspacePath(workspace, `/dashboard/${encodeURIComponent(ticker)}/summary`)}${suffix}`);
 }
 

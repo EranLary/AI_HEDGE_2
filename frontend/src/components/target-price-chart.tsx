@@ -92,6 +92,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
   const sectorWeightedTone = targetPriceTone(sectorWeightedTarget, consensusCurrent);
+  const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -187,7 +188,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       changePct: targetChangePct(consensusDecision, consensusCurrent),
       detail: "30 / 30 / 40 final blend",
       detailEmphasis: null,
-      valueClass: "text-[color:var(--consensus-text)]",
+      valueClass: TARGET_TONE_CLASS[consensusTone],
       featured: true,
     },
   ].filter((item) => typeof item.value === "number" && Number.isFinite(item.value));

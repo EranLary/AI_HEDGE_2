@@ -803,8 +803,8 @@ function SectorWeightTables({
       />
       {personas.length ? (
         <EffectiveWeightsTable
-          title="Dream Team weights"
-          subtitle="Persona weights inside the Dream Team family, which contributes 10% before any missing-family redistribution."
+          title="Sector-Weighted Dream Team"
+          subtitle="Persona contributions inside the sector-weighted Dream Team component, before any missing-family redistribution."
           rows={personas}
           currentPrice={currentPrice}
           currencyContext={currencyContext}

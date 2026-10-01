@@ -2083,10 +2083,11 @@ def _run_ticker_valuation_impl(
     except Exception as extraction_err:
         notes.append(f"Dashboard extraction append failed: {extraction_err}")
 
+    valuation_prompt_markdown = legacy.prepare_valuation_prompt_markdown(regular_text)
     valuation_input_md, valuation_context = _write_valuation_input_markdown(
         out_dir,
         ticker,
-        regular_text,
+        valuation_prompt_markdown,
     )
     valuation_contexts = [valuation_context]
 

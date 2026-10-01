@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db";
-import type { DashboardPayload } from "@/lib/dashboard-types";
+import type { ConsensusBasis, DashboardPayload } from "@/lib/dashboard-types";
 import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import {
@@ -29,7 +29,7 @@ export interface DbReportSummary {
   consensus_target_price: number | null;
   allocation_pct: number | null;
   score: number | null;
-  consensus_basis: "mean_median" | "mean_only" | null;
+  consensus_basis: ConsensusBasis | null;
   source: string;
   source_run_id: string | null;
   visibility: ReportVisibility;
@@ -74,6 +74,17 @@ export interface DeletedReportRef {
   source_run_id: string | null;
 }
 
+function isConsensusBasis(value: unknown): value is ConsensusBasis {
+  return [
+    "mean_median",
+    "mean_only",
+    "mean_median_sector_weighted",
+    "mean_sector_weighted",
+    "median_sector_weighted",
+    "sector_weighted_only",
+  ].includes(String(value || ""));
+}
+
 function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
   return rows.map((row) => {
     const { valuation_dashboard: valuationDashboard, ...summary } = row;
@@ -99,7 +110,7 @@ function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
       allocation_pct: typeof allocation === "number" && Number.isFinite(allocation) ? allocation : summary.allocation_pct,
       score: typeof score === "number" && Number.isFinite(score) ? score : summary.score,
       consensus_basis:
-        consensus?.consensus_basis === "mean_median" || consensus?.consensus_basis === "mean_only"
+        isConsensusBasis(consensus?.consensus_basis)
           ? consensus.consensus_basis
           : summary.consensus_basis,
     };
@@ -437,8 +448,7 @@ function fallbackCommunityReportsFromOutputs(
           ? Number((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
           : null,
       consensus_basis:
-        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_median" ||
-        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_only"
+        isConsensusBasis(dashboard.valuation_hub?.consensus?.consensus_basis)
           ? dashboard.valuation_hub.consensus.consensus_basis
           : null,
       source: "site",

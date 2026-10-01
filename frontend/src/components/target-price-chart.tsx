@@ -19,7 +19,7 @@ import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/componen
 import { targetPriceTone, type TargetPriceTone } from "@/lib/target-price-comparison";
 import { useThemeTokens } from "@/lib/theme-tokens";
 
-const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear"] as const;
+const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear", "--chart-sector-weighted"] as const;
 
 const TARGET_TONE_CLASS: Record<TargetPriceTone, string> = {
   positive: "text-[color:var(--success)]",
@@ -74,6 +74,11 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
       ? Number(consensus.decision_target_price)
       : consensusMean;
+  const sectorWeighted = data?.valuation_hub?.sector_weighted_valuation;
+  const sectorWeightedTarget =
+    typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
+      ? Number(sectorWeighted.target_price)
+      : null;
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
   const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
@@ -229,6 +234,20 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
           </span>
         </div>
       </div>
+      {typeof sectorWeightedTarget === "number" ? (
+        <div className="mb-4 grid gap-3 rounded-xl border border-[color:var(--sector-weighted-border)] bg-[color:var(--sector-weighted-soft)] p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--sector-weighted-text)]">Sector-Weighted Valuation</p>
+            <p className="text-xs text-[color:var(--text-muted)]">{sectorWeighted?.sector || "Sector policy"} · {sectorWeighted?.policy_version || "sector-weighted-v1"}</p>
+          </div>
+          <p className={`text-xl font-bold ${TARGET_TONE_CLASS[targetPriceTone(sectorWeightedTarget, consensusCurrent)]}`}>
+            {fmtMoney(sectorWeightedTarget, currencyContext, "price")}
+          </p>
+          <span className="w-fit rounded-full border border-[color:var(--sector-weighted-border)] px-2 py-1 text-xs font-semibold text-[color:var(--sector-weighted-text)]">
+            40% Consensus Weight
+          </span>
+        </div>
+      ) : null}
       <div ref={wrapRef} className="hib-chart relative h-96 min-h-[16rem] min-w-0">
         {chartReady ? (
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
@@ -263,7 +282,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               {chartData.map((entry) => (
                 <Cell
                   key={`target-${entry.name}`}
-                  fill={entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
+                  fill={entry.name === "Sector-Weighted Valuation" ? tokens["--chart-sector-weighted"] : entry.aboveCurrent ? tokens["--chart-bull"] : tokens["--chart-bear"]}
                   style={{ cursor: "pointer" }}
                 />
               ))}

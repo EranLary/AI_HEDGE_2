@@ -80,6 +80,27 @@ test("Consensus model uses the dashboard decision target and decision investment
   assert.equal(consensus.allocations.hit_rate_pct, 0);
 });
 
+test("Sector-Weighted Valuation participates in the same model hit-rate row", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [{
+    name: "Sector-Weighted Valuation",
+    target_price: 130,
+    investment_amount: 20_000,
+    key_metric_means: {},
+    outputs: [],
+    policy_version: "sector-weighted-v1",
+    sector: "Technology",
+  }];
+  const agg = computeHitRateAggregation(
+    [{ ticker: "TEST", payload }],
+    new Map<string, number | null>([["TEST", 120]]),
+  );
+  const row = agg.by_model.find((item) => item.key === "Sector-Weighted Valuation");
+  assert.ok(row);
+  assert.equal(row.targets.hits, 1);
+  assert.equal(row.allocations.hits, 1);
+});
+
 test("Consensus target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100

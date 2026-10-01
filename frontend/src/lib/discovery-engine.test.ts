@@ -129,6 +129,34 @@ test("P/B discovery lens uses only reports that actually contain the new model",
   assert.deepEqual(rows[0].sourceReportIds, ["with-pb"]);
 });
 
+test("Sector-Weighted Valuation is available as a Discovery model lens", () => {
+  const weighted = payload("AAA", 125, 12);
+  weighted.valuation_hub.method_tabs = [{
+    name: "Sector-Weighted Valuation",
+    target_price: 150,
+    investment_amount: 25_000,
+    key_metric_means: {},
+    outputs: [],
+    policy_version: "sector-weighted-v1",
+    sector: "Technology",
+  }];
+  const universe = prepareDiscoveryUniverse({
+    reports: [{ ticker: "AAA", generatedAt: "2026-10-01T12:00:00Z", payload: weighted, reportId: "weighted" }],
+    priceByTicker: new Map([["AAA", 100]]),
+    asOfMs: Date.parse("2026-10-02T00:00:00Z"),
+  });
+
+  assert.ok(universe.models.includes("Sector-Weighted Valuation"));
+  const rows = scoreDiscoveryCandidates(universe, {
+    type: "model",
+    key: "Sector-Weighted Valuation",
+    label: "Sector-Weighted Valuation",
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].row.return_pct, 50);
+  assert.equal(rows[0].row.investment_allocation_pct, 25);
+});
+
 function candidate(ticker: string, score: number, disagreement: number = 0): ScoredDiscoveryCandidate {
   return {
     sourceReportIds: [],

@@ -73,6 +73,7 @@ const MODEL_EXPLANATIONS: Record<string, string> = {
   "Composite Scenario": "Composite Scenario is a full Bull/Base/Bear synthesis of growth, margin, financing, tax, and valuation multiple assumptions, producing a probability-weighted target that stress-tests execution and cycle risk.",
   "SOTP Scenario": "SOTP Scenario values each business segment separately in Bull/Base/Bear configurations, then combines scenario probabilities to produce a weighted equity value target.",
   "P/B Valuation": "P/B Valuation estimates one normalized through-cycle common book-equity base and applies a carefully underwritten Price-to-Book multiple. Market capitalization and per-share value are then calculated deterministically from that output and the verified total-company share count.",
+  "Sector-Weighted Valuation": "Sector-Weighted Valuation applies the sector-specific policy to the available valuation families. Missing models receive no zero; their configured weight is redistributed proportionally across valid models.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -175,6 +176,7 @@ const ACTIVE_SCENARIO_METHOD_NAMES = new Set([
   "SOTP Scenario",
   "P/B Valuation",
   "Dream Team",
+  "Sector-Weighted Valuation",
 ]);
 
 type MethodMetricItem = {
@@ -1280,6 +1282,7 @@ export function HedgeDashboard({
       "SOTP Scenario",
       "P/B Valuation",
       "Dream Team",
+      "Sector-Weighted Valuation",
     ];
     return Array.from(deduped.values()).sort((a, b) => {
       const ai = order.indexOf(a.name);
@@ -1343,6 +1346,10 @@ export function HedgeDashboard({
     typeof consensus?.median_target_price === "number" && Number.isFinite(consensus.median_target_price)
       ? Number(consensus.median_target_price)
       : null;
+  const consensusSectorWeighted =
+    typeof consensus?.sector_weighted_target_price === "number" && Number.isFinite(consensus.sector_weighted_target_price)
+      ? Number(consensus.sector_weighted_target_price)
+      : null;
   const consensusDecision =
     typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
       ? Number(consensus.decision_target_price)
@@ -1354,6 +1361,10 @@ export function HedgeDashboard({
   const consensusMedianChangePct =
     typeof consensusCurrent === "number" && typeof consensusMedian === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusMedian - consensusCurrent) / consensusCurrent) * 100
+      : null;
+  const consensusSectorWeightedChangePct =
+    typeof consensusCurrent === "number" && typeof consensusSectorWeighted === "number" && Math.abs(consensusCurrent) > 1e-9
+      ? ((consensusSectorWeighted - consensusCurrent) / consensusCurrent) * 100
       : null;
   const consensusDecisionChangePct =
     typeof consensusCurrent === "number" && typeof consensusDecision === "number" && Math.abs(consensusCurrent) > 1e-9
@@ -1389,9 +1400,11 @@ export function HedgeDashboard({
   const selectedOutputTargetChangeClass = toneClassFromSign(selectedOutputTargetChangePct);
   const consensusMeanClass = toneClassFromTarget(consensusMean, consensusCurrent);
   const consensusMedianClass = toneClassFromTarget(consensusMedian, consensusCurrent);
+  const consensusSectorWeightedClass = toneClassFromTarget(consensusSectorWeighted, consensusCurrent);
   const consensusDecisionClass = toneClassFromTarget(consensusDecision, consensusCurrent);
   const consensusMeanText = fmtTargetOrFloor(consensus?.mean_target_price, currencyContext);
   const consensusMedianText = fmtTargetOrFloor(consensusMedian, currencyContext);
+  const consensusSectorWeightedText = fmtTargetOrFloor(consensusSectorWeighted, currencyContext);
   const consensusDecisionText = fmtTargetOrFloor(consensusDecision, currencyContext);
   const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
   const overallDisagreement =
@@ -1747,6 +1760,10 @@ export function HedgeDashboard({
     typeof scoreCard?.median_investment_amount === "number" && Number.isFinite(scoreCard.median_investment_amount)
       ? Number(scoreCard.median_investment_amount) / NOTIONAL_BASE_USD * 100
       : null;
+  const sectorWeightedAllocationPct =
+    typeof scoreCard?.sector_weighted_investment_amount === "number" && Number.isFinite(scoreCard.sector_weighted_investment_amount)
+      ? Number(scoreCard.sector_weighted_investment_amount) / NOTIONAL_BASE_USD * 100
+      : null;
   const decisionAllocationPct =
     typeof scoreCard?.position_size_pct_of_notional === "number" &&
     Number.isFinite(scoreCard.position_size_pct_of_notional)
@@ -1952,7 +1969,7 @@ export function HedgeDashboard({
                       </p>
                       <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-zinc-400">Mean</span>
+                          <span className="text-zinc-400">Mean · 30%</span>
                           <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
                             <span className={consensusMeanClass}>{consensusMeanText}</span>
                             <span className={`text-[11px] ${toneClassFromSign(consensusChangePct)}`}>
@@ -1961,7 +1978,7 @@ export function HedgeDashboard({
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-zinc-400">Median</span>
+                          <span className="text-zinc-400">Median · 30%</span>
                           <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
                             <span className={consensusMedianClass}>{consensusMedianText}</span>
                             <span className={`text-[11px] ${toneClassFromSign(consensusMedianChangePct)}`}>
@@ -1969,6 +1986,17 @@ export function HedgeDashboard({
                             </span>
                           </span>
                         </div>
+                        {typeof consensusSectorWeighted === "number" ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-zinc-400">Sector-Weighted · 40%</span>
+                            <span className="flex items-baseline gap-2 whitespace-nowrap text-right font-semibold tabular-nums">
+                              <span className={consensusSectorWeightedClass}>{consensusSectorWeightedText}</span>
+                              <span className={`text-[11px] ${toneClassFromSign(consensusSectorWeightedChangePct)}`}>
+                                {typeof consensusSectorWeightedChangePct === "number" ? fmtPct(consensusSectorWeightedChangePct) : "N/A"}
+                              </span>
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
@@ -1993,17 +2021,25 @@ export function HedgeDashboard({
                       />
                       <div className="mt-auto min-h-[76px] space-y-2 border-t border-white/10 pt-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-zinc-400">Mean</span>
+                          <span className="text-zinc-400">Mean · 30%</span>
                           <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(meanAllocationPct)}`}>
                             {fmtScoreInputPctOnly(meanAllocationPct)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-zinc-400">Median</span>
+                          <span className="text-zinc-400">Median · 30%</span>
                           <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(medianAllocationPct)}`}>
                             {fmtScoreInputPctOnly(medianAllocationPct)}
                           </span>
                         </div>
+                        {typeof sectorWeightedAllocationPct === "number" ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-zinc-400">Sector-Weighted · 40%</span>
+                            <span className={`whitespace-nowrap text-right font-semibold tabular-nums ${toneClassFromSign(sectorWeightedAllocationPct)}`}>
+                              {fmtScoreInputPctOnly(sectorWeightedAllocationPct)}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex min-h-[210px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4 xl:col-span-2">
@@ -2245,7 +2281,43 @@ export function HedgeDashboard({
                       ) : null}
                     </article>
                     <article className="rounded-xl border border-white/10 bg-black/35 p-3">
-                      {activeMethod.outputs.length ? (
+                      {activeMethod.name === "Sector-Weighted Valuation" && activeMethod.weight_breakdown?.length ? (
+                        <div>
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="font-semibold">{activeMethod.sector || "Sector"} policy weights</p>
+                              <p className="text-xs text-zinc-400">Configured weights are redistributed proportionally when a model is unavailable.</p>
+                            </div>
+                            <span className="rounded-full border border-[color:var(--sector-weighted-border)] bg-[color:var(--sector-weighted-soft)] px-2 py-1 text-xs font-semibold text-[color:var(--sector-weighted-text)]">
+                              40% Consensus Weight
+                            </span>
+                          </div>
+                          <div className="overflow-x-auto rounded-lg border border-white/10">
+                            <table className="w-full min-w-[620px] text-xs">
+                              <thead className="border-b border-white/10 text-zinc-400">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">Family</th>
+                                  <th className="px-3 py-2 text-right">Configured</th>
+                                  <th className="px-3 py-2 text-right">Effective target</th>
+                                  <th className="px-3 py-2 text-right">Effective allocation</th>
+                                  <th className="px-3 py-2 text-left">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {activeMethod.weight_breakdown.map((row) => (
+                                  <tr key={row.family} className="border-b border-white/5">
+                                    <td className="px-3 py-2 font-medium text-zinc-200">{row.family}</td>
+                                    <td className="px-3 py-2 text-right">{fmtPct(row.configured_weight * 100)}</td>
+                                    <td className="px-3 py-2 text-right">{typeof row.effective_target_weight === "number" ? fmtPct(row.effective_target_weight * 100) : "—"}</td>
+                                    <td className="px-3 py-2 text-right">{typeof row.effective_allocation_weight === "number" ? fmtPct(row.effective_allocation_weight * 100) : "—"}</td>
+                                    <td className="px-3 py-2 text-left text-zinc-400">{row.status === "missing" ? "Missing · redistributed" : row.status === "zero_weight" ? "0% by policy" : "Included"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : activeMethod.outputs.length ? (
                         <>
                           <div className="mb-2 flex flex-wrap gap-2">
                             {activeMethod.outputs.map((o) => {
@@ -2427,8 +2499,11 @@ export function HedgeDashboard({
                     </span>
                   </p>
                   <p className="text-sm text-zinc-400">
-                    Mean <span className={consensusMeanClass}>{consensusMeanText}</span> · Median{" "}
+                    Mean 30% <span className={consensusMeanClass}>{consensusMeanText}</span> · Median 30%{" "}
                     <span className={consensusMedianClass}>{consensusMedianText}</span>
+                    {typeof consensusSectorWeighted === "number" ? (
+                      <> · Sector-Weighted 40% <span className={consensusSectorWeightedClass}>{consensusSectorWeightedText}</span></>
+                    ) : null}
                   </p>
                   <p className="text-lg font-semibold text-zinc-100">
                     <span>Consensus Allocation: </span>
@@ -2436,8 +2511,11 @@ export function HedgeDashboard({
                       {fmtScoreInputPctOnly(decisionAllocationPct)}
                     </span>
                     <span className="ml-2 text-sm font-normal text-zinc-400">
-                      (Mean <span className={toneClassFromSign(meanAllocationPct)}>{fmtScoreInputPctOnly(meanAllocationPct)}</span> · Median{" "}
-                      <span className={toneClassFromSign(medianAllocationPct)}>{fmtScoreInputPctOnly(medianAllocationPct)}</span>)
+                      (Mean 30% <span className={toneClassFromSign(meanAllocationPct)}>{fmtScoreInputPctOnly(meanAllocationPct)}</span> · Median 30%{" "}
+                      <span className={toneClassFromSign(medianAllocationPct)}>{fmtScoreInputPctOnly(medianAllocationPct)}</span>
+                      {typeof sectorWeightedAllocationPct === "number" ? (
+                        <> · Sector-Weighted 40% <span className={toneClassFromSign(sectorWeightedAllocationPct)}>{fmtScoreInputPctOnly(sectorWeightedAllocationPct)}</span></>
+                      ) : null})
                     </span>
                   </p>
                   <p className="hib-neutral-metric text-sm">

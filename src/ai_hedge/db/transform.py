@@ -140,7 +140,14 @@ def _pluck_dashboard_fields(dashboard: dict) -> dict:
         if decision_investment is not None:
             consensus_allocation_pct = (decision_investment / 100000.0) * 100.0
     consensus_basis = consensus.get("consensus_basis") or score_card.get("consensus_basis")
-    if consensus_basis not in {"mean_median", "mean_only"}:
+    if consensus_basis not in {
+        "mean_median",
+        "mean_only",
+        "mean_median_sector_weighted",
+        "mean_sector_weighted",
+        "median_sector_weighted",
+        "sector_weighted_only",
+    }:
         consensus_basis = None
     return {
         "company_name": header.get("company_name"),
@@ -224,15 +231,23 @@ def ticker_dir_to_row(
     company_profile = dashboard.get("company_profile") or {}
     profile_sector = str(company_profile.get("sector") or "").strip() or None
     profile_industry = str(company_profile.get("industry") or "").strip() or None
+    profile_source = str(company_profile.get("source") or "").strip()
+    report_only_sector = (
+        "llm.deepseek" in profile_source or "report.previous_llm" in profile_source
+    )
 
     ticker_row = {
         "symbol": ticker,
         "company_name": plucked["company_name"],
         "exchange": (dashboard.get("header") or {}).get("exchange"),
         "currency": plucked["currency"],
-        "sector": profile_sector,
+        # LLM fallback classifications are auditable report snapshots, not
+        # authoritative provider data, and must never update tickers.sector.
+        "sector": None if report_only_sector else profile_sector,
         "industry": profile_industry,
-        "profile_source": company_profile.get("source"),
+        "profile_source": (
+            "yfinance.info" if report_only_sector and profile_industry else profile_source or None
+        ),
         "profile_updated_at": generated_at if profile_sector or profile_industry else None,
     }
 

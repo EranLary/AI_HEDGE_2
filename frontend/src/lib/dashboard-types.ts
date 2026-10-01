@@ -32,7 +32,27 @@ export type DashboardMethodTab = {
   investment_amount: number | null;
   key_metric_means: Record<string, number>;
   outputs: DashboardMethodOutput[];
+  policy_version?: string;
+  sector?: string;
+  weight_breakdown?: Array<{
+    family: string;
+    configured_weight: number;
+    effective_target_weight?: number | null;
+    effective_allocation_weight?: number | null;
+    target_price?: number | null;
+    investment_amount?: number | null;
+    aliases?: string[];
+    status?: "included" | "missing" | "zero_weight" | string;
+  }>;
 };
+
+export type ConsensusBasis =
+  | "mean_median"
+  | "mean_only"
+  | "mean_median_sector_weighted"
+  | "mean_sector_weighted"
+  | "median_sector_weighted"
+  | "sector_weighted_only";
 
 export type TradingAgentsPayload = {
   status?: "success" | "unavailable" | "error" | string;
@@ -405,7 +425,10 @@ export type DashboardPayload = {
       mean_target_price?: number | null;
       median_target_price?: number | null;
       decision_target_price?: number | null;
-      consensus_basis?: "mean_median" | "mean_only";
+      consensus_basis?: ConsensusBasis;
+      sector_weighted_target_price?: number | null;
+      component_weights?: Record<string, number>;
+      configured_component_weights?: Record<string, number>;
       std?: number | null;
       cv?: number | null;
       lmil?: number[] | null;
@@ -414,6 +437,24 @@ export type DashboardPayload = {
     revenue?: Record<string, unknown>;
     net_income?: Record<string, unknown>;
     pe?: Record<string, unknown>;
+    sector_weighted_valuation?: {
+      name?: string;
+      policy_version?: string;
+      sector?: string;
+      sector_source?: string;
+      target_price?: number | null;
+      investment_amount?: number | null;
+      investment_pct?: number | null;
+      provenance?: "generated" | "backfill" | string;
+      computed_at?: string;
+      family_weights?: DashboardMethodTab["weight_breakdown"];
+      dream_team?: {
+        target_price?: number | null;
+        investment_amount?: number | null;
+        personas?: Array<Record<string, unknown>>;
+      };
+      backfill_metadata?: Record<string, unknown>;
+    };
   };
   dream_team: Array<{
     persona: string;
@@ -443,7 +484,13 @@ export type DashboardPayload = {
     combined_score?: number | null;
     mean_score?: number | null;
     median_score?: number | null;
-    consensus_basis?: "mean_median" | "mean_only";
+    consensus_basis?: ConsensusBasis;
+    sector_weighted_investment_amount?: number | null;
+    sector_weighted_target_return_pct?: number | null;
+    sector_weighted_score?: number | null;
+    component_weights?: Record<string, number>;
+    allocation_component_weights?: Record<string, number>;
+    configured_component_weights?: Record<string, number>;
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;
@@ -462,7 +509,13 @@ export type DashboardPayload = {
     combined_score?: number | null;
     mean_score?: number | null;
     median_score?: number | null;
-    consensus_basis?: "mean_median" | "mean_only";
+    consensus_basis?: ConsensusBasis;
+    sector_weighted_investment_amount?: number | null;
+    sector_weighted_target_return_pct?: number | null;
+    sector_weighted_score?: number | null;
+    component_weights?: Record<string, number>;
+    allocation_component_weights?: Record<string, number>;
+    configured_component_weights?: Record<string, number>;
     overall_cv?: number | null;
     confidence_factor?: number | null;
     adjusted_score?: number | null;
@@ -605,7 +658,7 @@ export type ReportListItem = {
   mean_target_price?: number | null;
   median_target_price?: number | null;
   allocation_pct?: number | null;
-  consensus_basis?: "mean_median" | "mean_only" | null;
+  consensus_basis?: ConsensusBasis | null;
   workspace?: "analysis" | "nasdaq100";
   release_id?: string | null;
 };

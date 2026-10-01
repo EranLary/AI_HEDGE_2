@@ -85,6 +85,10 @@ All values defined in [`globals.css`](src/app/globals.css). WCAG AA targets: **4
 | `--chart-bull` | `#22c55e` | `#15803d` | Positive bars (above current) |
 | `--chart-bear` | `#ef4444` | `#b91c1c` | Negative bars (below current) |
 | `--chart-current` | `#f59e0b` | `#b45309` | Current-price reference line |
+| `--chart-sector-weighted` | `#a78bfa` | `#6d28d9` | Sector-Weighted Valuation chart bar |
+| `--sector-weighted-text` | `#c4b5fd` | `#5b21b6` | Featured Sector-Weighted text |
+| `--sector-weighted-border` | `#8b5cf6` | `#7c3aed` | Featured Sector-Weighted border |
+| `--sector-weighted-soft` | `rgba(139, 92, 246, 0.14)` | `rgba(124, 58, 237, 0.10)` | Featured Sector-Weighted background |
 | `--chart-series-1..6` | emerald, blue, amber, fuchsia, mint, orange | darkened equivalents | Multi-series lines / bars |
 
 ### Persona accents (Dream Team)

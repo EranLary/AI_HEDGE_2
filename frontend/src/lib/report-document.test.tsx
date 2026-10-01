@@ -68,6 +68,8 @@ test("structured valuation fallback presents the stored sector-weighted consensu
         mean_investment_amount_raw: 10000,
         median_investment_amount: 20000,
         sector_weighted_investment_amount: 30000,
+        component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+        allocation_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
       },
     },
     "TEST",
@@ -76,11 +78,11 @@ test("structured valuation fallback presents the stored sector-weighted consensu
   assert.match(markdown, /Sector-weighted target price \| \$150\.00/);
   assert.match(markdown, /Consensus target price \| \$129\.00/);
   assert.match(markdown, /Sector-weighted allocation \| 30%/);
-  assert.match(markdown, /Consensus basis \| 30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
+  assert.match(markdown, /Target consensus basis \| 30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
   assert.doesNotMatch(markdown, /50% Mean \/ 50% Median/);
 });
 
-test("native valuation Markdown takes precedence over the historical fallback", () => {
+test("native valuation narrative is preserved below the canonical structured snapshot", () => {
   const valuationMarkdown = [
     "# TEST Valuation Report",
     "",
@@ -110,11 +112,59 @@ test("native valuation Markdown takes precedence over the historical fallback", 
     "valuation",
   );
   assert.equal(built.usedStructuredValuationFallback, false);
-  assert.match(built.markdown, /Valuation Decision Snapshot/);
+  assert.match(built.markdown, /Current Structured Consensus/);
+  assert.match(built.markdown, /Original Valuation Narrative/);
+  assert.doesNotMatch(built.markdown, /Valuation Decision Snapshot/);
   assert.match(built.markdown, /Valuation Method Comparison/);
   assert.match(built.markdown, /Short \| 15\.0% of \$100,000 notional/);
   assert.match(built.markdown, /Peter Lynch — AI Persona/);
   assert.doesNotMatch(built.markdown, /Historical Valuation/);
+});
+
+test("native historical 50/50 snapshot is replaced at render time by effective sector weights", () => {
+  const native = [
+    "# TEST Valuation Report",
+    "",
+    "## Valuation Decision Snapshot",
+    "",
+    "| Consensus Basis | 50% Mean / 50% Median |",
+    "",
+    "## Valuation Method Comparison",
+    "",
+    "Original method evidence remains here.",
+  ].join("\n");
+  const dashboard = {
+    header: { currency: "USD" },
+    valuation_hub: {
+      prices: { Current: 100, Mean: [120], Median: [110] },
+      consensus: {
+        current_price: 100,
+        mean_target_price: 120,
+        median_target_price: 110,
+        sector_weighted_target_price: 150,
+        decision_target_price: 129,
+        component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      },
+      sector_weighted_valuation: { target_price: 150, investment_amount: 30000 },
+    },
+    score_card: {
+      position_size_pct_of_notional: 21,
+      mean_investment_amount_raw: 10000,
+      median_investment_amount: 20000,
+      sector_weighted_investment_amount: 30000,
+      adjusted_score: 8.5,
+      component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      allocation_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+    },
+  };
+  const built = buildReportMarkdown(
+    { ticker: "TEST", analysisMd: "# Analysis", pricesExplainMd: native, dashboard },
+    "valuation",
+  );
+
+  assert.match(built.markdown, /30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
+  assert.doesNotMatch(built.markdown, /50% Mean \/ 50% Median/);
+  assert.match(built.markdown, /Original method evidence remains here/);
 });
 
 test("TradingAgents tactical fields appear only in Valuation and Combined reports", () => {

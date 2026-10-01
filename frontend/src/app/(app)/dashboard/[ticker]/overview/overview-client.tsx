@@ -15,6 +15,7 @@ import {
 import { INVESTORS_ORDERED, OVERVIEW_FEATURED_PERSONAS } from "@/components/dream-team/persona-themes";
 import { disagreementScoreForReport } from "@/lib/ticker-summary-aggregate";
 import { useWorkspace } from "@/components/shell/workspace-context";
+import { effectiveConsensusWeights, formatConsensusWeight } from "@/lib/consensus-components";
 
 function fmtPct(v?: number | null): string {
   return typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "N/A";
@@ -58,6 +59,12 @@ export function OverviewClient({
   const current = typeof consensus?.current_price === "number" ? consensus.current_price : null;
   const mean = typeof consensus?.mean_target_price === "number" ? consensus.mean_target_price : null;
   const median = typeof consensus?.median_target_price === "number" ? consensus.median_target_price : null;
+  const sectorWeighted =
+    typeof consensus?.sector_weighted_target_price === "number"
+      ? consensus.sector_weighted_target_price
+      : typeof data.valuation_hub.sector_weighted_valuation?.target_price === "number"
+        ? data.valuation_hub.sector_weighted_valuation.target_price
+        : null;
   const decision = typeof consensus?.decision_target_price === "number" ? consensus.decision_target_price : mean;
   const changePct =
     typeof current === "number" && typeof decision === "number" && Math.abs(current) > 1e-9
@@ -75,6 +82,26 @@ export function OverviewClient({
     typeof scoreCard?.median_investment_amount === "number"
       ? scoreCard.median_investment_amount / 100000 * 100
       : null;
+  const sectorPositionPct =
+    typeof scoreCard?.sector_weighted_investment_amount === "number"
+      ? scoreCard.sector_weighted_investment_amount / 100000 * 100
+      : null;
+  const targetWeights = effectiveConsensusWeights(consensus?.component_weights, {
+    mean: typeof mean === "number",
+    median: typeof median === "number",
+    sector_weighted: typeof sectorWeighted === "number",
+  });
+  const allocationWeights = effectiveConsensusWeights(scoreCard?.allocation_component_weights, {
+    mean: typeof meanPositionPct === "number",
+    median: typeof medianPositionPct === "number",
+    sector_weighted: typeof sectorPositionPct === "number",
+  });
+  const targetByComponent = { mean, median, sector_weighted: sectorWeighted };
+  const allocationByComponent = {
+    mean: meanPositionPct,
+    median: medianPositionPct,
+    sector_weighted: sectorPositionPct,
+  };
   const signedTone = (value: number | null) =>
     typeof value === "number" && Math.abs(value) > 1e-9
       ? value > 0 ? "hib-target-up" : "hib-target-down"
@@ -207,9 +234,16 @@ export function OverviewClient({
               {fmtMoney(decision, ctx, "price")}
             </p>
             <p className={`mt-1 text-xs font-semibold ${changeClass}`}>{fmtPct(changePct)}</p>
-            <p className="mt-1 text-[10px] text-zinc-500">
-              Mean <span className={targetTone(mean)}>{fmtMoneyCompact(mean, ctx, "price")}</span> · Median{" "}
-              <span className={targetTone(median)}>{fmtMoneyCompact(median, ctx, "price")}</span>
+            <p className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+              {targetWeights.map((component) => {
+                const value = targetByComponent[component.key];
+                return (
+                  <span key={component.key}>
+                    {component.label} {formatConsensusWeight(component.weight)}{" "}
+                    <span className={targetTone(value)}>{fmtMoneyCompact(value, ctx, "price")}</span>
+                  </span>
+                );
+              })}
             </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">
@@ -222,9 +256,16 @@ export function OverviewClient({
                 : "N/A"}
             </p>
             <p className="mt-1 text-xs text-zinc-500">of notional</p>
-            <p className="mt-1 text-[10px] text-zinc-500">
-              Mean <span className={signedTone(meanPositionPct)}>{fmtPct(meanPositionPct)}</span> · Median{" "}
-              <span className={signedTone(medianPositionPct)}>{fmtPct(medianPositionPct)}</span>
+            <p className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+              {allocationWeights.map((component) => {
+                const value = allocationByComponent[component.key];
+                return (
+                  <span key={component.key}>
+                    {component.label} {formatConsensusWeight(component.weight)}{" "}
+                    <span className={signedTone(value)}>{fmtPct(value)}</span>
+                  </span>
+                );
+              })}
             </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 p-3">

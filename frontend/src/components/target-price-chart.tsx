@@ -18,6 +18,11 @@ import type { DashboardPayload } from "@/lib/dashboard-types";
 import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
 import { targetPriceTone, type TargetPriceTone } from "@/lib/target-price-comparison";
 import { useThemeTokens } from "@/lib/theme-tokens";
+import {
+  consensusBlendLabel,
+  effectiveConsensusWeights,
+  formatConsensusWeight,
+} from "@/lib/consensus-components";
 
 const CHART_TOKENS = ["--chart-grid", "--chart-current", "--chart-bull", "--chart-bear", "--chart-consensus"] as const;
 
@@ -86,13 +91,23 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       : consensusMean;
   const sectorWeighted = data?.valuation_hub?.sector_weighted_valuation;
   const sectorWeightedTarget =
-    typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
-      ? Number(sectorWeighted.target_price)
-      : null;
+    typeof consensus?.sector_weighted_target_price === "number" && Number.isFinite(consensus.sector_weighted_target_price)
+      ? Number(consensus.sector_weighted_target_price)
+      : typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
+        ? Number(sectorWeighted.target_price)
+        : null;
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
   const sectorWeightedTone = targetPriceTone(sectorWeightedTarget, consensusCurrent);
   const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
+  const targetWeights = effectiveConsensusWeights(consensus?.component_weights, {
+    mean: typeof consensusMean === "number",
+    median: typeof consensusMedian === "number",
+    sector_weighted: typeof sectorWeightedTarget === "number",
+  });
+  const targetWeight = (key: "mean" | "median" | "sector_weighted") =>
+    targetWeights.find((component) => component.key === key)?.weight ?? null;
+  const blendLabel = consensusBlendLabel(targetWeights);
 
   const methodTabs = useMemo(() => data?.valuation_hub?.method_tabs || [], [data?.valuation_hub?.method_tabs]);
   const methodPerformerByName = useMemo(() => {
@@ -110,7 +125,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     return map;
   }, [methodTabs]);
 
-  const chartData = useMemo(() => {
+  const chartData = (() => {
     const blocks = data?.valuation_hub?.method_blocks || [];
     const rows = blocks
       .filter((b) => typeof b.target_price === "number" && Number.isFinite(Number(b.target_price)))
@@ -127,7 +142,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
           name: "Consensus",
           target: consensusDecision,
           aboveCurrent: typeof consensusCurrent === "number" ? consensusDecision >= consensusCurrent : true,
-          performer: "30% Mean · 30% Median · 40% Sector-Weighted",
+          performer: blendLabel || "Consensus blend",
           investment: data?.score_card?.decision_investment_amount ?? null,
         });
       }
@@ -138,7 +153,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       { name: "Median", target: consensusMedian, aboveCurrent: true, performer: "Consensus", investment: null },
       { name: "Consensus", target: consensusDecision, aboveCurrent: true, performer: "Consensus", investment: null },
     ].filter((row): row is typeof row & { target: number } => typeof row.target === "number");
-  }, [consensusCurrent, consensusDecision, consensusMean, consensusMedian, data?.score_card?.decision_investment_amount, data?.valuation_hub?.method_blocks, methodPerformerByName]);
+  })();
 
   const priceSummary = [
     {
@@ -156,7 +171,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       label: "Mean",
       value: consensusMean,
       changePct: targetChangePct(consensusMean, consensusCurrent),
-      detail: "30% consensus weight",
+      detail: targetWeight("mean") !== null ? `${formatConsensusWeight(targetWeight("mean")!)} consensus weight` : "Consensus component",
       detailEmphasis: null,
       valueClass: TARGET_TONE_CLASS[meanTone],
       featured: false,
@@ -166,7 +181,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       label: "Median",
       value: consensusMedian,
       changePct: targetChangePct(consensusMedian, consensusCurrent),
-      detail: "30% consensus weight",
+      detail: targetWeight("median") !== null ? `${formatConsensusWeight(targetWeight("median")!)} consensus weight` : "Consensus component",
       detailEmphasis: null,
       valueClass: TARGET_TONE_CLASS[medianTone],
       featured: false,
@@ -176,7 +191,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       label: "Sector-Weighted",
       value: sectorWeightedTarget,
       changePct: targetChangePct(sectorWeightedTarget, consensusCurrent),
-      detail: "40% consensus weight",
+      detail: targetWeight("sector_weighted") !== null ? `${formatConsensusWeight(targetWeight("sector_weighted")!)} consensus weight` : "Consensus component",
       detailEmphasis: sectorWeighted?.sector || "Sector policy",
       valueClass: TARGET_TONE_CLASS[sectorWeightedTone],
       featured: false,
@@ -186,14 +201,14 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       label: "Consensus",
       value: consensusDecision,
       changePct: targetChangePct(consensusDecision, consensusCurrent),
-      detail: "30 / 30 / 40 final blend",
+      detail: blendLabel ? `${blendLabel} final blend` : "Final consensus blend",
       detailEmphasis: null,
       valueClass: TARGET_TONE_CLASS[consensusTone],
       featured: true,
     },
   ].filter((item) => typeof item.value === "number" && Number.isFinite(item.value));
 
-  const chartScale = useMemo(() => {
+  const chartScale = (() => {
     const values = chartData.map((x) => Number(x.target)).filter((x) => Number.isFinite(x));
     if (typeof consensusCurrent === "number") values.push(consensusCurrent);
     if (typeof consensusMean === "number") values.push(consensusMean);
@@ -219,7 +234,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       new Set(ticks.map((t) => Number(t.toFixed(6))).filter((t) => Number.isFinite(t))),
     ).sort((a, b) => a - b);
     return { min, max, ticks: uniqueTicks, currentEpsilon: Math.max((max - min) * 0.002, 1e-6) };
-  }, [chartData, consensusCurrent, consensusDecision, consensusMean, consensusMedian]);
+  })();
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const [chartReady, setChartReady] = useState(false);
@@ -302,7 +317,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
         {priceSummary.map((item) => (
           <article
             key={item.key}
-            className={`min-w-0 rounded-xl border p-3 ${
+            className={`flex min-w-0 flex-col rounded-xl border p-3 ${
               item.featured
                 ? "border-[color:var(--consensus-border)] bg-[color:var(--consensus-soft)]"
                 : "border-[color:var(--border-subtle)] bg-[color:var(--surface)]"
@@ -321,18 +336,20 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             <p className={`mt-2 break-words text-xl font-bold tabular-nums ${item.valueClass}`}>
               {fmtMoney(item.value, currencyContext, "price")}
             </p>
-            <div className="mt-2 flex min-h-12 flex-col justify-end gap-1 text-[11px]">
+            <div className="mt-2 min-h-4 text-[11px] leading-4">
               {typeof item.changePct === "number" ? (
-                <span className={`font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>
+                <span className={`block font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>
                   {fmtChangePct(item.changePct)} vs current
                 </span>
               ) : (
-                <span className="font-semibold text-[color:var(--text-muted)]">Baseline</span>
+                <span className="block font-semibold text-[color:var(--text-muted)]">Baseline</span>
               )}
+            </div>
+            <div className="mt-2 min-h-9 text-[11px] leading-4">
               {item.detailEmphasis ? (
-                <span className="font-semibold leading-4 text-[color:var(--text-secondary)]">{item.detailEmphasis}</span>
+                <span className="block font-semibold text-[color:var(--text-secondary)]">{item.detailEmphasis}</span>
               ) : null}
-              <span className="leading-4 text-[color:var(--text-muted)]">{item.detail}</span>
+              <span className="block text-[color:var(--text-muted)]">{item.detail}</span>
             </div>
           </article>
         ))}

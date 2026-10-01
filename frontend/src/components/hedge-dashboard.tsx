@@ -18,6 +18,7 @@ import type {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { canonicalModelName } from "@/lib/method-display";
+import { effectiveConsensusWeights, formatConsensusWeight } from "@/lib/consensus-components";
 import {
   tradingAgentsDecisionTone,
   tradingAgentsDisplayDecision,
@@ -1958,6 +1959,26 @@ export function HedgeDashboard({
       : typeof scoreCard?.decision_investment_amount === "number" && Number.isFinite(scoreCard.decision_investment_amount)
         ? Number(scoreCard.decision_investment_amount) / NOTIONAL_BASE_USD * 100
         : meanAllocationPct;
+  const targetComponentWeights = effectiveConsensusWeights(consensus?.component_weights, {
+    mean: typeof consensusMean === "number",
+    median: typeof consensusMedian === "number",
+    sector_weighted: typeof consensusSectorWeighted === "number",
+  });
+  const allocationComponentWeights = effectiveConsensusWeights(scoreCard?.allocation_component_weights, {
+    mean: typeof meanAllocationPct === "number",
+    median: typeof medianAllocationPct === "number",
+    sector_weighted: typeof sectorWeightedAllocationPct === "number",
+  });
+  const targetValueByComponent = {
+    mean: { value: consensusMeanText, className: consensusMeanClass },
+    median: { value: consensusMedianText, className: consensusMedianClass },
+    sector_weighted: { value: consensusSectorWeightedText, className: consensusSectorWeightedClass },
+  };
+  const allocationValueByComponent = {
+    mean: meanAllocationPct,
+    median: medianAllocationPct,
+    sector_weighted: sectorWeightedAllocationPct,
+  };
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
@@ -2158,11 +2179,9 @@ export function HedgeDashboard({
                         <div className="border-t border-white/10 pt-3">
                           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
                           <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-                            <span>Mean · 30%</span>
-                            <span>Median · 30%</span>
-                            {typeof consensusSectorWeighted === "number" ? (
-                              <span>Sector · 40%</span>
-                            ) : null}
+                            {targetComponentWeights.map((component) => (
+                              <span key={component.key}>{component.label} · {formatConsensusWeight(component.weight)}</span>
+                            ))}
                           </p>
                         </div>
                       </div>
@@ -2191,11 +2210,9 @@ export function HedgeDashboard({
                         <div className="border-t border-white/10 pt-3">
                           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
                           <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-                            <span>Mean · 30%</span>
-                            <span>Median · 30%</span>
-                            {typeof sectorWeightedAllocationPct === "number" ? (
-                              <span>Sector · 40%</span>
-                            ) : null}
+                            {allocationComponentWeights.map((component) => (
+                              <span key={component.key}>{component.label} · {formatConsensusWeight(component.weight)}</span>
+                            ))}
                           </p>
                         </div>
                       </div>
@@ -2628,24 +2645,31 @@ export function HedgeDashboard({
                       {typeof consensusDecisionChangePct === "number" ? `(${fmtPct(consensusDecisionChangePct)})` : "(N/A)"}
                     </span>
                   </p>
-                  <p className="text-sm text-zinc-400">
-                    Mean 30% <span className={consensusMeanClass}>{consensusMeanText}</span> · Median 30%{" "}
-                    <span className={consensusMedianClass}>{consensusMedianText}</span>
-                    {typeof consensusSectorWeighted === "number" ? (
-                      <> · Sector-Weighted 40% <span className={consensusSectorWeightedClass}>{consensusSectorWeightedText}</span></>
-                    ) : null}
+                  <p className="flex flex-wrap gap-x-2 text-sm text-zinc-400">
+                    {targetComponentWeights.map((component) => (
+                      <span key={component.key}>
+                        {component.label} {formatConsensusWeight(component.weight)}{" "}
+                        <span className={targetValueByComponent[component.key].className}>
+                          {targetValueByComponent[component.key].value}
+                        </span>
+                      </span>
+                    ))}
                   </p>
                   <p className="text-lg font-semibold text-zinc-100">
                     <span>Consensus Allocation: </span>
                     <span className={toneClassFromSign(decisionAllocationPct)}>
                       {fmtScoreInputPctOnly(decisionAllocationPct)}
                     </span>
-                    <span className="ml-2 text-sm font-normal text-zinc-400">
-                      (Mean 30% <span className={toneClassFromSign(meanAllocationPct)}>{fmtScoreInputPctOnly(meanAllocationPct)}</span> · Median 30%{" "}
-                      <span className={toneClassFromSign(medianAllocationPct)}>{fmtScoreInputPctOnly(medianAllocationPct)}</span>
-                      {typeof sectorWeightedAllocationPct === "number" ? (
-                        <> · Sector-Weighted 40% <span className={toneClassFromSign(sectorWeightedAllocationPct)}>{fmtScoreInputPctOnly(sectorWeightedAllocationPct)}</span></>
-                      ) : null})
+                    <span className="ml-2 inline-flex flex-wrap gap-x-2 text-sm font-normal text-zinc-400">
+                      {allocationComponentWeights.map((component) => {
+                        const value = allocationValueByComponent[component.key];
+                        return (
+                          <span key={component.key}>
+                            {component.label} {formatConsensusWeight(component.weight)}{" "}
+                            <span className={toneClassFromSign(value)}>{fmtScoreInputPctOnly(value)}</span>
+                          </span>
+                        );
+                      })}
                     </span>
                   </p>
                   <p className="hib-neutral-metric text-sm">

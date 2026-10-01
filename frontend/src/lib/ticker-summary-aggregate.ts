@@ -421,8 +421,9 @@ export function computeTickerSummaryAggregation(
 
   for (const report of filtered) {
     const payload = report.payload;
-    // Portfolio/discovery decisions use the same equal-weight Mean/Median
-    // target that drives the report score. Older reports fall back to Mean.
+    // Summary, screeners, and Discovery consume the stored report decision.
+    // Sector-weighted-v1 reports therefore retain their 30/30/40 decision;
+    // older reports fall back to their historical Mean/Median or Mean value.
     const overviewTarget = safeTarget(
       payload.valuation_hub?.consensus?.decision_target_price ??
         payload.valuation_hub?.consensus?.mean_target_price,

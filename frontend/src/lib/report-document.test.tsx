@@ -47,6 +47,39 @@ test("historical valuation fallback uses only stored structured values", () => {
   assert.match(markdown, /Buy/);
 });
 
+test("structured valuation fallback presents the stored sector-weighted consensus", () => {
+  const markdown = buildStructuredLegacyValuationMarkdown(
+    {
+      header: { currency: "USD" },
+      valuation_hub: {
+        prices: { Current: 100, Mean: [120], Median: [110] },
+        consensus: {
+          current_price: 100,
+          mean_target_price: 120,
+          median_target_price: 110,
+          sector_weighted_target_price: 150,
+          decision_target_price: 129,
+          component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+        },
+        sector_weighted_valuation: { target_price: 150, investment_amount: 30000 },
+      },
+      score_card: {
+        position_size_pct_of_notional: 21,
+        mean_investment_amount_raw: 10000,
+        median_investment_amount: 20000,
+        sector_weighted_investment_amount: 30000,
+      },
+    },
+    "TEST",
+  );
+
+  assert.match(markdown, /Sector-weighted target price \| \$150\.00/);
+  assert.match(markdown, /Consensus target price \| \$129\.00/);
+  assert.match(markdown, /Sector-weighted allocation \| 30%/);
+  assert.match(markdown, /Consensus basis \| 30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
+  assert.doesNotMatch(markdown, /50% Mean \/ 50% Median/);
+});
+
 test("native valuation Markdown takes precedence over the historical fallback", () => {
   const valuationMarkdown = [
     "# TEST Valuation Report",

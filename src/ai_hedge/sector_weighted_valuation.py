@@ -413,6 +413,8 @@ def apply_to_dashboard(
         }
     )
     sector_return = ((sector_target - current) / current * 100.0) if current else None
+    mean_return = ((mean - current) / current * 100.0) if mean is not None and current else None
+    median_return = ((median - current) / current * 100.0) if median is not None and current else None
     card.update(
         {
             "position_size_pct_of_notional": (decision_allocation / NOTIONAL * 100.0) if decision_allocation is not None else 0.0,
@@ -421,7 +423,11 @@ def apply_to_dashboard(
             "mean_investment_amount_raw": mean_allocation,
             "median_investment_amount": median_allocation,
             "sector_weighted_investment_amount": sector_allocation,
+            "mean_target_return_pct": mean_return,
+            "median_target_return_pct": median_return,
             "sector_weighted_target_return_pct": sector_return,
+            "mean_score": scores["mean"],
+            "median_score": scores["median"],
             "sector_weighted_score": scores["sector_weighted"],
             "target_return_pct": ((decision_target - current) / current * 100.0) if decision_target is not None and current else None,
             "combined_score": combined_score,

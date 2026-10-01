@@ -2154,15 +2154,17 @@ export function HedgeDashboard({
                       <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(consensusDecisionChangePct)}`}>
                         {typeof consensusDecisionChangePct === "number" ? fmtPct(consensusDecisionChangePct) : "N/A"} vs current
                       </p>
-                      <div className="mt-auto border-t border-white/10 pt-3">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
-                        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-                          <span>Mean · 30%</span>
-                          <span>Median · 30%</span>
-                          {typeof consensusSectorWeighted === "number" ? (
-                            <span>Sector · 40%</span>
-                          ) : null}
-                        </p>
+                      <div className="mt-auto pt-4">
+                        <div className="border-t border-white/10 pt-3">
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
+                          <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                            <span>Mean · 30%</span>
+                            <span>Median · 30%</span>
+                            {typeof consensusSectorWeighted === "number" ? (
+                              <span>Sector · 40%</span>
+                            ) : null}
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">
@@ -2185,15 +2187,17 @@ export function HedgeDashboard({
                         minPx={14}
                         className={`hib-metric-subvalue mt-1 font-bold leading-tight ${toneClassFromSign(decisionAllocationPct)}`}
                       />
-                      <div className="mt-auto border-t border-white/10 pt-3">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
-                        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-                          <span>Mean · 30%</span>
-                          <span>Median · 30%</span>
-                          {typeof sectorWeightedAllocationPct === "number" ? (
-                            <span>Sector · 40%</span>
-                          ) : null}
-                        </p>
+                      <div className="mt-auto pt-4">
+                        <div className="border-t border-white/10 pt-3">
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Weighting</p>
+                          <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                            <span>Mean · 30%</span>
+                            <span>Median · 30%</span>
+                            {typeof sectorWeightedAllocationPct === "number" ? (
+                              <span>Sector · 40%</span>
+                            ) : null}
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <div className="flex min-h-[180px] min-w-0 flex-col rounded-lg border border-white/10 bg-black/25 p-4">

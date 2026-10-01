@@ -146,6 +146,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       value: consensusCurrent,
       changePct: null,
       detail: "Report reference",
+      detailEmphasis: null,
       valueClass: "text-[color:var(--warning)]",
       featured: false,
     },
@@ -155,6 +156,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       value: consensusMean,
       changePct: targetChangePct(consensusMean, consensusCurrent),
       detail: "30% consensus weight",
+      detailEmphasis: null,
       valueClass: TARGET_TONE_CLASS[meanTone],
       featured: false,
     },
@@ -164,6 +166,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       value: consensusMedian,
       changePct: targetChangePct(consensusMedian, consensusCurrent),
       detail: "30% consensus weight",
+      detailEmphasis: null,
       valueClass: TARGET_TONE_CLASS[medianTone],
       featured: false,
     },
@@ -172,7 +175,8 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       label: "Sector-Weighted",
       value: sectorWeightedTarget,
       changePct: targetChangePct(sectorWeightedTarget, consensusCurrent),
-      detail: `${sectorWeighted?.sector || "Sector policy"} · 40% weight`,
+      detail: "40% consensus weight",
+      detailEmphasis: sectorWeighted?.sector || "Sector policy",
       valueClass: TARGET_TONE_CLASS[sectorWeightedTone],
       featured: false,
     },
@@ -182,6 +186,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       value: consensusDecision,
       changePct: targetChangePct(consensusDecision, consensusCurrent),
       detail: "30 / 30 / 40 final blend",
+      detailEmphasis: null,
       valueClass: "text-[color:var(--consensus-text)]",
       featured: true,
     },
@@ -315,7 +320,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
             <p className={`mt-2 break-words text-xl font-bold tabular-nums ${item.valueClass}`}>
               {fmtMoney(item.value, currencyContext, "price")}
             </p>
-            <div className="mt-1 flex min-h-10 flex-col justify-end text-[11px]">
+            <div className="mt-2 flex min-h-12 flex-col justify-end gap-1 text-[11px]">
               {typeof item.changePct === "number" ? (
                 <span className={`font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>
                   {fmtChangePct(item.changePct)} vs current
@@ -323,6 +328,9 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
               ) : (
                 <span className="font-semibold text-[color:var(--text-muted)]">Baseline</span>
               )}
+              {item.detailEmphasis ? (
+                <span className="font-semibold leading-4 text-[color:var(--text-secondary)]">{item.detailEmphasis}</span>
+              ) : null}
               <span className="leading-4 text-[color:var(--text-muted)]">{item.detail}</span>
             </div>
           </article>

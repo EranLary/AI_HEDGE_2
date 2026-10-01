@@ -528,6 +528,7 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
     current_price = _first_float(consensus.get("current_price"))
     mean_target_price = _first_float(consensus.get("mean_target_price"))
     median_target_price = _first_float(consensus.get("median_target_price"))
+    sector_weighted_target_price = _first_float(consensus.get("sector_weighted_target_price"))
     decision_target_price = _first_float(consensus.get("decision_target_price"))
     has_real_median = (
         median_target_price is not None
@@ -565,18 +566,25 @@ def _build_dashboard_signal_snapshot_text(dashboard_payload: Dict[str, Any]) -> 
         if cv_vals:
             disagreement_score = sum(cv_vals) / len(cv_vals)
 
+    component_weights = consensus.get("component_weights") if isinstance(consensus.get("component_weights"), dict) else {}
+    if not component_weights:
+        component_weights = {"mean": 0.5, "median": 0.5} if has_real_median else {"mean": 1.0}
     lines = [
         "## Dashboard Signal Snapshot",
         f"- Current Price: {_fmt_price(current_price, currency_code)}",
         f"- Mean Target Price: {_fmt_price(mean_target_price, currency_code)}",
         f"- Median Target Price: {_fmt_price(median_target_price, currency_code) if has_real_median else 'Not available'}",
+    ]
+    if sector_weighted_target_price is not None:
+        lines.append(f"- Sector-Weighted Target Price: {_fmt_price(sector_weighted_target_price, currency_code)}")
+    lines.extend([
         f"- Consensus Target Price: {_fmt_price(decision_target_price, currency_code)}",
         f"- Consensus Change vs Current Price: {_fmt_signed_pct(target_change_pct)}",
         f"- Consensus Allocation (% of Notional): {_fmt_signed_pct(investment_pct)}",
         f"- Consensus Score: {_fmt_number(score_card.get('adjusted_score'))}",
-        f"- Consensus Basis: {'50% Mean / 50% Median' if has_real_median else 'Mean only (Median unavailable)'}",
+        f"- Consensus Basis: {_consensus_basis_label(component_weights)}",
         f"- Disagreement Score: {_fmt_number(disagreement_score, decimals=4)}",
-    ]
+    ])
     return "\n".join(lines).strip()
 
 
@@ -1042,6 +1050,36 @@ def _collect_targets_from_methods(methods: Dict[str, Any]) -> List[float]:
 
 
 VALUATION_NOTIONAL_BUDGET = 100_000.0
+CONSENSUS_COMPONENT_WEIGHTS = {"mean": 0.30, "median": 0.30, "sector_weighted": 0.40}
+
+
+def _blend_consensus_components(values: Dict[str, Any]) -> tuple[Optional[float], Dict[str, float]]:
+    valid = {
+        name: value
+        for name, raw in values.items()
+        if (value := _first_float(raw)) is not None and CONSENSUS_COMPONENT_WEIGHTS.get(name, 0) > 0
+    }
+    denominator = sum(CONSENSUS_COMPONENT_WEIGHTS[name] for name in valid)
+    if denominator <= 0:
+        return None, {}
+    effective = {
+        name: CONSENSUS_COMPONENT_WEIGHTS[name] / denominator
+        for name in valid
+    }
+    return sum(valid[name] * effective[name] for name in valid), effective
+
+
+def _consensus_basis_label(component_weights: Dict[str, Any]) -> str:
+    labels = {"mean": "Mean", "median": "Median", "sector_weighted": "Sector-Weighted"}
+    if set(component_weights) == {"mean"} and abs((_first_float(component_weights.get("mean")) or 0.0) - 1.0) <= 1e-9:
+        return "Mean only (Median unavailable)"
+    parts = []
+    for name in ("mean", "median", "sector_weighted"):
+        weight = _first_float(component_weights.get(name))
+        if weight is None:
+            continue
+        parts.append(f"{weight * 100.0:.2f}% {labels[name]}".replace(".00%", "%"))
+    return " / ".join(parts) if parts else "Unavailable"
 
 
 def _fmt_change_from_current(value: Any, current_price: Any) -> str:
@@ -1148,17 +1186,27 @@ def _build_valuation_decision_snapshot(
     aggregate_investments: Dict[str, Any],
     current_price: Any,
     final_dict: Optional[Dict[str, Any]] = None,
+    sector_weighted: Optional[Dict[str, Any]] = None,
 ) -> str:
+    sector_model_name = "Sector-Weighted Valuation"
     target_values = [
         float(value)
-        for value in (_first_float(raw) for raw in aggregate_targets.values())
+        for value in (
+            _first_float(raw)
+            for name, raw in aggregate_targets.items()
+            if name != sector_model_name
+        )
         if value is not None
     ]
     if not target_values:
         target_values = _collect_targets_from_methods(methods)
     investment_values = [
         float(value)
-        for value in (_first_float(raw) for raw in aggregate_investments.values())
+        for value in (
+            _first_float(raw)
+            for name, raw in aggregate_investments.items()
+            if name != sector_model_name
+        )
         if value is not None
     ]
     if not investment_values:
@@ -1190,17 +1238,23 @@ def _build_valuation_decision_snapshot(
             if len(sorted_investments) % 2
             else (sorted_investments[middle - 1] + sorted_investments[middle]) / 2.0
         )
-    has_real_median = median_target is not None and median_investment is not None
-    decision_target = (
-        (mean_target + median_target) / 2.0
-        if has_real_median and mean_target is not None
-        else mean_target
+    sector_entry = prices.get(sector_model_name)
+    sector_target = (
+        _first_float(sector_entry[0])
+        if isinstance(sector_entry, (list, tuple)) and sector_entry
+        else _first_float((sector_weighted or {}).get("target_price"))
     )
-    decision_investment = (
-        (mean_investment + median_investment) / 2.0
-        if has_real_median and mean_investment is not None
-        else mean_investment
+    sector_investment = _first_float((sector_weighted or {}).get("investment_amount"))
+    if sector_investment is None:
+        sector_investment = _first_float(aggregate_investments.get(sector_model_name))
+    decision_target, target_component_weights = _blend_consensus_components(
+        {"mean": mean_target, "median": median_target, "sector_weighted": sector_target}
     )
+    decision_investment, allocation_component_weights = _blend_consensus_components(
+        {"mean": mean_investment, "median": median_investment, "sector_weighted": sector_investment}
+    )
+    has_median_target = median_target is not None
+    has_median_investment = median_investment is not None
     method_names = [
         method_name
         for method_name in dict.fromkeys(
@@ -1242,7 +1296,12 @@ def _build_valuation_decision_snapshot(
     )
     median_return = (
         ((median_target - current) / current) * 100.0
-        if has_real_median and current is not None and abs(current) > 1e-9
+        if has_median_target and current is not None and abs(current) > 1e-9
+        else None
+    )
+    sector_return = (
+        ((sector_target - current) / current) * 100.0
+        if sector_target is not None and current is not None and abs(current) > 1e-9
         else None
     )
     decision_return = (
@@ -1256,7 +1315,11 @@ def _build_valuation_decision_snapshot(
     )
     median_allocation_pct = (
         (median_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
-        if has_real_median else None
+        if has_median_investment else None
+    )
+    sector_allocation_pct = (
+        (sector_investment / VALUATION_NOTIONAL_BUDGET) * 100.0
+        if sector_investment is not None else None
     )
     mean_score = (
         0.4 * mean_allocation_pct + 0.6 * mean_return
@@ -1266,25 +1329,32 @@ def _build_valuation_decision_snapshot(
         0.4 * median_allocation_pct + 0.6 * median_return
         if median_allocation_pct is not None and median_return is not None else None
     )
-    consensus_score = (
-        (mean_score + median_score) / 2.0
-        if mean_score is not None and median_score is not None else mean_score
+    sector_score = (
+        0.4 * sector_allocation_pct + 0.6 * sector_return
+        if sector_allocation_pct is not None and sector_return is not None else None
     )
-    basis = "50% Mean / 50% Median" if has_real_median else "Mean only (Median unavailable)"
+    consensus_score, _ = _blend_consensus_components(
+        {"mean": mean_score, "median": median_score, "sector_weighted": sector_score}
+    )
+    basis = _consensus_basis_label(target_component_weights)
 
     rows = [
         ("Current Price", _fmt_money(current_price)),
         ("Mean Target Price", _fmt_money(mean_target)),
-        ("Median Target Price", _fmt_money(median_target) if has_real_median else "Not available"),
+        ("Median Target Price", _fmt_money(median_target) if has_median_target else "Not available"),
+        ("Sector-Weighted Target Price", _fmt_money(sector_target) if sector_target is not None else "Not available"),
         ("Consensus Target Price", _fmt_money(decision_target)),
         ("Mean Upside / Downside", _fmt_signed_pct(mean_return)),
-        ("Median Upside / Downside", _fmt_signed_pct(median_return) if has_real_median else "Not available"),
+        ("Median Upside / Downside", _fmt_signed_pct(median_return) if has_median_target else "Not available"),
+        ("Sector-Weighted Upside / Downside", _fmt_signed_pct(sector_return) if sector_return is not None else "Not available"),
         ("Consensus Upside / Downside", _fmt_signed_pct(decision_return)),
         ("Mean Allocation", _fmt_allocation(mean_investment)),
-        ("Median Allocation", _fmt_allocation(median_investment) if has_real_median else "Not available"),
+        ("Median Allocation", _fmt_allocation(median_investment) if has_median_investment else "Not available"),
+        ("Sector-Weighted Allocation", _fmt_allocation(sector_investment) if sector_investment is not None else "Not available"),
         ("Consensus Allocation", _fmt_allocation(decision_investment)),
         ("Consensus Score", _fmt_number(consensus_score)),
         ("Consensus Basis", basis),
+        ("Allocation Basis", _consensus_basis_label(allocation_component_weights)),
         ("Target Range", target_range),
         ("Valuation Methods", str(len(method_names))),
         ("Model Runs", str(model_runs)),
@@ -1541,6 +1611,7 @@ def _build_prices_explain_text(
         aggregate_investments if isinstance(aggregate_investments, dict) else {},
         current_price,
         final_dict if isinstance(final_dict, dict) else {},
+        explain_payload.get("sector_weighted_valuation") if isinstance(explain_payload.get("sector_weighted_valuation"), dict) else None,
     )
     if decision_snapshot:
         lines.extend(["", decision_snapshot])

@@ -9,6 +9,11 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch live yahooquery valuation and financial data.")
     parser.add_argument("--ticker", required=True)
+    parser.add_argument(
+        "--skip-company-profile",
+        action="store_true",
+        help="Do not request YahooQuery asset_profile; ticker classification is persisted separately.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -19,7 +24,10 @@ def main() -> int:
     from ai_hedge.yahooquery_data import fetch_yahooquery_snapshot
 
     ticker = str(args.ticker or "").strip().upper()
-    payload = fetch_yahooquery_snapshot(ticker)
+    payload = fetch_yahooquery_snapshot(
+        ticker,
+        include_company_profile=not args.skip_company_profile,
+    )
     print(json.dumps(payload, ensure_ascii=False, allow_nan=False))
     return 0 if payload.get("status") == "success" else 1
 

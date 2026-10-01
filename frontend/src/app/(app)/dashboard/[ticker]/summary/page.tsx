@@ -29,6 +29,12 @@ type SummaryPayload = {
   generated_at: string;
   ticker: string;
   window: SummaryWindow;
+  company_profile: {
+    sector: string | null;
+    industry: string | null;
+    source: string | null;
+    updated_at: string | null;
+  } | null;
   coverage: {
     reports_total: number;
     reports_in_window: number;
@@ -538,7 +544,7 @@ export default function DashboardSummaryPage({
       setCompanyInfoLoading(true);
       try {
         const res = await fetch(
-          api(`/api/dashboard/${encodeURIComponent(upper)}/company-info?refresh=${Date.now()}-${refreshToken}`),
+          api(`/api/dashboard/${encodeURIComponent(upper)}/market-info?refresh=${Date.now()}-${refreshToken}`),
           { cache: "no-store" },
         );
         const json = (await res.json()) as YahooqueryInfo;
@@ -739,7 +745,7 @@ export default function DashboardSummaryPage({
           <p className="text-sm text-zinc-400">
             {coverageText} Generated at {fmtDateTimeNoSeconds(data.generated_at)}.
           </p>
-          <CompanyClassification info={companyInfo} loading={companyInfoLoading} />
+          <CompanyClassification profile={data.company_profile} />
           <ReturnsGrid rows={returnsMap} loading={performanceLoading} />
 
           <section className="grid gap-4 md:grid-cols-5">

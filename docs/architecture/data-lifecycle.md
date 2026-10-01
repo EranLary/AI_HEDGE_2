@@ -9,6 +9,7 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 | Data | Authoritative store | Secondary or transient copy | Main owners |
 | --- | --- | --- | --- |
 | Report catalog and list fields | Site Neon: `reports`, `tickers`, `report_releases` | Denormalized fields inside dashboard JSON | `src/ai_hedge/db/`, `frontend/src/lib/reports-db.ts` |
+| Current ticker classification | Site Neon: `tickers.sector`, `tickers.industry` | Generation-time `company_profile` snapshot inside dashboard JSON | analysis Yahoo collection, `src/ai_hedge/db/transform.py` |
 | Structured dashboard and report text | Site Neon: `report_artifacts` | Run directory under `outputs/`; selected objects in R2 | `src/ai_hedge/db/writer.py`, `src/ai_hedge/db/transform.py` |
 | Jev forecasts and realized outcomes | Site Neon: `report_jev_runs`, `report_jev_predictions` | Vercel AI Gateway request logs and transient yfinance responses | `src/ai_hedge/jev.py`, `scripts/db/refresh_jev_outcomes.py` |
 | Downloadable/generated documents | Rendered from the saved report sources on request | Legacy files or R2 objects when a historical report points to them | artifact API route, `frontend/src/lib/report-document.tsx` |
@@ -26,8 +27,9 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 2. The configured artifact store receives each available file. Local mode returns
    the local path; R2 mode uploads immutable objects and returns object keys.
 3. `write_run_to_db()` converts the run directory into a ticker row, a report row,
-   and one `report_artifacts` row. The report and artifact insert share a DB
-   transaction.
+   and one `report_artifacts` row. The ticker upsert refreshes non-empty sector and
+   industry values from the same Yahoo snapshot already collected by the analysis.
+   The report and artifact insert share a DB transaction.
 4. The site reads saved reports from Neon first. Analysis-workspace compatibility
    paths may scan `outputs/` when the DB is unavailable or a legacy row is absent.
 5. HTML, Markdown, and PDF report documents are composed from the saved sources.
@@ -60,6 +62,9 @@ restart/cancellation tests cover the new single-store behavior.
 - `nasdaq100` reports belong to a matching staged/running release when inserted;
   readers expose only running or active releases.
 - A report and its `report_artifacts` row are inserted together.
+- Ticker Summary reads sector and industry from saved ticker metadata, never from
+  a page-open provider request. Empty or failed provider responses do not erase a
+  previously saved classification.
 - Paper portfolio snapshots and holdings are immutable after insertion.
 - R2 object keys include workspace, release/direct segment, ticker, and generation
   timestamp; bucket listing is not a public API.

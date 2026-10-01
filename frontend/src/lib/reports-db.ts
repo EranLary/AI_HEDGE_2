@@ -53,9 +53,20 @@ export interface DbTickerRow {
   company_name: string | null;
   exchange: string | null;
   currency: string | null;
+  sector: string | null;
+  industry: string | null;
+  profile_source: string | null;
+  profile_updated_at: string | null;
   report_count: number;
   last_analyzed_at: string | null;
 }
+
+export type TickerCompanyProfile = {
+  sector: string | null;
+  industry: string | null;
+  source: string | null;
+  updated_at: string | null;
+};
 
 export interface DeletedReportRef {
   id: string;
@@ -229,6 +240,8 @@ export async function listTickers(workspace: Workspace = "analysis"): Promise<Db
   if (!sql) return [];
   const rows = (await sql`
     SELECT t.symbol, t.company_name, t.exchange, t.currency,
+           t.sector, t.industry, t.profile_source,
+           t.profile_updated_at::text AS profile_updated_at,
            count(r.id)::int AS report_count,
            max(r.generated_at)::text AS last_analyzed_at
       FROM tickers t
@@ -237,10 +250,26 @@ export async function listTickers(workspace: Workspace = "analysis"): Promise<Db
      WHERE r.deleted_at IS NULL
        AND r.workspace = ${workspace}
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
-     GROUP BY t.symbol, t.company_name, t.exchange, t.currency
+     GROUP BY t.symbol, t.company_name, t.exchange, t.currency,
+              t.sector, t.industry, t.profile_source, t.profile_updated_at
      ORDER BY report_count DESC, t.symbol;
   `) as unknown as DbTickerRow[];
   return filterExcludedTickers(rows, (row) => row.symbol);
+}
+
+export async function getTickerCompanyProfile(ticker: string): Promise<TickerCompanyProfile | null> {
+  const sql = getSql();
+  if (!sql) return null;
+  const normalizedTicker = String(ticker || "").trim().toUpperCase();
+  if (!normalizedTicker) return null;
+  const rows = (await sql`
+    SELECT sector, industry, profile_source AS source,
+           profile_updated_at::text AS updated_at
+      FROM tickers
+     WHERE symbol = ${normalizedTicker}
+     LIMIT 1;
+  `) as unknown as TickerCompanyProfile[];
+  return rows[0] || null;
 }
 
 /**

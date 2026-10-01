@@ -106,14 +106,15 @@ function MetricTile({ card, currency }: { card: MetricCard; currency: string }) 
 }
 
 export function CompanyClassification({
-  info,
-  loading,
+  profile,
 }: {
-  info: YahooqueryInfo | null;
-  loading: boolean;
+  profile: {
+    sector: string | null;
+    industry: string | null;
+    source: string | null;
+    updated_at: string | null;
+  } | null;
 }) {
-  const profile = info?.company_profile || {};
-
   return (
     <section className="overflow-hidden rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)]">
       <div className="border-b border-[color:var(--border-subtle)] bg-[color:var(--surface)] px-4 py-3 sm:px-5">
@@ -125,47 +126,41 @@ export function CompanyClassification({
             </h2>
             <p className="mt-1 text-sm text-[color:var(--text-muted)]">The company&apos;s market identity at a glance.</p>
           </div>
-          <span className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
-            Yahoo Finance profile
+          <span
+            title={profile?.source ? `Source: ${profile.source}` : undefined}
+            className="rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-muted)]"
+          >
+            {profile?.updated_at ? `Saved ${dateLabel(profile.updated_at)}` : "Saved ticker profile"}
           </span>
         </div>
       </div>
       <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-        {loading ? (
-          <>
-            <LoadingTile />
-            <LoadingTile />
-          </>
-        ) : (
-          <>
-            <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--accent)]">
-                  <Building2 size={19} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Sector</p>
-                  <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
-                    {profileValue(profile.sector)}
-                  </p>
-                </div>
-              </div>
-            </article>
-            <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--info)]">
-                  <Factory size={19} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Industry</p>
-                  <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
-                    {profileValue(profile.industry)}
-                  </p>
-                </div>
-              </div>
-            </article>
-          </>
-        )}
+        <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--accent)]">
+              <Building2 size={19} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Sector</p>
+              <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
+                {profileValue(profile?.sector)}
+              </p>
+            </div>
+          </div>
+        </article>
+        <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-4 transition hover:border-[color:var(--border-strong)]">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] text-[color:var(--info)]">
+              <Factory size={19} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Industry</p>
+              <p className="mt-1 break-words text-lg font-semibold text-[color:var(--text-primary)]">
+                {profileValue(profile?.industry)}
+              </p>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
   );

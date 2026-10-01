@@ -44,6 +44,8 @@ const MODEL_NAME_ALIASES: Record<string, string> = {
   "p b valuation": "P/B Valuation",
   "price to book": "P/B Valuation",
   "price to book valuation": "P/B Valuation",
+  "sector weighted": "Sector-Weighted Valuation",
+  "sector weighted valuation": "Sector-Weighted Valuation",
   overall: "Consensus",
 };
 

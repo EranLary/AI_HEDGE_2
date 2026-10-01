@@ -64,7 +64,10 @@ CREATE TABLE IF NOT EXISTS reports (
     consensus_target_price numeric,
     consensus_allocation_pct numeric,
     consensus_score    numeric,
-    consensus_basis    text CHECK (consensus_basis IN ('mean_median', 'mean_only')),
+    consensus_basis    text CHECK (consensus_basis IN (
+        'mean_median', 'mean_only', 'mean_median_sector_weighted',
+        'mean_sector_weighted', 'median_sector_weighted', 'sector_weighted_only'
+    )),
 
     visibility          text NOT NULL DEFAULT 'public',-- public | private | unlisted
     source              text NOT NULL,                 -- fly_backfill | cli | site

@@ -85,3 +85,43 @@ test("missing allocation makes the whole decision fall back to Mean even when a 
   assert.equal(normalized.score_card?.median_score, null);
   assert.equal(normalized.score_card?.consensus_basis, "mean_only");
 });
+
+test("sector-weighted-v1 consensus is preserved without leaking the derived row into Mean or Median", () => {
+  const payload = {
+    ticker: "TEST",
+    header: { current_price: 100 },
+    valuation_hub: {
+      method_blocks: [
+        { name: "Scenario DCF", target_price: 120, investment_amount: 10000 },
+        { name: "Sector-Weighted Valuation", target_price: 150, investment_amount: 20000 },
+      ],
+      method_tabs: [],
+      sector_weighted_valuation: { policy_version: "sector-weighted-v1", target_price: 150 },
+      consensus: {
+        current_price: 100,
+        mean_target_price: 120,
+        median_target_price: 110,
+        sector_weighted_target_price: 150,
+        decision_target_price: 129,
+        consensus_basis: "mean_median_sector_weighted",
+        component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      },
+    },
+    score_card: {
+      position_size_pct_of_notional: 15,
+      mean_investment_amount: 15000,
+      mean_investment_amount_raw: 10000,
+      median_investment_amount: 12000,
+      decision_investment_amount: 15000,
+      consensus_basis: "mean_median_sector_weighted",
+      adjusted_score: 20,
+      rationale: "weighted",
+    },
+  } as unknown as DashboardPayload;
+
+  const normalized = normalizeValuationConsensus(payload);
+  assert.equal(normalized.valuation_hub.consensus.mean_target_price, 120);
+  assert.equal(normalized.valuation_hub.consensus.median_target_price, 110);
+  assert.equal(normalized.valuation_hub.consensus.decision_target_price, 129);
+  assert.equal(normalized.score_card?.adjusted_score, 20);
+});

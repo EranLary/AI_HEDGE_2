@@ -63,3 +63,19 @@ def test_audit_failures_keep_unexpected_tables_as_separate_policy() -> None:
 
     assert audit_failures(payload) == []
     assert audit_failures(payload, fail_on_unexpected=True) == ["1 unexpected table(s)"]
+
+
+def test_sector_weighted_consensus_migration_expands_constraint_without_data_rewrite() -> None:
+    migration = (
+        ROOT
+        / "src"
+        / "ai_hedge"
+        / "db"
+        / "migrations"
+        / "020_sector_weighted_consensus.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "mean_median_sector_weighted" in migration
+    assert "mean_sector_weighted" in migration
+    assert "DROP CONSTRAINT IF EXISTS reports_consensus_basis_check" in migration
+    assert "UPDATE reports" not in migration.upper()

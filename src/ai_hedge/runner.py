@@ -24,6 +24,7 @@ from .dashboard import (
     write_dashboard_payload,
 )
 from .io import get_artifact_store
+from .company_profile import resolve_company_profile
 from .workspaces import normalize_workspace_release
 
 def _env_int(name: str, default: int) -> int:
@@ -2091,6 +2092,31 @@ def _run_ticker_valuation_impl(
     )
     valuation_contexts = [valuation_context]
 
+    # Resolve the sector before valuation so P/B eligibility and the derived
+    # weighting policy use one classification and one provenance source.
+    from .sector_classifier import resolve_sector_for_valuation
+    from .sector_weighted_valuation import apply_to_dashboard, augment_runtime_outputs
+
+    resolved_sector, resolved_sector_source = resolve_sector_for_valuation(
+        ticker=ticker,
+        info_dict=info_dict,
+        analysis_text=regular_text,
+        call_llm=lambda prompt: legacy.deepseek_simple_text(
+            api_key=os.environ["DEEPSEEK_API_KEY"],
+            prompt=prompt,
+            model="deepseek-chat",
+            temperature=0,
+            short_answer=False,
+        ),
+    )
+    raw_info = info_dict.get("info") if isinstance(info_dict.get("info"), dict) else {}
+    if resolved_sector and not str(raw_info.get("sector") or "").strip():
+        info_dict.setdefault("info", {})["sector"] = resolved_sector
+        info_dict["company_profile_override"] = {
+            "sector": resolved_sector,
+            "source": resolved_sector_source,
+        }
+
     explain_payload: Dict[str, Any] = {}
     with _obs.llm_context(stage="valuations"):
         final_dict = legacy.run_valuations(
@@ -2105,6 +2131,12 @@ def _run_ticker_valuation_impl(
             add_text=False,
             valuation_contexts=valuation_contexts,
             explain_collector=explain_payload,
+        )
+    if resolved_sector:
+        augment_runtime_outputs(
+            final_dict=final_dict,
+            explain_payload=explain_payload,
+            sector=resolved_sector,
         )
     _append_progress(progress_file, "Finished Valuations")
 
@@ -2346,6 +2378,13 @@ def _run_ticker_valuation_impl(
         )
         dashboard_payload["workspace"] = workspace
         dashboard_payload["release_id"] = release_id
+        if resolved_sector:
+            dashboard_payload = apply_to_dashboard(
+                dashboard_payload,
+                sector=resolved_sector,
+                sector_source=resolved_sector_source,
+                provenance="generated",
+            )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
         try:
             dashboard_signal_snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)

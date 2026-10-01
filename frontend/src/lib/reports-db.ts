@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db";
-import type { DashboardPayload } from "@/lib/dashboard-types";
+import type { ConsensusBasis, DashboardPayload } from "@/lib/dashboard-types";
 import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
 import { filterExcludedTickers, isExcludedTicker } from "@/lib/excluded-tickers";
 import {
@@ -29,7 +29,7 @@ export interface DbReportSummary {
   consensus_target_price: number | null;
   allocation_pct: number | null;
   score: number | null;
-  consensus_basis: "mean_median" | "mean_only" | null;
+  consensus_basis: ConsensusBasis | null;
   source: string;
   source_run_id: string | null;
   visibility: ReportVisibility;
@@ -74,6 +74,17 @@ export interface DeletedReportRef {
   source_run_id: string | null;
 }
 
+function isConsensusBasis(value: unknown): value is ConsensusBasis {
+  return [
+    "mean_median",
+    "mean_only",
+    "mean_median_sector_weighted",
+    "mean_sector_weighted",
+    "median_sector_weighted",
+    "sector_weighted_only",
+  ].includes(String(value || ""));
+}
+
 function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
   return rows.map((row) => {
     const { valuation_dashboard: valuationDashboard, ...summary } = row;
@@ -99,7 +110,7 @@ function withConsensusMetrics(rows: DbReportSummary[]): DbReportSummary[] {
       allocation_pct: typeof allocation === "number" && Number.isFinite(allocation) ? allocation : summary.allocation_pct,
       score: typeof score === "number" && Number.isFinite(score) ? score : summary.score,
       consensus_basis:
-        consensus?.consensus_basis === "mean_median" || consensus?.consensus_basis === "mean_only"
+        isConsensusBasis(consensus?.consensus_basis)
           ? consensus.consensus_basis
           : summary.consensus_basis,
     };
@@ -437,8 +448,7 @@ function fallbackCommunityReportsFromOutputs(
           ? Number((dashboard.score_card || dashboard.decision_card)?.adjusted_score)
           : null,
       consensus_basis:
-        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_median" ||
-        dashboard.valuation_hub?.consensus?.consensus_basis === "mean_only"
+        isConsensusBasis(dashboard.valuation_hub?.consensus?.consensus_basis)
           ? dashboard.valuation_hub.consensus.consensus_basis
           : null,
       source: "site",
@@ -853,8 +863,9 @@ export async function listDashboardsForDiscovery(workspace: Workspace = "analysi
 }
 
 /**
- * Full historical dashboard payloads (no DISTINCT) for site-level analytics
- * pages like Hit Rate.
+ * Compact historical valuation projections (no DISTINCT) for site-level
+ * analytics pages. Avoid loading narrative-heavy dashboard JSON for every
+ * report; Discovery, Hit Rate, and screeners use only these fields.
  */
 export async function listAllDashboardsForHitRate(workspace: Workspace = "analysis"): Promise<
   { id: string; ticker: string; generated_at: string; available_at: string; dashboard: unknown; source_run_id: string | null }[]
@@ -864,7 +875,57 @@ export async function listAllDashboardsForHitRate(workspace: Workspace = "analys
   const rows = (await sql`
     SELECT r.id::text AS id, r.ticker, r.generated_at,
            r.available_at,
-           r.source_run_id, a.dashboard
+           r.source_run_id,
+           jsonb_build_object(
+             'ticker', a.dashboard->'ticker',
+             'generated_at', a.dashboard->'generated_at',
+             'header', a.dashboard->'header',
+             'company_profile', a.dashboard->'company_profile',
+             'valuation_hub', jsonb_build_object(
+               'consensus', a.dashboard #> '{valuation_hub,consensus}',
+               'sector_weighted_valuation', a.dashboard #> '{valuation_hub,sector_weighted_valuation}',
+               'method_blocks', (
+                 SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'name', block->'name',
+                   'target_price', block->'target_price',
+                   'investment_amount', block->'investment_amount'
+                 )), '[]'::jsonb)
+                 FROM jsonb_array_elements(CASE
+                   WHEN jsonb_typeof(a.dashboard #> '{valuation_hub,method_blocks}') = 'array'
+                   THEN a.dashboard #> '{valuation_hub,method_blocks}'
+                   ELSE '[]'::jsonb
+                 END) AS block
+               ),
+               'method_tabs', (
+                 SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'name', tab->'name',
+                   'target_price', tab->'target_price',
+                   'investment_amount', tab->'investment_amount',
+                   'outputs', (
+                     SELECT coalesce(jsonb_agg(jsonb_build_object(
+                       'output_id', output->'output_id',
+                       'persona', output->'persona',
+                       'target_price', output->'target_price',
+                       'investment_amount', output->'investment_amount'
+                     )), '[]'::jsonb)
+                     FROM jsonb_array_elements(CASE
+                       WHEN jsonb_typeof(tab->'outputs') = 'array' THEN tab->'outputs'
+                       ELSE '[]'::jsonb
+                     END) AS output
+                   )
+                 )), '[]'::jsonb)
+                 FROM jsonb_array_elements(CASE
+                   WHEN jsonb_typeof(a.dashboard #> '{valuation_hub,method_tabs}') = 'array'
+                   THEN a.dashboard #> '{valuation_hub,method_tabs}'
+                   ELSE '[]'::jsonb
+                 END) AS tab
+               )
+             ),
+             'dream_team', a.dashboard->'dream_team',
+             'score_card', a.dashboard->'score_card',
+             'decision_card', a.dashboard->'decision_card',
+             'technical_analysis', a.dashboard->'technical_analysis'
+           ) AS dashboard
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id

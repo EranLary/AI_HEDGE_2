@@ -7798,6 +7798,7 @@ def plot_all_three(
             "P/B Valuation",
             "Dream Team",
             "Scenario DCF",
+            "Sector-Weighted Valuation",
             "Mean",
             "Median",
         ],

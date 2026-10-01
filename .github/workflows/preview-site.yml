@@ -166,6 +166,15 @@ jobs:
           python -m pip install "psycopg[binary]>=3.2" "python-dotenv>=1.0.1"
           python scripts/db/migrate.py --db-url "$DATABASE_URL_UNPOOLED"
 
+      - name: Backfill preview sector-weighted valuations
+        env:
+          DATABASE_URL_UNPOOLED: ${{ env.PR_DATABASE_URL_UNPOOLED }}
+        run: |
+          python scripts/db/backfill_sector_weighted_valuation.py \
+            --db-url "$DATABASE_URL_UNPOOLED" \
+            --apply \
+            --batch-size 50
+
       - name: Stage preview secrets
         env:
           FLY_API_TOKEN: ${{ env.FLY_AUTH_TOKEN }}

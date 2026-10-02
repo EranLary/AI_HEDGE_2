@@ -101,6 +101,32 @@ test("Sector-Weighted Valuation participates in the same model hit-rate row", ()
   assert.equal(row.allocations.hits, 1);
 });
 
+test("Simple Mean and Median receive independent model hit-rate rows", () => {
+  const payload = basePayload();
+  payload.valuation_hub.consensus.mean_target_price = 130;
+  payload.valuation_hub.consensus.median_target_price = 80;
+  payload.score_card = {
+    position_size_pct_of_notional: 5,
+    mean_investment_amount: 5_000,
+    mean_investment_amount_raw: 10_000,
+    median_investment_amount: -10_000,
+    rationale: "",
+  };
+
+  const agg = computeHitRateAggregation(
+    [{ ticker: "TEST", payload }],
+    new Map<string, number | null>([["TEST", 120]]),
+  );
+  const mean = agg.by_model.find((row) => row.key === "Simple Mean");
+  const median = agg.by_model.find((row) => row.key === "Median");
+
+  assert.ok(mean && median);
+  assert.equal(mean.targets.hits, 1);
+  assert.equal(mean.allocations.hits, 1);
+  assert.equal(median.targets.misses, 1);
+  assert.equal(median.allocations.misses, 1);
+});
+
 test("Consensus target < 0 is floored to 0 and neutral allocations are excluded from denominator", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = -10; // floored to 0, still predicts down vs baseline 100

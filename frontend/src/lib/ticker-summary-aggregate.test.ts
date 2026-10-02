@@ -54,6 +54,14 @@ function basePayload(): DashboardPayload {
 test("computes overview/model/valuator/assumptions means across reports", () => {
   const p1 = basePayload();
   p1.valuation_hub.consensus.mean_target_price = 120;
+  p1.valuation_hub.consensus.median_target_price = 110;
+  p1.score_card = {
+    position_size_pct_of_notional: 10,
+    mean_investment_amount: 10_000,
+    mean_investment_amount_raw: 12_000,
+    median_investment_amount: 8_000,
+    rationale: "",
+  };
   p1.decision_card!.position_size_pct_of_notional = 10;
   p1.valuation_hub.method_tabs = [
     {
@@ -114,6 +122,14 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
 
   const p2 = basePayload();
   p2.valuation_hub.consensus.mean_target_price = 140;
+  p2.valuation_hub.consensus.median_target_price = 130;
+  p2.score_card = {
+    position_size_pct_of_notional: 20,
+    mean_investment_amount: 20_000,
+    mean_investment_amount_raw: 18_000,
+    median_investment_amount: 12_000,
+    rationale: "",
+  };
   p2.decision_card!.position_size_pct_of_notional = 20;
   p2.valuation_hub.method_tabs = [
     {
@@ -187,6 +203,16 @@ test("computes overview/model/valuator/assumptions means across reports", () => 
   assert.ok(dcf);
   assert.equal(dcf.mean_target_price, 140);
   assert.equal(dcf.mean_allocation_pct, 7.5);
+
+  const simpleMean = agg.by_model.find((row) => row.key === "Simple Mean");
+  assert.ok(simpleMean);
+  assert.equal(simpleMean.mean_target_price, 130);
+  assert.equal(simpleMean.mean_allocation_pct, 15);
+
+  const median = agg.by_model.find((row) => row.key === "Median");
+  assert.ok(median);
+  assert.equal(median.mean_target_price, 120);
+  assert.equal(median.mean_allocation_pct, 10);
 
   const valuator = agg.by_valuator.find((row) => row.key === "Warren Buffett");
   assert.ok(valuator);

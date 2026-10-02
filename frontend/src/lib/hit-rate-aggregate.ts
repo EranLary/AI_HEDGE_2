@@ -1,5 +1,6 @@
 import type { DashboardPayload } from "./dashboard-types";
 import { canonicalModelName } from "./method-display";
+import { consensusModelViews } from "./consensus-models";
 import {
   actualDirectionFromPrices,
   allocationDirectionFromAmount,
@@ -228,6 +229,11 @@ export function computeHitRateAggregation(
 
     for (const modelRow of modelRows) {
       applyModelPrediction(modelRow.name, modelRow.target_price, modelRow.investment_amount);
+    }
+    const storedModelNames = new Set(modelRows.map((row) => row.name));
+    for (const view of consensusModelViews(payload)) {
+      if (view.key === "sector_weighted" || storedModelNames.has(view.name)) continue;
+      applyModelPrediction(view.name, view.targetPrice, view.investmentAmount);
     }
 
     const consensusTarget = toNumOrNull(payload.valuation_hub?.consensus?.decision_target_price) ?? toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);

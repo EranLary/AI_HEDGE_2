@@ -1,5 +1,6 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { NOTIONAL_BASE_USD } from "@/lib/hit-rate-utils";
+import { consensusModelViews } from "@/lib/consensus-models";
 import { canonicalModelName } from "@/lib/method-display";
 
 export type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
@@ -452,6 +453,15 @@ export function computeTickerSummaryAggregation(
 
     for (const row of modelRows) {
       applyModel(row.name, row.targetPrice, row.allocationPct);
+    }
+    const storedModelNames = new Set(modelRows.map((row) => canonicalModelName(row.name)));
+    for (const view of consensusModelViews(payload)) {
+      if (view.key === "sector_weighted" || storedModelNames.has(view.name)) continue;
+      applyModel(
+        view.name,
+        view.targetPrice === null ? null : safeTarget(view.targetPrice),
+        view.investmentAmount === null ? null : allocationPctFromAmount(view.investmentAmount),
+      );
     }
     applyModel("Consensus", overviewTarget, overviewAllocation);
 

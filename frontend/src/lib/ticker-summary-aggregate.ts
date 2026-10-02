@@ -1,7 +1,10 @@
 import type { DashboardPayload } from "@/lib/dashboard-types";
+import { disagreementScoreForReport } from "@/lib/disagreement-score";
 import { NOTIONAL_BASE_USD } from "@/lib/hit-rate-utils";
 import { consensusModelViews } from "@/lib/consensus-models";
 import { canonicalModelName } from "@/lib/method-display";
+
+export { disagreementScoreForReport } from "@/lib/disagreement-score";
 
 export type SummaryWindow = "all" | "1y" | "3m" | "1m" | "1w";
 
@@ -175,23 +178,6 @@ function compareMeanRows(a: SummaryMeanRow, b: SummaryMeanRow): number {
   const bSamples = b.target_samples + b.allocation_samples;
   if (bSamples !== aSamples) return bSamples - aSamples;
   return a.label.localeCompare(b.label);
-}
-
-export function disagreementScoreForReport(payload: DashboardPayload): number | null {
-  const scoreCard = payload.score_card || payload.decision_card;
-  const scoreCv = toNumOrNull(scoreCard?.overall_cv);
-  if (typeof scoreCv === "number" && Number.isFinite(scoreCv)) {
-    return Math.abs(scoreCv);
-  }
-  const consensusCv = toNumOrNull(payload.valuation_hub?.consensus?.cv);
-  const lmil = payload.valuation_hub?.consensus?.lmil;
-  const investmentCv =
-    Array.isArray(lmil) && lmil.length > 1 ? toNumOrNull(lmil[1]) : null;
-  const parts = [consensusCv, investmentCv]
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
-    .map((v) => Math.abs(v));
-  if (!parts.length) return null;
-  return avg(parts);
 }
 
 function shouldKeepReport(report: SummarySourceReport, window: SummaryWindow, nowMs: number): boolean {

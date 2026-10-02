@@ -28,6 +28,7 @@ import {
   SECTOR_WEIGHTED_MODEL_NAME,
   type ConsensusModelView,
 } from "@/lib/consensus-models";
+import { disagreementScoreForReport } from "@/lib/disagreement-score";
 import {
   tradingAgentsDecisionTone,
   tradingAgentsDisplayDecision,
@@ -1587,12 +1588,6 @@ export function HedgeDashboard({
     typeof consensusCurrent === "number" && typeof consensusDecision === "number" && Math.abs(consensusCurrent) > 1e-9
       ? ((consensusDecision - consensusCurrent) / consensusCurrent) * 100
       : null;
-  const consensusCvRaw =
-    typeof consensus?.cv === "number" && Number.isFinite(consensus.cv) ? Math.abs(Number(consensus.cv)) : null;
-  const lmilCvRaw =
-    Array.isArray(consensus?.lmil) && typeof consensus?.lmil?.[1] === "number"
-      ? Math.abs(Number(consensus.lmil[1]))
-      : null;
   const activeMethodTargetClass = toneClassFromTarget(activeMethod?.target_price, consensusCurrent);
   const activeMethodInvestmentClass = toneClassFromSign(activeMethod?.investment_amount);
   const selectedOutputTargetClass = toneClassFromTarget(selectedOutput?.target_price, consensusCurrent);
@@ -1624,10 +1619,7 @@ export function HedgeDashboard({
   const consensusSectorWeightedText = fmtTargetOrFloor(consensusSectorWeighted, currencyContext);
   const consensusDecisionText = fmtTargetOrFloor(consensusDecision, currencyContext);
   const consensusCurrentText = fmtMoneyCompact(consensus?.current_price, currencyContext, "price");
-  const overallDisagreement =
-    [consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length > 0
-      ? avg([consensusCvRaw, lmilCvRaw].filter((v): v is number => typeof v === "number" && Number.isFinite(v)))
-      : null;
+  const overallDisagreement = disagreementScoreForReport(data);
   const targetTableRows = useMemo(() => {
     const currentPrice =
       typeof consensus?.current_price === "number" && Number.isFinite(consensus.current_price)

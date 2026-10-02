@@ -18,7 +18,16 @@ import type {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { canonicalModelName } from "@/lib/method-display";
-import { effectiveConsensusWeights, formatConsensusWeight } from "@/lib/consensus-components";
+import {
+  effectiveConsensusWeights,
+  formatConsensusWeight,
+  type ConsensusComponentKey,
+} from "@/lib/consensus-components";
+import {
+  consensusModelViews,
+  SECTOR_WEIGHTED_MODEL_NAME,
+  type ConsensusModelView,
+} from "@/lib/consensus-models";
 import {
   tradingAgentsDecisionTone,
   tradingAgentsDisplayDecision,
@@ -81,6 +90,15 @@ const MODEL_EXPLANATIONS: Record<string, string> = {
   "SOTP Scenario": "SOTP Scenario values each business segment separately in Bull/Base/Bear configurations, then combines scenario probabilities to produce a weighted equity value target.",
   "P/B Valuation": "P/B Valuation estimates one normalized through-cycle common book-equity base and applies a carefully underwritten Price-to-Book multiple. Market capitalization and per-share value are then calculated deterministically from that output and the verified total-company share count.",
   "Sector-Weighted Valuation": "Sector-Weighted Valuation applies the sector-specific policy to the available valuation families. Missing models receive no zero; their configured weight is redistributed proportionally across valid models.",
+};
+
+const CONSENSUS_MODEL_EXPLANATIONS: Record<ConsensusComponentKey, string> = {
+  sector_weighted:
+    "Applies the sector policy to the available valuation families. Missing families are omitted and the remaining positive weights are redistributed proportionally.",
+  mean:
+    "Uses the simple arithmetic mean across the available valuation-family targets and allocations. Every available family contributes equally to this view.",
+  median:
+    "Uses the middle valuation-family result (or the average of the two middle results). It is less sensitive to unusually high or low model outputs.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -788,8 +806,9 @@ function SectorWeightTables({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3">
         <div>
-          <p className="font-semibold text-[color:var(--text-primary)]">{sector} actual model weights</p>
-          <p className="text-xs text-[color:var(--text-muted)]">Only post-redistribution weights are shown. Missing models receive no zero.</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Sector policy</p>
+          <p className="mt-1 text-xl font-bold text-[color:var(--text-primary)]">{sector}</p>
+          <p className="mt-1 text-xs text-[color:var(--text-muted)]">Actual model weights after redistribution. Missing models receive no zero.</p>
         </div>
         <span className="rounded-full border border-[color:var(--accent)] px-2 py-1 text-xs font-semibold text-[color:var(--accent)]">
           40% of Consensus
@@ -1284,6 +1303,7 @@ export function HedgeDashboard({
     setInternalMainTab(next);
   };
   const [valuationTab, setValuationTab] = useState("overview");
+  const [consensusModelTab, setConsensusModelTab] = useState<ConsensusComponentKey>("sector_weighted");
   const [outputTab, setOutputTab] = useState<Record<string, string>>({});
   const [showAssumptionsRangeMobile, setShowAssumptionsRangeMobile] = useState(false);
   const [liveCurrentPrice, setLiveCurrentPrice] = useState<number | null>(null);
@@ -1415,6 +1435,7 @@ export function HedgeDashboard({
         setData(j);
         setMainTab("valuation");
         setValuationTab("overview");
+        setConsensusModelTab("sector_weighted");
         setOutputTab({});
         setError("");
       })
@@ -1506,6 +1527,14 @@ export function HedgeDashboard({
     }
     return map;
   }, [methodTabs]);
+  const visibleMethodTabs = useMemo(
+    () => methodTabs.filter((tab) => tab.name !== SECTOR_WEIGHTED_MODEL_NAME),
+    [methodTabs],
+  );
+  const consensusModels = useMemo(() => (data ? consensusModelViews(data) : []), [data]);
+  const activeConsensusModel: ConsensusModelView | null =
+    consensusModels.find((view) => view.key === consensusModelTab) || consensusModels[0] || null;
+  const sectorWeightedMethod = methodTabs.find((tab) => tab.name === SECTOR_WEIGHTED_MODEL_NAME) || null;
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
   const sectorWeightedDreamPersonas = data?.valuation_hub?.sector_weighted_valuation?.dream_team?.personas || [];
   const tradingAgentsPayload = data?.trading_agents;
@@ -1979,6 +2008,16 @@ export function HedgeDashboard({
     median: medianAllocationPct,
     sector_weighted: sectorWeightedAllocationPct,
   };
+  const activeConsensusTargetChangePct = targetChangePctFromCurrent(
+    activeConsensusModel?.targetPrice,
+    consensusCurrent,
+  );
+  const activeConsensusAllocationPct =
+    typeof activeConsensusModel?.investmentAmount === "number" && Number.isFinite(activeConsensusModel.investmentAmount)
+      ? (activeConsensusModel.investmentAmount / NOTIONAL_BASE_USD) * 100
+      : null;
+  const activeConsensusTargetWeight = activeConsensusModel?.targetWeight ?? null;
+  const activeConsensusAllocationWeight = activeConsensusModel?.allocationWeight ?? null;
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
@@ -1996,6 +2035,11 @@ export function HedgeDashboard({
   const openMethodTab = (methodName: string, outputName?: string) => {
     const cleanMethod = String(methodName || "").trim();
     if (!cleanMethod) return;
+    if (cleanMethod === SECTOR_WEIGHTED_MODEL_NAME) {
+      setValuationTab("consensus");
+      setConsensusModelTab("sector_weighted");
+      return;
+    }
     setValuationTab(cleanMethod);
     if (outputName) {
       setOutputTab((prev) => ({ ...prev, [cleanMethod]: outputName }));
@@ -2245,7 +2289,13 @@ export function HedgeDashboard({
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tab active={valuationTab === "overview"} onClick={() => setValuationTab("overview")} label="Overview" />
-                  {methodTabs.map((m) => (
+                  <Tab
+                    active={valuationTab === "consensus"}
+                    onClick={() => setValuationTab("consensus")}
+                    label="Consensus"
+                    tone={tabToneFromTarget(consensusDecision, consensusCurrent)}
+                  />
+                  {visibleMethodTabs.map((m) => (
                     <Tab
                       key={m.name}
                       active={valuationTab === m.name}
@@ -2424,6 +2474,113 @@ export function HedgeDashboard({
                           </table>
                         </div>
                       </div>
+                    ) : null}
+                  </div>
+                ) : valuationTab === "consensus" ? (
+                  <div className="mt-3 space-y-4">
+                    <section className="rounded-xl border border-[color:var(--consensus-border)] bg-[color:var(--consensus-soft)] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="max-w-3xl">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--consensus-text)]">
+                            Final Consensus
+                          </p>
+                          <h3 className="mt-1 text-xl font-bold text-[color:var(--text-primary)]">
+                            Three independent views, one decision
+                          </h3>
+                          <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-secondary)]">
+                            The target, allocation, and score are blended from Sector-Weighted, Simple Mean, and Median. If a component is unavailable, its positive weight is redistributed proportionally across the available components.
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[color:var(--consensus-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-right">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Consensus Target</p>
+                          <p className={`text-2xl font-bold ${consensusDecisionClass}`}>{consensusDecisionText}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {targetComponentWeights.map((component) => (
+                          <span
+                            key={`${component.key}-consensus-formula`}
+                            className="rounded-full border border-[color:var(--border-strong)] bg-[color:var(--surface-elevated)] px-3 py-1 text-xs font-semibold text-[color:var(--text-secondary)]"
+                          >
+                            {formatConsensusWeight(component.weight)} {component.label}
+                          </span>
+                        ))}
+                      </div>
+                    </section>
+
+                    <div className="flex flex-wrap gap-2" aria-label="Consensus component models">
+                      {consensusModels.map((view) => (
+                        <Tab
+                          key={view.key}
+                          active={consensusModelTab === view.key}
+                          onClick={() => setConsensusModelTab(view.key)}
+                          label={view.shortLabel}
+                          tone={tabToneFromTarget(view.targetPrice, consensusCurrent)}
+                        />
+                      ))}
+                    </div>
+
+                    {activeConsensusModel ? (
+                      <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Consensus Component</p>
+                            <h3 className="mt-1 text-xl font-bold text-[color:var(--text-primary)]">{activeConsensusModel.name}</h3>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                            <span className="rounded-full border border-[color:var(--border-strong)] px-2.5 py-1 text-[color:var(--text-secondary)]">
+                              Target weight {activeConsensusTargetWeight !== null ? formatConsensusWeight(activeConsensusTargetWeight) : "N/A"}
+                            </span>
+                            <span className="rounded-full border border-[color:var(--border-strong)] px-2.5 py-1 text-[color:var(--text-secondary)]">
+                              Allocation weight {activeConsensusAllocationWeight !== null ? formatConsensusWeight(activeConsensusAllocationWeight) : "N/A"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Target Price</p>
+                            <p className={`mt-1 text-2xl font-bold ${toneClassFromTarget(activeConsensusModel.targetPrice, consensusCurrent)}`}>
+                              {fmtTargetOrFloor(activeConsensusModel.targetPrice, currencyContext)}
+                            </p>
+                            <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(activeConsensusTargetChangePct)}`}>
+                              {typeof activeConsensusTargetChangePct === "number" ? `${fmtPct(activeConsensusTargetChangePct)} vs current` : "N/A vs current"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Allocation</p>
+                            <p className={`mt-1 text-2xl font-bold ${toneClassFromSign(activeConsensusAllocationPct)}`}>
+                              {fmtScoreInputPctOnly(activeConsensusAllocationPct)}
+                            </p>
+                            <p className="mt-1 text-xs text-[color:var(--text-muted)]">of the {fmtMoneyCompact(NOTIONAL_BASE_USD, currencyContext, "financial")} model notional</p>
+                          </div>
+                          <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Component Score</p>
+                            <p className={`mt-1 text-2xl font-bold ${toneClassFromSign(activeConsensusModel.score)}`}>
+                              {typeof activeConsensusModel.score === "number" && Number.isFinite(activeConsensusModel.score)
+                                ? activeConsensusModel.score.toFixed(2)
+                                : "N/A"}
+                            </p>
+                            <p className="mt-1 text-xs text-[color:var(--text-muted)]">Before the final disagreement adjustment</p>
+                          </div>
+                        </div>
+
+                        <p className="mt-4 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3 text-sm leading-relaxed text-[color:var(--text-secondary)]">
+                          {CONSENSUS_MODEL_EXPLANATIONS[activeConsensusModel.key]}
+                        </p>
+
+                        {activeConsensusModel.key === "sector_weighted" && sectorWeightedMethod?.weight_breakdown?.length ? (
+                          <div className="mt-5">
+                            <SectorWeightTables
+                              sector={sectorWeightedMethod.sector || data.valuation_hub?.sector_weighted_valuation?.sector || "Sector"}
+                              familyRows={sectorWeightedMethod.weight_breakdown}
+                              dreamRows={sectorWeightedDreamPersonas}
+                              currentPrice={consensusCurrent}
+                              currencyContext={currencyContext}
+                            />
+                          </div>
+                        ) : null}
+                      </section>
                     ) : null}
                   </div>
                 ) : valuationTab === "trading-agents" ? (

@@ -80,7 +80,7 @@ test("historical discovery excludes future reports and anchors the 90-day window
   assert.equal(overall.length, 1);
   assert.ok(Math.abs(Number(overall[0].row.points_score) - 16) < 1e-9);
 
-  assert.deepEqual(universe.models, ["Scenario DCF"]);
+  assert.deepEqual(universe.models, ["Scenario DCF", "Simple Mean"]);
   const model = scoreDiscoveryCandidates(universe, { type: "model", key: "Scenario DCF", label: "Scenario DCF" });
   assert.ok(Math.abs(Number(model[0].row.points_score) - 22) < 1e-9);
 
@@ -155,6 +155,43 @@ test("Sector-Weighted Valuation is available as a Discovery model lens", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].row.return_pct, 50);
   assert.equal(rows[0].row.investment_allocation_pct, 25);
+});
+
+test("Simple Mean and Median are available as independent Discovery model lenses", () => {
+  const modeled = payload("AAA", 125, 12);
+  modeled.valuation_hub.consensus.median_target_price = 110;
+  modeled.score_card = {
+    position_size_pct_of_notional: 12,
+    mean_investment_amount: 12_000,
+    mean_investment_amount_raw: 20_000,
+    median_investment_amount: 5_000,
+    rationale: "",
+  };
+  const universe = prepareDiscoveryUniverse({
+    reports: [{ ticker: "AAA", generatedAt: "2026-10-01T12:00:00Z", payload: modeled, reportId: "modeled" }],
+    priceByTicker: new Map([["AAA", 100]]),
+    asOfMs: Date.parse("2026-10-02T00:00:00Z"),
+  });
+
+  assert.ok(universe.models.includes("Simple Mean"));
+  assert.ok(universe.models.includes("Median"));
+
+  const meanRows = scoreDiscoveryCandidates(universe, {
+    type: "model",
+    key: "Simple Mean",
+    label: "Simple Mean",
+  });
+  const medianRows = scoreDiscoveryCandidates(universe, {
+    type: "model",
+    key: "Median",
+    label: "Median",
+  });
+  assert.equal(meanRows[0].row.return_pct, 25);
+  assert.equal(meanRows[0].row.investment_allocation_pct, 20);
+  assert.deepEqual(meanRows[0].sourceReportIds, ["modeled"]);
+  assert.equal(medianRows[0].row.return_pct, 10);
+  assert.equal(medianRows[0].row.investment_allocation_pct, 5);
+  assert.deepEqual(medianRows[0].sourceReportIds, ["modeled"]);
 });
 
 function candidate(ticker: string, score: number, disagreement: number = 0): ScoredDiscoveryCandidate {

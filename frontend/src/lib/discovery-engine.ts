@@ -1,5 +1,6 @@
 import type { DiscoveryRow } from "@/lib/dashboard-types";
 import { canonicalModelName } from "@/lib/method-display";
+import { consensusModelViews } from "@/lib/consensus-models";
 import {
   computeTickerSummaryAggregation,
   filterReportsByWindow,
@@ -93,11 +94,17 @@ function reportModelNames(report: DiscoverySourceReport): Set<string> {
     ? report.payload.valuation_hub.method_blocks
     : [];
   const rows = tabs.length ? tabs : blocks;
-  return new Set(
+  const names = new Set(
     rows
       .map((row) => canonicalModelName(String(row.name || "").trim()))
       .filter((name) => name && name !== "Unknown Model"),
   );
+  for (const view of consensusModelViews(report.payload)) {
+    if (view.key !== "sector_weighted" && (view.targetPrice !== null || view.investmentAmount !== null)) {
+      names.add(view.name);
+    }
+  }
+  return names;
 }
 
 function reportValuatorNames(report: DiscoverySourceReport): Set<string> {

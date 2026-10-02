@@ -749,14 +749,14 @@ export default function DashboardSummaryPage({
           <ReturnsGrid rows={returnsMap} loading={performanceLoading} />
 
           <section className="grid gap-4 md:grid-cols-5">
-            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Current Live Price</p>
+            <article className="flex flex-col rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="min-h-12 text-xs uppercase leading-4 tracking-[0.18em] text-zinc-500">Current Live Price</p>
               <p className="hib-summary-metric-value mt-2 font-bold text-zinc-100">
                 {fmtMoney(data.overview.live_current_price, upper)}
               </p>
             </article>
-            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Target</p>
+            <article className="flex flex-col rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="min-h-12 text-xs uppercase leading-4 tracking-[0.18em] text-zinc-500">Consensus Target</p>
               <p
                 className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromTarget(
                   data.overview.mean_target_price,
@@ -768,28 +768,28 @@ export default function DashboardSummaryPage({
               <p className={`mt-1 text-sm font-semibold ${toneClassFromSign(meanTargetChangePct)}`}>
                 ({fmtPct(meanTargetChangePct)})
               </p>
-              <p className="mt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
+              <p className="mt-auto pt-2 text-xs text-zinc-400">N {data.overview.target_samples}</p>
             </article>
-            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Allocation</p>
-              <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(data.overview.mean_allocation_pct)}`}>
+            <article className="flex flex-col rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="min-h-12 text-xs uppercase leading-4 tracking-[0.18em] text-zinc-500">Consensus Allocation</p>
+              <p className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromSign(data.overview.mean_allocation_pct)}`}>
                 {fmtPct(data.overview.mean_allocation_pct)}
               </p>
-              <p className="mt-2 text-xs text-zinc-400">N {data.overview.allocation_samples}</p>
+              <p className="mt-auto pt-2 text-xs text-zinc-400">N {data.overview.allocation_samples}</p>
             </article>
-            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Mean Disagreement Score</p>
-              <p className="mt-2 text-3xl font-bold text-zinc-100">{fmtNum(data.overview.mean_disagreement_score)}</p>
-              <p className="mt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
+            <article className="flex flex-col rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="min-h-12 text-xs uppercase leading-4 tracking-[0.18em] text-zinc-500">Mean Disagreement Score</p>
+              <p className="hib-summary-metric-value mt-2 font-bold text-zinc-100">{fmtNum(data.overview.mean_disagreement_score)}</p>
+              <p className="mt-auto pt-2 text-xs text-zinc-400">N {data.overview.disagreement_samples}</p>
             </article>
-            <article className="rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Consensus Score</p>
-              <p className={`mt-2 text-3xl font-bold ${toneClassFromSign(overviewAdjustedScore)}`}>
+            <article className="flex flex-col rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="min-h-12 text-xs uppercase leading-4 tracking-[0.18em] text-zinc-500">Consensus Score</p>
+              <p className={`hib-summary-metric-value mt-2 font-bold ${toneClassFromSign(overviewAdjustedScore)}`}>
                 {typeof overviewAdjustedScore === "number" && Number.isFinite(overviewAdjustedScore)
                   ? overviewAdjustedScore.toFixed(2)
                   : "N/A"}
               </p>
-              <p className="mt-2 text-xs text-zinc-400">Confidence-adjusted point score</p>
+              <p className="mt-auto pt-2 text-xs text-zinc-400">Confidence-adjusted point score</p>
             </article>
           </section>
 

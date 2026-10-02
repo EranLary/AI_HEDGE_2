@@ -13,7 +13,7 @@ import {
   fmtMoneyCompact,
 } from "@/components/hedge-dashboard";
 import { INVESTORS_ORDERED, OVERVIEW_FEATURED_PERSONAS } from "@/components/dream-team/persona-themes";
-import { disagreementScoreForReport } from "@/lib/ticker-summary-aggregate";
+import { disagreementScoreForReport } from "@/lib/disagreement-score";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { effectiveConsensusWeights, formatConsensusWeight } from "@/lib/consensus-components";
 

@@ -443,9 +443,9 @@ html[data-theme="light"] .hib-conviction-accent {
   font-variant-numeric: tabular-nums;
 }
 
-/* Summary cards: keep price + currency symbol on one line without overflow */
+/* Summary cards: use one metric scale and keep values on one line without overflow */
 .hib-summary-metric-value {
-  font-size: clamp(0.95rem, 1.7vw, 1.45rem);
+  font-size: clamp(1.25rem, 2vw, 1.875rem);
   line-height: 1.1;
   display: block;
   width: 100%;

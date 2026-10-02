@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildReportMarkdown,
+  buildSectorConsensusMethodologyMarkdown,
   buildStandaloneReportHtml,
   buildStructuredLegacyValuationMarkdown,
   buildTradingAgentsReportMarkdown,
@@ -165,6 +166,99 @@ test("native historical 50/50 snapshot is replaced at render time by effective s
   assert.match(built.markdown, /30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
   assert.doesNotMatch(built.markdown, /50% Mean \/ 50% Median/);
   assert.match(built.markdown, /Original method evidence remains here/);
+});
+
+test("current Valuation and Combined documents explain the sector recipe and final consensus", () => {
+  const dashboard = {
+    header: { currency: "USD" },
+    valuation_hub: {
+      prices: { Current: 100, Mean: [120], Median: [115] },
+      consensus: {
+        current_price: 100,
+        mean_target_price: 120,
+        median_target_price: 115,
+        sector_weighted_target_price: 130,
+        decision_target_price: 122.5,
+        configured_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+        component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      },
+      sector_weighted_valuation: {
+        policy_version: "sector-weighted-v1",
+        sector: "Technology",
+        sector_source: "yahooquery.asset_profile.sector",
+        target_price: 130,
+        investment_amount: 22000,
+        family_weights: [
+          {
+            family: "Scenario DCF",
+            configured_weight: 0.2,
+            effective_target_weight: 0.25,
+            target_price: 140,
+            status: "included",
+          },
+          {
+            family: "Revenue Scenario",
+            configured_weight: 0.2,
+            effective_target_weight: null,
+            target_price: null,
+            status: "missing",
+          },
+          {
+            family: "Dream Team",
+            configured_weight: 0.1,
+            effective_target_weight: 0.125,
+            target_price: 125,
+            status: "included",
+          },
+        ],
+        dream_team: {
+          personas: [
+            {
+              persona: "Aswath Damodaran",
+              configured_weight: 0.15,
+              effective_target_weight: 0.2,
+              target_price: 128,
+              status: "included",
+            },
+          ],
+        },
+      },
+    },
+    score_card: {
+      mean_investment_amount_raw: 18000,
+      median_investment_amount: 20000,
+      sector_weighted_investment_amount: 22000,
+      mean_score: 10,
+      median_score: 9,
+      sector_weighted_score: 14,
+      allocation_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      configured_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+    },
+  };
+  const source = {
+    ticker: "TEST",
+    analysisMd: "# Analysis\n\nEvidence.",
+    pricesExplainMd: "# TEST Valuation Report\n\n## Valuation Method Comparison\n\nOriginal evidence.",
+    dashboard,
+  };
+
+  const methodology = buildSectorConsensusMethodologyMarkdown(dashboard);
+  const valuation = buildReportMarkdown(source, "valuation").markdown;
+  const combined = buildReportMarkdown(source, "combined").markdown;
+  const analysis = buildReportMarkdown(source, "analysis").markdown;
+
+  assert.match(methodology, /Sector used: Technology/);
+  assert.match(methodology, /Yahoo Finance company profile/);
+  assert.match(methodology, /30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
+  assert.match(methodology, /Scenario DCF \| \$140\.00 \| 20% \| 25% \| Used/);
+  assert.match(methodology, /Revenue Scenario \| Not available \| 20% \| Not available \| Unavailable; weight redistributed/);
+  assert.match(methodology, /Dream Team inside the sector model/);
+  assert.match(methodology, /Aswath Damodaran \| \$128\.00 \| 15% \| 20% \| Used/);
+  assert.match(methodology, /missing result is never inserted as zero/);
+  assert.equal((valuation.match(/How the Sector-Weighted Model and Consensus Are Built/g) || []).length, 1);
+  assert.equal((combined.match(/How the Sector-Weighted Model and Consensus Are Built/g) || []).length, 1);
+  assert.doesNotMatch(analysis, /How the Sector-Weighted Model and Consensus Are Built/);
 });
 
 test("TradingAgents tactical fields appear only in Valuation and Combined reports", () => {

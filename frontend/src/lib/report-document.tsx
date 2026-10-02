@@ -148,6 +148,143 @@ function consensusBasisLabel(consensus: Record<string, unknown>, hasMedian: bool
   return hasMedian ? "50% Mean / 50% Median" : "Mean only (Median unavailable)";
 }
 
+const CONSENSUS_COMPONENTS = [
+  {
+    key: "mean",
+    label: "Simple Mean",
+    description: "The arithmetic average of the available valuation-family results.",
+  },
+  {
+    key: "median",
+    label: "Median",
+    description: "The middle family result, which reduces the influence of unusually high or low estimates.",
+  },
+  {
+    key: "sector_weighted",
+    label: "Sector-Weighted",
+    description: "The available family results blended with the policy weights for this company's sector.",
+  },
+] as const;
+
+function reportSectorSourceLabel(value: unknown): string {
+  const source = textValue(value).toLowerCase();
+  if (!source) return "Stored report classification";
+  if (source.includes("yahoo")) return "Yahoo Finance company profile";
+  if (source === "llm.deepseek-v4-flash") return "Fallback AI classification from this report's company evidence";
+  if (source === "report.previous_llm") return "Prior saved AI classification for this ticker";
+  if (source === "tickers") return "Saved ticker classification";
+  if (source === "company_profile") return "Saved company profile";
+  return "Stored report classification";
+}
+
+function weightStatusLabel(value: unknown): string {
+  const status = textValue(value).toLowerCase();
+  if (status === "included") return "Used";
+  if (status === "zero_weight") return "0% for this sector";
+  if (status === "missing") return "Unavailable; weight redistributed";
+  return status ? status.replaceAll("_", " ") : "Not available";
+}
+
+export function buildSectorConsensusMethodologyMarkdown(dashboard: unknown): string {
+  const root = asObject(dashboard);
+  const header = asObject(root?.header);
+  const hub = asObject(root?.valuation_hub);
+  const consensus = asObject(hub?.consensus);
+  const decision = asObject(root?.score_card) || asObject(root?.decision_card);
+  const weighted = asObject(hub?.sector_weighted_valuation);
+  const sector = textValue(weighted?.sector);
+  const policyVersion = textValue(weighted?.policy_version);
+  if (!weighted || !sector || !policyVersion) return "";
+
+  const currency = textValue(header?.currency || header?.display_currency);
+  const configuredComponents =
+    asObject(consensus?.configured_component_weights) || asObject(decision?.configured_component_weights);
+  const targetWeights = asObject(consensus?.component_weights);
+  const allocationWeights = asObject(decision?.allocation_component_weights);
+  const scoreWeights = asObject(decision?.component_weights);
+  const familyRows = Array.isArray(weighted.family_weights)
+    ? weighted.family_weights.map(asObject).filter((row): row is Record<string, unknown> => row !== null)
+    : [];
+  const dreamTeam = asObject(weighted.dream_team);
+  const personaRows = Array.isArray(dreamTeam?.personas)
+    ? dreamTeam.personas.map(asObject).filter((row): row is Record<string, unknown> => row !== null)
+    : [];
+
+  const componentTargets: Record<string, number | null> = {
+    mean: finiteNumber(consensus?.mean_target_price),
+    median: finiteNumber(consensus?.median_target_price),
+    sector_weighted: finiteNumber(consensus?.sector_weighted_target_price ?? weighted.target_price),
+  };
+  const componentRows = CONSENSUS_COMPONENTS.map((component) => {
+    const configuredWeight = finiteNumber(configuredComponents?.[component.key]);
+    const effectiveWeight = finiteNumber(targetWeights?.[component.key]);
+    return `| ${component.label} | ${component.description} | ${formatPrice(componentTargets[component.key], currency)} | ${formatPercent(configuredWeight)} | ${formatPercent(effectiveWeight)} |`;
+  });
+  const familyTableRows = familyRows.map((row) =>
+    `| ${markdownCell(textValue(row.family) || "Unknown family")} | ${markdownCell(formatPrice(finiteNumber(row.target_price), currency))} | ${markdownCell(formatPercent(finiteNumber(row.configured_weight)))} | ${markdownCell(formatPercent(finiteNumber(row.effective_target_weight)))} | ${markdownCell(weightStatusLabel(row.status))} |`,
+  );
+  const personaTableRows = personaRows.map((row) =>
+    `| ${markdownCell(textValue(row.persona) || "Unknown persona")} | ${markdownCell(formatPrice(finiteNumber(row.target_price), currency))} | ${markdownCell(formatPercent(finiteNumber(row.configured_weight)))} | ${markdownCell(formatPercent(finiteNumber(row.effective_target_weight)))} | ${markdownCell(weightStatusLabel(row.status))} |`,
+  );
+  const targetBasis = consensusBasisLabel(consensus || {}, finiteNumber(consensus?.median_target_price) !== null);
+  const allocationBasis = consensusBasisLabel(
+    { component_weights: allocationWeights },
+    finiteNumber(decision?.median_investment_amount) !== null,
+  );
+  const scoreBasis = consensusBasisLabel(
+    { component_weights: scoreWeights },
+    finiteNumber(decision?.median_score) !== null,
+  );
+
+  return [
+    "## How the Sector-Weighted Model and Consensus Are Built",
+    "",
+    `> **Sector used: ${markdownCell(sector)}**  `,
+    `> Classification source: ${markdownCell(reportSectorSourceLabel(weighted.sector_source))} · Policy: \`${markdownCell(policyVersion)}\``,
+    "",
+    "This report keeps the valuation families independent, then summarizes them in three complementary ways. The Simple Mean gives every available family an equal voice, the Median limits the impact of outliers, and the Sector-Weighted view emphasizes the methods that best fit the company's sector.",
+    "",
+    "### Final consensus recipe",
+    "",
+    "| Component | What it represents | Target in this report | Policy weight | Effective target weight |",
+    "| --- | --- | ---: | ---: | ---: |",
+    ...componentRows,
+    "",
+    `The target blend used **${targetBasis}**. Allocation and score are blended separately from their own available inputs: **${allocationBasis}** for allocation and **${scoreBasis}** for score. If a component is unavailable, it is omitted and the remaining positive policy weights are increased proportionally; a missing result is never inserted as zero.`,
+    "",
+    `### ${markdownCell(sector)} sector recipe`,
+    "",
+    "The Sector-Weighted component applies this report's sector policy to the available valuation families. The effective column is the weight actually used after any unavailable family was removed.",
+    "",
+    ...(familyTableRows.length
+      ? [
+          "| Valuation family | Target | Sector policy weight | Effective target weight | Status |",
+          "| --- | ---: | ---: | ---: | --- |",
+          ...familyTableRows,
+          "",
+        ]
+      : []),
+    ...(personaTableRows.length
+      ? [
+          "### Dream Team inside the sector model",
+          "",
+          "Dream Team is one valuation family. Its personas are blended inside that family first; the resulting Dream Team target then enters the sector recipe at the family's effective weight. Persona weights below are internal to Dream Team, not direct weights in the final consensus.",
+          "",
+          "| AI persona | Target | Internal policy weight | Effective internal weight | Status |",
+          "| --- | ---: | ---: | ---: | --- |",
+          ...personaTableRows,
+          "",
+        ]
+      : []),
+    "### How to read the final result",
+    "",
+    "- The final consensus target combines the three target views using the effective target weights above.",
+    "- The allocation is calculated the same way, but only from components with a valid allocation result.",
+    "- Each component score combines 60% target return and 40% suggested allocation. The blended score is then adjusted by the report's existing disagreement-confidence factor.",
+    "- These are model-policy weights, not probabilities that a target will occur and not portfolio guarantees.",
+  ].join("\n");
+}
+
 function textValue(value: unknown): string {
   return String(value || "").trim();
 }
@@ -378,7 +515,9 @@ function currentStructuredConsensusMarkdown(dashboard: unknown, ticker: string):
     "> This canonical snapshot is rendered from the report's structured dashboard. It supersedes any historical Mean/Median decision snapshot in the original narrative below without rewriting the stored artifact.",
     "",
   );
-  return section.join("\n").trim();
+  return [section.join("\n").trim(), buildSectorConsensusMethodologyMarkdown(dashboard)]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function stripGeneratedConsensusSections(markdown: string): string {
@@ -387,6 +526,7 @@ function stripGeneratedConsensusSections(markdown: string): string {
     "dashboard signal snapshot",
     "consensus snapshot",
     "current structured consensus",
+    "how the sector-weighted model and consensus are built",
   ]);
   const output: string[] = [];
   let skipping = false;
@@ -437,9 +577,12 @@ function valuationMarkdown(source: ReportDocumentSource): {
     };
   }
   if (hasStructuredLegacyValuation(source.dashboard)) {
+    const methodology = buildSectorConsensusMethodologyMarkdown(source.dashboard);
     return {
       markdown: labelFamousValuatorPersonas(
-        buildStructuredLegacyValuationMarkdown(source.dashboard, source.ticker),
+        [buildStructuredLegacyValuationMarkdown(source.dashboard, source.ticker), methodology]
+          .filter(Boolean)
+          .join("\n\n"),
       ),
       usedFallback: true,
     };

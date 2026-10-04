@@ -9,7 +9,7 @@ import traceback
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 
 def _utc_now() -> str:
@@ -58,6 +58,45 @@ def _maybe_start_preview_keepalive() -> Tuple[Optional[threading.Event], Optiona
     thread = threading.Thread(target=_loop, name="preview-keepalive", daemon=True)
     thread.start()
     return (stop_event, thread)
+
+
+DEFAULT_STATUS_HEARTBEAT_SECONDS = 30
+MAX_STATUS_HEARTBEAT_SECONDS = 300
+
+
+def _status_heartbeat_seconds() -> int:
+    raw = str(
+        os.getenv("SITE_RUN_HEARTBEAT_SECONDS", str(DEFAULT_STATUS_HEARTBEAT_SECONDS))
+        or DEFAULT_STATUS_HEARTBEAT_SECONDS
+    ).strip()
+    try:
+        parsed = int(raw)
+    except Exception:
+        return DEFAULT_STATUS_HEARTBEAT_SECONDS
+    if parsed <= 0:
+        return DEFAULT_STATUS_HEARTBEAT_SECONDS
+    return min(parsed, MAX_STATUS_HEARTBEAT_SECONDS)
+
+
+def _start_status_heartbeat(
+    update: Callable[[], None],
+) -> Tuple[threading.Event, threading.Thread]:
+    """Refresh the durable heartbeat even while no tracked LLM call finishes."""
+
+    stop_event = threading.Event()
+    interval = _status_heartbeat_seconds()
+
+    def _loop() -> None:
+        while not stop_event.wait(interval):
+            try:
+                update()
+            except Exception:
+                # Status sinks are best-effort; heartbeat failure must not fail a run.
+                pass
+
+    thread = threading.Thread(target=_loop, name="site-run-heartbeat", daemon=True)
+    thread.start()
+    return stop_event, thread
 
 
 def _append_progress_line(progress_file: str, message: str) -> None:
@@ -150,6 +189,7 @@ def main() -> int:
     llm_total_estimated = _estimate_total_llm_calls()
     llm_completed = 0
     observed_cost_usd = 0.0
+    status_terminal = False
     lock = threading.Lock()
     existing_status: Dict[str, Any] = {}
     if status_file.exists():
@@ -190,17 +230,26 @@ def main() -> int:
 
     def _write_running_progress() -> None:
         with lock:
+            if status_terminal:
+                return
             completed = int(llm_completed)
-        pct = min(99.0, (completed / float(llm_total_estimated)) * 100.0)
-        payload = {
-            **running_payload,
-            "status": "running",
-            "finished_at": None,
-            "llm_completed": completed,
-            "llm_progress_pct": round(pct, 2),
-        }
-        sink.update_status(payload)
+            pct = min(99.0, (completed / float(llm_total_estimated)) * 100.0)
+            payload = {
+                **running_payload,
+                "status": "running",
+                "finished_at": None,
+                "llm_completed": completed,
+                "llm_progress_pct": round(pct, 2),
+            }
+            sink.update_status(payload)
 
+    def _write_terminal_status(payload: Dict[str, Any]) -> None:
+        nonlocal status_terminal
+        with lock:
+            status_terminal = True
+            sink.update_status(payload)
+
+    heartbeat_stop, heartbeat_thread = _start_status_heartbeat(_write_running_progress)
     keepalive_stop, keepalive_thread = _maybe_start_preview_keepalive()
 
     try:
@@ -261,7 +310,7 @@ def main() -> int:
             }
             if isinstance(result, dict) and result.get("traceback"):
                 failed_payload["traceback"] = result.get("traceback")
-            sink.update_status(failed_payload)
+            _write_terminal_status(failed_payload)
             _append_progress_line(progress_file, "Site Run Finalized: failed")
             legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
@@ -343,7 +392,7 @@ def main() -> int:
                 "persistence_error": persistence_error or "DB persistence failed.",
                 "error": "",
             }
-            sink.update_status(completed_with_warning)
+            _write_terminal_status(completed_with_warning)
             _append_progress_line(progress_file, "Site Run Finalized: completed")
             legacy_port._deepseek_simple_full = original_full
             legacy_port.deepseek_simple_text = original_deepseek
@@ -364,7 +413,7 @@ def main() -> int:
             "observed_cost_usd": observed_cost_usd,
             "report_id": report_id,
         }
-        sink.update_status(completed_payload)
+        _write_terminal_status(completed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: completed")
         legacy_port._deepseek_simple_full = original_full
         legacy_port.deepseek_simple_text = original_deepseek
@@ -391,10 +440,12 @@ def main() -> int:
             "error": str(exc),
             "traceback": traceback.format_exc(limit=6),
         }
-        sink.update_status(failed_payload)
+        _write_terminal_status(failed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: failed")
         return 1
     finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=2)
         # Stop the preview keep-alive so the machine can auto-stop once the run
         # ends. Runs on every return/exception path above.
         if keepalive_stop is not None:

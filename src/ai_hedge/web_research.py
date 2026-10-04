@@ -4,6 +4,8 @@ import json
 import ipaddress
 import os
 import re
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -17,6 +19,8 @@ DEFAULT_RESULTS_PER_KIND = 4
 DEFAULT_EXTRACTS_PER_QUERY = 2
 MAX_EXTRACT_CHARS = 3_500
 MAX_SNIPPET_CHARS = 700
+DEFAULT_STAGE_TIMEOUT_SECONDS = 45 * 60
+MAX_STAGE_TIMEOUT_SECONDS = 60 * 60
 
 
 LlmCallable = Callable[..., str]
@@ -36,6 +40,14 @@ def _env_positive_int(name: str, default: int, *, maximum: int) -> int:
     except Exception:
         return default
     return min(parsed, maximum) if parsed > 0 else default
+
+
+def _stage_timeout_seconds() -> int:
+    return _env_positive_int(
+        "WEB_RESEARCH_STAGE_TIMEOUT_SECONDS",
+        DEFAULT_STAGE_TIMEOUT_SECONDS,
+        maximum=MAX_STAGE_TIMEOUT_SECONDS,
+    )
 
 
 def _parse_json_payload(text: str) -> Any:
@@ -524,6 +536,128 @@ def _write_artifacts(payload: Dict[str, Any], *, output_dir: Path, ticker: str) 
     payload["artifact_txt"] = str(text_path.resolve())
     text_path.write_text(build_web_search_markdown(payload) + "\n", encoding="utf-8")
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _isolated_failure_payload(
+    *,
+    ticker: str,
+    output_dir: str | Path,
+    message: str,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    generated_at = now or datetime.now(timezone.utc)
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=timezone.utc)
+    ticker_clean = str(ticker or "").strip().upper()
+    payload: Dict[str, Any] = {
+        "status": "error",
+        "ticker": ticker_clean,
+        "generated_at": generated_at.astimezone(timezone.utc).isoformat(),
+        "planner_model": "deepseek-reasoner",
+        "researcher_model": "deepseek-reasoner",
+        "search_provider": "DDGS metasearch (web + news)",
+        "queries": [],
+        "search_results": [],
+        "sources": [],
+        "report_markdown": "",
+        "errors": [_clean_text(message, max_chars=500)],
+    }
+    _write_artifacts(payload, output_dir=Path(output_dir), ticker=ticker_clean)
+    return payload
+
+
+def run_web_research_isolated(
+    *,
+    ticker: str,
+    company_name: str,
+    analysis_text: str,
+    api_key: str,
+    output_dir: str | Path,
+    now: Optional[datetime] = None,
+    timeout_seconds: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Run optional web research in a killable child process.
+
+    DDGS and provider libraries can block inside their own worker threads. A
+    thread-level timeout cannot safely stop those calls, so the complete
+    optional stage runs in a subprocess. Timeout, hard exit, malformed output,
+    or an OOM-killed child becomes an error artifact while the main analysis
+    continues.
+    """
+
+    timeout = int(timeout_seconds or _stage_timeout_seconds())
+    timeout = max(1, min(timeout, MAX_STAGE_TIMEOUT_SECONDS))
+    generated_at = now or datetime.now(timezone.utc)
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=timezone.utc)
+
+    obs_run_id = ""
+    try:
+        from . import obs as _obs
+
+        obs_run_id = str(_obs.RUN_ID.get() or "")
+    except Exception:
+        pass
+
+    request_payload = {
+        "ticker": str(ticker or "").strip().upper(),
+        "company_name": str(company_name or "").strip(),
+        "analysis_text": str(analysis_text or ""),
+        "output_dir": str(Path(output_dir).resolve()),
+        "generated_at": generated_at.astimezone(timezone.utc).isoformat(),
+        "obs_run_id": obs_run_id,
+    }
+    child_env = os.environ.copy()
+    child_env["DEEPSEEK_API_KEY"] = str(api_key or "")
+    src_root = str(Path(__file__).resolve().parents[1])
+    existing_pythonpath = str(child_env.get("PYTHONPATH") or "").strip()
+    child_env["PYTHONPATH"] = (
+        src_root + os.pathsep + existing_pythonpath if existing_pythonpath else src_root
+    )
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "ai_hedge.web_research_worker"],
+            input=json.dumps(request_payload, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=child_env,
+        )
+    except subprocess.TimeoutExpired:
+        return _isolated_failure_payload(
+            ticker=ticker,
+            output_dir=output_dir,
+            message=f"Web research exceeded its {timeout}-second stage timeout and was terminated.",
+            now=generated_at,
+        )
+    except Exception as exc:
+        return _isolated_failure_payload(
+            ticker=ticker,
+            output_dir=output_dir,
+            message=f"Web research subprocess could not start: {type(exc).__name__}: {exc}",
+            now=generated_at,
+        )
+
+    if completed.returncode != 0:
+        detail = _clean_text(completed.stderr, max_chars=320) or "no child-process error was captured"
+        return _isolated_failure_payload(
+            ticker=ticker,
+            output_dir=output_dir,
+            message=f"Web research subprocess exited with code {completed.returncode}: {detail}",
+            now=generated_at,
+        )
+
+    parsed = _parse_json_payload(completed.stdout)
+    if not isinstance(parsed, dict) or not str(parsed.get("status") or "").strip():
+        return _isolated_failure_payload(
+            ticker=ticker,
+            output_dir=output_dir,
+            message="Web research subprocess returned an invalid payload.",
+            now=generated_at,
+        )
+    return parsed
 
 
 def run_web_research(

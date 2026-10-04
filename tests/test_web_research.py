@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timezone
 
 from ai_hedge import web_research
@@ -160,3 +161,79 @@ def test_search_source_urls_reject_local_and_private_network_targets():
     assert web_research._canonical_url("http://169.254.169.254/metadata") == ""
     assert web_research._canonical_url("https://user:pass@example.com/private") == ""
     assert web_research._canonical_url("https://example.com/research#section") == "https://example.com/research"
+
+
+def test_isolated_web_research_passes_secret_only_through_child_environment(monkeypatch, tmp_path):
+    captured = {}
+    expected = {
+        "status": "success",
+        "ticker": "TEST",
+        "queries": [],
+        "search_results": [],
+        "sources": [],
+        "report_markdown": "done",
+        "errors": [],
+    }
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(expected), stderr="")
+
+    monkeypatch.setattr(web_research.subprocess, "run", fake_run)
+    payload = web_research.run_web_research_isolated(
+        ticker="TEST",
+        company_name="Test Corp",
+        analysis_text="Completed analysis",
+        api_key="secret-key",
+        output_dir=tmp_path,
+        timeout_seconds=123,
+    )
+
+    request = json.loads(captured["input"])
+    assert payload == expected
+    assert captured["timeout"] == 123
+    assert captured["env"]["DEEPSEEK_API_KEY"] == "secret-key"
+    assert "api_key" not in request
+    assert request["analysis_text"] == "Completed analysis"
+    assert captured["command"][-1] == "ai_hedge.web_research_worker"
+
+
+def test_isolated_web_research_timeout_writes_error_artifacts(monkeypatch, tmp_path):
+    def fake_run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(web_research.subprocess, "run", fake_run)
+    payload = web_research.run_web_research_isolated(
+        ticker="TEST",
+        company_name="Test Corp",
+        analysis_text="Completed analysis",
+        api_key="secret-key",
+        output_dir=tmp_path,
+        timeout_seconds=2_700,
+    )
+
+    assert payload["status"] == "error"
+    assert "2700-second stage timeout" in payload["errors"][0]
+    artifact = json.loads((tmp_path / "TEST_web_search.json").read_text(encoding="utf-8"))
+    assert artifact["status"] == "error"
+    assert (tmp_path / "TEST_web_search.txt").exists()
+
+
+def test_isolated_web_research_hard_exit_becomes_non_blocking_error(monkeypatch, tmp_path):
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 137, stdout="", stderr="worker was killed")
+
+    monkeypatch.setattr(web_research.subprocess, "run", fake_run)
+    payload = web_research.run_web_research_isolated(
+        ticker="TEST",
+        company_name="Test Corp",
+        analysis_text="Completed analysis",
+        api_key="secret-key",
+        output_dir=tmp_path,
+        timeout_seconds=2_700,
+    )
+
+    assert payload["status"] == "error"
+    assert "code 137" in payload["errors"][0]
+    assert "worker was killed" in payload["errors"][0]

@@ -2076,7 +2076,7 @@ def _run_ticker_valuation_impl(
     web_search_json = ""
     web_search_txt = ""
     try:
-        from .web_research import build_web_search_markdown, run_web_research
+        from .web_research import build_web_search_markdown, run_web_research_isolated
 
         info_payload = info_dict.get("info", {}) if isinstance(info_dict, dict) else {}
         company_name = ""
@@ -2087,7 +2087,8 @@ def _run_ticker_valuation_impl(
                 or info_dict.get("short_name")
                 or ticker
             ).strip()
-        web_search_payload = run_web_research(
+        _append_progress(progress_file, "Started Web Search Research")
+        web_search_payload = run_web_research_isolated(
             ticker=ticker,
             company_name=company_name or ticker,
             analysis_text=regular_text,

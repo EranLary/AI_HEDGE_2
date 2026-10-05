@@ -6,16 +6,27 @@ before any DB, dashboard, consensus, or product integration is considered.
 
 ## Credentials
 
-Create a project-scoped OpenAI API key with billing and a spending limit. Add it
-only to the repository-root `.env` file:
+Create project-scoped API keys with billing and spending limits. Add them only
+to the repository-root `.env` file:
 
 ```dotenv
 OPENAI_API_KEY=sk-...
+DEEPSEEK_API_KEY=sk-...
 ```
 
 The key must never be passed on the command line, written to artifacts, or
 committed. API billing is separate from ChatGPT billing. Quality-first defaults
 are documented in `.env.example`.
+
+The standalone DeepSeek path uses custom DDGS web/news/extraction tools because
+DeepSeek's API does not supply a built-in web-search tool. DeepSeek Flash drives
+the iterative retrieval loop; V4 Pro plans the investigation, builds the strict
+valuation case, and writes the report. Default safeguards are a $3 estimated
+usage cap, a 45-minute deadline (60-minute hard maximum), 80 tool calls, 36
+searches, 30 opened sources, one valuation-case repair, and one report repair.
+Provider dollar cost is estimated from returned token/cache usage and the
+official peak/off-peak rate for each call; it is not a provider-billed dollar
+field.
 
 ## Pipeline
 
@@ -63,6 +74,30 @@ Run the full narrative research and first-pass gates:
 ```powershell
 python scripts/run_deep_research.py --ticker IBKR
 ```
+
+Run the custom DeepSeek + DDGS engine against a new frozen snapshot:
+
+```powershell
+python scripts/run_provider_research.py --provider deepseek --ticker ITRN
+```
+
+Reuse a frozen snapshot for an apples-to-apples provider benchmark and enforce
+an explicit cost cap:
+
+```powershell
+python scripts/run_provider_research.py `
+  --provider deepseek `
+  --ticker ITRN `
+  --snapshot-file <SNAPSHOT_JSON> `
+  --max-cost-usd 3.0
+```
+
+DeepSeek runs retain the plan, every tool call, extracted source documents,
+evidence/coverage/contradiction ledgers, strict valuation case, compiler result,
+draft and pre-publication reviews, final report, quality gate, token-level cost
+ledger, and manifest. A structural or self-review pass is not publication
+approval; the common independent audit and deterministic target audit still
+must pass.
 
 Resume a background response from `state.json`:
 

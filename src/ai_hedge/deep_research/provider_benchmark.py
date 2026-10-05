@@ -133,11 +133,21 @@ def _gemini_cost(usage: Any) -> dict[str, Any]:
     thought_tokens = int(
         raw.get("total_thought_tokens") or raw.get("thought_tokens") or 0
     )
-    billable_input = max(0, input_tokens - cached_tokens)
-    token_estimate = (
-        billable_input * 0.50
-        + cached_tokens * 0.05
-        + (output_tokens + thought_tokens) * 3.00
+    tool_use_tokens = int(raw.get("total_tool_use_tokens") or 0)
+    billable_input = max(0, input_tokens + tool_use_tokens - cached_tokens)
+    billable_output = output_tokens + thought_tokens
+    # The agent reports cumulative usage, but not the per-step prompt sizes that
+    # determine Gemini 3.1 Pro's <=200k versus >200k rate. Preserve that
+    # uncertainty as a range rather than presenting false precision.
+    low_context_token_estimate = (
+        billable_input * 2.00
+        + cached_tokens * 0.20
+        + billable_output * 12.00
+    ) / 1_000_000
+    high_context_token_estimate = (
+        billable_input * 4.00
+        + cached_tokens * 0.40
+        + billable_output * 18.00
     ) / 1_000_000
     search_queries = 0
     for item in raw.get("grounding_tool_count") or []:
@@ -147,17 +157,27 @@ def _gemini_cost(usage: Any) -> dict[str, Any]:
     return {
         "currency": "USD",
         "kind": "usage_based_estimate",
-        "token_cost_estimate_usd": round(token_estimate, 6),
+        "token_cost_estimate_usd": round(low_context_token_estimate, 6),
+        "token_cost_estimate_range_usd": {
+            "minimum": round(low_context_token_estimate, 6),
+            "maximum": round(high_context_token_estimate, 6),
+        },
         "google_search_queries": search_queries,
         "search_cost_if_outside_free_allowance_usd": round(search_if_billable, 6),
-        "total_if_all_searches_billable_usd": round(
-            token_estimate + search_if_billable, 6
-        ),
+        "total_estimate_range_if_searches_free_usd": {
+            "minimum": round(low_context_token_estimate, 6),
+            "maximum": round(high_context_token_estimate, 6),
+        },
+        "total_estimate_range_if_all_searches_billable_usd": {
+            "minimum": round(low_context_token_estimate + search_if_billable, 6),
+            "maximum": round(high_context_token_estimate + search_if_billable, 6),
+        },
         "official_typical_task_estimate_usd": {"minimum": 1.0, "maximum": 3.0},
         "note": (
-            "Gemini does not return an exact billed-dollar field. Token rates use "
-            "Gemini 3.1 Pro Preview standard pricing; Google Search may be covered by "
-            "the account's monthly free allowance."
+            "Gemini does not return an exact billed-dollar field or per-step prompt "
+            "sizes. The range uses current Gemini 3.1 Pro Preview standard rates "
+            "for prompts at or below versus above 200k tokens. Google Search may "
+            "be covered by the account's monthly free allowance."
         ),
     }
 
@@ -293,10 +313,13 @@ class ProviderBenchmarkEngine:
         )
 
     def _run_gemini(self, prompt: str) -> tuple[Any, dict[str, Any]]:
+        # Gemini Deep Research does not accept a separate system instruction.
+        # Preserve the common provider contract by placing the same instructions
+        # ahead of the frozen research prompt.
+        combined_prompt = f"{DEVELOPER_INSTRUCTIONS.strip()}\n\n{prompt}"
         request = {
             "agent": self.model,
-            "input": prompt,
-            "system_instruction": DEVELOPER_INSTRUCTIONS,
+            "input": combined_prompt,
             "agent_config": {
                 "type": "deep-research",
                 "thinking_summaries": "none",

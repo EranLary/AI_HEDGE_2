@@ -59,9 +59,14 @@ def test_gemini_extracts_report_sources_and_usage_cost() -> None:
     assert _gemini_report_text(response) == "# Research\nDetailed report"
     assert _gemini_sources(response)[0]["url"] == "https://example.com/filing"
     cost = _gemini_cost(usage)
-    assert cost["token_cost_estimate_usd"] == pytest.approx(0.1175)
+    assert cost["token_cost_estimate_usd"] == pytest.approx(0.47)
+    assert cost["token_cost_estimate_range_usd"] == pytest.approx(
+        {"minimum": 0.47, "maximum": 0.76}
+    )
     assert cost["google_search_queries"] == 80
-    assert cost["total_if_all_searches_billable_usd"] == pytest.approx(1.2375)
+    assert cost["total_estimate_range_if_all_searches_billable_usd"] == pytest.approx(
+        {"minimum": 1.59, "maximum": 1.88}
+    )
 
 
 def test_xai_converts_provider_reported_cost_ticks() -> None:
@@ -86,8 +91,9 @@ def test_gemini_run_polls_and_writes_comparable_artifacts(tmp_path: Path) -> Non
             grounding_tool_count=[],
         ),
     )
+    calls: list[dict[str, object]] = []
     interactions = SimpleNamespace(
-        create=lambda **_kwargs: queued,
+        create=lambda **kwargs: calls.append(kwargs) or queued,
         get=lambda _interaction_id: completed,
     )
     engine = ProviderBenchmarkEngine(
@@ -104,6 +110,10 @@ def test_gemini_run_polls_and_writes_comparable_artifacts(tmp_path: Path) -> Non
     assert result.report_path.read_text(encoding="utf-8").startswith("# Final report")
     assert manifest["provider"] == "gemini"
     assert manifest["model_actual"] == "gemini-3.1-pro-preview"
+    assert "system_instruction" not in calls[0]
+    assert calls[0]["input"].startswith(
+        "You are an independent senior buy-side equity analyst"
+    )
     assert result.quality_path.exists()
 
 

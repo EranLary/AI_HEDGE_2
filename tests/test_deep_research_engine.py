@@ -1195,7 +1195,7 @@ def test_arithmetic_audit_rejects_non_reconciling_target_and_currency() -> None:
     assert {"arithmetic", "currency", "share_count"}.issubset(categories)
 
 
-def test_arithmetic_audit_blocks_any_major_semantic_issue() -> None:
+def test_arithmetic_audit_marks_major_semantic_issue_amber_but_usable() -> None:
     payload = {
         "valuation": {
             "reference_price": 80.0,
@@ -1224,7 +1224,42 @@ def test_arithmetic_audit_blocks_any_major_semantic_issue() -> None:
 
     result = validate_audit_arithmetic(payload, _snapshot())
 
+    assert result.usable_target is True
+    assert result.publication_status == "amber"
+
+
+def test_arithmetic_audit_blocks_critical_material_semantic_issue() -> None:
+    payload = {
+        "valuation": {
+            "reference_price": 80.0,
+            "target_price": 100.0,
+            "upside_downside_pct": 25.0,
+            "currency": "USD",
+            "diluted_shares_used": 100_000_000,
+            "methods": [
+                {
+                    "name": "Intrinsic",
+                    "value_per_share": 100.0,
+                    "weight_pct": 100.0,
+                    "used_in_final": True,
+                    "currency": "USD",
+                }
+            ],
+        },
+        "issues": [
+            {
+                "severity": "critical",
+                "category": "arithmetic",
+                "description": "Material formula mismatch",
+            }
+        ],
+    }
+
+    result = validate_audit_arithmetic(payload, _snapshot())
+
     assert result.usable_target is False
+    assert result.publication_status == "red"
+    assert result.hard_blockers
 
 
 @pytest.mark.parametrize("ticker", ["", "../AAPL", "AAPL USD", "A" * 33])

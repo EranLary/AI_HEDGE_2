@@ -18,15 +18,35 @@ The key must never be passed on the command line, written to artifacts, or
 committed. API billing is separate from ChatGPT billing. Quality-first defaults
 are documented in `.env.example`.
 
-The standalone DeepSeek path uses custom DDGS web/news/extraction tools because
-DeepSeek's API does not supply a built-in web-search tool. DeepSeek Flash drives
+The standalone DeepSeek path uses an explicit DDGS web/news engine ensemble,
+with an optional self-hosted SearXNG endpoint, because DeepSeek's API does not
+supply a built-in web-search tool. Trafilatura is the first HTML extractor and
+DDGS extraction is the fallback. DeepSeek Flash drives
 the iterative retrieval loop; V4 Pro plans the investigation, builds the strict
 valuation case, and writes the report. Default safeguards are a $3 estimated
 usage cap, a 45-minute deadline (60-minute hard maximum), 80 tool calls, 36
-searches, 30 opened sources, one valuation-case repair, and one report repair.
+searches, 30 opened sources, up to two focused valuation-case repairs, and one
+report repair. The second case repair exists for compiler-localized defects; it
+does not weaken or auto-correct the valuation contract.
 Provider dollar cost is estimated from returned token/cache usage and the
 official peak/off-peak rate for each call; it is not a provider-billed dollar
 field.
+
+Before the model plans any searches, v2 builds `research_input_packet.json`
+from Yahoo identity/descriptive fields, a frozen market price, FX (including
+explicit inversion provenance), and a 10-year Treasury routing proxy. Yahoo
+financial-statement values and Yahoo share count are explicitly forbidden as
+final valuation evidence. The engine then calls the platform's existing filing
+router: SEC for non-`.TA` tickers and MAYA for `.TA` tickers. Downloaded filings
+are persisted under `primary_filings/` and injected as already-opened primary
+sources. Set a real contact string in `SEC_USER_AGENT`. Set
+`DEEP_RESEARCH_SEARXNG_URL` only when a private SearXNG JSON API is available;
+the explicit DDGS ensemble remains the no-infrastructure fallback.
+
+The compiler owns the final `Valuation Control Summary`. Python renders the
+reference/target dates, share denominator, method values, weights, target,
+upside and rate inputs directly from the validated case. The report writer may
+explain those values but cannot silently replace them.
 
 ## Pipeline
 
@@ -49,7 +69,8 @@ The current standalone pipeline separates prose quality from valuation truth:
 8. Use a sector compiler when a generic valuation contract is insufficient.
    The first sector implementation is the driver-based broker compiler.
 
-A report is publication-ready only when all of the following are true:
+A report is publication-ready under the original strict common audit only when
+all of the following are true:
 
 - deterministic report quality passes;
 - semantic audit score is at least 85;
@@ -60,6 +81,24 @@ A report is publication-ready only when all of the following are true:
 The latest repair is never promoted merely because it is latest. Candidate
 selection retains every version and ranks publication readiness and blockers
 before scores.
+
+DeepSeek v2 additionally writes `research_grade.json` with separate research
+and valuation grades. Its traffic-light rule is deliberately more useful than
+the old all-or-nothing gate:
+
+- **Red**: deterministic compiler failure or another material valuation blocker;
+  no target is usable.
+- **Amber**: the compiled target is usable with disclosed research/review
+  limitations. Shortness, a missing secondary section, or another repairable
+  major observation does not erase the target by itself.
+- **Green**: compiler, structural target and pre-publication review all pass
+  without findings.
+
+The independent semantic audit follows the same principle: only critical
+identity, freshness, currency, share-count, valuation-method, arithmetic or
+contradiction failures block the target. Major issues remain Amber advisories.
+This status is an evaluation artifact, not authorization to publish into the
+platform.
 
 ## Main commands
 
@@ -81,6 +120,18 @@ Run the custom DeepSeek + DDGS engine against a new frozen snapshot:
 python scripts/run_provider_research.py --provider deepseek --ticker ITRN
 ```
 
+Reuse a completed evidence packet and rerun only valuation and publication:
+
+```powershell
+python scripts/refine_deepseek_research.py `
+  --run-dir <COMPLETED_DEEPSEEK_RUN_DIR> `
+  --max-cost-usd 2.0
+```
+
+Refinement is deliberately cheaper than repeating discovery. It creates an
+immutable child under `refinements/`, retains its own marginal cost ledger, and
+does not overwrite the parent research run.
+
 Reuse a frozen snapshot for an apples-to-apples provider benchmark and enforce
 an explicit cost cap:
 
@@ -92,10 +143,11 @@ python scripts/run_provider_research.py `
   --max-cost-usd 3.0
 ```
 
-DeepSeek runs retain the plan, every tool call, extracted source documents,
+DeepSeek runs retain the input packet, primary-filing manifest and full filing
+text, plan, every tool call, extracted source documents,
 evidence/coverage/contradiction ledgers, strict valuation case, compiler result,
 draft and pre-publication reviews, final report, quality gate, token-level cost
-ledger, and manifest. A structural or self-review pass is not publication
+ledger, traffic-light grade, and manifest. A structural or self-review pass is not publication
 approval; the common independent audit and deterministic target audit still
 must pass.
 
@@ -229,3 +281,42 @@ recommendation, or manual ChatGPT benchmark report. Existing IBKR and ITRN
 reports remain held-out evaluator inputs. Once the broker-specific automated
 path passes IBKR, ITRN is the next blind company test, followed by the user's
 additional held-out report.
+
+## Blind ITRN v2 benchmark, 2026-10-06
+
+The v2 search/evidence layer was run twice from the same frozen snapshot
+(`$52.53`, 2026-10-04) without exposing the engine to the manual ChatGPT report
+or the platform target. Both full runs passed the deterministic research-depth
+gate with a score of 100. They cost $0.766364 and $0.743040, an average of
+$0.754702 per full run. Four valuation-only refinements cost $0.148244 to
+$0.417190 each. The total $2.806699 spent below is an engineering experiment
+total, not an expected per-ticker production cost.
+
+No v2 ITRN target is approved. This is an intentionally negative but useful
+result:
+
+| Candidate | Marginal cost | Result | Status |
+|---|---:|---|---|
+| Full run 1 | $0.766364 | 7,523-word research report; FCFE date mismatch prevented a target | Red |
+| Full run 2 | $0.743040 | 9,724-word research report; valuation repairs did not produce a valid case | Red |
+| Refinement 1 | $0.148244 | No valid target | Red |
+| Refinement 2 | $0.417190 | $10.37 asset/book-only target for a going concern | Rejected |
+| Refinement 3 | $0.355372 | $58.70 FCFE target with a material forecast-date mismatch | Rejected |
+| Refinement 4 | $0.376489 | Near-zero residual-income target caused by per-share/total-share unit mixing | Rejected |
+
+The three rejected compiled cases produced permanent controls: a going concern
+must include an income or cash-flow method; forecast periods must align with
+their actual cash-flow dates; residual-income inputs must be absolute company
+totals rather than per-share values; and share units are normalized before
+compilation. These failures are material Red blockers. Minor citation,
+shortness, or coverage observations remain Amber advisories and do not erase an
+otherwise valid target.
+
+The main unresolved acquisition issue is primary evidence. SEC returned HTTP
+403 from the live test environment, so the filing manifest correctly records no
+usable direct filing rather than silently treating a search result as one. The
+optional SearXNG branch is implemented but was not exercised locally because a
+Docker/SearXNG service was unavailable; DDGS plus Trafilatura was the live
+fallback. A fresh held-out run is required after direct SEC/MAYA acquisition is
+proven. Until then, v2 is a stronger research system, not a validated final
+price setter.

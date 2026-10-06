@@ -56,6 +56,7 @@ class QualityFinding:
 @dataclass(frozen=True)
 class QualityGateResult:
     passed: bool
+    publication_status: str
     score: int
     word_count: int
     source_count: int
@@ -103,7 +104,7 @@ def evaluate_report_quality(
     elif word_count < 3_500:
         findings.append(
             QualityFinding(
-                "critical",
+                "warning",
                 "report_too_short",
                 f"Report has {word_count} words; minimum research gate is 3,500.",
             )
@@ -122,7 +123,7 @@ def evaluate_report_quality(
     if len(source_rows) < 15:
         findings.append(
             QualityFinding(
-                "critical",
+                "warning",
                 "insufficient_sources",
                 f"Only {len(source_rows)} unique web sources were retained; minimum is 15.",
             )
@@ -131,7 +132,7 @@ def evaluate_report_quality(
     if len(cited_sources) < 10:
         findings.append(
             QualityFinding(
-                "critical",
+                "warning",
                 "insufficient_citations",
                 f"Only {len(cited_sources)} unique sources are cited in the report; minimum is 10.",
             )
@@ -142,7 +143,7 @@ def evaluate_report_quality(
     if covered < minimum_sections:
         findings.append(
             QualityFinding(
-                "critical",
+                "warning",
                 "incomplete_section_coverage",
                 f"Only {covered}/{len(_SECTION_MARKERS)} required topic headings were detected; "
                 f"minimum is {minimum_sections}.",
@@ -156,7 +157,7 @@ def evaluate_report_quality(
         ]
         findings.append(
             QualityFinding(
-                "critical",
+                "warning",
                 "incomplete_valuation_controls",
                 "Missing valuation control concepts: " + ", ".join(missing),
             )
@@ -194,11 +195,12 @@ def evaluate_report_quality(
         score -= 20
 
     score = max(0, min(100, score))
-    passed = score >= 80 and not any(
-        finding.severity == "critical" for finding in findings
-    )
+    hard_blockers = [finding for finding in findings if finding.severity == "critical"]
+    passed = score >= 65 and not hard_blockers
+    publication_status = "red" if hard_blockers else ("amber" if findings else "green")
     return QualityGateResult(
         passed=passed,
+        publication_status=publication_status,
         score=score,
         word_count=word_count,
         source_count=len(source_rows),

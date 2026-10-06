@@ -11,6 +11,16 @@ from .snapshot import CompanySnapshot
 
 AUDIT_VERSION = "equity-research-audit-v1"
 
+_HARD_BLOCKER_CATEGORIES = {
+    "identity",
+    "freshness",
+    "currency",
+    "share_count",
+    "valuation_method",
+    "arithmetic",
+    "contradiction",
+}
+
 
 def valuation_audit_schema() -> dict[str, Any]:
     nullable_number = {"type": ["number", "null"]}
@@ -266,12 +276,15 @@ def run_semantic_audit(
 @dataclass(frozen=True)
 class ArithmeticCheck:
     usable_target: bool
+    publication_status: str
     configured_target_price: Optional[float]
     recomputed_target_price: Optional[float]
     configured_upside_downside_pct: Optional[float]
     recomputed_upside_downside_pct: Optional[float]
     effective_weight_pct: float
     issues: tuple[dict[str, str], ...]
+    hard_blockers: tuple[dict[str, str], ...]
+    advisories: tuple[dict[str, str], ...]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -391,26 +404,36 @@ def validate_audit_arithmetic(
             }
         )
 
-    semantic_issues = payload.get("issues")
-    if isinstance(semantic_issues, list):
-        blocking_semantic = any(
-            isinstance(issue, Mapping)
-            and issue.get("severity") in {"critical", "major"}
-            for issue in semantic_issues
-        )
-    else:
-        blocking_semantic = False
-    usable = not blocking_semantic and not any(
-        issue["severity"] == "critical" for issue in issues
+    semantic_issues_raw = payload.get("issues")
+    semantic_issues = (
+        [dict(issue) for issue in semantic_issues_raw if isinstance(issue, Mapping)]
+        if isinstance(semantic_issues_raw, list)
+        else []
     )
+    deterministic_blockers = [issue for issue in issues if issue["severity"] == "critical"]
+    semantic_blockers = [
+        issue
+        for issue in semantic_issues
+        if issue.get("severity") == "critical"
+        and issue.get("category") in _HARD_BLOCKER_CATEGORIES
+    ]
+    hard_blockers = deterministic_blockers + semantic_blockers
+    advisories = [
+        issue for issue in issues + semantic_issues if issue not in hard_blockers
+    ]
+    usable = not hard_blockers
+    publication_status = "red" if hard_blockers else ("amber" if advisories else "green")
     return ArithmeticCheck(
         usable_target=usable,
+        publication_status=publication_status,
         configured_target_price=configured_target,
         recomputed_target_price=recomputed_target,
         configured_upside_downside_pct=configured_upside,
         recomputed_upside_downside_pct=recomputed_upside,
         effective_weight_pct=effective_weight,
         issues=tuple(issues),
+        hard_blockers=tuple(hard_blockers),
+        advisories=tuple(advisories),
     )
 
 

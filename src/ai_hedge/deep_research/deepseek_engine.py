@@ -24,7 +24,7 @@ from .snapshot import CompanySnapshot
 
 DEEPSEEK_PRO_MODEL = "deepseek-v4-pro"
 DEEPSEEK_FLASH_MODEL = "deepseek-flash"
-ENGINE_VERSION = "deepseek-agentic-research-v2"
+ENGINE_VERSION = "deepseek-agentic-research-v3"
 
 
 def _utc_now() -> datetime:
@@ -333,6 +333,7 @@ class SourceRepository:
                 item.get("body") or item.get("description") or "", max_chars=1_200
             ),
             "content_excerpt": "",
+            "focused_excerpts": [],
             "opened": False,
             "consulted": True,
             "cited": False,
@@ -594,20 +595,46 @@ class SourceRepository:
         if not row:
             return {"error": "unknown source_id"}
         text = str(row.get("content_excerpt") or row.get("snippet") or "")
+        local_path = str(row.get("local_path") or "").strip()
+        if local_path:
+            try:
+                text = Path(local_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                pass
         query = str(pattern or "").strip()
         if not query:
             return {"error": "pattern is empty"}
         lowered = text.casefold()
-        index = lowered.find(query.casefold())
-        if index < 0:
+        needle = query.casefold()
+        positions: list[int] = []
+        cursor = 0
+        while len(positions) < 4:
+            index = lowered.find(needle, cursor)
+            if index < 0:
+                break
+            positions.append(index)
+            cursor = index + max(1, len(needle))
+        if not positions:
             return {"source_id": source_id, "pattern": query, "found": False}
-        start = max(0, index - 900)
-        end = min(len(text), index + len(query) + 1_800)
+        matches: list[str] = []
+        for index in positions:
+            start = max(0, index - 700)
+            end = min(len(text), index + len(query) + 1_500)
+            excerpt = text[start:end]
+            matches.append(excerpt)
+            focused = row.setdefault("focused_excerpts", [])
+            if isinstance(focused, list) and len(focused) < 12 and not any(
+                str(item.get("excerpt") or "") == excerpt
+                for item in focused
+                if isinstance(item, Mapping)
+            ):
+                focused.append({"pattern": query, "excerpt": excerpt})
         return {
             "source_id": source_id,
             "pattern": query,
             "found": True,
-            "excerpt": text[start:end],
+            "excerpt": matches[0],
+            "matches": matches,
         }
 
     def redact_for_provider_filter(self, source_id: str) -> bool:
@@ -644,6 +671,7 @@ class SourceRepository:
                 "provider_blocked": bool(row.get("provider_blocked")),
                 "snippet": row["snippet"],
                 "content_excerpt": row["content_excerpt"],
+                "focused_excerpts": row.get("focused_excerpts") or [],
             }
             for row in self.sources.values()
             if row.get("opened") or row.get("snippet")
@@ -753,7 +781,11 @@ Create the research plan for an autonomous institutional equity investigation. D
 report and do not estimate a target price. Convert the mandate into a skeptical hypothesis tree and
 an executable source plan. Require primary filings, latest interim results, exact share count,
 cash/debt and operating-liability classification, same-period peers, dated discount-rate inputs,
-sector KPIs, contrary evidence, and explicit completion criteria.
+sector KPIs, contrary evidence, and explicit completion criteria. For a profitable non-financial
+company, explicitly plan both (a) an intrinsic cash-flow valuation and (b) a normalized representative
+earnings estimate multiplied by a representative P/E or EV/EBIT multiple. The earnings plan must
+separate recurring operations from one-offs, stock compensation policy, acquisition accounting,
+capitalized development costs, and unusual tax effects.
 
 Frozen snapshot:
 {json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2)}
@@ -856,6 +888,16 @@ support for material numerical claims; open the source before relying on it. Do 
 superficial search. When the evidence is sufficient, return a concise controller summary describing
 coverage, unresolved gaps, and contradictions.
 """.strip()
+        preloaded_source_index = [
+            {
+                "source_id": row.get("source_id"),
+                "title": row.get("title"),
+                "published_at": row.get("published_at"),
+                "kind": row.get("kind"),
+            }
+            for row in sources.sources.values()
+            if row.get("kind") in {"primary_filing", "deterministic_market_input"}
+        ]
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system},
             {
@@ -863,6 +905,11 @@ coverage, unresolved gaps, and contradictions.
                 "content": (
                     f"Frozen snapshot:\n{json.dumps(snapshot.to_dict(), ensure_ascii=False)}\n\n"
                     f"Research plan:\n{json.dumps(plan, ensure_ascii=False, indent=2)}\n\n"
+                    "Preloaded authoritative sources already opened by the platform filing router:\n"
+                    f"{json.dumps(preloaded_source_index, ensure_ascii=False, indent=2)}\n\n"
+                    "Inspect preloaded primary filings with find_in_source before web-searching financial "
+                    "statement facts. The complete local filing is searchable even when open_source returns "
+                    "only an excerpt.\n\n"
                     f"Full mandate:\n{mandate}"
                 ),
             },
@@ -1077,15 +1124,23 @@ Mandatory economic controls:
 4. Never mix FCFF with cost of equity or FCFE with WACC.
 5. Match trailing peer multiples with trailing subject metrics or forward with forward.
 6. Every positive-weight method needs enough sourced evidence to reproduce it.
-7. Prefer one or two valid methods over a fabricated additional method.
+7. For a profitable non-financial operating company, the default is two independent methods: an
+   intrinsic DCF/FCFE and a normalized-earnings multiple. Explicitly reconcile the representative
+   earnings metric from reported GAAP results, recurring adjustments, tax normalization and the
+   target-period operating outlook. Do not use management non-GAAP EPS without showing the exclusions.
+   Prefer one valid method only when the evidence genuinely cannot support the second.
 8. Omit every unsupported method entirely, including a nominal zero-weight method. Every method in the
    array must be fully valid, must have positive weight, and positive weights must sum to 100%.
 9. Valuation is forward-looking analysis, so sourced historical/LTM facts may be projected with explicit
    analyst-assumption evidence items. State the driver, rationale and sensitivity; do not treat the absence
    of a sell-side forecast as a reason to return no methods when a sound cash-flow or residual-income base
    exists. Prefer conservative, transparent assumptions to false precision.
-10. A multiple method is a peer method, not a subject-company self-multiple. It requires at least three
-    individually sourced same-basis peer observations plus a separately evidenced premium/discount.
+10. A multiple method should use at least three individually sourced same-basis peer observations plus
+    a separately evidenced premium/discount when comparable data are available. If the packet cannot
+    support three clean same-basis peers, an explicitly labeled analyst-assumption representative
+    multiple is allowed instead: put it in peer_statistic_evidence_id, explain the chosen multiple using
+    growth, margins, recurring revenue, balance-sheet quality and disruption risk, use no peer ids, and
+    show a sensitivity range. Never disguise an analyst-selected multiple as an observed peer median.
 11. Return no methods only when the packet lacks both a usable share denominator and any economically
     coherent historical cash-flow, earnings/book-value, or asset base from which assumptions can be built.
 12. Forecast timing is economic, not cosmetic. Date each cash flow after the common target/value date,

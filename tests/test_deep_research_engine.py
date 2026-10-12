@@ -497,6 +497,39 @@ def test_valuation_compiler_recomputes_methods_consensus_and_return() -> None:
     )
 
 
+def test_valuation_compiler_accepts_reasoned_representative_multiple_without_peers() -> None:
+    case = _compiler_case()
+    multiple = case["methods"][1]
+    multiple["peer_multiple_evidence_ids"] = []
+    multiple["peer_statistic_evidence_id"] = "representative_pe"
+    multiple["premium_discount_evidence_id"] = None
+    multiple["applied_multiple"] = 14.0
+    multiple["evidence_ids"] = [
+        "forward_eps",
+        "representative_pe",
+    ]
+    case["evidence"].extend(
+        [
+            {
+                "id": "representative_pe",
+                "kind": "analyst_assumption",
+                "value": 14.0,
+                "unit": "P/E multiple",
+                "as_of_date": "2026-10-03",
+                "source_url": None,
+                "rationale": (
+                    "Selected for moderate growth, recurring revenue, strong margins and cash, "
+                    "offset by execution and disruption risk."
+                ),
+            },
+        ]
+    )
+
+    result = compile_valuation_case(case)
+
+    assert result.methods[1].value_per_share == pytest.approx(56.0)
+
+
 def test_valuation_compiler_rejects_mixed_dates_and_multiple_basis() -> None:
     case = _compiler_case()
     case["methods"][1]["value_date"] = "2026-10-03"

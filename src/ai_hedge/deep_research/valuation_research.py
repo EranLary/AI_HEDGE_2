@@ -66,9 +66,11 @@ of these contracts:
    explicitly converted to distributable FCFE.
 5. For residual income, make beginning book equity and every forecast period consistent with target_date;
    include net income, dividends, terminal ROE, and a bridge from final explicit ROE to terminal ROE.
-6. For multiples, use at least three individually sourced same-period peer multiples. Put their ids in
-   peer_multiple_evidence_ids. Match trailing with trailing or forward with forward. The compiler calculates
-   the median and the applied premium/discount.
+6. For multiples, use at least three individually sourced same-period peer multiples when available. Put
+   their ids in peer_multiple_evidence_ids and match trailing with trailing or forward with forward. If
+   clean peer data are unavailable, an analyst-assumption representative multiple is permitted only when
+   its rationale explicitly addresses growth, margins, recurring revenue, balance sheet and disruption
+   risk; put it in peer_statistic_evidence_id and do not imply that it is an observed peer median.
 7. For CAPM, provide separate risk-free, beta, ERP, and additional-premium evidence ids. The claimed cost
    of equity must equal risk-free + beta x ERP + additional premium. A build-up method needs a full rationale.
 8. A liquidation, book, or downside anchor that is not a going-concern fair value must have zero weight.

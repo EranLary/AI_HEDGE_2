@@ -208,9 +208,11 @@ Rules:
    the report. Do not silently align differing dates.
 6. For a multiple method, peer_metric_basis and subject_metric_basis are trailing or forward. The peer
    observations, premium/discount, subject metric, and applied multiple must be separately extractable.
-   Put at least three same-basis, individually sourced peer multiple evidence ids in
-   peer_multiple_evidence_ids; the compiler calculates the median. Do not supply a model-computed median
-   in place of the underlying observations.
+   When the report uses peers, put at least three same-basis, individually sourced peer multiple evidence
+   ids in peer_multiple_evidence_ids; the compiler calculates the median. When the report explicitly uses
+   an analyst-selected representative multiple because clean peer data are unavailable, leave peer ids
+   empty and extract that multiple as an analyst_assumption in peer_statistic_evidence_id with its full
+   rationale. Never convert a weak peer table into a fabricated median.
 7. For a residual-income method, include every explicit period, beginning book equity, cost of equity,
    terminal growth, terminal ROE, and the report's bridge rationale. Do not create missing forecast rows.
 8. Include only methods assigned a numeric weight in the final weighted target, including zero-weight

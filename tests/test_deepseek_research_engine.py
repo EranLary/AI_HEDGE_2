@@ -159,6 +159,40 @@ def test_source_repository_registers_preloaded_primary_filing(tmp_path: Path) ->
     assert repository.sources[source_id]["extraction_provider"] == "platform SEC/MAYA filing router"
 
 
+def test_find_searches_complete_preloaded_filing_and_retains_focused_excerpt(
+    tmp_path: Path,
+) -> None:
+    filing_path = tmp_path / "annual-filing.txt"
+    filing_path.write_text(
+        "opening summary\n"
+        + ("ordinary disclosure\n" * 2_000)
+        + "Stock-based compensation was 146 million.\n",
+        encoding="utf-8",
+    )
+    repository = SourceRepository(
+        output_dir=tmp_path,
+        config=DeepSeekResearchConfig(max_source_chars=200),
+    )
+    source_id = repository.register_preloaded(
+        {
+            "title": "Annual filing",
+            "url": "https://www.sec.gov/Archives/annual.htm",
+            "publisher": "SEC EDGAR",
+            "published_at": "2026-02-26",
+            "kind": "primary_filing",
+            "text": filing_path.read_text(encoding="utf-8"),
+            "local_path": str(filing_path),
+        }
+    )
+
+    found = repository.find(source_id=source_id, pattern="stock-based compensation")
+
+    assert found["found"] is True
+    assert "146 million" in found["matches"][0]
+    packet = repository.evidence_packet()
+    assert packet[0]["focused_excerpts"][0]["pattern"] == "stock-based compensation"
+
+
 def test_combined_search_interleaves_web_and_news_results(tmp_path: Path) -> None:
     repository = SourceRepository(
         output_dir=tmp_path,

@@ -725,9 +725,9 @@ HEADERS = {
     "User-Agent": str(
         os.getenv(
             "SEC_USER_AGENT",
-            "AI_HEDGE_2 research engine (https://github.com/EranLary/AI_HEDGE_2)",
+            "AI_HEDGE_2 research engine research@hedge-in-a-box.com",
         )
-        or "AI_HEDGE_2 research engine (https://github.com/EranLary/AI_HEDGE_2)"
+        or "AI_HEDGE_2 research engine research@hedge-in-a-box.com"
     ).strip(),
     "Accept-Encoding": "gzip, deflate",
     "Host": "data.sec.gov"

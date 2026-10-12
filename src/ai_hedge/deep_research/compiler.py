@@ -396,19 +396,33 @@ def _compile_multiple(
             issues.append(f"{name} requires at least three sourced peer multiples")
         peer_statistic = statistics.median(peer_values) if peer_values else 0.0
     else:
+        representative_id = method.get("peer_statistic_evidence_id")
         peer_statistic = _evidence_number(
             evidence,
-            method.get("peer_statistic_evidence_id"),
-            f"{name} peer statistic",
+            representative_id,
+            f"{name} representative multiple",
             issues,
         )
-        if weight > 0:
-            issues.append(f"{name} requires peer_multiple_evidence_ids for deterministic median")
-    premium = _evidence_rate(
-        evidence,
-        method.get("premium_discount_evidence_id"),
-        f"{name} premium or discount",
-        issues,
+        representative_row = evidence.get(str(representative_id or "").strip())
+        if weight > 0 and (
+            not representative_row
+            or str(representative_row.get("kind") or "") != "analyst_assumption"
+            or not str(representative_row.get("rationale") or "").strip()
+        ):
+            issues.append(
+                f"{name} without three peer multiples requires a reasoned analyst-assumption "
+                "representative multiple"
+            )
+    premium_id = method.get("premium_discount_evidence_id")
+    premium = (
+        _evidence_rate(
+            evidence,
+            premium_id,
+            f"{name} premium or discount",
+            issues,
+        )
+        if premium_id
+        else 0.0
     )
     applied_multiple = peer_statistic * (1 + premium)
     claimed_multiple = _number(method.get("applied_multiple"), f"{name} applied multiple", issues)

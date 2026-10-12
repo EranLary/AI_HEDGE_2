@@ -32,7 +32,7 @@ Provider dollar cost is estimated from returned token/cache usage and the
 official peak/off-peak rate for each call; it is not a provider-billed dollar
 field.
 
-Before the model plans any searches, v2 builds `research_input_packet.json`
+Before the model plans any searches, v3 builds `research_input_packet.json`
 from Yahoo identity/descriptive fields, a frozen market price, FX (including
 explicit inversion provenance), and a 10-year Treasury routing proxy. Yahoo
 financial-statement values and Yahoo share count are explicitly forbidden as
@@ -42,6 +42,20 @@ are persisted under `primary_filings/` and injected as already-opened primary
 sources. Set a real contact string in `SEC_USER_AGENT`. Set
 `DEEP_RESEARCH_SEARXNG_URL` only when a private SearXNG JSON API is available;
 the explicit DDGS ensemble remains the no-infrastructure fallback.
+
+The SEC/MAYA router exposes downloaded filings as pre-opened research sources.
+The controller receives their source IDs and `find_in_source` searches the
+complete saved filing, not merely the first excerpt retained in the prompt.
+Focused matches are retained in the evidence packet so accounting notes and
+late-document tables can reach evidence normalization without sending an entire
+hundreds-of-thousands-character filing to the model.
+
+For profitable non-financial companies, valuation defaults to two independent
+methods: intrinsic cash flow and normalized representative earnings multiplied
+by a representative multiple. Three same-basis sourced peers remain preferred.
+When clean peer data are unavailable, the compiler permits a clearly labeled,
+reasoned analyst-assumption multiple instead of either fabricating a peer median
+or discarding the earnings cross-check.
 
 The compiler owns the final `Valuation Control Summary`. Python renders the
 reference/target dates, share denominator, method values, weights, target,

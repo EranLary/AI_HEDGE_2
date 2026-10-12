@@ -22,7 +22,7 @@ SLICKCHARTS_NASDAQ100_URL = "https://www.slickcharts.com/nasdaq100"
 TRADINGVIEW_TA125_URL = "https://il.tradingview.com/symbols/TASE-TA125/components/"
 TRADINGVIEW_ISRAEL_SCAN_URL = "https://scanner.tradingview.com/israel/scan"
 WIKIPEDIA_SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 UNIVERSE_CONFIGS = {
     "sp500": {
         "label": "S&P 500",
@@ -47,6 +47,16 @@ UNIVERSE_CONFIGS = {
     },
 }
 VALUATION_METRIC_KEYS = ("peRatio", "pbRatio", "evToEbitda", "evToRevenue", "evToFcf")
+PB_RATIO_METRIC_KEY = "pbRatio"
+PB_ELIGIBLE_SECTORS = frozenset(
+    {
+        "financial services",
+        "real estate",
+        "utilities",
+        "industrials",
+        "basic materials",
+    }
+)
 MARGIN_METRIC_KEYS = ("grossMargin", "ebitdaMargin", "operatingMargin", "netProfitMargin", "fcfMargin")
 QUALITY_METRIC_KEYS = (
     *MARGIN_METRIC_KEYS,
@@ -57,6 +67,11 @@ QUALITY_METRIC_KEYS = (
     "debtToEquity",
 )
 VALUATION_CONFIGS = {metric: {"direction": "lower", "weight": 0.20} for metric in VALUATION_METRIC_KEYS}
+NON_PB_VALUATION_CONFIGS = {
+    metric: {"direction": "lower", "weight": 0.25}
+    for metric in VALUATION_METRIC_KEYS
+    if metric != PB_RATIO_METRIC_KEY
+}
 QUALITY_CONFIGS = {
     "fcfMargin": {"direction": "higher", "weight": 0.10},
     "operatingMargin": {"direction": "higher", "weight": 0.10},
@@ -119,6 +134,16 @@ class _TableParser(HTMLParser):
 
 def _clean_text(value: Any) -> str:
     return re.sub(r"\s+", " ", unescape(str(value or ""))).strip()
+
+
+def _normalized_sector_name(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _valuation_configs_for_sector(sector: Any) -> Dict[str, Dict[str, Any]]:
+    if _normalized_sector_name(sector) in PB_ELIGIBLE_SECTORS:
+        return VALUATION_CONFIGS
+    return NON_PB_VALUATION_CONFIGS
 
 
 def _json_safe(value: Any) -> Any:
@@ -420,9 +445,10 @@ def _has_usable_data(profile: Dict[str, Any], analysis: Dict[str, Any]) -> bool:
         return True
     if _positive_number(analysis.get("currentPrice")) is not None:
         return True
+    valuation_configs = _valuation_configs_for_sector(profile.get("sector"))
     return any(
         _normalized_metric_value(metric, analysis.get(metric)) is not None
-        for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)
+        for metric in (*valuation_configs, *QUALITY_METRIC_KEYS)
     )
 
 
@@ -844,7 +870,8 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
             continue
         sector = _group_key(str(row.get("sector") or ""))
         industry = _group_key(str(row.get("industry") or ""))
-        for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS):
+        valuation_configs = _valuation_configs_for_sector(sector)
+        for metric in (*valuation_configs, *QUALITY_METRIC_KEYS):
             value = _normalized_metric_value(metric, analysis.get(metric))
             if value is None:
                 continue
@@ -857,10 +884,11 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
         analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
         sector = _group_key(str(row.get("sector") or ""))
         industry = _group_key(str(row.get("industry") or ""))
+        valuation_configs = _valuation_configs_for_sector(sector)
         valuation_score = _weighted_category_score(
             analysis,
-            VALUATION_METRIC_KEYS,
-            VALUATION_CONFIGS,
+            tuple(valuation_configs),
+            valuation_configs,
             sector,
             industry,
             sector_values,
@@ -877,7 +905,7 @@ def _calculate_scores(rows: List[Dict[str, Any]]) -> None:
             industry_values,
             industry_counts,
         )
-        valuation_coverage = _category_coverage(analysis, VALUATION_METRIC_KEYS, VALUATION_CONFIGS)
+        valuation_coverage = _category_coverage(analysis, tuple(valuation_configs), valuation_configs)
         quality_coverage = _category_coverage(analysis, QUALITY_METRIC_KEYS, QUALITY_CONFIGS)
         confidence = ((valuation_coverage * sum(config["weight"] for config in VALUATION_CONFIGS.values()))
             + (quality_coverage * sum(config["weight"] for config in QUALITY_CONFIGS.values()))) / (
@@ -938,7 +966,11 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
             industry = _clean_text(cached_profile.get("industry"))
         if not sector and not industry:
             missing_profiles += 1
-        if not any(_normalized_metric_value(metric, analysis.get(metric)) is not None for metric in (*VALUATION_METRIC_KEYS, *QUALITY_METRIC_KEYS)):
+        valuation_configs = _valuation_configs_for_sector(sector)
+        if not any(
+            _normalized_metric_value(metric, analysis.get(metric)) is not None
+            for metric in (*valuation_configs, *QUALITY_METRIC_KEYS)
+        ):
             missing_scores += 1
         current_price = _positive_number(analysis.get("currentPrice"))
         if not forced_query_ticker:
@@ -981,6 +1013,12 @@ def build_payload(max_age_minutes: int, refresh: bool, workers: int, universe_ke
             "sector_source": "yahooquery.asset_profile.sector",
             "industry_source": "yahooquery.asset_profile.industry",
             "final_score_formula": "0.45 * valuation_score + 0.55 * quality_score",
+            "pb_ratio_policy": {
+                "eligible_sectors": sorted(PB_ELIGIBLE_SECTORS),
+                "eligible_weight": 0.20,
+                "ineligible_weight": 0.0,
+                "other_valuation_metric_weight_when_ineligible": 0.25,
+            },
             "peer_blend_policy": {
                 "small_industry": "fewer than 5 companies: 70% sector / 30% industry",
                 "medium_industry": "5 to 15 companies: 50% sector / 50% industry",

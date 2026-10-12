@@ -126,27 +126,7 @@ def refine_existing_deepseek_run(
             draft=None,
             review=replacement_instruction,
         )
-        review = engine._review_report(
-            snapshot=snapshot,
-            evidence=evidence,
-            compiled=compiled,
-            valuation_case=valuation_case,
-            report=report,
-        )
-        _write_json(output_dir / "prepublication_review_initial.json", review)
-        if not review.get("publishable") or review.get("major_issues"):
-            report = engine._write_report(
-                snapshot=snapshot,
-                mandate=mandate,
-                plan=plan,
-                evidence=evidence,
-                source_packet=source_packet,
-                compiled=compiled,
-                valuation_case=valuation_case,
-                compiled_ok=True,
-                draft=report,
-                review=review,
-            )
+        if engine.config.enable_model_review:
             review = engine._review_report(
                 snapshot=snapshot,
                 evidence=evidence,
@@ -154,7 +134,37 @@ def refine_existing_deepseek_run(
                 valuation_case=valuation_case,
                 report=report,
             )
-        _write_json(output_dir / "prepublication_review_final.json", review)
+            _write_json(output_dir / "prepublication_review_initial.json", review)
+            if not review.get("publishable") or review.get("major_issues"):
+                report = engine._write_report(
+                    snapshot=snapshot,
+                    mandate=mandate,
+                    plan=plan,
+                    evidence=evidence,
+                    source_packet=source_packet,
+                    compiled=compiled,
+                    valuation_case=valuation_case,
+                    compiled_ok=True,
+                    draft=report,
+                    review=review,
+                )
+                review = engine._review_report(
+                    snapshot=snapshot,
+                    evidence=evidence,
+                    compiled=compiled,
+                    valuation_case=valuation_case,
+                    report=report,
+                )
+            _write_json(output_dir / "prepublication_review_final.json", review)
+        else:
+            review = {
+                "publishable": False,
+                "model_review_skipped": True,
+                "human_review_required": True,
+                "major_issues": [],
+                "minor_issues": [],
+            }
+            _write_json(output_dir / "human_review_required.json", review)
 
     report_path = output_dir / "research_report.md"
     report_path.write_text(report.rstrip() + "\n", encoding="utf-8")
@@ -164,10 +174,22 @@ def refine_existing_deepseek_run(
     _write_json(output_dir / "research_sources.json", {"sources": sources})
     quality_result = evaluate_run_artifacts(output_dir)
     quality_path = write_quality_report(output_dir, quality_result)
-    review_passed = bool(review.get("publishable") and not (review.get("major_issues") or []))
+    model_review_enabled = engine.config.enable_model_review
+    human_review_required = bool(compiled_ok and not model_review_enabled)
+    review_passed = bool(
+        model_review_enabled
+        and review.get("publishable")
+        and not (review.get("major_issues") or [])
+    )
     hard_review_blockers = review_hard_blockers(review)
     target_usable = bool(compiled_ok and not hard_review_blockers)
-    status = "red" if not target_usable else ("green" if review_passed and quality_result.publication_status == "green" else "amber")
+    status = (
+        "red"
+        if not target_usable
+        else "amber"
+        if human_review_required
+        else ("green" if review_passed and quality_result.publication_status == "green" else "amber")
+    )
     _write_json(
         output_dir / "research_grade.json",
         {
@@ -177,7 +199,9 @@ def refine_existing_deepseek_run(
             "research_quality": quality_result.to_dict(),
             "valuation_quality": {
                 "compiler_passed": compiled_ok,
-                "prepublication_review_passed": review_passed,
+                "model_review_enabled": model_review_enabled,
+                "human_review_required": human_review_required,
+                "prepublication_review_passed": review_passed if model_review_enabled else None,
                 "major_issues": review.get("major_issues") or [],
                 "hard_blockers": hard_review_blockers,
                 "minor_issues": review.get("minor_issues") or [],
@@ -202,7 +226,9 @@ def refine_existing_deepseek_run(
         "publication_status": status,
         "target_usable": target_usable,
         "research_quality_score": quality_result.score,
-        "prepublication_review_passed": review_passed,
+        "model_review_enabled": model_review_enabled,
+        "human_review_required": human_review_required,
+        "prepublication_review_passed": review_passed if model_review_enabled else None,
         "usage_and_cost": engine.usage.to_dict(),
     }
     manifest_path = output_dir / "research_manifest.json"

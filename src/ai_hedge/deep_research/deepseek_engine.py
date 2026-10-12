@@ -220,6 +220,7 @@ class DeepSeekResearchConfig:
     min_opened_sources: int = 14
     max_case_repairs: int = 2
     load_primary_filings: bool = True
+    enable_model_review: bool = False
     searxng_base_url: str = ""
     ddgs_web_backends: str = "brave,mojeek,startpage,yahoo,duckduckgo"
     ddgs_news_backends: str = "bing,yahoo,duckduckgo"
@@ -240,6 +241,14 @@ class DeepSeekResearchConfig:
                 return default
             return value if value > 0 else default
 
+        def boolean(name: str, default: bool) -> bool:
+            raw = str(os.getenv(name, "") or "").strip().casefold()
+            if raw in {"1", "true", "yes", "on"}:
+                return True
+            if raw in {"0", "false", "no", "off"}:
+                return False
+            return default
+
         return cls(
             max_cost_usd=number("DEEPSEEK_RESEARCH_MAX_COST_USD", 3.0),
             max_seconds=integer("DEEPSEEK_RESEARCH_MAX_SECONDS", 2700, 3600),
@@ -252,6 +261,9 @@ class DeepSeekResearchConfig:
             ),
             max_case_repairs=integer(
                 "DEEPSEEK_RESEARCH_MAX_CASE_REPAIRS", 2, 3
+            ),
+            enable_model_review=boolean(
+                "DEEPSEEK_RESEARCH_ENABLE_MODEL_REVIEW", False
             ),
             searxng_base_url=str(
                 os.getenv("DEEP_RESEARCH_SEARXNG_URL", "") or ""
@@ -1754,7 +1766,7 @@ Draft:
             ],
             "minor_issues": [],
         }
-        if compiled_ok:
+        if compiled_ok and self.config.enable_model_review:
             self._require_time(deadline, "pre-publication review")
             review = self._review_report(
                 snapshot=snapshot,
@@ -1791,6 +1803,15 @@ Draft:
                     report=report,
                 )
             _write_json(output_dir / "prepublication_review_final.json", review)
+        elif compiled_ok:
+            review = {
+                "publishable": False,
+                "model_review_skipped": True,
+                "human_review_required": True,
+                "major_issues": [],
+                "minor_issues": [],
+            }
+            _write_json(output_dir / "human_review_required.json", review)
         report_path = output_dir / "research_report.md"
         report_path.write_text(report + "\n", encoding="utf-8")
 
@@ -1806,12 +1827,16 @@ Draft:
         )
         quality_result = evaluate_run_artifacts(output_dir)
         quality_path = write_quality_report(output_dir, quality_result)
+        model_review_enabled = self.config.enable_model_review
+        human_review_required = bool(compiled_ok and not model_review_enabled)
         review_has_major = bool(review.get("major_issues") or [])
         hard_review_blockers = review_hard_blockers(review)
         target_usable = bool(compiled_ok and not hard_review_blockers)
         publication_status = (
             "red"
             if not target_usable
+            else "amber"
+            if human_review_required
             else (
                 "green"
                 if quality_result.publication_status == "green"
@@ -1835,8 +1860,12 @@ Draft:
                 },
                 "valuation_quality": {
                     "compiler_passed": compiled_ok,
-                    "prepublication_review_passed": bool(
-                        review.get("publishable") and not review_has_major
+                    "model_review_enabled": model_review_enabled,
+                    "human_review_required": human_review_required,
+                    "prepublication_review_passed": (
+                        bool(review.get("publishable") and not review_has_major)
+                        if model_review_enabled
+                        else None
                     ),
                     "major_issues": review.get("major_issues") or [],
                     "hard_blockers": hard_review_blockers,
@@ -1881,8 +1910,12 @@ Draft:
             "publication_status": publication_status,
             "target_usable": target_usable,
             "research_quality_score": quality_result.score,
-            "prepublication_review_passed": bool(
-                review.get("publishable") and not (review.get("major_issues") or [])
+            "model_review_enabled": model_review_enabled,
+            "human_review_required": human_review_required,
+            "prepublication_review_passed": (
+                bool(review.get("publishable") and not (review.get("major_issues") or []))
+                if model_review_enabled
+                else None
             ),
             "limits": _jsonable(self.config),
             "usage_and_cost": self.usage.to_dict(),

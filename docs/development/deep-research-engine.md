@@ -151,6 +151,13 @@ ledger, traffic-light grade, and manifest. A structural or self-review pass is n
 approval; the common independent audit and deterministic target audit still
 must pass.
 
+DeepSeek self-review is disabled by default
+(`DEEPSEEK_RESEARCH_ENABLE_MODEL_REVIEW=false`). A compiled target is retained
+as Amber and `human_review_required=true`; the engine does not pay for a Flash
+review or a review-triggered V4 report rewrite. Flash remains the low-cost
+retrieval and evidence worker. Set the flag to `true` only for a deliberate
+automated self-review benchmark.
+
 Resume a background response from `state.json`:
 
 ```powershell

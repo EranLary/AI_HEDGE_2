@@ -61,6 +61,14 @@ def test_usage_ledger_prices_offpeak_flash_tokens() -> None:
     assert ledger.estimated_cost_usd == pytest.approx(0.21)
 
 
+def test_model_self_review_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEEPSEEK_RESEARCH_ENABLE_MODEL_REVIEW", raising=False)
+    assert DeepSeekResearchConfig.from_env().enable_model_review is False
+
+    monkeypatch.setenv("DEEPSEEK_RESEARCH_ENABLE_MODEL_REVIEW", "true")
+    assert DeepSeekResearchConfig.from_env().enable_model_review is True
+
+
 class _FakeSearchClient:
     def news(self, *_args: object, **_kwargs: object) -> list[dict[str, str]]:
         return []

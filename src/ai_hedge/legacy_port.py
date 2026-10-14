@@ -722,7 +722,13 @@ import io
 from datetime import datetime, timedelta
 
 HEADERS = {
-    "User-Agent": "YourAppName your_email@domain.com",
+    "User-Agent": str(
+        os.getenv(
+            "SEC_USER_AGENT",
+            "AI_HEDGE_2 research engine research@hedge-in-a-box.com",
+        )
+        or "AI_HEDGE_2 research engine research@hedge-in-a-box.com"
+    ).strip(),
     "Accept-Encoding": "gzip, deflate",
     "Host": "data.sec.gov"
 }

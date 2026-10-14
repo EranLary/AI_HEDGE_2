@@ -20,6 +20,13 @@ from .input_packet import ResearchInputPacket, build_research_input_packet
 from .prompt import DEVELOPER_INSTRUCTIONS, PROMPT_VERSION, build_research_prompt
 from .quality import evaluate_run_artifacts, write_quality_report
 from .snapshot import CompanySnapshot
+from .valuation_policy import (
+    build_canonical_valuation_anchors,
+    build_valuation_method_policy,
+    repair_method_policy_issues,
+    share_scale_from_text,
+    valuation_method_policy_issues,
+)
 
 
 DEEPSEEK_PRO_MODEL = "deepseek-v4-pro"
@@ -1106,6 +1113,8 @@ Return JSON with exactly these top-level keys:
         evidence: Mapping[str, Any],
         source_packet: list[dict[str, Any]],
         input_packet: Mapping[str, Any],
+        valuation_policy: Mapping[str, Any],
+        valuation_anchors: Mapping[str, Any],
         prior_issues: Optional[list[str]] = None,
         prior_case: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
@@ -1124,11 +1133,14 @@ Mandatory economic controls:
 4. Never mix FCFF with cost of equity or FCFE with WACC.
 5. Match trailing peer multiples with trailing subject metrics or forward with forward.
 6. Every positive-weight method needs enough sourced evidence to reproduce it.
-7. For a profitable non-financial operating company, the default is two independent methods: an
-   intrinsic DCF/FCFE and a normalized-earnings multiple. Explicitly reconcile the representative
-   earnings metric from reported GAAP results, recurring adjustments, tax normalization and the
-   target-period operating outlook. Do not use management non-GAAP EPS without showing the exclusions.
-   Prefer one valid method only when the evidence genuinely cannot support the second.
+7. Obey the deterministic valuation-method policy below. When it is locked for a profitable
+   non-financial company, return exactly two central methods: one DCF/FCFE at 50% and one forward
+   independently normalized earnings multiple at 50%. Residual income, asset value and management
+   non-GAAP may be discussed only as sensitivities in the final report; they cannot replace either
+   central method. Start normalized earnings from reported GAAP, expense stock compensation, review
+   acquired-intangible amortization and other recurring/non-recurring adjustments explicitly, and
+   bridge to the target period. If an anchor is missing, make a conservative labeled analyst
+   assumption with sensitivity rather than changing the mandated method family.
 8. Omit every unsupported method entirely, including a nominal zero-weight method. Every method in the
    array must be fully valid, must have positive weight, and positive weights must sum to 100%.
 9. Valuation is forward-looking analysis, so sourced historical/LTM facts may be projected with explicit
@@ -1158,6 +1170,13 @@ Frozen snapshot:
 Deterministic input packet (routing priors; use only within its stated policy):
 {json.dumps(input_packet, ensure_ascii=False, indent=2)}
 
+Deterministic valuation-method policy (this overrides model discretion):
+{json.dumps(valuation_policy, ensure_ascii=False, indent=2)}
+
+Canonical valuation-anchor packet extracted before valuation (missing means disclose and estimate;
+it does not permit changing a locked central method):
+{json.dumps(valuation_anchors, ensure_ascii=False, indent=2)}
+
 Evidence and contradictions:
 {json.dumps(evidence, ensure_ascii=False)}
 
@@ -1174,8 +1193,13 @@ Repair policy:
 - When a prior candidate is supplied, preserve every field that did not trigger a compiler issue.
 - Make the smallest evidence-supported local correction. Do not replace a nearly valid method with a
   different method merely to avoid fixing one field.
+- The deterministic central method families, weights, forward earnings basis, and normalization policy
+  are immutable. A repair may fix only format, units, dates, evidence links, or arithmetic within that
+  blueprint. If the initial candidate omitted a mandated method, add the missing mandated method rather
+  than inventing a residual-income or asset substitute.
 - If a method is unsupported, remove only that method and proportionally renormalize the remaining
-  positive weights. Return no methods only when no remaining method can be fully supported.
+  positive weights only when the deterministic policy is not locked. Under a locked policy, repair the
+  required method with transparent conservative assumptions instead of removing or replacing it.
 
 Required JSON schema:
 {json.dumps(schema, ensure_ascii=False)}
@@ -1207,12 +1231,9 @@ Required JSON schema:
         for row in normalized.get("evidence") or []:
             if not isinstance(row, dict) or str(row.get("id") or "") != share_id:
                 continue
-            unit = str(row.get("unit") or "").casefold()
-            factor = 1.0
-            if "million" in unit:
-                factor = 1_000_000.0
-            elif "thousand" in unit or "000" in unit:
-                factor = 1_000.0
+            factor = share_scale_from_text(
+                row.get("value"), row.get("unit"), row.get("rationale")
+            )
             if factor == 1.0:
                 break
             try:
@@ -1230,7 +1251,11 @@ Required JSON schema:
 
     @staticmethod
     def _case_policy_issues(
-        snapshot: CompanySnapshot, case: Mapping[str, Any]
+        snapshot: CompanySnapshot,
+        case: Mapping[str, Any],
+        *,
+        valuation_policy: Optional[Mapping[str, Any]] = None,
+        prior_case: Optional[Mapping[str, Any]] = None,
     ) -> list[str]:
         issues: list[str] = []
         reference_date = datetime.fromisoformat(
@@ -1360,7 +1385,13 @@ Required JSON schema:
                 issues.append(
                     f"method[{position}] has non-positive weight; omit unsupported methods entirely"
                 )
-        return issues
+        if valuation_policy:
+            issues.extend(valuation_method_policy_issues(valuation_policy, case))
+            if prior_case:
+                issues.extend(
+                    repair_method_policy_issues(valuation_policy, prior_case, case)
+                )
+        return list(dict.fromkeys(issues))
 
     def _compile_case(
         self,
@@ -1369,6 +1400,8 @@ Required JSON schema:
         evidence: Mapping[str, Any],
         source_packet: list[dict[str, Any]],
         input_packet: Mapping[str, Any],
+        valuation_policy: Mapping[str, Any],
+        valuation_anchors: Mapping[str, Any],
         output_dir: Path,
     ) -> tuple[dict[str, Any], dict[str, Any], bool]:
         case = self._valuation_case(
@@ -1376,13 +1409,22 @@ Required JSON schema:
             evidence=evidence,
             source_packet=source_packet,
             input_packet=input_packet,
+            valuation_policy=valuation_policy,
+            valuation_anchors=valuation_anchors,
         )
         case = self._normalize_case_units(case)
         _write_json(output_dir / "valuation_case_initial.json", case)
         def attempt(
             candidate: Mapping[str, Any],
+            *,
+            prior_candidate: Optional[Mapping[str, Any]] = None,
         ) -> tuple[Optional[Any], list[str]]:
-            candidate_issues = self._case_policy_issues(snapshot, candidate)
+            candidate_issues = self._case_policy_issues(
+                snapshot,
+                candidate,
+                valuation_policy=valuation_policy,
+                prior_case=prior_candidate,
+            )
             try:
                 candidate_compiled = compile_valuation_case(candidate)
             except (ValuationCompilationError, KeyError, TypeError, ValueError) as exc:
@@ -1401,19 +1443,22 @@ Required JSON schema:
         for repair_attempt in range(1, self.config.max_case_repairs + 1):
             if not issues:
                 break
+            prior_case = case
             case = self._valuation_case(
                 snapshot=snapshot,
                 evidence=evidence,
                 source_packet=source_packet,
                 input_packet=input_packet,
+                valuation_policy=valuation_policy,
+                valuation_anchors=valuation_anchors,
                 prior_issues=issues,
-                prior_case=case,
+                prior_case=prior_case,
             )
             case = self._normalize_case_units(case)
             _write_json(
                 output_dir / f"valuation_case_repair_{repair_attempt}.json", case
             )
-            compiled, issues = attempt(case)
+            compiled, issues = attempt(case, prior_candidate=prior_case)
             _write_json(
                 output_dir / f"valuation_compile_repair_{repair_attempt}.json",
                 {
@@ -1790,11 +1835,20 @@ Draft:
             output_dir / "valuation_source_packet.json",
             {"sources": valuation_source_packet},
         )
+        valuation_policy = build_valuation_method_policy(
+            input_packet=input_payload,
+            evidence=evidence,
+        )
+        valuation_anchors = build_canonical_valuation_anchors(evidence)
+        _write_json(output_dir / "valuation_method_policy.json", valuation_policy)
+        _write_json(output_dir / "valuation_anchor_packet.json", valuation_anchors)
         valuation_case, compiled, compiled_ok = self._compile_case(
             snapshot=snapshot,
             evidence=evidence,
             source_packet=valuation_source_packet,
             input_packet=input_payload,
+            valuation_policy=valuation_policy,
+            valuation_anchors=valuation_anchors,
             output_dir=output_dir,
         )
         _write_json(output_dir / "valuation_case.json", valuation_case)

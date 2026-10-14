@@ -20,6 +20,12 @@ from ai_hedge.deep_research.deepseek_engine import (
 from ai_hedge.deep_research.snapshot import CompanySnapshot
 from ai_hedge.deep_research.filings import fetch_primary_filing_packet
 from ai_hedge.deep_research.input_packet import build_research_input_packet
+from ai_hedge.deep_research.valuation_policy import (
+    build_canonical_valuation_anchors,
+    build_valuation_method_policy,
+    repair_method_policy_issues,
+    valuation_method_policy_issues,
+)
 
 
 def _usage(**values: int) -> SimpleNamespace:
@@ -484,3 +490,206 @@ def test_case_policy_rejects_per_share_residual_income_inputs() -> None:
 
     assert any("absolute company total" in issue for issue in issues)
     assert any("per-share inputs" in issue for issue in issues)
+
+
+def _profitable_software_policy() -> dict[str, object]:
+    return build_valuation_method_policy(
+        input_packet={
+            "company_profile": {
+                "sector": "Technology",
+                "industry": "Software - Application",
+            }
+        },
+        evidence={
+            "evidence": [
+                {
+                    "claim_id": "profit",
+                    "claim": "FY2025 GAAP net income",
+                    "value": 100.0,
+                    "unit": "USD millions",
+                    "scope": "Consolidated GAAP",
+                    "fact_type": "reported_fact",
+                }
+            ]
+        },
+    )
+
+
+def test_profitable_non_financial_policy_locks_two_methods_at_50_50() -> None:
+    policy = _profitable_software_policy()
+
+    assert policy["locked"] is True
+    assert policy["classification"] == "profitable_non_financial"
+    assert [row["weight_pct"] for row in policy["central_methods"]] == [50.0, 50.0]
+
+
+def test_financial_company_does_not_receive_generic_two_method_lock() -> None:
+    policy = build_valuation_method_policy(
+        input_packet={
+            "company_profile": {
+                "sector": "Financial Services",
+                "industry": "Capital Markets",
+            }
+        },
+        evidence={
+            "evidence": [
+                {
+                    "claim_id": "profit",
+                    "claim": "GAAP net income",
+                    "value": 100.0,
+                    "unit": "USD millions",
+                    "scope": "Consolidated",
+                    "fact_type": "reported_fact",
+                }
+            ]
+        },
+    )
+
+    assert policy["locked"] is False
+    assert policy["classification"] == "flexible_special_case"
+
+
+def test_locked_policy_rejects_residual_income_substitution_and_wrong_weights() -> None:
+    policy = _profitable_software_policy()
+    case = {
+        "evidence": [
+            {
+                "id": "eps",
+                "unit": "USD per share",
+                "rationale": "Forward normalized GAAP earnings",
+            }
+        ],
+        "methods": [
+            {"type": "residual_income", "weight_pct": 40.0},
+            {
+                "type": "multiple",
+                "weight_pct": 60.0,
+                "subject_metric_basis": "trailing",
+                "peer_metric_basis": "trailing",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+
+    issues = valuation_method_policy_issues(policy, case)
+
+    assert any("exactly one DCF/FCFE" in issue for issue in issues)
+    assert any("exactly 50%" in issue for issue in issues)
+    assert any("forward basis" in issue for issue in issues)
+
+
+def test_locked_policy_rejects_management_non_gaap_central_earnings() -> None:
+    policy = _profitable_software_policy()
+    case = {
+        "evidence": [
+            {
+                "id": "eps",
+                "unit": "USD non-GAAP EPS",
+                "rationale": "Management FY2027 non-GAAP EPS guidance",
+            }
+        ],
+        "methods": [
+            {"type": "fcfe", "weight_pct": 50.0, "cash_flows_per_share": []},
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+
+    issues = valuation_method_policy_issues(policy, case)
+
+    assert any("independently reconciled from GAAP" in issue for issue in issues)
+
+
+def test_repair_cannot_switch_a_valid_fcfe_blueprint_to_dcf() -> None:
+    policy = _profitable_software_policy()
+    evidence = [
+        {
+            "id": "eps",
+            "unit": "USD per share",
+            "rationale": "Forward normalized earnings reconciled from GAAP",
+        }
+    ]
+    prior = {
+        "evidence": evidence,
+        "methods": [
+            {"type": "fcfe", "weight_pct": 50.0, "cash_flows_per_share": []},
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+    candidate = {
+        "evidence": evidence,
+        "methods": [
+            {"type": "dcf", "weight_pct": 50.0, "cash_flows_per_share": []},
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+
+    issues = repair_method_policy_issues(policy, prior, candidate)
+
+    assert any("cannot switch" in issue for issue in issues)
+
+
+def test_anchor_packet_normalizes_explicit_thousand_share_units() -> None:
+    anchors = build_canonical_valuation_anchors(
+        {
+            "evidence": [
+                {
+                    "claim_id": "shares",
+                    "claim": "Weighted average diluted shares",
+                    "value": 59_394,
+                    "unit": "thousands diluted shares",
+                    "period_or_date": "Q2 2026",
+                    "fact_type": "reported_fact",
+                },
+                {
+                    "claim_id": "sbc",
+                    "claim": "Share-based compensation expense",
+                    "value": 88.1,
+                    "unit": "USD millions",
+                    "period_or_date": "H1 2026",
+                    "fact_type": "reported_fact",
+                },
+            ]
+        }
+    )
+
+    share = anchors["anchors"]["diluted_shares"]["candidates"][0]
+    assert share["canonical_absolute_shares"] == pytest.approx(59_394_000)
+    assert anchors["anchors"]["stock_compensation"]["status"] == "available"
+
+
+def test_case_unit_normalization_uses_explicit_million_scale_in_rationale() -> None:
+    case = {
+        "diluted_shares": 59.43,
+        "diluted_shares_evidence_id": "shares",
+        "evidence": [
+            {
+                "id": "shares",
+                "value": 59.43,
+                "unit": "shares",
+                "rationale": "Derived weighted-average diluted shares of 59.43M",
+            }
+        ],
+    }
+
+    normalized = DeepSeekResearchEngine._normalize_case_units(case)
+
+    assert normalized["diluted_shares"] == pytest.approx(59_430_000)
+    assert normalized["evidence"][0]["value"] == pytest.approx(59_430_000)

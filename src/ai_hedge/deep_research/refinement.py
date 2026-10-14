@@ -17,6 +17,10 @@ from .deepseek_engine import (
 from .engine import _write_json
 from .quality import evaluate_run_artifacts, write_quality_report
 from .snapshot import CompanySnapshot
+from .valuation_policy import (
+    build_canonical_valuation_anchors,
+    build_valuation_method_policy,
+)
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -75,11 +79,20 @@ def refine_existing_deepseek_run(
         output_dir / "valuation_source_packet.json",
         {"sources": valuation_source_packet},
     )
+    valuation_policy = build_valuation_method_policy(
+        input_packet=input_packet,
+        evidence=evidence,
+    )
+    valuation_anchors = build_canonical_valuation_anchors(evidence)
+    _write_json(output_dir / "valuation_method_policy.json", valuation_policy)
+    _write_json(output_dir / "valuation_anchor_packet.json", valuation_anchors)
     valuation_case, compiled, compiled_ok = engine._compile_case(
         snapshot=snapshot,
         evidence=evidence,
         source_packet=valuation_source_packet,
         input_packet=input_packet,
+        valuation_policy=valuation_policy,
+        valuation_anchors=valuation_anchors,
         output_dir=output_dir,
     )
     _write_json(output_dir / "valuation_case.json", valuation_case)

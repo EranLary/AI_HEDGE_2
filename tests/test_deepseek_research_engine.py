@@ -14,6 +14,7 @@ from ai_hedge.deep_research.deepseek_engine import (
     DeepSeekResearchResult,
     SourceRepository,
     UsageLedger,
+    _parse_json,
     select_valuation_sources,
     review_hard_blockers,
 )
@@ -21,6 +22,7 @@ from ai_hedge.deep_research.snapshot import CompanySnapshot
 from ai_hedge.deep_research.filings import fetch_primary_filing_packet
 from ai_hedge.deep_research.input_packet import build_research_input_packet
 from ai_hedge.deep_research.valuation_policy import (
+    build_valuation_coherence_audit,
     build_canonical_valuation_anchors,
     build_valuation_method_policy,
     repair_method_policy_issues,
@@ -30,6 +32,15 @@ from ai_hedge.deep_research.valuation_policy import (
 
 def _usage(**values: int) -> SimpleNamespace:
     return SimpleNamespace(usage=SimpleNamespace(**values))
+
+
+def test_parse_json_accepts_first_object_before_trailing_content() -> None:
+    payload = _parse_json(
+        'analysis prefix\n{"evidence": [1], "coverage": {}}\n'
+        '{"unexpected_second_object": true}\ntrailing text'
+    )
+
+    assert payload == {"evidence": [1], "coverage": {}}
 
 
 def test_usage_ledger_prices_peak_pro_tokens() -> None:
@@ -603,6 +614,182 @@ def test_locked_policy_rejects_management_non_gaap_central_earnings() -> None:
     issues = valuation_method_policy_issues(policy, case)
 
     assert any("independently reconciled from GAAP" in issue for issue in issues)
+
+
+def test_locked_policy_rejects_absolute_earnings_as_multiple_subject() -> None:
+    policy = _profitable_software_policy()
+    case = {
+        "evidence": [
+            {
+                "id": "income",
+                "unit": "USD millions",
+                "rationale": "Forward normalized net income before division by shares",
+            }
+        ],
+        "methods": [
+            {"type": "fcfe", "weight_pct": 50.0, "cash_flows_per_share": []},
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "income",
+            },
+        ],
+    }
+
+    issues = valuation_method_policy_issues(policy, case)
+
+    assert any("explicit per-share value" in issue for issue in issues)
+
+
+def test_locked_policy_rejects_missing_or_full_year_stub() -> None:
+    policy = _profitable_software_policy()
+    base = {
+        "value_date": "2027-10-14",
+        "type": "fcfe",
+        "weight_pct": 50.0,
+        "cash_flows_per_share": [
+            {
+                "date": "2027-12-31",
+                "amount": 4.0,
+                "rationale": "FY2027 full-year FCFE",
+            },
+            {
+                "date": "2028-12-31",
+                "amount": 4.2,
+                "rationale": "FY2028 full-year FCFE",
+            },
+        ],
+    }
+    case = {
+        "evidence": [
+            {"id": "eps", "unit": "USD per share", "rationale": "Forward GAAP EPS"}
+        ],
+        "methods": [
+            base,
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+
+    issues = valuation_method_policy_issues(policy, case)
+
+    assert any("explicitly identified" in issue for issue in issues)
+    assert any("elapsed-day fraction" in issue for issue in issues)
+
+    base["cash_flows_per_share"][0] = {
+        "date": "2028-12-31",
+        "amount": 4.0,
+        "rationale": "First forecast year",
+    }
+    issues = valuation_method_policy_issues(policy, case)
+    assert any("more than one year" in issue for issue in issues)
+
+
+def test_locked_policy_accepts_actual_day_stub() -> None:
+    policy = _profitable_software_policy()
+    case = {
+        "evidence": [
+            {"id": "eps", "unit": "USD per share", "rationale": "Forward GAAP EPS"}
+        ],
+        "methods": [
+            {
+                "value_date": "2027-10-14",
+                "type": "fcfe",
+                "weight_pct": 50.0,
+                "cash_flows_per_share": [
+                    {
+                        "date": "2027-12-31",
+                        "amount": 0.90,
+                        "rationale": "Stub prorated for the 78 actual calendar days",
+                    },
+                    {
+                        "date": "2028-12-31",
+                        "amount": 4.2,
+                        "rationale": "FY2028 full-year FCFE",
+                    },
+                ],
+            },
+            {
+                "type": "multiple",
+                "weight_pct": 50.0,
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "eps",
+            },
+        ],
+    }
+
+    issues = valuation_method_policy_issues(policy, case)
+
+    assert not any("stub" in issue.casefold() for issue in issues)
+
+
+def test_coherence_audit_blocks_scale_error_and_records_fingerprint() -> None:
+    case = {
+        "diluted_shares": 20_000_000,
+        "evidence": [
+            {"id": "eps", "value": 85.5, "unit": "USD millions"},
+            {"id": "rate", "value": 0.09},
+            {"id": "growth", "value": 0.025},
+        ],
+        "methods": [
+            {
+                "name": "FCFE",
+                "type": "fcfe",
+                "weight_pct": 50,
+                "discount_rate_evidence_id": "rate",
+                "terminal_growth_evidence_id": "growth",
+                "cash_flows_per_share": [{"date": "2027-12-31", "amount": 0.8}],
+            },
+            {
+                "name": "P/E",
+                "type": "multiple",
+                "weight_pct": 50,
+                "subject_metric_evidence_id": "eps",
+                "applied_multiple": 13,
+            },
+        ],
+    }
+    compiled = {
+        "reference_price": 51.0,
+        "target_price": 584.0,
+        "methods": [
+            {"value_per_share": 56.0},
+            {"value_per_share": 1111.5},
+        ],
+    }
+
+    audit = build_valuation_coherence_audit(case, compiled)
+
+    assert audit["passed"] is False
+    assert any("differ by" in issue for issue in audit["blocking_issues"])
+    assert any("reference price" in issue for issue in audit["blocking_issues"])
+    assert audit["fingerprint"]["methods"][1]["subject_metric_unit"] == "USD millions"
+
+
+def test_coherence_audit_warns_but_does_not_block_unusual_market_gap_alone() -> None:
+    audit = build_valuation_coherence_audit(
+        {"diluted_shares": 1, "evidence": [], "methods": []},
+        {
+            "reference_price": 10.0,
+            "target_price": 35.0,
+            "methods": [
+                {"value_per_share": 34.0},
+                {"value_per_share": 36.0},
+            ],
+        },
+    )
+
+    assert audit["passed"] is True
+    assert audit["blocking_issues"] == []
+    assert any("not blocked solely" in warning for warning in audit["warnings"])
 
 
 def test_repair_cannot_switch_a_valid_fcfe_blueprint_to_dcf() -> None:

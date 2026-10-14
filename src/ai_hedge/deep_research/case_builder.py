@@ -223,6 +223,11 @@ Rules:
 10. Set reference_price_evidence_id and diluted_shares_evidence_id to evidence items that exactly reconcile
     to the top-level values. Every positive method weight needs a weight_rationale. Every DCF cash-flow row
     and residual-income period needs its own driver rationale and evidence_ids.
+11. A multiple's subject metric must be explicitly per share (EPS or currency/share). If the report starts
+    from absolute normalized earnings, extract the report's division by diluted shares; never feed company
+    earnings in thousands or millions directly into a P/E calculation.
+12. Preserve the first post-value-date DCF/FCFE period. When it is a partial fiscal year, its rationale must
+    identify the stub and its actual-day proration. Do not silently skip the stub or treat it as a full year.
 
 Frozen identity snapshot:
 {json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2)}

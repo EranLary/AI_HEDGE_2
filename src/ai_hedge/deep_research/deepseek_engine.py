@@ -21,6 +21,7 @@ from .prompt import DEVELOPER_INSTRUCTIONS, PROMPT_VERSION, build_research_promp
 from .quality import evaluate_run_artifacts, write_quality_report
 from .snapshot import CompanySnapshot
 from .valuation_policy import (
+    build_valuation_coherence_audit,
     build_canonical_valuation_anchors,
     build_valuation_method_policy,
     repair_method_policy_issues,
@@ -31,7 +32,7 @@ from .valuation_policy import (
 
 DEEPSEEK_PRO_MODEL = "deepseek-v4-pro"
 DEEPSEEK_FLASH_MODEL = "deepseek-flash"
-ENGINE_VERSION = "deepseek-agentic-research-v3"
+ENGINE_VERSION = "deepseek-agentic-research-v4"
 
 
 def _utc_now() -> datetime:
@@ -113,12 +114,19 @@ def _parse_json(text: str) -> dict[str, Any]:
     raw = re.sub(r"\s*```$", "", raw)
     try:
         payload = json.loads(raw)
-    except json.JSONDecodeError:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start < 0 or end <= start:
-            raise
-        payload = json.loads(raw[start : end + 1])
+    except json.JSONDecodeError as original_error:
+        decoder = json.JSONDecoder()
+        payload = None
+        for match in re.finditer(r"\{", raw):
+            try:
+                candidate, _ = decoder.raw_decode(raw[match.start() :])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                payload = candidate
+                break
+        if payload is None:
+            raise original_error
     if not isinstance(payload, dict):
         raise ValueError("DeepSeek JSON response was not an object")
     return payload
@@ -1163,6 +1171,17 @@ Mandatory economic controls:
     period's net income, and every period's dividends must use the same absolute currency unit. Convert
     USD millions to absolute USD before returning the case. The compiler divides total equity value by
     absolute diluted shares exactly once. Do not feed BVPS/EPS/DPS into residual income.
+14. The central earnings-multiple subject metric must already be a per-share value. Its evidence unit
+    must explicitly say EPS, currency per share, or currency/share. If you forecast normalized company
+    net income in thousands or millions, divide it by the reconciled absolute diluted shares first and
+    make that bridge explicit. Never multiply absolute net income directly by a P/E multiple.
+15. Every DCF/FCFE must begin with the economic period immediately after value_date. If the next fiscal
+    year-end is less than roughly ten months away, insert an explicit stub cash flow dated at that year-end
+    and prorate it using actual calendar days; then include full-year flows. Never omit the stub by starting
+    more than one year after value_date, and never place a full year's cash flow into a short stub.
+16. Before returning the case, compare the two independently calculated method values. Do not force them
+    to agree, but if they differ by more than 2x or imply a target outside 0.1x-5x the frozen market price,
+    rebuild units, dates, shares, and forecast bases before accepting an extraordinary economic conclusion.
 
 Frozen snapshot:
 {json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2)}
@@ -1414,11 +1433,20 @@ Required JSON schema:
         )
         case = self._normalize_case_units(case)
         _write_json(output_dir / "valuation_case_initial.json", case)
+        latest_audit: dict[str, Any] = {
+            "version": "valuation-coherence-audit-v1",
+            "passed": False,
+            "blocking_issues": ["valuation case has not compiled"],
+            "warnings": [],
+            "fingerprint": {},
+        }
+
         def attempt(
             candidate: Mapping[str, Any],
             *,
             prior_candidate: Optional[Mapping[str, Any]] = None,
         ) -> tuple[Optional[Any], list[str]]:
+            nonlocal latest_audit
             candidate_issues = self._case_policy_issues(
                 snapshot,
                 candidate,
@@ -1427,6 +1455,10 @@ Required JSON schema:
             )
             try:
                 candidate_compiled = compile_valuation_case(candidate)
+                latest_audit = build_valuation_coherence_audit(
+                    candidate, candidate_compiled.to_dict()
+                )
+                candidate_issues.extend(latest_audit["blocking_issues"])
             except (ValuationCompilationError, KeyError, TypeError, ValueError) as exc:
                 candidate_issues.extend(
                     list(getattr(exc, "issues", None) or [str(exc)])
@@ -1467,10 +1499,16 @@ Required JSON schema:
                 },
             )
         if issues or compiled is None:
+            _write_json(output_dir / "valuation_coherence_audit.json", latest_audit)
             return case, {"valid": False, "issues": issues}, False
         if compiled is None:
             return case, {"valid": False, "issues": ["valuation compiler returned no result"]}, False
-        return case, {"valid": True, "compiled": compiled.to_dict()}, True
+        _write_json(output_dir / "valuation_coherence_audit.json", latest_audit)
+        return case, {
+            "valid": True,
+            "compiled": compiled.to_dict(),
+            "coherence_audit": latest_audit,
+        }, True
 
     def _write_report(
         self,

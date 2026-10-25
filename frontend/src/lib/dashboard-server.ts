@@ -143,6 +143,9 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
         workspace: r.workspace,
         release_id: r.release_id,
         consensus_basis: r.consensus_basis,
+        engine_id: r.engine_id,
+        research_quality_status: r.research_quality_status,
+        automation_eligible: r.automation_eligible,
       };
       const runId = String(r.source_run_id || "").trim();
       const key = runId ? `run:${String(r.ticker || "").toUpperCase()}:${runId}` : `db:${r.id}`;
@@ -210,6 +213,9 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
             : null,
       workspace: "analysis",
       release_id: null,
+      engine_id: payload?.research_harness?.engine_id,
+      research_quality_status: payload?.research_harness?.quality_status,
+      automation_eligible: payload?.research_harness?.automation_eligible,
       consensus_basis:
         String(payload?.valuation_hub?.consensus?.consensus_basis || "").includes("sector_weighted") ||
         payload?.valuation_hub?.consensus?.consensus_basis === "mean_median" ||

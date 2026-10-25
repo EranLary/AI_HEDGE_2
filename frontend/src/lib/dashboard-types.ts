@@ -317,6 +317,20 @@ export type DashboardPayload = {
   report_id?: string;
   report_file?: string;
   report_mtime?: string;
+  research_harness?: {
+    run_id?: string;
+    engine_id?: "deterministic_v1" | "hybrid_v1";
+    engine_version?: string;
+    harness_schema_version?: string;
+    quality_status?: "green" | "amber_conflict" | "red" | "budget_exhausted";
+    automation_eligible?: boolean;
+    queries_used?: number;
+    observed_cost_usd?: number;
+    source_count?: number;
+    evidence_count?: number;
+    claim_count?: number;
+    contradiction_count?: number;
+  };
   ticker: string;
   company_profile?: {
     sector?: string;
@@ -626,6 +640,13 @@ export type DashboardPayload = {
     web_search_json?: string;
     web_search_txt?: string;
     share_count_resolution_json?: string;
+    research_state_json?: string;
+    execution_manifest_json?: string;
+    evidence_ledger_jsonl?: string;
+    contradictions_json?: string;
+    valuation_sensitivity_json?: string;
+    research_source_bodies_jsonl?: string;
+    checkpoint_latest_json?: string;
   };
   downloads?: {
     analysis_pdf: string;
@@ -673,4 +694,7 @@ export type ReportListItem = {
   consensus_basis?: ConsensusBasis | null;
   workspace?: "analysis" | "nasdaq100";
   release_id?: string | null;
+  engine_id?: "deterministic_v1" | "hybrid_v1";
+  research_quality_status?: "green" | "amber_conflict" | "red" | "budget_exhausted";
+  automation_eligible?: boolean;
 };

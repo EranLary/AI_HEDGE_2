@@ -1,5 +1,7 @@
 "use client";
 
+import type { AnalysisEngineId } from "@/lib/analysis-engine";
+
 export type ClientRunStatus = "queued" | "running" | "completed" | "failed";
 
 export type ClientActiveRun = {
@@ -9,6 +11,7 @@ export type ClientActiveRun = {
   llm_progress_pct?: number;
   created_at: string;
   updated_at?: string;
+  engine_id?: AnalysisEngineId;
 };
 
 const ACTIVE_RUNS_KEY = "hib-active-runs-v1";

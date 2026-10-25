@@ -1,0 +1,36 @@
+{
+  "version": "hybrid-research-corpus-v1",
+  "description": "Twenty-company shadow corpus for paired deterministic_v1 and hybrid_v1 replay on identical captured provider snapshots.",
+  "repeat_hard_cases": 3,
+  "companies": [
+    {"ticker": "AAPL", "market": "US", "tags": ["mega_cap", "multi_currency", "buybacks"]},
+    {"ticker": "MSFT", "market": "US", "tags": ["mega_cap", "fiscal_calendar", "segments"]},
+    {"ticker": "AMZN", "market": "US", "tags": ["multi_segment", "cash_flow", "lease_adjustments"]},
+    {"ticker": "GOOGL", "market": "US", "tags": ["dual_class", "buybacks", "net_cash"]},
+    {"ticker": "NVDA", "market": "US", "tags": ["non_calendar_fiscal", "rapid_growth", "high_dispersion"], "hard_case": true},
+    {"ticker": "JPM", "market": "US", "tags": ["financials", "pb_gate", "regulated_filings"]},
+    {"ticker": "BRK-B", "market": "US", "tags": ["conglomerate", "insurance", "share_classes"], "hard_case": true},
+    {"ticker": "COST", "market": "US", "tags": ["non_calendar_fiscal", "membership_model", "thin_margins"]},
+    {"ticker": "PLTR", "market": "US", "tags": ["sbc", "high_dispersion", "narrative_risk"]},
+    {"ticker": "MRNA", "market": "US", "tags": ["biotech", "volatile_revenue", "cash_rich"], "hard_case": true},
+    {"ticker": "CHKP", "market": "Israel_US", "tags": ["foreign_issuer", "20f", "usd_reporting"]},
+    {"ticker": "WIX", "market": "Israel_US", "tags": ["foreign_issuer", "sbc", "cash_flow"]},
+    {"ticker": "TEVA", "market": "Israel_US", "tags": ["foreign_issuer", "debt", "legal_exposure"], "hard_case": true},
+    {"ticker": "NICE", "market": "Israel_US", "tags": ["foreign_issuer", "acquisitions", "dual_listing"]},
+    {"ticker": "ITRN", "market": "Israel_US", "tags": ["small_cap", "share_count", "assumption_dispersion"], "hard_case": true},
+    {"ticker": "ESLT", "market": "Israel_US", "tags": ["defense", "backlog", "foreign_issuer"]},
+    {"ticker": "ICL.TA", "market": "Israel_TASE", "tags": ["maya", "commodity_cycle", "currency"]},
+    {"ticker": "ENLT.TA", "market": "Israel_TASE", "tags": ["maya", "project_finance", "multi_currency"], "hard_case": true},
+    {"ticker": "FBRT.TA", "market": "Israel_TASE", "tags": ["maya", "small_cap", "share_count"], "hard_case": true},
+    {"ticker": "PEAX.TA", "market": "Israel_TASE", "tags": ["maya", "sparse_sources", "provider_failure"], "hard_case": true}
+  ],
+  "gates": {
+    "critical_input_evidence_coverage": 1.0,
+    "critical_conflict_ledger_coverage": 1.0,
+    "silent_overwrites": 0,
+    "undocumented_repairs": 0,
+    "blind_review_hybrid_equal_or_better": 0.8,
+    "p95_duration_seconds": 7200,
+    "max_cost_usd": 10.0
+  }
+}

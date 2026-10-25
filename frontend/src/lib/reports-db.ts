@@ -35,6 +35,12 @@ export interface DbReportSummary {
   visibility: ReportVisibility;
   workspace: Workspace;
   release_id: string | null;
+  research_run_id?: string | null;
+  engine_id?: "deterministic_v1" | "hybrid_v1";
+  engine_version?: string;
+  harness_schema_version?: string;
+  research_quality_status?: "green" | "amber_conflict" | "red" | "budget_exhausted";
+  automation_eligible?: boolean;
   is_golden?: boolean;
   valuation_dashboard?: DashboardPayload | null;
 }
@@ -149,6 +155,9 @@ export async function fetchLatestReport(ticker: string, workspace: Workspace = "
            r.consensus_basis,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id,
+           r.research_run_id::text AS research_run_id,
+           r.engine_id, r.engine_version, r.harness_schema_version,
+           r.research_quality_status, r.automation_eligible,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -198,6 +207,9 @@ export async function fetchReportById(id: string, workspace: Workspace = "analys
            r.consensus_basis,
            r.source, r.source_run_id,
            r.visibility, r.workspace, r.release_id::text AS release_id,
+           r.research_run_id::text AS research_run_id,
+           r.engine_id, r.engine_version, r.harness_schema_version,
+           r.research_quality_status, r.automation_eligible,
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
@@ -316,7 +328,10 @@ export async function listLatestReportsPerTicker(workspace: Workspace = "analysi
              )
            ELSE NULL END AS valuation_dashboard,
            r.source, r.source_run_id,
-           r.visibility, r.workspace, r.release_id::text AS release_id
+           r.visibility, r.workspace, r.release_id::text AS release_id,
+           r.research_run_id::text AS research_run_id,
+           r.engine_id, r.engine_version, r.harness_schema_version,
+           r.research_quality_status, r.automation_eligible
       FROM reports r
       LEFT JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
@@ -456,6 +471,10 @@ function fallbackCommunityReportsFromOutputs(
       visibility: "public",
       workspace: "analysis",
       release_id: null,
+      research_run_id: dashboard.research_harness?.run_id || null,
+      engine_id: dashboard.research_harness?.engine_id,
+      research_quality_status: dashboard.research_harness?.quality_status,
+      automation_eligible: dashboard.research_harness?.automation_eligible,
       is_golden: isGoldenReport(dashboard, dashboard.valuation_hub?.consensus?.current_price),
       valuation_dashboard: dashboard,
     });
@@ -530,7 +549,10 @@ export async function listAllReports(workspace: Workspace = "analysis"): Promise
              )
            ELSE NULL END AS valuation_dashboard,
            r.source, r.source_run_id,
-           r.visibility, r.workspace, r.release_id::text AS release_id
+           r.visibility, r.workspace, r.release_id::text AS release_id,
+           r.research_run_id::text AS research_run_id,
+           r.engine_id, r.engine_version, r.harness_schema_version,
+           r.research_quality_status, r.automation_eligible
       FROM reports r
       LEFT JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
@@ -855,6 +877,7 @@ export async function listDashboardsForDiscovery(workspace: Workspace = "analysi
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.automation_eligible = true
        AND r.workspace = ${workspace}
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.ticker, r.generated_at DESC;
@@ -930,6 +953,7 @@ export async function listAllDashboardsForHitRate(workspace: Workspace = "analys
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rel ON rel.id = r.release_id
      WHERE r.deleted_at IS NULL
+       AND r.automation_eligible = true
        AND r.workspace = ${workspace}
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY r.generated_at DESC;

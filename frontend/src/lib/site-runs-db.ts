@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import type { RunStatusPayload } from "@/lib/site-runner";
+import type { AnalysisEngineId } from "@/lib/analysis-engine";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -27,6 +28,12 @@ interface SiteRunRow {
   llm_completed: number;
   error: string;
   report_id: string | null;
+  research_run_id: string | null;
+  engine_id: AnalysisEngineId;
+  engine_version: string;
+  harness_schema_version: string;
+  research_quality_status: RunStatusPayload["research_quality_status"];
+  automation_eligible: boolean;
 }
 
 function rowToRunStatus(row: SiteRunRow): Partial<RunStatusPayload> {
@@ -47,6 +54,12 @@ function rowToRunStatus(row: SiteRunRow): Partial<RunStatusPayload> {
     llm_progress_pct: llmPct,
     error: row.error || "",
     report_id: row.report_id,
+    research_run_id: row.research_run_id,
+    engine_id: row.engine_id,
+    engine_version: row.engine_version,
+    harness_schema_version: row.harness_schema_version,
+    research_quality_status: row.research_quality_status,
+    automation_eligible: row.automation_eligible,
   };
 }
 
@@ -61,6 +74,7 @@ export async function insertQueuedRun(opts: {
   userId: string | null;
   llmTotalEstimated: number;
   bootAnchorAt: string;
+  engine: AnalysisEngineId;
 }): Promise<boolean> {
   const sql = getSql();
   if (!sql) return false;
@@ -68,14 +82,17 @@ export async function insertQueuedRun(opts: {
     await sql`
       INSERT INTO site_runs (
         job_id, ticker, user_id, status,
-        llm_total_estimated, boot_anchor_at
+        llm_total_estimated, boot_anchor_at,
+        engine_id, engine_version, harness_schema_version,
+        research_quality_status, automation_eligible
       ) VALUES (
         ${opts.jobId},
         ${opts.ticker.toUpperCase()},
         ${asUuid(opts.userId)}::uuid,
         'queued',
         ${Math.max(1, Math.trunc(opts.llmTotalEstimated))},
-        ${opts.bootAnchorAt}::timestamptz
+        ${opts.bootAnchorAt}::timestamptz,
+        ${opts.engine}, '1.0.0', '1.0', 'green', true
       )
       ON CONFLICT (job_id) DO NOTHING;
     `;
@@ -108,7 +125,10 @@ export async function readRunStatusFromDb(jobId: string): Promise<Partial<RunSta
              finished_at::text AS finished_at,
              llm_total_estimated, llm_completed,
              error,
-             report_id::text AS report_id
+             report_id::text AS report_id,
+             research_run_id::text AS research_run_id,
+             engine_id, engine_version, harness_schema_version,
+             research_quality_status, automation_eligible
         FROM site_runs
        WHERE job_id = ${jobId}
        LIMIT 1;
@@ -148,7 +168,10 @@ export async function listActiveRunsForUser(
              finished_at::text AS finished_at,
              llm_total_estimated, llm_completed,
              error,
-             report_id::text AS report_id
+             report_id::text AS report_id,
+             research_run_id::text AS research_run_id,
+             engine_id, engine_version, harness_schema_version,
+             research_quality_status, automation_eligible
         FROM site_runs
        WHERE user_id = ${cleanUserId}::uuid
          AND workspace = 'analysis'

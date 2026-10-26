@@ -632,12 +632,18 @@ class HarnessSession:
         )
         return "\n".join(lines)
 
-    def capture_valuation_outputs(self, final_dict: Mapping[str, Any]) -> None:
+    def capture_valuation_outputs(
+        self,
+        final_dict: Mapping[str, Any],
+        *,
+        valuation_details: Mapping[str, Any] | None = None,
+    ) -> None:
         """Record deterministic valuation outputs and their explicit assumptions."""
         if not final_dict:
             return
         self._valuation_outputs = dict(final_dict)
-        content = stable_json(dict(final_dict))
+        details = dict(valuation_details or {})
+        content = stable_json({"summary": dict(final_dict), "details": details})
         source = self.add_source(
             canonical_uri=f"valuation-output://{self.state.ticker}/{self.state.run_id}",
             source_type="computed_valuation",
@@ -725,6 +731,116 @@ class HarnessSession:
                 confidence=1.0,
                 critical=False,
             )
+
+        methods = details.get("methods") if isinstance(details, Mapping) else None
+        assumption_tokens = (
+            "assumption",
+            "probability",
+            "growth",
+            "wacc",
+            "terminal",
+            "margin",
+            "tax_rate",
+            "multiple",
+            "fcf_next_year",
+            "revenue_3y",
+            "net_income_3y",
+            "net_financing_result",
+        )
+        output_tokens = (
+            "target_price",
+            "target_market_cap",
+            "weighted_target_market_cap",
+            "investment_amount",
+            "scenario_price",
+        )
+
+        def raw_json_for_item(item: Mapping[str, Any]) -> Mapping[str, Any]:
+            raw = item.get("raw_json")
+            if isinstance(raw, Mapping):
+                return raw
+            raw_text = str(item.get("raw_json_text") or "").strip()
+            if raw_text.startswith("{") and raw_text.endswith("}"):
+                try:
+                    parsed = json.loads(raw_text)
+                except Exception:
+                    return {}
+                return parsed if isinstance(parsed, Mapping) else {}
+            return {}
+
+        def walk_detail_assumptions(
+            value: Any,
+            path: str,
+            *,
+            scenario_context: bool = False,
+        ) -> Iterator[tuple[str, Any]]:
+            if isinstance(value, Mapping):
+                for key, nested in value.items():
+                    key_text = str(key)
+                    key_lower = key_text.casefold()
+                    next_path = f"{path}.{key_text}"
+                    next_scenario = scenario_context or key_lower in {"bull", "base", "bear"}
+                    if any(token in key_lower for token in output_tokens):
+                        continue
+                    if isinstance(nested, (str, int, float, bool)) and (
+                        next_scenario or any(token in key_lower for token in assumption_tokens)
+                    ):
+                        yield next_path, nested
+                    else:
+                        yield from walk_detail_assumptions(
+                            nested,
+                            next_path,
+                            scenario_context=next_scenario,
+                        )
+            elif isinstance(value, list):
+                for index, nested in enumerate(value):
+                    next_path = f"{path}[{index}]"
+                    if isinstance(nested, (str, int, float, bool)) and scenario_context:
+                        yield next_path, nested
+                    else:
+                        yield from walk_detail_assumptions(
+                            nested,
+                            next_path,
+                            scenario_context=scenario_context,
+                        )
+
+        if isinstance(methods, Mapping):
+            for method_name, items in methods.items():
+                if not isinstance(items, list):
+                    continue
+                for item_index, item in enumerate(items):
+                    if assumptions_seen >= 200 or not isinstance(item, Mapping):
+                        continue
+                    raw_json = raw_json_for_item(item)
+                    for path, value in walk_detail_assumptions(
+                        raw_json,
+                        f"$.details.methods.{method_name}[{item_index}].raw_json",
+                    ):
+                        if assumptions_seen >= 200:
+                            break
+                        assumptions_seen += 1
+                        evidence = self.add_evidence(
+                            source_id=source.id,
+                            excerpt=stable_json({"path": path, "value": value}),
+                            locator=path,
+                            extraction_method="valuation_assumption_path",
+                            quality=1.0,
+                        )
+                        normalized_path = re.sub(r"[^a-z0-9]+", ".", path.lower()).strip(".")
+                        self.add_claim(
+                            kind=ClaimKind.ASSUMPTION,
+                            statement=f"Valuation assumption at {path}: {value}",
+                            subject=self.state.ticker,
+                            predicate="valuation_assumption",
+                            canonical_key=f"valuation.assumption.{normalized_path}",
+                            value=value,
+                            origin_stage="valuations",
+                            origin_type="model",
+                            evidence_ids=[evidence.id],
+                            source_score=1.0,
+                            confidence=1.0,
+                            critical=False,
+                        )
 
     def apply_valuation_sensitivity(self, final_dict: Mapping[str, Any]) -> None:
         """Calculate exact denominator sensitivity for share-count conflicts."""
@@ -943,6 +1059,13 @@ class HarnessSession:
         self.reconcile()
         if self._valuation_outputs:
             self.apply_valuation_sensitivity(self._valuation_outputs)
+        # Hybrid must never publish a green/eligible result while a stage,
+        # checkpoint, or typed extraction error is present. This final invariant
+        # protects against a call site recording an error but forgetting to
+        # downgrade quality explicitly.
+        if self.is_hybrid and self.state.errors and self.state.status != "budget_exhausted":
+            self.state.quality_status = "red"
+            self.state.automation_eligible = False
         if self.state.status == "running":
             self.state.status = "completed" if success else "failed"
         if not success and self.state.status != "budget_exhausted":

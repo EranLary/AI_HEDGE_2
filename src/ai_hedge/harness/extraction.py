@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 
 ALLOWED_WEB_CLAIM_KEYS = frozenset(
@@ -35,6 +35,16 @@ class WebClaimCandidate(BaseModel):
     period: str | None = None
     as_of: str | None = None
     confidence: float = Field(default=0.5, ge=0, le=1)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            labels = {"high": 0.9, "medium": 0.6, "low": 0.3}
+            if normalized in labels:
+                return labels[normalized]
+        return value
 
 
 _CANDIDATES = TypeAdapter(list[WebClaimCandidate])
@@ -108,6 +118,7 @@ Rules:
 - Preserve units, currency, period, and as-of date. If a required qualifier is absent, omit the claim.
 - Shares must be total-company shares outstanding, never float, ADS ratio, issued shares, or a partial class.
 - Do not turn opinions, forecasts, or inferred arithmetic into FACT candidates.
+- confidence must be a numeric value from 0 to 1; high/medium/low are not valid output.
 - Return [] when the sources do not directly establish an allowed claim.
 
 Research gaps:

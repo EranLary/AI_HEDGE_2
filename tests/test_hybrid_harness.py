@@ -181,7 +181,21 @@ def test_valuation_outputs_preserve_assumptions_inferences_and_conclusions(tmp_p
             "Prices": {"Mean": [125.0]},
             "Revenue": {"Mean": [2_000_000.0]},
             "Method": {"raw_json": {"growth_assumption": "8% for three years"}},
-        }
+        },
+        valuation_details={
+            "methods": {
+                "Scenario DCF": [
+                    {
+                        "raw_json": {
+                            "bull": [0.25, 600_000_000, 0.08, 0.095, 0.025],
+                            "base": [0.50, 520_000_000, 0.05, 0.10, 0.025],
+                            "bear": [0.25, 400_000_000, -0.02, 0.11, 0.02],
+                            "target_market_cap": 7_000_000_000,
+                        }
+                    }
+                ]
+            }
+        },
     )
 
     by_kind = {claim.kind for claim in session.state.claims}
@@ -189,6 +203,9 @@ def test_valuation_outputs_preserve_assumptions_inferences_and_conclusions(tmp_p
     assert ClaimKind.INFERENCE in by_kind
     assert ClaimKind.CONCLUSION in by_kind
     assert all(claim.evidence_ids for claim in session.state.claims)
+    assumption_claims = [claim for claim in session.state.claims if claim.kind == ClaimKind.ASSUMPTION]
+    assert len(assumption_claims) >= 15
+    assert not any("target_market_cap" in claim.canonical_key for claim in assumption_claims)
 
 
 def test_reconciliation_records_have_stable_ids(tmp_path: Path) -> None:
@@ -302,12 +319,60 @@ def test_web_claim_extractor_rejects_non_verbatim_and_incomplete_candidates() ->
     assert accepted[0].canonical_key == "valuation.shares_outstanding"
 
 
+def test_web_claim_extractor_normalizes_bounded_confidence_labels() -> None:
+    payload = {
+        "sources": [
+            {
+                "url": "https://example.com/filing",
+                "title": "Filing",
+                "content_excerpt": "As of 2026-09-30, total shares outstanding were 1000000 shares.",
+            }
+        ]
+    }
+    raw = json.dumps(
+        [
+            {
+                "source_index": 0,
+                "canonical_key": "valuation.shares_outstanding",
+                "statement": "One million shares were outstanding.",
+                "value": 1_000_000,
+                "quote": "total shares outstanding were 1000000 shares",
+                "unit": "shares",
+                "currency": None,
+                "period": None,
+                "as_of": "2026-09-30",
+                "confidence": "high",
+            }
+        ]
+    )
+
+    accepted = extract_web_claims(
+        payload,
+        ticker="TEST",
+        gap_context="shares",
+        call_llm=lambda _prompt: raw,
+    )
+
+    assert accepted[0].confidence == pytest.approx(0.9)
+
+
 def test_budget_exhaustion_survives_failure_finalization(tmp_path: Path) -> None:
     session = _session(tmp_path)
     session.mark_budget_exhausted("query budget")
     session.finalize(success=False)
     assert session.state.status == "budget_exhausted"
     assert session.state.quality_status == "budget_exhausted"
+    assert session.state.automation_eligible is False
+
+
+def test_hybrid_finalize_never_leaves_recorded_errors_green(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.state.errors.append("typed extraction failed")
+
+    session.finalize(success=True)
+
+    assert session.state.status == "completed"
+    assert session.state.quality_status == "red"
     assert session.state.automation_eligible is False
 
 

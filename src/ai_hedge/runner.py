@@ -2278,6 +2278,8 @@ def _run_ticker_valuation_impl(
                         )
                 except Exception as extraction_err:
                     notes.append(f"Hybrid typed web claim extraction cycle {cycle} failed: {extraction_err}")
+                    harness.state.quality_status = "red"
+                    harness.state.automation_eligible = False
                 try:
                     from .obs.db import current_cost_for_run_id
 
@@ -2490,7 +2492,7 @@ def _run_ticker_valuation_impl(
         {"valuation_keys": sorted(str(key) for key in final_dict)},
         dependencies=[reconciliation_stage_id] if reconciliation_stage_id else [],
     ) as valuation_capture_stage:
-        harness.capture_valuation_outputs(final_dict)
+        harness.capture_valuation_outputs(final_dict, valuation_details=explain_payload)
         harness.apply_valuation_sensitivity(final_dict)
         harness.complete_stage(
             valuation_capture_stage,

@@ -258,7 +258,8 @@ class HarnessSession:
         started = time.perf_counter()
         try:
             yield stage
-            stage.status = "completed"
+            if stage.status == "running":
+                stage.status = "completed"
         except Exception as exc:
             stage.status = "failed"
             stage.error = f"{type(exc).__name__}: {exc}"[:2000]
@@ -431,6 +432,23 @@ class HarnessSession:
                     elif "price" in lowered_path:
                         canonical_key = "company.price_currency"
                 if not canonical_key:
+                    continue
+                # The legacy variables dictionary stores FX conversion factors
+                # under ``price_currency`` / ``financial_currency``. They are
+                # numeric rates, not ISO currency facts, and must never compete
+                # with values such as ``USD`` in the canonical ledger.
+                if canonical_key in {
+                    "company.currency",
+                    "company.financial_currency",
+                    "company.price_currency",
+                } and not isinstance(value, str):
+                    continue
+                # The provider payload includes trailing-period and averaged
+                # market-cap observations. The valuation boundary consumes the
+                # current, share-count-adjusted value in ``variables.market_cap``;
+                # historical observations stay available in the immutable raw
+                # source body without masquerading as same-period candidates.
+                if canonical_key == "valuation.market_cap" and path.casefold() != "variables.market_cap":
                     continue
                 fingerprint = (canonical_key, stable_json(value))
                 if fingerprint in seen:

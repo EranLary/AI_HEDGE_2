@@ -2213,6 +2213,24 @@ def _run_ticker_valuation_impl(
                 )
                 harness.record_queries(len(cycle_payload.get("queries") or []))
                 harness.capture_web_research(cycle_payload, cycle=cycle)
+                if cycle_payload.get("status") != "success":
+                    web_errors = [
+                        str(error)
+                        for error in cycle_payload.get("errors") or []
+                        if str(error)
+                    ]
+                    web_stage.status = "failed"
+                    web_stage.error = (
+                        web_errors[-1]
+                        if web_errors
+                        else f"Web research returned status {cycle_payload.get('status') or 'unknown'}"
+                    )[:2_000]
+                    if harness.is_hybrid:
+                        harness.state.quality_status = "red"
+                        harness.state.automation_eligible = False
+                        harness.state.errors.append(
+                            f"{web_stage.stage_key}: {web_stage.error}"
+                        )
                 try:
                     from .obs.db import current_cost_for_run_id
 
@@ -2220,6 +2238,12 @@ def _run_ticker_valuation_impl(
                 except Exception:
                     pass
                 harness.complete_stage(web_stage, cycle_payload)
+            if cycle_payload.get("status") != "success":
+                # A gap cycle is not a retry for a structurally failed worker.
+                # Preserve the failure and avoid spending the remaining cycles
+                # on the same deterministic startup/provider error.
+                cycle_payloads.append(cycle_payload)
+                break
             if harness.is_hybrid and cycle_payload.get("sources"):
                 from .harness.extraction import extract_web_claims
 

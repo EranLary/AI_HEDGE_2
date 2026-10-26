@@ -128,6 +128,52 @@ def test_matching_claims_support_each_other_without_conflict(tmp_path: Path) -> 
     assert any(row.relation.value == "supports" for row in session.state.relations)
 
 
+def test_provider_snapshot_excludes_fx_rates_and_historical_market_caps(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.capture_provider_snapshot(
+        info_dict={
+            "info": {"currency": "USD", "marketCap": 700},
+            "yahooquery": {
+                "valuation_measures": {
+                    "latest": {"MarketCap": 600},
+                    "recent_average": {"MarketCap": 550},
+                }
+            },
+        },
+        financial_dict={"info": {"currency": "USD"}},
+        variables_dict={
+            "market_cap": 720,
+            "price_currency": 1.0,
+            "financial_currency": 1.0,
+            "shares_outstanding": 100,
+        },
+    )
+    session.reconcile()
+
+    market_caps = [
+        claim for claim in session.state.claims if claim.canonical_key == "valuation.market_cap"
+    ]
+    currency_claims = [
+        claim
+        for claim in session.state.claims
+        if claim.canonical_key in {"company.currency", "company.financial_currency", "company.price_currency"}
+    ]
+    assert [claim.value for claim in market_caps] == [720]
+    assert {claim.value for claim in currency_claims} == {"USD"}
+    assert not session.state.contradictions
+
+
+def test_stage_can_be_explicitly_marked_failed_without_raising(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    with session.stage("optional", {"input": 1}) as stage:
+        stage.status = "failed"
+        stage.error = "provider unavailable"
+        session.complete_stage(stage, {"status": "error"})
+
+    assert stage.status == "failed"
+    assert stage.error == "provider unavailable"
+
+
 def test_valuation_outputs_preserve_assumptions_inferences_and_conclusions(tmp_path: Path) -> None:
     session = _session(tmp_path)
     session.capture_valuation_outputs(

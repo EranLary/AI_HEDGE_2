@@ -717,6 +717,11 @@ def test_newer_provider_share_candidate_keeps_official_resolution_amber(tmp_path
 
 def test_low_confidence_share_count_fallback_is_not_automation_eligible(tmp_path: Path) -> None:
     session = _session(tmp_path)
+    session.capture_provider_snapshot(
+        info_dict={"info": {"currency": "USD"}},
+        financial_dict={},
+        variables_dict={"shares_outstanding": 25_000_000, "market_cap": 900_000_000},
+    )
     session.capture_share_count(
         {
             "source_type": "provider_fallback",
@@ -732,6 +737,13 @@ def test_low_confidence_share_count_fallback_is_not_automation_eligible(tmp_path
     assert session.state.quality_status == "amber_conflict"
     assert session.state.automation_eligible is False
     assert any("low-confidence provider fallback" in note for note in session.state.quality_notes)
+    selected = next(
+        claim
+        for claim in session.state.claims
+        if claim.selected and claim.canonical_key == "valuation.shares_outstanding"
+    )
+    assert selected.source_score == pytest.approx(0.68)
+    assert selected.confidence == pytest.approx(0.68)
 
 
 def test_valuation_quality_gate_rejects_large_allocation_with_disagreement(tmp_path: Path) -> None:

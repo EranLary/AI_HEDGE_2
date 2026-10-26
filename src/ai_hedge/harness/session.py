@@ -641,9 +641,10 @@ class HarnessSession:
             return
         source_type = str(payload.get("source_type") or "provider_fallback")
         confidence_label = str(payload.get("confidence") or "").strip().casefold()
-        if source_type != "official_filing" and (
+        low_confidence_fallback = source_type != "official_filing" and (
             bool(payload.get("fallback_used")) or confidence_label in {"low", "very low"}
-        ):
+        )
+        if low_confidence_fallback:
             self.mark_amber(
                 "share count relies on a low-confidence provider fallback because no official filing evidence was available"
             )
@@ -665,6 +666,18 @@ class HarnessSession:
         )
         selected = payload.get("selected_shares_outstanding")
         if selected is not None:
+            if low_confidence_fallback:
+                # The same numeric denominator may already exist in the provider
+                # snapshot with a higher generic score. Cap every equivalent
+                # claim so the selected ledger confidence agrees with the
+                # explicit fallback quality note.
+                for existing_claim in self.state.claims:
+                    if (
+                        existing_claim.canonical_key == "valuation.shares_outstanding"
+                        and _equivalent(existing_claim.value, selected)
+                    ):
+                        existing_claim.source_score = min(existing_claim.source_score, 0.68)
+                        existing_claim.confidence = min(existing_claim.confidence, 0.68)
             evidence = self.add_evidence(
                 source_id=source.id,
                 excerpt=evidence_excerpt or stable_json({"selected_shares_outstanding": selected}),

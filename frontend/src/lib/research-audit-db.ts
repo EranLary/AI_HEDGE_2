@@ -12,6 +12,7 @@ export type ResearchAudit = {
     status: string;
     quality_status: "green" | "amber_conflict" | "red" | "budget_exhausted";
     automation_eligible: boolean;
+    quality_notes: string[];
     budget: Record<string, unknown>;
     config_snapshot: Record<string, unknown>;
     queries_used: number;
@@ -36,7 +37,7 @@ export async function fetchResearchAudit(reportId: string): Promise<ResearchAudi
            rr.harness_schema_version, rr.run_mode,
            rr.baseline_research_run_id::text AS baseline_research_run_id,
            rr.status, rr.quality_status,
-           rr.automation_eligible, rr.budget, rr.config_snapshot,
+           rr.automation_eligible, rr.quality_notes, rr.budget, rr.config_snapshot,
            rr.queries_used, rr.observed_cost_usd::float8 AS observed_cost_usd,
            rr.started_at::text AS started_at, rr.finished_at::text AS finished_at
       FROM reports r

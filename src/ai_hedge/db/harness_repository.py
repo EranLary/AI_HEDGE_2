@@ -19,14 +19,15 @@ def persist_research_state(state: ResearchState) -> tuple[str | None, str | None
                         harness_schema_version, run_mode, baseline_research_run_id,
                         status, quality_status,
                         automation_eligible, budget, config_snapshot, queries_used,
-                        observed_cost_usd, errors, started_at, finished_at
+                        observed_cost_usd, errors, quality_notes, started_at, finished_at
                     ) VALUES (
                         %(id)s::uuid, %(job_id)s, %(ticker)s, %(workspace)s,
                         %(engine_id)s, %(engine_version)s, %(harness_schema_version)s,
                         %(run_mode)s, %(baseline_research_run_id)s::uuid,
                         %(status)s, %(quality_status)s, %(automation_eligible)s,
                         %(budget)s, %(config_snapshot)s, %(queries_used)s,
-                        %(observed_cost_usd)s, %(errors)s, %(started_at)s, %(finished_at)s
+                        %(observed_cost_usd)s, %(errors)s, %(quality_notes)s,
+                        %(started_at)s, %(finished_at)s
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         status = EXCLUDED.status,
@@ -35,6 +36,7 @@ def persist_research_state(state: ResearchState) -> tuple[str | None, str | None
                         queries_used = EXCLUDED.queries_used,
                         observed_cost_usd = EXCLUDED.observed_cost_usd,
                         errors = EXCLUDED.errors,
+                        quality_notes = EXCLUDED.quality_notes,
                         finished_at = EXCLUDED.finished_at
                     """,
                     {
@@ -55,6 +57,7 @@ def persist_research_state(state: ResearchState) -> tuple[str | None, str | None
                         "queries_used": state.queries_used,
                         "observed_cost_usd": state.observed_cost_usd,
                         "errors": Jsonb(state.errors),
+                        "quality_notes": Jsonb(state.quality_notes),
                         "started_at": state.started_at,
                         "finished_at": state.finished_at,
                     },

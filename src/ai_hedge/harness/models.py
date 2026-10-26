@@ -181,6 +181,7 @@ class ResearchState(StrictModel):
     sensitivity_scenarios: list[SensitivityScenario] = Field(default_factory=list)
     queries_used: int = 0
     observed_cost_usd: float = 0.0
+    quality_notes: list[str] = Field(default_factory=list)
     started_at: datetime = Field(default_factory=utc_now)
     finished_at: datetime | None = None
     errors: list[str] = Field(default_factory=list)

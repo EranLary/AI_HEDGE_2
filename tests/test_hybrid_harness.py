@@ -7,7 +7,7 @@ import pytest
 
 from ai_hedge.harness import HarnessSession, engine_descriptor, normalize_engine_id
 from ai_hedge.harness.extraction import extract_web_claims
-from ai_hedge.harness.models import ClaimKind
+from ai_hedge.harness.models import ClaimKind, ClaimStatus
 
 
 def _session(tmp_path: Path, engine: str = "hybrid_v1") -> HarnessSession:
@@ -161,6 +161,75 @@ def test_provider_snapshot_excludes_fx_rates_and_historical_market_caps(tmp_path
     assert [claim.value for claim in market_caps] == [720]
     assert {claim.value for claim in currency_claims} == {"USD"}
     assert not session.state.contradictions
+    selected = [claim for claim in session.state.claims if claim.selected]
+    assert all(claim.unit for claim in selected if claim.critical)
+    assert all(claim.period or claim.as_of for claim in selected if claim.critical)
+    assert next(claim for claim in selected if claim.canonical_key == "valuation.market_cap").currency == "USD"
+
+
+def test_provider_snapshot_separates_original_currency_from_normalized_usd(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.capture_provider_snapshot(
+        info_dict={
+            "info": {
+                "currency": "ILS",
+                "financialCurrency": "ILS",
+                "original_price_currency": "ILA",
+                "original_financial_currency": "ILS",
+            }
+        },
+        financial_dict={"currency_statement": "Financial data is in USD"},
+        variables_dict={
+            "market_cap": 720,
+            "price_currency": 0.0031,
+            "financial_currency": 3.2,
+            "shares_outstanding": 100,
+        },
+    )
+    session.reconcile()
+
+    selected = [claim for claim in session.state.claims if claim.selected]
+    assert {
+        claim.value
+        for claim in selected
+        if claim.canonical_key
+        in {"company.currency", "company.price_currency", "company.financial_currency"}
+    } == {"USD"}
+    assert next(
+        claim for claim in selected if claim.canonical_key == "valuation.market_cap"
+    ).currency == "USD"
+    assert any(
+        claim.canonical_key == "company.original_price_currency" and claim.value == "ILA"
+        for claim in session.state.claims
+    )
+
+
+def test_provider_snapshot_excludes_unconverted_yahooquery_monetary_values(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.capture_provider_snapshot(
+        info_dict={
+            "info": {"currency": "USD", "totalRevenue": 542_000_000},
+            "yahooquery": {"financial_data": {"totalRevenue": 1_685_000_000}},
+        },
+        financial_dict={
+            "currency_statement": "Financial data is in USD",
+            "statement_metrics": {"revenue": 542_000_000},
+        },
+        variables_dict={
+            "revenue": 542_000_000,
+            "price_currency": 1.0,
+            "financial_currency": 1.0,
+        },
+    )
+    session.reconcile()
+
+    revenue_claims = [
+        claim for claim in session.state.claims if claim.canonical_key == "financial.revenue"
+    ]
+    assert {claim.value for claim in revenue_claims} == {542_000_000}
+    assert revenue_claims[0].selected is True
+    assert revenue_claims[0].source_score == 0.9
+    assert not session.state.contradictions
 
 
 def test_stage_can_be_explicitly_marked_failed_without_raising(tmp_path: Path) -> None:
@@ -193,7 +262,30 @@ def test_valuation_outputs_preserve_assumptions_inferences_and_conclusions(tmp_p
                             "target_market_cap": 7_000_000_000,
                         }
                     }
-                ]
+                ],
+                "Earnings Scenario": [
+                    {
+                        "raw_json": {
+                            "bull": [0.25, 40_000_000],
+                            "base": [0.50, 25_000_000],
+                            "bear": [0.25, 10_000_000],
+                            "net_income_3y": 25_000_000,
+                        }
+                    }
+                ],
+                "SOTP Scenario": [
+                    {
+                        "raw_json": {
+                            "bull": {
+                                "probability": 0.25,
+                                "activities": {
+                                    "Shipbuilding and Defense": 300_000_000,
+                                    "Equity Adjustments": -50_000_000,
+                                },
+                            }
+                        }
+                    }
+                ],
             }
         },
     )
@@ -205,7 +297,41 @@ def test_valuation_outputs_preserve_assumptions_inferences_and_conclusions(tmp_p
     assert all(claim.evidence_ids for claim in session.state.claims)
     assumption_claims = [claim for claim in session.state.claims if claim.kind == ClaimKind.ASSUMPTION]
     assert len(assumption_claims) >= 15
-    assert not any("target_market_cap" in claim.canonical_key for claim in assumption_claims)
+    assert not any("weighted_target_market_cap" in claim.canonical_key for claim in assumption_claims)
+    session.reconcile()
+    assert all(claim.status == ClaimStatus.PROPOSED for claim in assumption_claims)
+    assert all(claim.confidence == pytest.approx(0.5) for claim in assumption_claims)
+    assert any(
+        claim.canonical_key.endswith("scenario.dcf.bull.wacc")
+        and claim.unit == "ratio"
+        for claim in assumption_claims
+    )
+    assert any(
+        claim.canonical_key.endswith("scenario.dcf.bull.fcf.next.year")
+        and claim.unit == "currency_full_units"
+        and claim.currency == "USD"
+        and claim.period == "forward_1y"
+        for claim in assumption_claims
+    )
+    assert any(
+        claim.canonical_key.endswith("scenario.dcf.bull.growth.rate")
+        and claim.unit == "ratio"
+        for claim in assumption_claims
+    )
+    assert any(
+        claim.canonical_key.endswith("earnings.scenario.net.income.3y")
+        and claim.unit == "currency_full_units"
+        and claim.currency == "USD"
+        and claim.period == "forward_3y"
+        for claim in assumption_claims
+    )
+    assert any(
+        claim.canonical_key.endswith("sotp.scenario.bull.shipbuilding.and.defense")
+        and claim.unit == "currency_full_units"
+        and claim.currency == "USD"
+        and claim.period == "forecast"
+        for claim in assumption_claims
+    )
 
 
 def test_reconciliation_records_have_stable_ids(tmp_path: Path) -> None:
@@ -227,6 +353,80 @@ def test_reconciliation_records_have_stable_ids(tmp_path: Path) -> None:
         [row.id for row in session.state.contradictions],
         [row.id for row in session.state.sensitivity_scenarios],
     )
+
+
+def test_valuation_output_gate_rejects_fx_reinterpretation_of_snapshot(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+
+    issues = session.valuation_output_integrity_issues(
+        {
+            "methods": {
+                "Target Scenario": [
+                    {
+                        "raw_json": {
+                            "step_by_step_analysis": (
+                                "The provider current market cap is currency-mislabeled, "
+                                "so I exclude it and convert the ILS market cap to USD."
+                            )
+                        }
+                    }
+                ]
+            }
+        }
+    )
+
+    assert issues == [
+        "a valuation model reinterpreted or FX-converted the authoritative Hybrid valuation snapshot"
+    ]
+    assert session.state.quality_status == "amber_conflict"
+    assert session.state.automation_eligible is False
+
+
+def test_valuation_output_gate_allows_local_currency_operating_evidence(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+
+    issues = session.valuation_output_integrity_issues(
+        {
+            "methods": {
+                "Scenario DCF": [
+                    {
+                        "raw_json": {
+                            "step_by_step_analysis": (
+                                "The ILS 2.5bn filing-backed backlog supports the revenue forecast; "
+                                "the authoritative current market cap is USD 878.5m."
+                            )
+                        }
+                    }
+                ]
+            }
+        }
+    )
+
+    assert issues == []
+
+
+def test_valuation_output_gate_rejects_numeric_share_denominator(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+
+    issues = session.valuation_output_integrity_issues(
+        {
+            "methods": {
+                "Earnings Scenario": [
+                    {
+                        "raw_json": {
+                            "step_by_step_analysis": (
+                                "Net income divided by 25,000,000 shares gives the per-share value."
+                            )
+                        }
+                    }
+                ]
+            }
+        }
+    )
+
+    assert issues == [
+        "a valuation model introduced a numeric share denominator that belongs only to the backend"
+    ]
 
 
 def test_hybrid_readiness_requires_shares_and_currency(tmp_path: Path) -> None:
@@ -354,6 +554,205 @@ def test_web_claim_extractor_normalizes_bounded_confidence_labels() -> None:
     )
 
     assert accepted[0].confidence == pytest.approx(0.9)
+
+
+def test_web_claim_extractor_preserves_management_guidance_as_assumption(tmp_path: Path) -> None:
+    payload = {
+        "sources": [
+            {
+                "url": "https://example.com/guidance",
+                "title": "Company guidance",
+                "content_excerpt": "For FY2027, management expects revenue of USD 500 million.",
+            }
+        ]
+    }
+    raw = json.dumps(
+        [
+            {
+                "source_index": 0,
+                "claim_kind": "ASSUMPTION",
+                "canonical_key": "guidance.revenue",
+                "statement": "Management expects FY2027 revenue of USD 500 million.",
+                "value": 500_000_000,
+                "quote": "management expects revenue of USD 500 million",
+                "unit": "currency_full_units",
+                "currency": "USD",
+                "period": "FY2027",
+                "as_of": None,
+                "confidence": 0.8,
+            }
+        ]
+    )
+    accepted = extract_web_claims(
+        payload,
+        ticker="TEST",
+        gap_context="forward revenue",
+        call_llm=lambda _prompt: raw,
+    )
+    assert accepted[0].claim_kind == "ASSUMPTION"
+    session = _session(tmp_path)
+    session.capture_web_research(payload, cycle=1)
+    session.capture_web_claims(payload, accepted, cycle=1)
+    claim = next(claim for claim in session.state.claims if claim.canonical_key == "guidance.revenue")
+    assert claim.kind == ClaimKind.ASSUMPTION
+    assert claim.evidence_ids
+
+
+def test_web_claim_extractor_accepts_contract_award_with_provenance(tmp_path: Path) -> None:
+    quote = "The deal is valued at approximately EUR 80 million."
+    payload = {
+        "sources": [
+            {
+                "url": "https://example.com/contract",
+                "title": "Israel Shipyards new export contract",
+                "publisher": "Example",
+                "published_at": "2026-10-12",
+                "content_excerpt": quote,
+            }
+        ]
+    }
+    response = json.dumps(
+        [
+            {
+                "source_index": 0,
+                "claim_kind": "FACT",
+                "canonical_key": "contracts.new_award_value",
+                "statement": "A new export contract is valued at EUR 80 million.",
+                "value": 80_000_000,
+                "quote": quote,
+                "unit": "currency_full_units",
+                "currency": "EUR",
+                "period": None,
+                "as_of": "2026-10-12",
+                "confidence": 0.8,
+            }
+        ]
+    )
+
+    accepted = extract_web_claims(
+        payload,
+        call_llm=lambda _: response,
+        ticker="ISHI.TA",
+        company_name="Israel Shipyards",
+        gap_context="Find post-filing contract awards.",
+    )
+    session = _session(tmp_path)
+    session.capture_web_claims(payload, accepted, cycle=1)
+
+    claim = next(
+        claim for claim in session.state.claims if claim.canonical_key == "contracts.new_award_value"
+    )
+    assert claim.kind == ClaimKind.FACT
+    assert claim.currency == "EUR"
+    assert claim.as_of == "2026-10-12"
+    assert claim.evidence_ids
+
+
+def test_web_claim_extractor_rejects_fact_from_unrelated_entity() -> None:
+    quote = "Unrelated Cloud Corp expects revenue of USD 63 billion."
+    payload = {
+        "sources": [
+            {
+                "url": "https://example.com/unrelated",
+                "title": "Unrelated Cloud Corp guidance",
+                "publisher": "Example",
+                "published_at": "2026-10-22",
+                "content_excerpt": quote,
+            }
+        ]
+    }
+    response = json.dumps(
+        [
+            {
+                "source_index": 0,
+                "claim_kind": "ASSUMPTION",
+                "canonical_key": "guidance.revenue",
+                "statement": quote,
+                "value": 63_000_000_000,
+                "quote": quote,
+                "unit": "currency_full_units",
+                "currency": "USD",
+                "period": "Q3 2026",
+                "as_of": "2026-10-22",
+                "confidence": 0.8,
+            }
+        ]
+    )
+
+    accepted = extract_web_claims(
+        payload,
+        call_llm=lambda _: response,
+        ticker="ISHI.TA",
+        company_name="Israel Shipyards",
+        gap_context="Find new contract awards.",
+    )
+
+    assert accepted == []
+
+
+def test_newer_provider_share_candidate_keeps_official_resolution_amber(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.capture_provider_snapshot(
+        info_dict={"info": {"currency": "USD"}},
+        financial_dict={},
+        variables_dict={"shares_outstanding": 90, "market_cap": 900},
+    )
+    session.capture_share_count(
+        {
+            "source_type": "official_filing",
+            "selected_shares_outstanding": 100,
+            "as_of_date": "2025-12-31",
+            "evidence_excerpt": "100 shares outstanding",
+            "provider_candidates": {"current_valuation_denominator": 90},
+        }
+    )
+    session.reconcile()
+    contradiction = next(
+        row for row in session.state.contradictions if row.canonical_key == "valuation.shares_outstanding"
+    )
+    assert contradiction.status == "provisional"
+    assert session.state.quality_status == "amber_conflict"
+    assert session.state.automation_eligible is False
+
+
+def test_low_confidence_share_count_fallback_is_not_automation_eligible(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.capture_share_count(
+        {
+            "source_type": "provider_fallback",
+            "selected_shares_outstanding": 25_000_000,
+            "fallback_used": True,
+            "confidence": "Low",
+            "validation_note": "No official filing share-count evidence was available.",
+            "provider_candidates": {"current_valuation_denominator": 25_000_000},
+        }
+    )
+    session.reconcile()
+
+    assert session.state.quality_status == "amber_conflict"
+    assert session.state.automation_eligible is False
+    assert any("low-confidence provider fallback" in note for note in session.state.quality_notes)
+
+
+def test_valuation_quality_gate_rejects_large_allocation_with_disagreement(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    session.evaluate_valuation_quality(
+        {
+            "Prices": {
+                "Mean": [108],
+                "Median": [95],
+                "Sector-Weighted Valuation": [108],
+                "CV": 0.15,
+                "LMIL Mean Investment": 8_000,
+                "LMIL Median Investment": 2_000,
+            }
+        },
+        valuation_details={"sector_weighted_valuation": {"investment_amount": 8_000}},
+        variables_dict={"price": 100},
+    )
+    assert session.state.quality_status == "amber_conflict"
+    assert session.state.automation_eligible is False
+    assert len(session.state.quality_notes) == 2
 
 
 def test_budget_exhaustion_survives_failure_finalization(tmp_path: Path) -> None:

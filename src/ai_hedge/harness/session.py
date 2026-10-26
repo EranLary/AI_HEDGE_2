@@ -7,6 +7,7 @@ import os
 import re
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import NAMESPACE_URL, uuid5
@@ -43,6 +44,23 @@ CRITICAL_KEYS = {
 }
 WEB_SEARCHES_PER_CYCLE = 6
 
+_CURRENT_SNAPSHOT_KEYS = {
+    "company.currency",
+    "company.financial_currency",
+    "company.price_currency",
+    "valuation.shares_outstanding",
+    "valuation.market_cap",
+}
+
+_MONETARY_KEYS = {
+    "valuation.market_cap",
+    "valuation.total_debt",
+    "valuation.total_cash",
+    "financial.revenue",
+    "financial.net_income",
+    "financial.free_cash_flow",
+}
+
 _KEY_ALIASES = {
     "shares_outstanding": "valuation.shares_outstanding",
     "sharesoutstanding": "valuation.shares_outstanding",
@@ -62,6 +80,8 @@ _KEY_ALIASES = {
     "currency": "company.currency",
     "financial_currency": "company.financial_currency",
     "price_currency": "company.price_currency",
+    "original_financial_currency": "company.original_financial_currency",
+    "original_price_currency": "company.original_price_currency",
 }
 
 
@@ -113,6 +133,41 @@ def _claims_equivalent(left: ResearchClaim, right: ResearchClaim) -> bool:
 def _period_from_path(path: str) -> str | None:
     match = re.search(r"\b(20\d{2}(?:[-_/]\d{1,2}(?:[-_/]\d{1,2})?)?)\b", path)
     return match.group(1).replace("_", "-").replace("/", "-") if match else None
+
+
+def _iso_date(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    match = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
+    return match.group(1) if match else None
+
+
+def _claim_qualifiers(
+    canonical_key: str,
+    *,
+    path: str,
+    snapshot_date: str,
+    reported_date: str | None,
+    currency: str | None,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    path_period = _period_from_path(path)
+    if canonical_key in {"company.currency", "company.financial_currency", "company.price_currency"}:
+        return "currency_code", None, "current", snapshot_date
+    if canonical_key == "valuation.shares_outstanding":
+        return "shares", None, "current", snapshot_date
+    if canonical_key == "valuation.market_cap":
+        return "currency_full_units", currency, "current", snapshot_date
+    if canonical_key in {"valuation.total_cash", "valuation.total_debt"}:
+        return "currency_full_units", currency, path_period or "latest_reported", reported_date
+    if canonical_key in {"financial.revenue", "financial.net_income", "financial.free_cash_flow"}:
+        return "currency_full_units", currency, path_period or "TTM", reported_date
+    return None, None, path_period, path_period
 
 
 def _web_authority(item: Mapping[str, Any]) -> float:
@@ -398,10 +453,14 @@ class HarnessSession:
         financial_dict: Mapping[str, Any],
         variables_dict: Mapping[str, Any],
     ) -> None:
+        # Iterate the actual valuation boundary first so duplicate provider
+        # observations cannot outrank the normalized values consumed by the
+        # deterministic calculators. The full raw payload remains immutable in
+        # the source body for audit.
         snapshots = {
-            "info": dict(info_dict or {}),
-            "financial": dict(financial_dict or {}),
             "variables": dict(variables_dict or {}),
+            "financial": dict(financial_dict or {}),
+            "info": dict(info_dict or {}),
         }
         source = self.add_source(
             canonical_uri=f"provider-snapshot://{self.state.ticker}/{self.state.run_id}",
@@ -410,7 +469,87 @@ class HarnessSession:
             title=f"{self.state.ticker} deterministic provider snapshot",
             publisher="AI_HEDGE_2 providers",
             authority_score=0.72,
+            metadata={"snapshot_as_of": self.state.started_at.date().isoformat()},
         )
+
+        snapshot_date = self.state.started_at.date().isoformat()
+        info_payload = info_dict.get("info") if isinstance(info_dict.get("info"), Mapping) else info_dict
+        financial_payload = (
+            financial_dict.get("info")
+            if isinstance(financial_dict.get("info"), Mapping)
+            else financial_dict
+        )
+        reported_date = _iso_date(
+            info_payload.get("mostRecentQuarter")
+            or financial_payload.get("mostRecentQuarter")
+            or financial_dict.get("as_of")
+            or financial_dict.get("date")
+        )
+        original_price_currency = next(
+            (
+                str(value).strip().upper()
+                for value in (
+                    info_payload.get("original_price_currency"),
+                    info_payload.get("currency"),
+                )
+                if isinstance(value, str) and str(value).strip()
+            ),
+            None,
+        )
+        original_financial_currency = next(
+            (
+                str(value).strip().upper()
+                for value in (
+                    info_payload.get("original_financial_currency"),
+                    info_payload.get("financialCurrency"),
+                )
+                if isinstance(value, str) and str(value).strip()
+            ),
+            None,
+        )
+        currency_statement = str(financial_dict.get("currency_statement") or "")
+        normalized_currency = (
+            "USD"
+            if "USD" in currency_statement.upper()
+            or any(key in variables_dict for key in ("price_currency", "financial_currency"))
+            else original_financial_currency or original_price_currency
+        )
+
+        for canonical_key in (
+            "company.currency",
+            "company.price_currency",
+            "company.financial_currency",
+        ):
+            if not normalized_currency:
+                continue
+            evidence = self.add_evidence(
+                source_id=source.id,
+                excerpt=stable_json(
+                    {
+                        "normalized_currency": normalized_currency,
+                        "currency_statement": currency_statement or None,
+                    }
+                ),
+                locator="$.financial.currency_statement",
+                extraction_method="pipeline_currency_normalization",
+                quality=0.9,
+            )
+            self.add_claim(
+                kind=ClaimKind.FACT,
+                statement=f"{canonical_key} is {normalized_currency} after provider normalization",
+                subject=self.state.ticker,
+                predicate=canonical_key,
+                canonical_key=canonical_key,
+                value=normalized_currency,
+                period="current",
+                as_of=snapshot_date,
+                unit="currency_code",
+                origin_stage="provider.snapshot",
+                origin_type="computed",
+                evidence_ids=[evidence.id],
+                source_score=0.9,
+                confidence=1.0,
+            )
 
         def walk(value: Any, path: str = "") -> Iterator[tuple[str, Any]]:
             if isinstance(value, Mapping):
@@ -426,12 +565,14 @@ class HarnessSession:
                 leaf = path.rsplit(".", 1)[-1].strip().lower()
                 canonical_key = _KEY_ALIASES.get(leaf)
                 if leaf == "currency":
-                    lowered_path = path.lower()
-                    if "financial" in lowered_path:
-                        canonical_key = "company.financial_currency"
-                    elif "price" in lowered_path:
-                        canonical_key = "company.price_currency"
+                    canonical_key = None
                 if not canonical_key:
+                    continue
+                # yahooquery is retained as raw provider context. Its monetary
+                # values are in the original listing/financial currencies and
+                # therefore cannot be compared directly with the normalized
+                # USD valuation boundary.
+                if ".yahooquery." in path.casefold() and canonical_key in _MONETARY_KEYS:
                     continue
                 # The legacy variables dictionary stores FX conversion factors
                 # under ``price_currency`` / ``financial_currency``. They are
@@ -455,12 +596,27 @@ class HarnessSession:
                     continue
                 seen.add(fingerprint)
                 excerpt = stable_json({"path": path, "value": value})
+                path_lower = path.casefold()
+                path_quality = (
+                    0.9
+                    if path_lower.startswith("variables.")
+                    else 0.88
+                    if path_lower.startswith("financial.statement_metrics.")
+                    else source.authority_score
+                )
                 evidence = self.add_evidence(
                     source_id=source.id,
                     excerpt=excerpt,
                     locator=f"$.{path}",
                     extraction_method="json_path",
-                    quality=0.72,
+                    quality=path_quality,
+                )
+                unit, claim_currency, period, as_of = _claim_qualifiers(
+                    canonical_key,
+                    path=path,
+                    snapshot_date=snapshot_date,
+                    reported_date=reported_date,
+                    currency=normalized_currency,
                 )
                 self.add_claim(
                     kind=ClaimKind.FACT,
@@ -469,29 +625,43 @@ class HarnessSession:
                     predicate=canonical_key,
                     canonical_key=canonical_key,
                     value=value,
-                    period=_period_from_path(path),
-                    as_of=_period_from_path(path),
-                    unit="shares" if canonical_key == "valuation.shares_outstanding" else None,
+                    period=period,
+                    as_of=as_of,
+                    unit=unit,
+                    currency=claim_currency,
                     origin_stage="provider.snapshot",
                     origin_type="external",
                     evidence_ids=[evidence.id],
-                    source_score=source.authority_score,
-                    confidence=0.72,
+                    source_score=path_quality,
+                    confidence=path_quality,
                 )
 
     def capture_share_count(self, payload: Mapping[str, Any]) -> None:
         if not payload:
             return
         source_type = str(payload.get("source_type") or "provider_fallback")
+        confidence_label = str(payload.get("confidence") or "").strip().casefold()
+        if source_type != "official_filing" and (
+            bool(payload.get("fallback_used")) or confidence_label in {"low", "very low"}
+        ):
+            self.mark_amber(
+                "share count relies on a low-confidence provider fallback because no official filing evidence was available"
+            )
         evidence_excerpt = str(payload.get("evidence_excerpt") or payload.get("validation_note") or "").strip()
         source = self.add_source(
-            canonical_uri=f"share-count://{self.state.ticker}/{self.state.run_id}",
+            canonical_uri=str(payload.get("source_url") or payload.get("filing_id") or "").strip()
+            or f"share-count://{self.state.ticker}/{self.state.run_id}",
             source_type=source_type,
             content=stable_json(dict(payload)),
             title=f"{self.state.ticker} share-count resolution",
             publisher="Official filing" if source_type == "official_filing" else "Provider fallback",
             published_at=str(payload.get("as_of_date") or "") or None,
             authority_score=0.98 if source_type == "official_filing" else 0.68,
+            metadata={
+                key: payload.get(key)
+                for key in ("form_type", "filing_id", "source_url", "filing_date")
+                if payload.get(key) not in (None, "")
+            },
         )
         selected = payload.get("selected_shares_outstanding")
         if selected is not None:
@@ -510,6 +680,7 @@ class HarnessSession:
                 canonical_key="valuation.shares_outstanding",
                 value=selected,
                 unit="shares",
+                period="filing_reported" if source_type == "official_filing" else "current",
                 as_of=str(payload.get("as_of_date") or "") or None,
                 origin_stage="share_count.verify",
                 origin_type="external",
@@ -533,6 +704,8 @@ class HarnessSession:
                 canonical_key="valuation.shares_outstanding",
                 value=value,
                 unit="shares",
+                period="current",
+                as_of=self.state.started_at.date().isoformat(),
                 origin_stage="share_count.verify",
                 origin_type="external",
                 evidence_ids=[evidence.id],
@@ -556,7 +729,11 @@ class HarnessSession:
                 publisher=str(item.get("publisher") or ""),
                 published_at=str(item.get("published_at") or "") or None,
                 authority_score=authority_score,
-                metadata={"cycle": cycle, "query_ids": list(item.get("query_ids") or [])},
+                metadata={
+                    "cycle": cycle,
+                    "query_ids": list(item.get("query_ids") or []),
+                    "claim_supporting": False,
+                },
             )
             self.add_evidence(
                 source_id=source.id,
@@ -591,7 +768,11 @@ class HarnessSession:
                 publisher=str(item.get("publisher") or ""),
                 published_at=str(item.get("published_at") or "") or None,
                 authority_score=authority_score,
-                metadata={"cycle": cycle, "query_ids": list(item.get("query_ids") or [])},
+                metadata={
+                    "cycle": cycle,
+                    "query_ids": list(item.get("query_ids") or []),
+                    "claim_supporting": True,
+                },
             )
             evidence = self.add_evidence(
                 source_id=source.id,
@@ -601,7 +782,7 @@ class HarnessSession:
                 quality=authority_score,
             )
             self.add_claim(
-                kind=ClaimKind.FACT,
+                kind=ClaimKind(str(candidate.claim_kind)),
                 statement=str(candidate.statement),
                 subject=self.state.ticker,
                 predicate=str(candidate.canonical_key).rsplit(".", 1)[-1],
@@ -617,6 +798,7 @@ class HarnessSession:
                 source_score=authority_score,
                 confidence=min(float(candidate.confidence), authority_score),
             )
+            source.metadata["claim_supporting"] = True
 
     def gap_context(self) -> str:
         issues = self.valuation_readiness_issues()
@@ -728,7 +910,7 @@ class HarnessSession:
                 origin_type="model",
                 evidence_ids=[evidence.id],
                 source_score=1.0,
-                confidence=1.0,
+                confidence=0.5,
                 critical=False,
             )
 
@@ -773,36 +955,116 @@ class HarnessSession:
             path: str,
             *,
             scenario_context: bool = False,
-        ) -> Iterator[tuple[str, Any]]:
+            scenario_name: str | None = None,
+            scenario_fields: tuple[str, ...] = (),
+        ) -> Iterator[tuple[str, str, Any]]:
             if isinstance(value, Mapping):
                 for key, nested in value.items():
                     key_text = str(key)
                     key_lower = key_text.casefold()
                     next_path = f"{path}.{key_text}"
                     next_scenario = scenario_context or key_lower in {"bull", "base", "bear"}
+                    next_scenario_name = key_lower if key_lower in {"bull", "base", "bear"} else scenario_name
                     if any(token in key_lower for token in output_tokens):
                         continue
                     if isinstance(nested, (str, int, float, bool)) and (
                         next_scenario or any(token in key_lower for token in assumption_tokens)
                     ):
-                        yield next_path, nested
+                        semantic_key = key_lower if any(token in key_lower for token in assumption_tokens) else key_lower
+                        if next_scenario_name:
+                            semantic_key = f"{next_scenario_name}.{semantic_key}"
+                        yield next_path, semantic_key, nested
                     else:
                         yield from walk_detail_assumptions(
                             nested,
                             next_path,
                             scenario_context=next_scenario,
+                            scenario_name=next_scenario_name,
+                            scenario_fields=scenario_fields,
                         )
             elif isinstance(value, list):
                 for index, nested in enumerate(value):
                     next_path = f"{path}[{index}]"
                     if isinstance(nested, (str, int, float, bool)) and scenario_context:
-                        yield next_path, nested
+                        field_name = scenario_fields[index] if index < len(scenario_fields) else f"value_{index}"
+                        semantic_key = f"{scenario_name}.{field_name}" if scenario_name else field_name
+                        yield next_path, semantic_key, nested
                     else:
                         yield from walk_detail_assumptions(
                             nested,
                             next_path,
                             scenario_context=scenario_context,
+                            scenario_name=scenario_name,
+                            scenario_fields=scenario_fields,
                         )
+
+        def scenario_fields_for(method_name: str) -> tuple[str, ...]:
+            normalized = re.sub(r"[^a-z0-9]+", " ", method_name.casefold()).strip()
+            if "scenario dcf" in normalized:
+                return ("probability", "fcf_next_year", "growth_rate", "wacc", "terminal_growth")
+            if "target scenario" in normalized:
+                return ("probability", "target_market_cap")
+            if "earnings scenario" in normalized:
+                return ("probability", "net_income_3y")
+            if "revenue scenario" in normalized:
+                return ("probability", "revenue_3y")
+            if "composite scenario" in normalized:
+                return (
+                    "probability",
+                    "revenue_growth_3y_avg",
+                    "operating_profitability_margin",
+                    "net_financing_result",
+                    "tax_rate",
+                    "pe_multiple",
+                )
+            return ()
+
+        def assumption_qualifiers(semantic_key: str) -> tuple[str | None, str | None, str | None]:
+            currency = next(
+                (
+                    str(claim.currency)
+                    if claim.canonical_key == "valuation.market_cap"
+                    else str(claim.value)
+                    for claim in self.state.claims
+                    if claim.selected
+                    and claim.canonical_key
+                    in {
+                        "valuation.market_cap",
+                        "company.financial_currency",
+                        "company.currency",
+                    }
+                    and (
+                        claim.currency
+                        if claim.canonical_key == "valuation.market_cap"
+                        else isinstance(claim.value, str)
+                    )
+                ),
+                None,
+            ) or "USD"
+            normalized_key = semantic_key.casefold()
+            if normalized_key.endswith(".probability") or any(
+                token in normalized_key
+                for token in (
+                    ".growth.rate",
+                    ".growth.3y.avg",
+                    ".wacc",
+                    ".terminal.growth",
+                    ".margin",
+                    ".tax.rate",
+                )
+            ):
+                return "ratio", None, "forecast"
+            if ".multiple" in normalized_key:
+                return "multiple", None, "forecast"
+            if normalized_key.endswith(".fcf.next.year"):
+                return "currency_full_units", currency, "forward_1y"
+            if normalized_key.endswith((".net.income.3y", ".revenue.3y")):
+                return "currency_full_units", currency, "forward_3y"
+            if normalized_key.endswith((".target.market.cap", ".net.financing.result")):
+                return "currency_full_units", currency, "forecast"
+            if "sotp.scenario." in normalized_key:
+                return "currency_full_units", currency, "forecast"
+            return None, None, "forecast"
 
         if isinstance(methods, Mapping):
             for method_name, items in methods.items():
@@ -812,9 +1074,11 @@ class HarnessSession:
                     if assumptions_seen >= 200 or not isinstance(item, Mapping):
                         continue
                     raw_json = raw_json_for_item(item)
-                    for path, value in walk_detail_assumptions(
+                    method_slug = re.sub(r"[^a-z0-9]+", ".", str(method_name).lower()).strip(".")
+                    for path, semantic_key, value in walk_detail_assumptions(
                         raw_json,
                         f"$.details.methods.{method_name}[{item_index}].raw_json",
+                        scenario_fields=scenario_fields_for(str(method_name)),
                     ):
                         if assumptions_seen >= 200:
                             break
@@ -826,19 +1090,31 @@ class HarnessSession:
                             extraction_method="valuation_assumption_path",
                             quality=1.0,
                         )
-                        normalized_path = re.sub(r"[^a-z0-9]+", ".", path.lower()).strip(".")
+                        normalized_semantic_key = re.sub(
+                            r"[^a-z0-9]+", ".", semantic_key.lower()
+                        ).strip(".")
+                        unit, claim_currency, period = assumption_qualifiers(
+                            f"{method_slug}.{normalized_semantic_key}"
+                        )
                         self.add_claim(
                             kind=ClaimKind.ASSUMPTION,
-                            statement=f"Valuation assumption at {path}: {value}",
+                            statement=(
+                                f"{method_name} assumption {normalized_semantic_key} is {value}"
+                            ),
                             subject=self.state.ticker,
                             predicate="valuation_assumption",
-                            canonical_key=f"valuation.assumption.{normalized_path}",
+                            canonical_key=(
+                                f"valuation.assumption.{method_slug}.{normalized_semantic_key}"
+                            ),
                             value=value,
+                            unit=unit,
+                            currency=claim_currency,
+                            period=period,
                             origin_stage="valuations",
                             origin_type="model",
                             evidence_ids=[evidence.id],
                             source_score=1.0,
-                            confidence=1.0,
+                            confidence=0.5,
                             critical=False,
                         )
 
@@ -875,11 +1151,166 @@ class HarnessSession:
                     scenario.scenario_target_price = scenario_price
                     scenario.target_impact_pct = ((scenario_price - baseline) / baseline) * 100.0 if baseline else None
 
+    def mark_amber(self, reason: str) -> None:
+        note = str(reason or "").strip()
+        if note and note not in self.state.quality_notes:
+            self.state.quality_notes.append(note)
+        if self.state.quality_status == "green":
+            self.state.quality_status = "amber_conflict"
+        self.state.automation_eligible = False
+
+    def validate_valuation_boundary(self, variables_dict: Mapping[str, Any]) -> list[str]:
+        """Verify that the frozen valuation snapshot uses one coherent price/share basis."""
+        if not self.is_hybrid:
+            return []
+        issues: list[str] = []
+        price = _finite_number(variables_dict.get("price"))
+        shares = _finite_number(variables_dict.get("shares_outstanding"))
+        market_cap = _finite_number(variables_dict.get("market_cap"))
+        if price is not None and shares is not None and market_cap is not None:
+            expected = price * shares
+            if not math.isclose(market_cap, expected, rel_tol=0.001, abs_tol=1.0):
+                issues.append(
+                    "valuation boundary market cap does not equal current price times selected shares"
+                )
+        selected_market_caps = [
+            claim
+            for claim in self.state.claims
+            if claim.selected and claim.canonical_key == "valuation.market_cap"
+        ]
+        if market_cap is not None and selected_market_caps and not any(
+            _equivalent(claim.value, market_cap) for claim in selected_market_caps
+        ):
+            issues.append("valuation boundary market cap differs from the selected ledger claim")
+        for issue in issues:
+            self.mark_amber(issue)
+        return issues
+
+    def evaluate_valuation_quality(
+        self,
+        final_dict: Mapping[str, Any],
+        *,
+        valuation_details: Mapping[str, Any] | None,
+        variables_dict: Mapping[str, Any],
+    ) -> None:
+        """Downgrade automation when sizing is not calibrated to dispersion and upside."""
+        if not self.is_hybrid:
+            return
+        prices = final_dict.get("Prices") if isinstance(final_dict, Mapping) else None
+        if not isinstance(prices, Mapping):
+            self.mark_amber("valuation quality gate could not read the Prices output")
+            return
+
+        def first(value: Any) -> float | None:
+            if isinstance(value, (list, tuple)) and value:
+                return _finite_number(value[0])
+            return _finite_number(value)
+
+        current = _finite_number(variables_dict.get("price"))
+        mean = first(prices.get("Mean", prices.get("Overall")))
+        median = first(prices.get("Median"))
+        sector_target = first(prices.get("Sector-Weighted Valuation"))
+        cv = _finite_number(prices.get("CV"))
+        targets = [(mean, 0.3), (median, 0.3), (sector_target, 0.4)]
+        present_targets = [(value, weight) for value, weight in targets if value is not None]
+        weight_sum = sum(weight for _, weight in present_targets)
+        consensus = (
+            sum(value * weight for value, weight in present_targets) / weight_sum
+            if present_targets and weight_sum > 0
+            else None
+        )
+
+        mean_investment = _finite_number(prices.get("LMIL Mean Investment"))
+        median_investment = _finite_number(prices.get("LMIL Median Investment"))
+        details = valuation_details if isinstance(valuation_details, Mapping) else {}
+        sector_payload = details.get("sector_weighted_valuation")
+        sector_investment = (
+            _finite_number(sector_payload.get("investment_amount"))
+            if isinstance(sector_payload, Mapping)
+            else None
+        )
+        allocations = [(mean_investment, 0.3), (median_investment, 0.3), (sector_investment, 0.4)]
+        present_allocations = [(value, weight) for value, weight in allocations if value is not None]
+        allocation_weight_sum = sum(weight for _, weight in present_allocations)
+        decision_investment = (
+            sum(value * weight for value, weight in present_allocations) / allocation_weight_sum
+            if present_allocations and allocation_weight_sum > 0
+            else None
+        )
+        upside = ((consensus / current) - 1.0) if consensus is not None and current else None
+        allocation_pct = abs(decision_investment) / 100_000 if decision_investment is not None else None
+
+        if (
+            cv is not None
+            and cv >= 0.10
+            and current is not None
+            and median is not None
+            and consensus is not None
+            and (median - current) * (consensus - current) < 0
+            and allocation_pct is not None
+            and allocation_pct > 0.025
+        ):
+            self.mark_amber(
+                "valuation allocation exceeds 2.5% while high target dispersion and the median disagree with consensus direction"
+            )
+        if (
+            upside is not None
+            and allocation_pct is not None
+            and abs(upside) < 0.10
+            and allocation_pct > 0.05
+        ):
+            self.mark_amber(
+                "valuation allocation exceeds 5% while absolute consensus upside is below 10%"
+            )
+
+    def valuation_output_integrity_issues(
+        self,
+        valuation_details: Mapping[str, Any] | None,
+    ) -> list[str]:
+        """Detect a valuator reinterpreting the frozen current-value snapshot.
+
+        Local-currency facts remain in the audit context by design. A model may
+        cite them as operating evidence, but it must never use them to relabel or
+        FX-convert the normalized current market capitalization.
+        """
+        if not self.is_hybrid or not isinstance(valuation_details, Mapping):
+            return []
+        rendered = json.dumps(valuation_details, ensure_ascii=False, default=str)
+        patterns = (
+            r"(?is)(?:provider|headline|current)\s*.{0,80}market\s*cap.{0,180}"
+            r"(?:mislabel|unreliable|currency\s+(?:error|conflict)|exclude)",
+            r"(?is)(?:currency[/ -]?market.?cap|market.?cap[/ -]?currency|currency\s+contradiction)",
+            r"(?is)market\s*cap.{0,120}(?:convert|converted|conversion).{0,120}(?:ILS|NIS|USD)",
+        )
+        issues: list[str] = []
+        if any(re.search(pattern, rendered) for pattern in patterns):
+            issues.append(
+                "a valuation model reinterpreted or FX-converted the authoritative "
+                "Hybrid valuation snapshot"
+            )
+        numeric_share_patterns = (
+            r"(?i)\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k|m|bn))?\s+"
+            r"(?:[a-z-]+\s+){0,3}shares(?:\s+outstanding)?\b",
+            r"(?i)\b(?:share\s+count|shares\s+outstanding|weighted[- ]average\s+shares)"
+            r"[^.\n]{0,60}?"
+            r"\d[\d,.]*(?:\s*(?:thousand|million|billion|k|m|bn))?\b",
+        )
+        if any(re.search(pattern, rendered) for pattern in numeric_share_patterns):
+            issues.append(
+                "a valuation model introduced a numeric share denominator that belongs only to the backend"
+            )
+        for issue in issues:
+            self.mark_amber(issue)
+        return issues
+
     def reconcile(self) -> None:
         self.state.relations = []
         self.state.contradictions = []
         self.state.sensitivity_scenarios = []
-        if self.state.quality_status == "amber_conflict":
+        self.state.quality_notes = [
+            note for note in self.state.quality_notes if not note.startswith("Critical conflict:")
+        ]
+        if self.state.quality_status == "amber_conflict" and not self.state.quality_notes:
             self.state.quality_status = "green"
             self.state.automation_eligible = True
         for claim in self.state.claims:
@@ -890,7 +1321,9 @@ class HarnessSession:
         for claim in self.state.claims:
             dimension = (
                 claim.canonical_key,
-                str(claim.period or claim.as_of or ""),
+                "current_snapshot"
+                if claim.canonical_key in _CURRENT_SNAPSHOT_KEYS
+                else str(claim.period or claim.as_of or ""),
             )
             grouped.setdefault(dimension, []).append(claim)
 
@@ -913,7 +1346,9 @@ class HarnessSession:
             ranked = sorted(claims, key=rank, reverse=True)
             selected = ranked[0]
             selected.selected = True
-            selected.status = ClaimStatus.VERIFIED
+            selected.status = (
+                ClaimStatus.PROPOSED if selected.kind == ClaimKind.ASSUMPTION else ClaimStatus.VERIFIED
+            )
             conflicts = [claim for claim in ranked[1:] if not _claims_equivalent(selected, claim)]
             for claim in ranked[1:]:
                 if claim in conflicts:
@@ -934,7 +1369,9 @@ class HarnessSession:
                         )
                     )
                 else:
-                    claim.status = ClaimStatus.VERIFIED
+                    claim.status = (
+                        ClaimStatus.PROPOSED if claim.kind == ClaimKind.ASSUMPTION else ClaimStatus.VERIFIED
+                    )
                     self.state.relations.append(
                         ClaimRelation(
                             id=stable_record_id(
@@ -957,6 +1394,17 @@ class HarnessSession:
                 critical
                 and selected.source_score >= 0.9
                 and all(selected.source_score - claim.source_score >= 0.15 for claim in conflicts)
+                and (
+                    bool(selected.as_of)
+                    if canonical_key in {"valuation.shares_outstanding", "valuation.market_cap"}
+                    else bool(selected.period or selected.as_of)
+                )
+                and not any(
+                    claim.as_of
+                    and selected.as_of
+                    and str(claim.as_of) > str(selected.as_of)
+                    for claim in conflicts
+                )
             )
             contradiction = ContradictionCase(
                 id=stable_record_id(self.state.run_id, "contradiction", *dimension),
@@ -993,8 +1441,9 @@ class HarnessSession:
                     )
                 )
             if critical and not decisive:
-                self.state.quality_status = "amber_conflict"
-                self.state.automation_eligible = False
+                self.mark_amber(
+                    f"Critical conflict: {canonical_key} remains provisional after authority, period, and recency scoring"
+                )
 
     def valuation_readiness_issues(self) -> list[str]:
         """Return hard-stop reasons for Hybrid before the immutable valuation boundary."""
@@ -1015,6 +1464,20 @@ class HarnessSession:
         )
         if currency_claim is None or not str(currency_claim.value or "").strip():
             issues.append("missing defensible currency")
+        for claim in selected:
+            if claim.kind != ClaimKind.FACT or claim.canonical_key not in CRITICAL_KEYS:
+                continue
+            missing: list[str] = []
+            if not claim.unit:
+                missing.append("unit")
+            if not (claim.period or claim.as_of):
+                missing.append("period/as_of")
+            if claim.canonical_key in _MONETARY_KEYS and not claim.currency:
+                missing.append("currency")
+            if missing:
+                issues.append(
+                    f"{claim.canonical_key} missing critical qualifiers: {', '.join(missing)}"
+                )
         return issues
 
     def context_markdown(self) -> str:
@@ -1039,7 +1502,7 @@ class HarnessSession:
             if claim.period:
                 qualifiers.append(f"period={claim.period}")
             lines.append(f"- [{'; '.join(qualifiers)}] {claim.statement}")
-        lines.extend(["", "### Unresolved Contradictions"])
+        lines.extend(["", "### Contradictions"])
         if not self.state.contradictions:
             lines.append("- None detected by the deterministic contradiction engine.")
         for contradiction in self.state.contradictions:
@@ -1047,6 +1510,9 @@ class HarnessSession:
                 f"- {contradiction.canonical_key}: candidates={contradiction.candidate_values}; "
                 f"status={contradiction.status}. {contradiction.rationale}"
             )
+        if self.state.quality_notes:
+            lines.extend(["", "### Quality Notes"])
+            lines.extend(f"- {note}" for note in self.state.quality_notes)
         return "\n".join(lines).strip()
 
     def mark_budget_exhausted(self, reason: str) -> None:

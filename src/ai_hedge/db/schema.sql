@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS research_runs (
     queries_used int NOT NULL DEFAULT 0 CHECK (queries_used >= 0),
     observed_cost_usd numeric(12, 4) NOT NULL DEFAULT 0 CHECK (observed_cost_usd >= 0),
     errors jsonb NOT NULL DEFAULT '[]'::jsonb,
+    quality_notes jsonb NOT NULL DEFAULT '[]'::jsonb,
     started_at timestamptz NOT NULL,
     finished_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()

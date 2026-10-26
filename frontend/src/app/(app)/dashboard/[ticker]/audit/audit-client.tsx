@@ -67,7 +67,12 @@ export function AuditClient({
 
       {warning ? (
         <section className="mb-5 rounded-xl border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-4 text-sm text-[color:var(--warning)]">
-          This report used a provisional deterministic resolution for at least one material conflict and is not eligible for automated downstream use.
+          <p>This report is not eligible for automated downstream use.</p>
+          {audit.run.quality_notes.length ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {audit.run.quality_notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          ) : null}
         </section>
       ) : null}
 

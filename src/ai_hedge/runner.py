@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from .dashboard import (
     _extract_analysis_section,
@@ -223,6 +223,9 @@ def _build_sec_currency_clarification(info_dict: Optional[Dict[str, Any]]) -> st
 def _build_sec_source_of_truth_guidance() -> str:
     return (
         "### SEC/MAYA Source-of-Truth Guidance for Valuation\n\n"
+        "The explicit Hybrid Valuation Snapshot Contract, when present, is authoritative for the "
+        "normalized current price, market capitalization, and currency. Do not use filing or "
+        "narrative figures to re-label or FX-convert that snapshot. "
         "If the earlier analysis sections and the SEC/MAYA filing summary disagree on a factual financial point, "
         "treat the SEC/MAYA filing summary as the source of truth for that contradiction. "
         "If the filing summary does not resolve the contradiction, treat the disputed item as unresolved and "
@@ -243,6 +246,87 @@ def _write_valuation_input_markdown(
     if persisted != analysis_markdown:
         raise RuntimeError("Valuation input Markdown changed while being persisted.")
     return path, persisted
+
+
+def _synchronize_hybrid_valuation_snapshot(
+    analysis_markdown: str,
+    *,
+    variables_dict: Mapping[str, Any],
+    currency: str | None,
+) -> str:
+    """Replace legacy header values and declare the authoritative valuation boundary.
+
+    The analysis body intentionally retains source prose for auditability. It can
+    therefore contain local-currency figures or superseded analyst interpretations.
+    Valuators must not reinterpret the already-normalized header from that prose.
+    """
+    synchronized = str(analysis_markdown or "")
+    replacements = {
+        "Current Price": variables_dict.get("price"),
+        "Market Cap": variables_dict.get("market_cap"),
+        "Currency": currency,
+    }
+    for label, value in replacements.items():
+        if value in (None, ""):
+            continue
+        rendered = str(value)
+        pattern = rf"(?m)^{re.escape(label)}:\s*.*$"
+        replacement = f"{label}: {rendered}"
+        if re.search(pattern, synchronized):
+            synchronized = re.sub(pattern, replacement, synchronized, count=1)
+        else:
+            lines = synchronized.splitlines()
+            insert_at = 2 if len(lines) >= 2 else len(lines)
+            lines.insert(insert_at, replacement)
+            synchronized = "\n".join(lines)
+
+    contract = (
+        "## Hybrid Valuation Snapshot Contract\n\n"
+        "- The Current Price, Market Cap, and Currency in the document header form one "
+        "internally coherent, already-normalized valuation snapshot.\n"
+        "- Treat that snapshot as authoritative for the current equity value. Do not "
+        "re-label it, apply another FX conversion, or replace it with a market-cap "
+        "calculation found in narrative source text.\n"
+        "- Local listing-currency and filing-currency figures elsewhere are provenance "
+        "and operating evidence only; they do not override the normalized header.\n"
+        "- The resolved share denominator is intentionally withheld from model context "
+        "and applied only by deterministic backend formulas. Do not infer, recompute, "
+        "or introduce a share count. Never divide Market Cap by Current Price.\n"
+        "- If an earlier narrative sentence conflicts with this contract or with a "
+        "selected claim in Hybrid Research State, treat that sentence as superseded."
+    )
+    synchronized = re.sub(
+        r"(?ms)^## Hybrid Valuation Snapshot Contract\s*.*?(?=^##\s|\Z)",
+        "",
+        synchronized,
+    ).rstrip()
+    header_end = re.search(r"(?m)^Currency:\s*.*$", synchronized)
+    if header_end:
+        insert_at = header_end.end()
+        synchronized = (
+            synchronized[:insert_at].rstrip()
+            + "\n\n"
+            + contract
+            + "\n\n"
+            + synchronized[insert_at:].lstrip()
+        )
+    else:
+        synchronized = contract + "\n\n" + synchronized.lstrip()
+    sanitized_lines: list[str] = []
+    for line in synchronized.splitlines():
+        if re.match(r"^Market Cap:\s*", line):
+            sanitized_lines.append(line)
+            continue
+        if (
+            re.search(r"(?i)market\s*(?:capitalization|cap)", line)
+            and re.search(r"(?:\d|\$|\b(?:ILS|NIS|USD|ILA)\b)", line, flags=re.IGNORECASE)
+        ):
+            sanitized_lines.append(
+                "[non-authoritative market-cap narrative withheld; use the Hybrid Valuation Snapshot Contract]"
+            )
+            continue
+        sanitized_lines.append(line)
+    return "\n".join(sanitized_lines)
 
 
 def _filing_source_label(form_type: str, raw: Dict[str, Any]) -> str:
@@ -2257,11 +2341,12 @@ def _run_ticker_valuation_impl(
                         dependencies=[web_stage.id],
                         model_id="deepseek-reasoner",
                         provider_id="configured-openai-compatible-provider",
-                        prompt_version="typed-web-claims-v1",
+                        prompt_version="typed-web-claims-v2",
                     ) as extraction_stage:
                         candidates = extract_web_claims(
                             cycle_payload,
                             ticker=ticker,
+                            company_name=company_name or ticker,
                             gap_context=gap_context,
                             call_llm=lambda prompt: legacy.deepseek_simple_text(
                                 api_key=str(os.getenv("DEEPSEEK_API_KEY", "") or "").strip(),
@@ -2272,6 +2357,10 @@ def _run_ticker_valuation_impl(
                             ),
                         )
                         harness.capture_web_claims(cycle_payload, candidates, cycle=cycle)
+                        if not candidates:
+                            harness.mark_amber(
+                                f"web research cycle {cycle} produced sources but no typed claims linked to evidence"
+                            )
                         harness.complete_stage(
                             extraction_stage,
                             {"accepted_claim_count": len(candidates)},
@@ -2433,6 +2522,33 @@ def _run_ticker_valuation_impl(
             )
 
     valuation_prompt_markdown = legacy.prepare_valuation_prompt_markdown(regular_text)
+    if harness.is_hybrid:
+        selected_currency = next(
+            (
+                str(claim.currency or claim.value)
+                for claim in harness.state.claims
+                if claim.selected
+                and claim.canonical_key
+                in {
+                    "valuation.market_cap",
+                    "company.currency",
+                    "company.price_currency",
+                    "company.financial_currency",
+                }
+                and str(claim.currency or claim.value or "").strip()
+            ),
+            None,
+        )
+        valuation_prompt_markdown = _synchronize_hybrid_valuation_snapshot(
+            valuation_prompt_markdown,
+            variables_dict=variables_dict,
+            currency=selected_currency,
+        )
+        boundary_issues = harness.validate_valuation_boundary(variables_dict)
+        if boundary_issues:
+            reason = "Hybrid valuation boundary is inconsistent: " + "; ".join(boundary_issues)
+            harness.state.errors.append(reason)
+            raise RuntimeError(reason)
     valuation_input_md, valuation_context = _write_valuation_input_markdown(
         out_dir,
         ticker,
@@ -2494,6 +2610,16 @@ def _run_ticker_valuation_impl(
     ) as valuation_capture_stage:
         harness.capture_valuation_outputs(final_dict, valuation_details=explain_payload)
         harness.apply_valuation_sensitivity(final_dict)
+        harness.evaluate_valuation_quality(
+            final_dict,
+            valuation_details=explain_payload,
+            variables_dict=variables_dict,
+        )
+        valuation_integrity_issues = harness.valuation_output_integrity_issues(explain_payload)
+        if valuation_integrity_issues:
+            reason = "Hybrid valuation output rejected: " + "; ".join(valuation_integrity_issues)
+            harness.state.errors.append(reason)
+            raise RuntimeError(reason)
         harness.complete_stage(
             valuation_capture_stage,
             {"claim_count": len(harness.state.claims), "source_count": len(harness.state.sources)},
@@ -2768,9 +2894,18 @@ def _run_ticker_valuation_impl(
             "queries_used": harness.state.queries_used,
             "observed_cost_usd": harness.state.observed_cost_usd,
             "source_count": len(harness.state.sources),
+            "claim_supporting_source_count": len(
+                {
+                    evidence.source_id
+                    for claim in harness.state.claims
+                    for evidence in harness.state.evidence
+                    if evidence.id in claim.evidence_ids
+                }
+            ),
             "evidence_count": len(harness.state.evidence),
             "claim_count": len(harness.state.claims),
             "contradiction_count": len(harness.state.contradictions),
+            "quality_notes": list(harness.state.quality_notes),
         }
         if resolved_sector:
             dashboard_payload = apply_to_dashboard(

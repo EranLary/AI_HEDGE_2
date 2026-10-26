@@ -327,9 +327,11 @@ export type DashboardPayload = {
     queries_used?: number;
     observed_cost_usd?: number;
     source_count?: number;
+    claim_supporting_source_count?: number;
     evidence_count?: number;
     claim_count?: number;
     contradiction_count?: number;
+    quality_notes?: string[];
   };
   ticker: string;
   company_profile?: {

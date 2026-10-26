@@ -194,9 +194,34 @@ def test_isolated_web_research_passes_secret_only_through_child_environment(monk
     assert payload == expected
     assert captured["timeout"] == 123
     assert captured["env"]["DEEPSEEK_API_KEY"] == "secret-key"
+    assert captured["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert captured["env"]["PYTHONUTF8"] == "1"
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
     assert "api_key" not in request
     assert request["analysis_text"] == "Completed analysis"
     assert captured["command"][-1] == "ai_hedge.web_research_worker"
+
+
+def test_query_planner_replaces_lone_surrogates_before_llm_request():
+    captured = {}
+
+    def fake_llm(**kwargs):
+        captured.update(kwargs)
+        return '{"queries":[{"query":"TEST latest news"}]}'
+
+    queries, _raw = web_research.generate_research_queries(
+        ticker="TEST",
+        company_name="Test Corp",
+        analysis_text="broken surrogate: \ud800",
+        api_key="secret-key",
+        llm=fake_llm,
+        as_of_date="2026-10-26",
+    )
+
+    assert queries[0]["query"] == "TEST latest news"
+    assert "\ud800" not in captured["prompt"]
+    captured["prompt"].encode("utf-8", errors="strict")
 
 
 def test_isolated_web_research_timeout_writes_error_artifacts(monkeypatch, tmp_path):

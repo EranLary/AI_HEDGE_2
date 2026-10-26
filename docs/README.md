@@ -7,6 +7,7 @@ can find the authoritative guide without scanning the project root.
 
 - [System map and runtime boundaries](architecture/system-map.md)
 - [Runtime pipeline](architecture/pipeline.md)
+- [Hybrid research harness](architecture/research-harness.md)
 - [Data lifecycle and sources of truth](architecture/data-lifecycle.md)
 - [Legacy-core dependency map](architecture/dependency-map.md)
 - [Valuation methods and proposed sector weights](architecture/valuation-methods-and-sector-weights.md)

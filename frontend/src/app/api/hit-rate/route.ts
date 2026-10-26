@@ -52,6 +52,7 @@ async function loadHistoricalDashboards(workspace: Workspace): Promise<LoadedDas
   for (const entry of listDashboardReports()) {
     const payload = readJson<DashboardPayload>(entry.path);
     if (!payload) continue;
+    if (payload.research_harness?.automation_eligible === false) continue;
     const ticker = String(payload.ticker || entry.ticker || "").toUpperCase();
     if (!ticker) continue;
     const generatedAt =

@@ -429,6 +429,7 @@ export async function listPortfolioReportInputs(args: {
        WHERE r.generated_at >= ${args.earliestGeneratedAt}::timestamptz
          AND r.generated_at <= ${args.latestGeneratedAt}::timestamptz
          AND r.workspace = ${args.workspace}
+         AND r.automation_eligible = true
          AND (
               r.workspace = 'analysis'
               OR (

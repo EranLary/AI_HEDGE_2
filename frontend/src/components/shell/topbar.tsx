@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link, { useLinkStatus } from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, Calculator, CandlestickChart, Download, FileText, Landmark, LoaderCircle, Menu, Scale, Store, Users } from "lucide-react";
+import { BarChart3, Calculator, CandlestickChart, Download, FileText, Landmark, LoaderCircle, Menu, Scale, ShieldCheck, Store, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AuthMenu } from "@/components/shell/auth-menu";
@@ -24,6 +24,7 @@ const SECTIONS: SectionItem[] = [
   { slug: "wall-st", label: "WALL ST.", icon: Landmark },
   { slug: "technical-analysis", label: "Technical Analysis", icon: CandlestickChart },
   { slug: "dream-team", label: "Dream Team", icon: Users },
+  { slug: "audit", label: "Audit", icon: ShieldCheck },
   { slug: "download", label: "Download", icon: Download },
 ];
 
@@ -151,7 +152,7 @@ function SectionPills({
   return (
     <nav aria-label="Report sections" className="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 px-1 sm:gap-2">
       <div className="hib-report-tabs flex min-w-0 flex-1 scroll-smooth items-center gap-1.5 overflow-x-auto sm:gap-2">
-        {SECTIONS.map((s) => {
+        {SECTIONS.filter((section) => workspace === "analysis" || section.slug !== "audit").map((s) => {
           const active = activeSection === s.slug;
           const href = `${workspacePath(workspace, `/dashboard/${encodeURIComponent(activeTicker)}/${s.slug}`)}${suffix}`;
           return (

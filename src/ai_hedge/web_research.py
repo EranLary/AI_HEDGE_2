@@ -27,8 +27,13 @@ LlmCallable = Callable[..., str]
 SearchClientFactory = Callable[[], Any]
 
 
+def _valid_unicode(value: Any) -> str:
+    """Replace lone surrogate code points before crossing a JSON/HTTP boundary."""
+    return str(value or "").encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _clean_text(value: Any, *, max_chars: Optional[int] = None) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"\s+", " ", _valid_unicode(value)).strip()
     if max_chars and len(text) > max_chars:
         return text[: max_chars - 3].rstrip() + "..."
     return text
@@ -200,6 +205,7 @@ def generate_research_queries(
         analysis_text=analysis_text,
         as_of_date=as_of_date or datetime.now(timezone.utc).date().isoformat(),
     )
+    prompt = _valid_unicode(prompt)
     with _llm_stage("web_search.query_planner", "Web Search Query Planner"):
         raw = llm(
             api_key=api_key,
@@ -473,6 +479,7 @@ def synthesize_web_research(
         search_results=search_results,
         as_of_date=as_of_date or datetime.now(timezone.utc).date().isoformat(),
     )
+    prompt = _valid_unicode(prompt)
     with _llm_stage("web_search.researcher", "Web Search Researcher"):
         raw = llm(
             api_key=api_key,
@@ -609,6 +616,8 @@ def run_web_research_isolated(
     }
     child_env = os.environ.copy()
     child_env["DEEPSEEK_API_KEY"] = str(api_key or "")
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
     src_root = str(Path(__file__).resolve().parents[1])
     existing_pythonpath = str(child_env.get("PYTHONPATH") or "").strip()
     child_env["PYTHONPATH"] = (
@@ -620,6 +629,8 @@ def run_web_research_isolated(
             [sys.executable, "-m", "ai_hedge.web_research_worker"],
             input=json.dumps(request_payload, ensure_ascii=False),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=timeout,
             check=False,

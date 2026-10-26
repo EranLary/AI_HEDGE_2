@@ -136,6 +136,27 @@ def total_cost_for_source_run_id(source_run_id: str) -> float:
             return 0.0
 
 
+def current_cost_for_run_id(run_id: str) -> float:
+    """Return the current call-level cost for an in-flight observability run."""
+    clean_id = str(run_id or "").strip()
+    if not clean_id:
+        return 0.0
+    with _conn() as c:
+        if c is None:
+            return 0.0
+        try:
+            with c.cursor() as cur:
+                cur.execute(
+                    "SELECT coalesce(sum(cost_usd), 0)::float8 FROM obs_calls WHERE run_id = %s::uuid",
+                    (clean_id,),
+                )
+                row = cur.fetchone()
+                return max(0.0, float(row[0] or 0.0)) if row else 0.0
+        except Exception as exc:  # noqa: BLE001
+            _log_err("current_cost_for_run_id", exc)
+            return 0.0
+
+
 def _next_sequence(cur, run_id: str) -> int:
     cur.execute(
         "SELECT COALESCE(max(sequence), -1) + 1 FROM obs_calls WHERE run_id = %s",

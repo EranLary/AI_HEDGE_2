@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { unstable_cache } from "next/cache";
 
 import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
+import type { HistoricalPricePoint } from "@/lib/hit-rate-horizons";
 import { isDbEnabled } from "@/lib/db";
 import {
   buildFallbackFromArtifacts,
@@ -444,6 +445,59 @@ function runLivePricesBatchScript(tickers: string[]): Promise<Record<string, num
   });
 }
 
+function runHistoricalPricesBatchScript(
+  tickers: string[],
+  startDate: string,
+  endDate: string,
+): Promise<Record<string, HistoricalPricePoint[]>> {
+  return new Promise((resolve, reject) => {
+    const clean = Array.from(new Set(tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean))).sort();
+    if (!clean.length) {
+      resolve({});
+      return;
+    }
+
+    const root = repoRoot();
+    const scriptPath = path.resolve(root, "scripts", "historical_prices_batch.py");
+    const pythonExe = process.env.PYTHON_EXECUTABLE || "python";
+    const workers = String(process.env.HIT_RATE_PRICE_WORKERS || "12");
+    const child = spawn(
+      pythonExe,
+      [scriptPath, "--tickers", clean.join(","), "--start", startDate, "--end", endDate, "--workers", workers],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          PYTHONUNBUFFERED: "1",
+          PYTHONPATH: path.resolve(root, "src"),
+        },
+      },
+    );
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `historical_prices_batch.py exited with ${code}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { prices?: Record<string, HistoricalPricePoint[]> };
+        resolve(parsed.prices || {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
 function runLiveFundamentalsScript(ticker: string): Promise<LiveFundamentals> {
   return new Promise((resolve, reject) => {
     const root = repoRoot();
@@ -603,6 +657,32 @@ export async function getLiveCurrentPricesBatch(tickers: string[]): Promise<Reco
     );
     return Object.fromEntries(pairs);
   }
+}
+
+const getHistoricalAdjustedPricesBatchCached = unstable_cache(
+  async (
+    tickers: string[],
+    startDate: string,
+    endDate: string,
+  ): Promise<Record<string, HistoricalPricePoint[]>> => {
+    try {
+      return await runHistoricalPricesBatchScript(tickers, startDate, endDate);
+    } catch {
+      return {};
+    }
+  },
+  ["hit-rate-historical-prices-v1"],
+  { revalidate: 3600 },
+);
+
+export async function getHistoricalAdjustedPricesBatch(
+  tickers: string[],
+  startDate: string,
+  endDate: string,
+): Promise<Record<string, HistoricalPricePoint[]>> {
+  const clean = Array.from(new Set(tickers.map((ticker) => String(ticker || "").trim().toUpperCase()).filter(Boolean))).sort();
+  if (!clean.length) return {};
+  return getHistoricalAdjustedPricesBatchCached(clean, startDate, endDate);
 }
 
 export type ResolvedTickerData = {

@@ -151,7 +151,7 @@ test("Consensus target < 0 is floored to 0 and neutral allocations are excluded 
   assert.equal(consensus.allocations.hit_rate_pct, null);
 });
 
-test("positive_only mode counts only positive target/allocation predictions", () => {
+test("positive_only mode counts only positive target, allocation, and signal predictions", () => {
   const payload = basePayload();
   payload.valuation_hub.method_tabs = [
     {
@@ -162,6 +162,10 @@ test("positive_only mode counts only positive target/allocation predictions", ()
       outputs: [],
     },
   ];
+  payload.technical_analysis = {
+    status: "success",
+    analysis: { final_decision: "bearish" },
+  };
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 120]]); // actual up
@@ -182,6 +186,10 @@ test("positive_only mode counts only positive target/allocation predictions", ()
   assert.equal(dcf.allocations.neutral, 0);
   assert.equal(dcf.allocations.considered, 0);
   assert.equal(dcf.allocations.hit_rate_pct, null);
+
+  // Bearish technical calls are excluded from the positive-only view.
+  assert.equal(agg.by_signal.length, 0);
+  assert.equal(agg.overview.signals.considered, 0);
 });
 
 test("P/B track record starts with reports that contain P/B and ignores older reports", () => {

@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { HorizonAccuracySection } from "@/components/horizon-accuracy-section";
 import { JevTrackRecordSection } from "@/components/jev-track-record-section";
 import { PortfolioReturnsSection } from "@/components/portfolio-returns-section";
 import { useWorkspace } from "@/components/shell/workspace-context";
 import { WORKSPACE_CONFIG } from "@/lib/workspace";
+import type { HorizonAccuracy } from "@/lib/hit-rate-horizons";
 
 type MetricCounts = {
   hits: number;
@@ -48,6 +50,7 @@ type HitRatePayload = {
   by_model: HitRateRow[];
   by_valuator: HitRateRow[];
   by_signal: HitRateRow[];
+  horizon_accuracy?: HorizonAccuracy;
 };
 
 type HitRateMode = "all" | "positive_only";
@@ -473,6 +476,7 @@ export default function HitRatePage() {
             <OverviewCard title="Combined" metric={data.overview.combined} />
           </section>
 
+          <HorizonAccuracySection data={data.horizon_accuracy} mode={mode} />
           <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
           <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
           <SignalHitRateTable title="By Signal" rows={data.by_signal || []} />

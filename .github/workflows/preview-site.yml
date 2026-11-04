@@ -151,8 +151,8 @@ jobs:
               >/dev/null 2>&1
           fi
 
-          POOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --pooled)
-          UNPOOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID")
+          POOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --pooled)
+          UNPOOLED=$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb)
           echo "::add-mask::$POOLED"
           echo "::add-mask::$UNPOOLED"
           echo "PR_DATABASE_URL=$POOLED" >> "$GITHUB_ENV"

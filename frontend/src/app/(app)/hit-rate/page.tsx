@@ -476,10 +476,10 @@ export default function HitRatePage() {
             <OverviewCard title="Combined" metric={data.overview.combined} />
           </section>
 
+          <HorizonAccuracySection data={data.horizon_accuracy} mode={mode} />
           <HitRateTable title="By Model" rows={data.by_model} lensType="model" />
           <HitRateTable title="By Valuator" rows={data.by_valuator} lensType="valuator" />
           <SignalHitRateTable title="By Signal" rows={data.by_signal || []} />
-          <HorizonAccuracySection data={data.horizon_accuracy} mode={mode} />
         </div>
       )}
 

@@ -156,7 +156,7 @@ test("a horizon landing today remains pending even when the provider exposes a p
   assert.equal(oneDay?.considered, 0);
 });
 
-test("positive-only filters downside valuation targets but keeps bearish technical calls", () => {
+test("positive-only filters downside valuation targets and bearish technical calls", () => {
   const bearishPayload = payload(80, "bearish");
   const result = computeHorizonAccuracy(
     [report(bearishPayload)],
@@ -168,7 +168,21 @@ test("positive-only filters downside valuation targets but keeps bearish technic
 
   const technicalCurrent = result.technical.by_horizon.find((row) => row.horizon === "current");
   const fundamentalCurrent = result.fundamental.by_horizon.find((row) => row.horizon === "current");
-  assert.equal(technicalCurrent?.hits, 1);
+  assert.equal(technicalCurrent?.predictions, 0);
   assert.equal(fundamentalCurrent?.predictions, 0);
   assert.equal(result.fundamental.by_model.length, 0);
+});
+
+test("positive-only keeps bullish technical calls", () => {
+  const result = computeHorizonAccuracy(
+    [report(payload(80, "bullish"))],
+    new Map([["TEST", [{ date: "2025-01-01", close: 100, adjusted_close: 100 }]]]),
+    new Map([["TEST", 110]]),
+    "positive_only",
+    new Date("2025-02-01T00:00:00Z"),
+  );
+
+  const technicalCurrent = result.technical.by_horizon.find((row) => row.horizon === "current");
+  assert.equal(technicalCurrent?.hits, 1);
+  assert.equal(technicalCurrent?.predictions, 1);
 });

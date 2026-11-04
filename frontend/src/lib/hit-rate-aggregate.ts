@@ -319,7 +319,7 @@ export function computeHitRateAggregation(
     }
 
     const technicalDirection = technicalSignalDirection(payload);
-    if (technicalDirection !== null) {
+    if (technicalDirection !== null && shouldIncludePrediction(mode, technicalDirection)) {
       const signalKey = "Technical Analysis";
       if (!bySignalMap.has(signalKey)) {
         bySignalMap.set(signalKey, createMetricSet());

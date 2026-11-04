@@ -267,7 +267,7 @@ export function computeHorizonAccuracy(
     const livePrice = livePriceByTicker.get(ticker) ?? null;
 
     const technicalDirection = technicalSignalDirection(report.payload);
-    if (technicalDirection !== null) {
+    if (technicalDirection !== null && shouldIncludePrediction(mode, technicalDirection)) {
       for (const definition of TECHNICAL_HORIZONS) {
         const outcome = outcomeForHorizon(
           definition,

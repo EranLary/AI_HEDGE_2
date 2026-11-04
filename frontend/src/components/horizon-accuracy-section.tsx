@@ -202,24 +202,6 @@ export function HorizonAccuracySection({
       <div className="mt-5 space-y-4">
         <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
           <div className="flex items-start gap-3">
-            <CandlestickChart size={20} className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden />
-            <div>
-              <h3 className="font-semibold text-[color:var(--text-primary)]">Technical Analysis</h3>
-              <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
-                Short-term bullish and bearish chart calls. Select a window to compare the signal with the market close after that period.
-              </p>
-            </div>
-          </div>
-          {technicalMetrics.length && selectedTechnicalMetric ? (
-            <div className="mt-4">
-              <HorizonPicker metrics={technicalMetrics} selected={selectedTechnicalHorizon} onSelect={setTechnicalChoice} label="Technical analysis time horizon" panelId="technical-horizon-detail" />
-              <HorizonDetail metric={selectedTechnicalMetric} id="technical-horizon-detail" />
-            </div>
-          ) : <div className="mt-4"><EmptyState /></div>}
-        </article>
-
-        <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
-          <div className="flex items-start gap-3">
             <Landmark size={20} className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden />
             <div>
               <h3 className="font-semibold text-[color:var(--text-primary)]">Fundamental &amp; Valuation Targets</h3>
@@ -295,6 +277,24 @@ export function HorizonAccuracySection({
               </div>
             </div>
           ) : null}
+        </article>
+
+        <article className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+          <div className="flex items-start gap-3">
+            <CandlestickChart size={20} className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden />
+            <div>
+              <h3 className="font-semibold text-[color:var(--text-primary)]">Technical Analysis</h3>
+              <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
+                Short-term chart-call direction. {mode === "positive_only" ? "Positive Only includes bullish signals." : "All includes both bullish and bearish signals."} Select a window to compare each signal with the market close after that period.
+              </p>
+            </div>
+          </div>
+          {technicalMetrics.length && selectedTechnicalMetric ? (
+            <div className="mt-4">
+              <HorizonPicker metrics={technicalMetrics} selected={selectedTechnicalHorizon} onSelect={setTechnicalChoice} label="Technical analysis time horizon" panelId="technical-horizon-detail" />
+              <HorizonDetail metric={selectedTechnicalMetric} id="technical-horizon-detail" />
+            </div>
+          ) : <div className="mt-4"><EmptyState /></div>}
         </article>
       </div>
     </section>

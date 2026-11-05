@@ -177,7 +177,8 @@ type Outcome =
 function outcomeForHorizon(
   definition: HorizonDefinition,
   reportTimestamp: number,
-  baselinePrice: number,
+  reportPrice: number,
+  adjustedBaselinePrice: number,
   points: Array<HistoricalPricePoint & { timestamp: number }>,
   livePrice: number | null,
   nowTimestamp: number,
@@ -186,7 +187,9 @@ function outcomeForHorizon(
     if (typeof livePrice !== "number" || !Number.isFinite(livePrice) || livePrice <= 0) {
       return { kind: "unavailable" };
     }
-    return { kind: "resolved", direction: directionOf(livePrice - baselinePrice) };
+    // Current prices and saved report prices are both raw provider quotes. Keep
+    // them on the same basis so Current matches the legacy live hit-rate view.
+    return { kind: "resolved", direction: directionOf(livePrice - reportPrice) };
   }
 
   const targetTimestamp = reportTimestamp + definition.days * 24 * 60 * 60 * 1000;
@@ -200,7 +203,7 @@ function outcomeForHorizon(
       ? { kind: "pending" }
       : { kind: "unavailable" };
   }
-  return { kind: "resolved", direction: directionOf(outcomePoint.adjusted_close - baselinePrice) };
+  return { kind: "resolved", direction: directionOf(outcomePoint.adjusted_close - adjustedBaselinePrice) };
 }
 
 function applyPrediction(
@@ -263,7 +266,7 @@ export function computeHorizonAccuracy(
       normalizedByTicker.set(ticker, normalizedSeries(historicalPricesByTicker.get(ticker)));
     }
     const prices = normalizedByTicker.get(ticker) || [];
-    const baselinePrice = adjustedBaseline(reportPrice, reportTimestamp, prices);
+    const adjustedBaselinePrice = adjustedBaseline(reportPrice, reportTimestamp, prices);
     const livePrice = livePriceByTicker.get(ticker) ?? null;
 
     const technicalDirection = technicalSignalDirection(report.payload);
@@ -272,7 +275,8 @@ export function computeHorizonAccuracy(
         const outcome = outcomeForHorizon(
           definition,
           reportTimestamp,
-          baselinePrice,
+          reportPrice,
+          adjustedBaselinePrice,
           prices,
           livePrice,
           nowTimestamp,
@@ -292,7 +296,8 @@ export function computeHorizonAccuracy(
         const outcome = outcomeForHorizon(
           definition,
           reportTimestamp,
-          baselinePrice,
+          reportPrice,
+          adjustedBaselinePrice,
           prices,
           livePrice,
           nowTimestamp,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DashboardPayload } from "./dashboard-types";
+import { computeHitRateAggregation, type HitRateMode } from "./hit-rate-aggregate";
 import { computeHorizonAccuracy, type HistoricalPricePoint, type HorizonSourceReport } from "./hit-rate-horizons";
 
 function payload(targetPrice = 120, technicalDecision: "bullish" | "bearish" | "neutral" = "bullish"): DashboardPayload {
@@ -73,7 +74,7 @@ const prices: HistoricalPricePoint[] = [
   { date: "2030-01-02", close: 180, adjusted_close: 90 },
 ];
 
-test("technical calls are frozen at short horizons and current remains live", () => {
+test("technical calls use adjusted closes at fixed horizons and raw prices for current", () => {
   const result = computeHorizonAccuracy(
     [report()],
     new Map([["TEST", prices]]),
@@ -89,12 +90,12 @@ test("technical calls are frozen at short horizons and current remains live", ()
       ["1w", 0, 1],
       ["1m", 1, 0],
       ["3m", 0, 1],
-      ["current", 1, 0],
+      ["current", 0, 1],
     ],
   );
 });
 
-test("fundamental target directions use long fixed horizons and split-adjust the report baseline", () => {
+test("fundamental targets split-adjust fixed horizons but keep current on the raw report-price basis", () => {
   const result = computeHorizonAccuracy(
     [report()],
     new Map([["TEST", prices]]),
@@ -110,10 +111,40 @@ test("fundamental target directions use long fixed horizons and split-adjust the
       ["1y", 0, 1],
       ["3y", 1, 0],
       ["5y", 1, 0],
-      ["current", 1, 0],
+      ["current", 0, 1],
     ],
   );
   assert.equal(result.fundamental.by_model[0].key, "Scenario DCF");
+});
+
+test("current horizon matches legacy target and signal hit rates on split-adjusted history", () => {
+  const sourceReport = report();
+  const livePrices = new Map<string, number | null>([["TEST", 90]]);
+
+  for (const mode of ["all", "positive_only"] satisfies HitRateMode[]) {
+    const horizons = computeHorizonAccuracy(
+      [sourceReport],
+      new Map([["TEST", prices]]),
+      livePrices,
+      mode,
+      new Date("2030-02-01T00:00:00Z"),
+    );
+    const legacy = computeHitRateAggregation([sourceReport], livePrices, mode);
+    const currentTarget = horizons.fundamental.by_model[0]?.by_horizon.find((row) => row.horizon === "current");
+    const currentSignal = horizons.technical.by_horizon.find((row) => row.horizon === "current");
+    const legacyTarget = legacy.by_model[0]?.targets;
+    const legacySignal = legacy.by_signal[0]?.signals;
+
+    assert.ok(currentTarget && currentSignal && legacyTarget && legacySignal);
+    assert.deepEqual(
+      [currentTarget.hits, currentTarget.misses, currentTarget.neutral, currentTarget.considered],
+      [legacyTarget.hits, legacyTarget.misses, legacyTarget.neutral, legacyTarget.considered],
+    );
+    assert.deepEqual(
+      [currentSignal.hits, currentSignal.misses, currentSignal.neutral, currentSignal.considered],
+      [legacySignal.hits, legacySignal.misses, legacySignal.neutral, legacySignal.considered],
+    );
+  }
 });
 
 test("unmatured fixed horizons are pending and excluded from hit rate", () => {

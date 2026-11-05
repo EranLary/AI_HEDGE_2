@@ -193,6 +193,28 @@ test("positive_only mode counts only positive target, allocation, and signal pre
   assert.equal(agg.overview.signals.considered, 0);
 });
 
+test("all mode excludes unavailable targets and allocations instead of labeling them neutral", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [{
+    name: "DCF",
+    target_price: null,
+    investment_amount: null,
+    key_metric_means: {},
+    outputs: [],
+  }];
+
+  const agg = computeHitRateAggregation(
+    [{ ticker: "TEST", payload }],
+    new Map([["TEST", 120]]),
+  );
+  const dcf = agg.by_model.find((row) => row.key === "Scenario DCF");
+
+  assert.ok(dcf);
+  assert.equal(dcf.targets.neutral, 0);
+  assert.equal(dcf.allocations.neutral, 0);
+  assert.equal(dcf.combined.neutral, 0);
+});
+
 test("P/B track record starts with reports that contain P/B and ignores older reports", () => {
   const historical = basePayload();
   historical.valuation_hub.method_tabs = [{

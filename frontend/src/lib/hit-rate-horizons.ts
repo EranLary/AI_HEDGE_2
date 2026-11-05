@@ -129,7 +129,7 @@ type Outcome =
 
 function outcomeForHorizon(
   definition: HorizonDefinition,
-  reportTimestamp: number,
+  reportTimestamp: number | null,
   baselinePrice: number,
   points: NormalizedHistoricalPricePoint[],
   livePrice: number | null,
@@ -141,6 +141,8 @@ function outcomeForHorizon(
     }
     return { kind: "resolved", direction: directionOf(livePrice - baselinePrice) };
   }
+
+  if (reportTimestamp === null || baselinePrice <= 0) return { kind: "unavailable" };
 
   const targetTimestamp = reportTimestamp + definition.days * 24 * 60 * 60 * 1000;
   // Do not resolve against a same-day partial session. A target date becomes
@@ -212,7 +214,7 @@ export function computeHorizonAccuracy(
     const ticker = String(report.ticker || "").trim().toUpperCase();
     const reportTimestamp = utcDateTimestamp(report.availableAt || report.generatedAt);
     const reportPrice = toNumOrNull(report.payload.valuation_hub?.consensus?.current_price);
-    if (!ticker || reportTimestamp === null || reportPrice === null || reportPrice <= 0) continue;
+    if (!ticker || reportPrice === null) continue;
 
     if (!normalizedByTicker.has(ticker)) {
       normalizedByTicker.set(ticker, normalizeHistoricalSeries(historicalPricesByTicker.get(ticker)));

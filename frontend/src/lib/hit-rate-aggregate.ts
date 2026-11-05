@@ -141,7 +141,10 @@ export function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -
   if (mode === "positive_only") {
     return predictedDirection === 1;
   }
-  return true;
+  // A missing prediction is unavailable, not a neutral call. Excluding it keeps
+  // the legacy Current cards aligned with the horizon metrics and avoids
+  // presenting absent targets or allocations as deliberate neutral forecasts.
+  return predictedDirection !== null;
 }
 
 function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {

@@ -148,6 +148,32 @@ test("current horizon matches split-adjusted legacy target and signal hit rates"
   }
 });
 
+test("current remains evaluable when a zero saved quote makes fixed horizons unavailable", () => {
+  const zeroBaselinePayload = payload();
+  zeroBaselinePayload.valuation_hub!.consensus!.current_price = 0;
+  const sourceReport = report(zeroBaselinePayload);
+  const livePrices = new Map<string, number | null>([["TEST", 10]]);
+  const historicalPrices = new Map([["TEST", prices]]);
+
+  const horizons = computeHorizonAccuracy(
+    [sourceReport],
+    historicalPrices,
+    livePrices,
+    "all",
+    new Date("2030-02-01T00:00:00Z"),
+  );
+  const legacy = computeHitRateAggregation([sourceReport], livePrices, "all", historicalPrices);
+  const current = horizons.fundamental.by_model[0]?.by_horizon.find((row) => row.horizon === "current");
+  const fixed = horizons.fundamental.by_model[0]?.by_horizon.find((row) => row.horizon === "6m");
+  const legacyTarget = legacy.by_model[0]?.targets;
+
+  assert.ok(current && fixed && legacyTarget);
+  assert.equal(current.hits, legacyTarget.hits);
+  assert.equal(current.misses, legacyTarget.misses);
+  assert.equal(current.considered, legacyTarget.considered);
+  assert.equal(fixed.unavailable, 1);
+});
+
 test("unmatured fixed horizons are pending and excluded from hit rate", () => {
   const recentPrices: HistoricalPricePoint[] = [
     { date: "2029-10-01", close: 100, split_factor: 1 },

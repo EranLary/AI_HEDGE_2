@@ -136,7 +136,11 @@ function outcomeForHorizon(
   nowTimestamp: number,
 ): Outcome {
   if (definition.days === null) {
-    if (typeof livePrice !== "number" || !Number.isFinite(livePrice) || livePrice <= 0) {
+    // Current intentionally follows the legacy Track Record contract exactly.
+    // Some unavailable/delisted quotes are persisted as 0; the legacy cards
+    // still resolve those against the saved report quote, so the companion
+    // horizon must not silently drop the same prediction.
+    if (typeof livePrice !== "number" || !Number.isFinite(livePrice)) {
       return { kind: "unavailable" };
     }
     return { kind: "resolved", direction: directionOf(livePrice - baselinePrice) };

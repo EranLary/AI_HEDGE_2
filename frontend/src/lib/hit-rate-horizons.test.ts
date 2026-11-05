@@ -174,6 +174,35 @@ test("current remains evaluable when a zero saved quote makes fixed horizons una
   assert.equal(fixed.unavailable, 1);
 });
 
+test("current matches legacy when the live quote is zero", () => {
+  const sourceReport = report();
+  const livePrices = new Map<string, number | null>([["TEST", 0]]);
+  const historicalPrices = new Map([["TEST", prices]]);
+
+  const horizons = computeHorizonAccuracy(
+    [sourceReport],
+    historicalPrices,
+    livePrices,
+    "all",
+    new Date("2030-02-01T00:00:00Z"),
+  );
+  const legacy = computeHitRateAggregation([sourceReport], livePrices, "all", historicalPrices);
+  const currentTarget = horizons.fundamental.by_model[0]?.by_horizon.find((row) => row.horizon === "current");
+  const currentSignal = horizons.technical.by_horizon.find((row) => row.horizon === "current");
+  const legacyTarget = legacy.by_model[0]?.targets;
+  const legacySignal = legacy.by_signal[0]?.signals;
+
+  assert.ok(currentTarget && currentSignal && legacyTarget && legacySignal);
+  assert.deepEqual(
+    [currentTarget.hits, currentTarget.misses, currentTarget.neutral, currentTarget.considered],
+    [legacyTarget.hits, legacyTarget.misses, legacyTarget.neutral, legacyTarget.considered],
+  );
+  assert.deepEqual(
+    [currentSignal.hits, currentSignal.misses, currentSignal.neutral, currentSignal.considered],
+    [legacySignal.hits, legacySignal.misses, legacySignal.neutral, legacySignal.considered],
+  );
+});
+
 test("unmatured fixed horizons are pending and excluded from hit rate", () => {
   const recentPrices: HistoricalPricePoint[] = [
     { date: "2029-10-01", close: 100, split_factor: 1 },

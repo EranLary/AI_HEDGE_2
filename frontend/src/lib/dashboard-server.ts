@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { unstable_cache } from "next/cache";
 
 import type { DashboardPayload, ReportListItem } from "@/lib/dashboard-types";
-import type { HistoricalPricePoint } from "@/lib/hit-rate-horizons";
+import type { HistoricalPricePoint } from "@/lib/hit-rate-price-basis";
 import { isDbEnabled } from "@/lib/db";
 import {
   buildFallbackFromArtifacts,
@@ -659,7 +659,7 @@ export async function getLiveCurrentPricesBatch(tickers: string[]): Promise<Reco
   }
 }
 
-const getHistoricalAdjustedPricesBatchCached = unstable_cache(
+const getHistoricalPricesBatchCached = unstable_cache(
   async (
     tickers: string[],
     startDate: string,
@@ -671,18 +671,18 @@ const getHistoricalAdjustedPricesBatchCached = unstable_cache(
       return {};
     }
   },
-  ["hit-rate-historical-prices-v1"],
+  ["hit-rate-historical-prices-v2-split-only"],
   { revalidate: 3600 },
 );
 
-export async function getHistoricalAdjustedPricesBatch(
+export async function getHistoricalPricesBatch(
   tickers: string[],
   startDate: string,
   endDate: string,
 ): Promise<Record<string, HistoricalPricePoint[]>> {
   const clean = Array.from(new Set(tickers.map((ticker) => String(ticker || "").trim().toUpperCase()).filter(Boolean))).sort();
   if (!clean.length) return {};
-  return getHistoricalAdjustedPricesBatchCached(clean, startDate, endDate);
+  return getHistoricalPricesBatchCached(clean, startDate, endDate);
 }
 
 export type ResolvedTickerData = {

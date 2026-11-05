@@ -63,18 +63,18 @@ function report(
 }
 
 const prices: HistoricalPricePoint[] = [
-  { date: "2025-01-01", close: 100, adjusted_close: 50 },
-  { date: "2025-01-02", close: 110, adjusted_close: 55 },
-  { date: "2025-01-08", close: 90, adjusted_close: 45 },
-  { date: "2025-01-31", close: 120, adjusted_close: 60 },
-  { date: "2025-04-02", close: 80, adjusted_close: 40 },
-  { date: "2025-07-02", close: 140, adjusted_close: 70 },
-  { date: "2026-01-02", close: 80, adjusted_close: 40 },
-  { date: "2028-01-03", close: 160, adjusted_close: 80 },
-  { date: "2030-01-02", close: 180, adjusted_close: 90 },
+  { date: "2025-01-01", close: 50, split_factor: 0.5 },
+  { date: "2025-01-02", close: 55, split_factor: 1 },
+  { date: "2025-01-08", close: 45, split_factor: 1 },
+  { date: "2025-01-31", close: 60, split_factor: 1 },
+  { date: "2025-04-02", close: 40, split_factor: 1 },
+  { date: "2025-07-02", close: 70, split_factor: 1 },
+  { date: "2026-01-02", close: 40, split_factor: 1 },
+  { date: "2028-01-03", close: 80, split_factor: 1 },
+  { date: "2030-01-02", close: 90, split_factor: 1 },
 ];
 
-test("technical calls use adjusted closes at fixed horizons and raw prices for current", () => {
+test("technical calls use a split-only-adjusted basis for fixed horizons and current", () => {
   const result = computeHorizonAccuracy(
     [report()],
     new Map([["TEST", prices]]),
@@ -90,12 +90,12 @@ test("technical calls use adjusted closes at fixed horizons and raw prices for c
       ["1w", 0, 1],
       ["1m", 1, 0],
       ["3m", 0, 1],
-      ["current", 0, 1],
+      ["current", 1, 0],
     ],
   );
 });
 
-test("fundamental targets split-adjust fixed horizons but keep current on the raw report-price basis", () => {
+test("fundamental targets use the same split-only-adjusted basis at every horizon", () => {
   const result = computeHorizonAccuracy(
     [report()],
     new Map([["TEST", prices]]),
@@ -111,25 +111,26 @@ test("fundamental targets split-adjust fixed horizons but keep current on the ra
       ["1y", 0, 1],
       ["3y", 1, 0],
       ["5y", 1, 0],
-      ["current", 0, 1],
+      ["current", 1, 0],
     ],
   );
   assert.equal(result.fundamental.by_model[0].key, "Scenario DCF");
 });
 
-test("current horizon matches legacy target and signal hit rates on split-adjusted history", () => {
+test("current horizon matches split-adjusted legacy target and signal hit rates", () => {
   const sourceReport = report();
   const livePrices = new Map<string, number | null>([["TEST", 90]]);
+  const historicalPrices = new Map([["TEST", prices]]);
 
   for (const mode of ["all", "positive_only"] satisfies HitRateMode[]) {
     const horizons = computeHorizonAccuracy(
       [sourceReport],
-      new Map([["TEST", prices]]),
+      historicalPrices,
       livePrices,
       mode,
       new Date("2030-02-01T00:00:00Z"),
     );
-    const legacy = computeHitRateAggregation([sourceReport], livePrices, mode);
+    const legacy = computeHitRateAggregation([sourceReport], livePrices, mode, historicalPrices);
     const currentTarget = horizons.fundamental.by_model[0]?.by_horizon.find((row) => row.horizon === "current");
     const currentSignal = horizons.technical.by_horizon.find((row) => row.horizon === "current");
     const legacyTarget = legacy.by_model[0]?.targets;
@@ -149,8 +150,8 @@ test("current horizon matches legacy target and signal hit rates on split-adjust
 
 test("unmatured fixed horizons are pending and excluded from hit rate", () => {
   const recentPrices: HistoricalPricePoint[] = [
-    { date: "2029-10-01", close: 100, adjusted_close: 100 },
-    { date: "2030-02-01", close: 110, adjusted_close: 110 },
+    { date: "2029-10-01", close: 100, split_factor: 1 },
+    { date: "2030-02-01", close: 110, split_factor: 1 },
   ];
   const result = computeHorizonAccuracy(
     [report(payload(), "2029-10-01T12:00:00Z")],
@@ -171,8 +172,8 @@ test("unmatured fixed horizons are pending and excluded from hit rate", () => {
 
 test("a horizon landing today remains pending even when the provider exposes a partial row", () => {
   const sameDayPrices: HistoricalPricePoint[] = [
-    { date: "2025-01-01", close: 100, adjusted_close: 100 },
-    { date: "2025-01-02", close: 110, adjusted_close: 110 },
+    { date: "2025-01-01", close: 100, split_factor: 1 },
+    { date: "2025-01-02", close: 110, split_factor: 1 },
   ];
   const result = computeHorizonAccuracy(
     [report()],
@@ -191,7 +192,7 @@ test("positive-only filters downside valuation targets and bearish technical cal
   const bearishPayload = payload(80, "bearish");
   const result = computeHorizonAccuracy(
     [report(bearishPayload)],
-    new Map([["TEST", [{ date: "2025-01-01", close: 100, adjusted_close: 100 }]]]),
+    new Map([["TEST", [{ date: "2025-01-01", close: 100, split_factor: 1 }]]]),
     new Map([["TEST", 90]]),
     "positive_only",
     new Date("2025-02-01T00:00:00Z"),
@@ -207,7 +208,7 @@ test("positive-only filters downside valuation targets and bearish technical cal
 test("positive-only keeps bullish technical calls", () => {
   const result = computeHorizonAccuracy(
     [report(payload(80, "bullish"))],
-    new Map([["TEST", [{ date: "2025-01-01", close: 100, adjusted_close: 100 }]]]),
+    new Map([["TEST", [{ date: "2025-01-01", close: 100, split_factor: 1 }]]]),
     new Map([["TEST", 110]]),
     "positive_only",
     new Date("2025-02-01T00:00:00Z"),

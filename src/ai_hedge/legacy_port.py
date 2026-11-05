@@ -1,6 +1,8 @@
+import csv
 import os
 import math
 import random
+import re
 import time
 from contextlib import contextmanager
 from functools import lru_cache
@@ -132,11 +134,18 @@ def df_to_llm_csv(df: pd.DataFrame, scale_abs_gt: float = 1.0) -> str:
                 return x / scale_abs_gt
             return x
 
-        # Backward compatibility for Pandas (applymap was replaced by map in newer versions)
-        if hasattr(df_llm, "map"):
-            df_llm = df_llm.map(_scale)
-        else:
-            df_llm = df_llm.applymap(_scale)
+        # Currency conversion must never touch unit counts. In particular,
+        # dividing weighted-average/outstanding shares by an FX rate creates a
+        # fictitious share-count conflict at the valuation boundary.
+        share_count_markers = ("average", "number", "issued", "outstanding", "treasury")
+        for column in df_llm.columns:
+            normalized = re.sub(r"[^a-z0-9]+", " ", str(column).casefold()).strip()
+            is_share_count = "share" in normalized and any(
+                marker in normalized for marker in share_count_markers
+            )
+            if is_share_count:
+                continue
+            df_llm[column] = df_llm[column].map(_scale)
 
     # 3. Round numeric values to 2 decimal places (Saves a massive amount of tokens)
     for col in df_llm.columns:
@@ -713,7 +722,6 @@ def get_info_data(ticker: str) -> dict:
     return info_dict
 
 
-import re
 import json
 import requests
 import html2text
@@ -4506,11 +4514,12 @@ VALUATION_EVIDENCE_DISCIPLINE = """
   The analysis document is structured Markdown. Use its headings to identify the source and role of each section.
 
   Contradiction rule:
-  1) If two statements conflict about the same factual item, use only the version explicitly supported by the "SEC Summary" or equivalent "MAYA Summary".
-  2) A section titled "SEC Summary (Warning)" or "MAYA Summary (Warning)" does not count as filing-backed evidence.
-  3) If no filing-backed section is available, or if it does not resolve the contradiction, treat the disputed item as unresolved and exclude it from valuation calculations and assumptions.
-  4) Do not average, reconcile, select, or invent a value merely to complete the valuation.
-  5) You may still use the rest of the analysis for qualitative context when it is not contradicted.
+  1) If a "Hybrid Valuation Snapshot Contract" is present, it is authoritative for current price, current market capitalization, currency, and denominator handling. Never re-label or FX-convert that normalized snapshot from narrative text, and never divide market capitalization by current price to infer shares.
+  2) Selected claims in "Hybrid Research State (Valuation Boundary)" override conflicting analyst prose. For other factual conflicts, use only the version explicitly supported by the "SEC Summary" or equivalent "MAYA Summary".
+  3) A section titled "SEC Summary (Warning)" or "MAYA Summary (Warning)" does not count as filing-backed evidence.
+  4) If neither the Hybrid boundary nor a filing-backed section resolves a contradiction, treat the disputed item as unresolved and exclude it from valuation calculations and assumptions.
+  5) Do not average, reconcile, select, or invent a value merely to complete the valuation.
+  6) You may still use the rest of the analysis for qualitative context when it is not contradicted.
 
   Anti-hallucination and evidence classification:
   For every material input used in step_by_step_analysis or a rationale, explicitly classify it as one of:
@@ -4525,12 +4534,60 @@ VALUATION_EVIDENCE_DISCIPLINE = """
   - Re-read every material number in step_by_step_analysis and all rationales and ensure it carries one of the four evidence labels above.
   - For each [CALCULATION], include the formula and the numeric inputs used.
   - Confirm that no management guidance, analyst estimate, or model assumption is phrased as a reported fact.
-  - Confirm that any factual contradiction was resolved only by filing-backed SEC/MAYA evidence; if it was not resolved there, exclude the disputed item.
+  - Confirm that every factual contradiction follows the authority order above: Hybrid boundary when present, then filing-backed SEC/MAYA evidence; otherwise exclude the disputed item.
   </Evidence_Discipline>
 """.strip()
 
 
 VALUATION_SHARE_COUNT_SECTION_HEADING = "Verified Share Count for Valuation"
+
+
+_NUMERIC_SHARE_COUNT_PATTERNS = (
+  re.compile(
+      r"(?i)\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k|m|bn))?\s+"
+      r"(?:[a-z-]+\s+){0,3}shares(?:\s+outstanding)?\b"
+  ),
+  re.compile(
+      r"(?i)\b(?:share\s+count|shares\s+outstanding|weighted[- ]average\s+shares)"
+      r"[^.\n]{0,60}?"
+      r"\d[\d,.]*(?:\s*(?:thousand|million|billion|k|m|bn))?\b"
+  ),
+  re.compile(
+      r"(?i)\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k|m|bn))?[- ]share\s+base\b"
+  ),
+)
+
+
+def _strip_share_columns_from_csv_blocks(text: str) -> str:
+  def replace_block(match: re.Match[str]) -> str:
+    body = match.group(1)
+    try:
+      rows = list(csv.reader(io.StringIO(body)))
+    except Exception:
+      return match.group(0)
+    if not rows:
+      return match.group(0)
+    keep = [
+        index
+        for index, heading in enumerate(rows[0])
+        if "share" not in str(heading or "").casefold()
+    ]
+    if len(keep) == len(rows[0]):
+      return match.group(0)
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer, lineterminator="\n")
+    for row in rows:
+      writer.writerow([row[index] if index < len(row) else "" for index in keep])
+    return "```csv\n" + buffer.getvalue().rstrip("\n") + "\n```"
+
+  return re.sub(r"(?ms)```csv\r?\n(.*?)\r?\n```", replace_block, str(text or ""))
+
+
+def _redact_numeric_share_counts(text: str) -> str:
+  redacted = _strip_share_columns_from_csv_blocks(str(text or ""))
+  for pattern in _NUMERIC_SHARE_COUNT_PATTERNS:
+    redacted = pattern.sub("[numeric share denominator withheld]", redacted)
+  return redacted
 
 
 def prepare_valuation_prompt_markdown(text: Any) -> str:
@@ -4557,11 +4614,11 @@ def prepare_valuation_prompt_markdown(text: Any) -> str:
     if not skipping_share_count_section:
       output.append(line)
 
-  return "".join(output).strip()
+  return _redact_numeric_share_counts("".join(output)).strip()
 
 
 def build_prompt(ticker, financial_dict, instruction, text):
-  financial_data = financial_dict["All Reports"]
+  financial_data = _redact_numeric_share_counts(financial_dict["All Reports"])
   info = safe_company_profile(
       financial_dict.get("info"),
       include_market_context=True,
@@ -4569,8 +4626,11 @@ def build_prompt(ticker, financial_dict, instruction, text):
   # Provider share fields can equal the separately resolved denominator. Keep
   # price and market cap available, but do not directly disclose any candidate
   # or selected share count to a valuation model.
-  info.pop("sharesOutstanding", None)
-  info.pop("impliedSharesOutstanding", None)
+  info = {
+      key: value
+      for key, value in info.items()
+      if "share" not in str(key).casefold()
+  }
   valuation_text = prepare_valuation_prompt_markdown(text)
   currency_statement = financial_dict["currency_statement"]
   today_date = dt.date.today().strftime("%Y-%m-%d")

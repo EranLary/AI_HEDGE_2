@@ -13,9 +13,14 @@ portfolio, and trading topology, see `docs/architecture/system-map.md`.
 - Nasdaq worker: durable DB queue -> `scripts/nasdaq_universe_run.py` -> the same
   full-analysis service with `workspace='nasdaq100'` and a release ID.
 
+Every entrypoint selects a versioned analysis engine. `deterministic_v1` is the
+default. Analysis may explicitly select the feature-flagged `hybrid_v1`; Nasdaq
+rejects it. See [research-harness.md](research-harness.md) for the structured
+state, budget, conflict, and audit contracts.
+
 ## Full-run order
 
-1. Validate ticker, workspace/release, API key, output directory, and concurrency.
+1. Validate ticker, workspace/release, engine, API key, output directory, and concurrency.
 2. Run the notebook-derived core analysis in `legacy_port.make_analysis_file()`:
    provider collection, filing/financial dictionaries, text agents, and F-score.
 3. Start TradingAgents in parallel while the filing stages continue.
@@ -24,9 +29,12 @@ portfolio, and trading topology, see `docs/architecture/system-map.md`.
 5. Resolve share count and other deterministic inputs used by the valuation path.
 6. Join TradingAgents and append its sanitized research context. Tactical rating,
    target, and horizon are kept outside valuation inputs.
-7. Run complementary Web Search and append its evidence-backed report.
-8. Extract the pre-valuation dashboard sections from analysis, filing, and
-   financial context, then persist the exact valuation-input Markdown.
+7. Run complementary Web Search and append its evidence-backed report. Hybrid
+   may run bounded additional read-only cycles and records each source and
+   evidence locator.
+8. In Hybrid, reconcile canonical claims and retain every conflict; then extract
+   the pre-valuation dashboard sections from analysis, filing, and financial
+   context and persist the exact valuation-input Markdown.
 9. Run the valuation blocks in parallel and aggregate their structured results.
 10. Build Wall St, Financials, and Technical Analysis sidecars; merge final
     analysis sections and the post-valuation TradingAgents decision.

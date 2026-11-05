@@ -32,7 +32,8 @@ def test_valuation_prompt_marks_full_markdown_and_enforces_evidence_discipline()
     assert "Do not average, reconcile, select, or invent" in prompt
     assert "Final self-check before returning JSON" in prompt
     assert "include the formula and the numeric inputs used" in prompt
-    assert "resolved only by filing-backed SEC/MAYA evidence" in prompt
+    assert "Hybrid Valuation Snapshot Contract" in prompt
+    assert "Hybrid boundary when present, then filing-backed SEC/MAYA evidence" in prompt
     for label in (
         "[REPORTED FACT]",
         "[CALCULATION]",
@@ -134,6 +135,123 @@ def test_valuation_input_snapshot_is_exact_markdown(tmp_path: Path) -> None:
     assert path.name == "TEST_valuation_input.md"
     assert path.read_bytes() == markdown.encode("utf-8")
     assert persisted == markdown
+
+
+def test_valuation_prompt_redacts_numeric_share_counts_everywhere() -> None:
+    markdown = """# TEST
+
+## Narrative
+25,000,000 shares times price supports market cap.
+The diluted shares outstanding were 25.0 million.
+Share count: 25M.
+The 25m-share base was stable.
+The filing lists 25 million ordinary shares.
+Share count has stayed at 25m.
+Insiders own 80% and no options were granted.
+"""
+
+    prepared = legacy_port.prepare_valuation_prompt_markdown(markdown)
+
+    assert prepared.count("[numeric share denominator withheld]") == 6
+    assert "25,000,000 shares" not in prepared
+    assert "25.0 million" not in prepared
+    assert "Share count: 25M" not in prepared
+    assert "25m-share base" not in prepared
+    assert "25 million ordinary shares" not in prepared
+    assert "Share count has stayed at 25m" not in prepared
+    assert "Insiders own 80%" in prepared
+
+
+def test_valuation_prompt_removes_share_columns_from_structured_financial_data() -> None:
+    financial_dict = _financial_dict()
+    financial_dict["All Reports"] = """### Income Statement
+```csv
+Reporting_Period,Net Income,Diluted Average Shares,Basic Average Shares,Diluted EPS
+2025-12-31,100,25000000,25000000,4.0
+```
+"""
+    financial_dict["info"] = {
+        "shortName": "Test Company",
+        "marketCap": 1_000,
+        "sharesOutstanding": 25_000_000,
+        "floatShares": 5_000_000,
+    }
+
+    prompt = legacy_port.build_prompt(
+        "TEST",
+        financial_dict,
+        "Return JSON",
+        "# TEST Analysis",
+    )
+
+    assert "Diluted Average Shares" not in prompt
+    assert "Basic Average Shares" not in prompt
+    assert "sharesOutstanding" not in prompt
+    assert "floatShares" not in prompt
+    assert "25000000" not in prompt
+    assert "Reporting_Period,Net Income,Diluted EPS" in prompt
+
+
+def test_hybrid_valuation_snapshot_uses_reconciled_boundary_values() -> None:
+    markdown = "# TEST - Analysis file\n\nCurrent Price: 10\n\nMarket Cap: 100\n\nCurrency: 1.0\n"
+    synchronized = runner._synchronize_hybrid_valuation_snapshot(
+        markdown,
+        variables_dict={"price": 10, "market_cap": 120},
+        currency="USD",
+    )
+    assert "Current Price: 10" in synchronized
+    assert "Market Cap: 120" in synchronized
+    assert "Currency: USD" in synchronized
+    assert "Market Cap: 100" not in synchronized
+    assert synchronized.count("## Hybrid Valuation Snapshot Contract") == 1
+    assert "already-normalized valuation snapshot" in synchronized
+    assert "Do not re-label it, apply another FX conversion" in synchronized
+    assert "Do not infer, recompute, or introduce a share count" in synchronized
+    assert "Never divide Market Cap by Current Price" in synchronized
+    assert "25,000,000" not in synchronized
+
+
+def test_hybrid_snapshot_withholds_conflicting_market_cap_narratives() -> None:
+    markdown = """# TEST
+
+Current Price: 35
+
+Market Cap: 875000000
+
+Currency: USD
+
+## Filing Narrative
+The provided market cap is approximately NIS 875m.
+The modest market capitalization increases liquidity risk.
+"""
+
+    synchronized = runner._synchronize_hybrid_valuation_snapshot(
+        markdown,
+        variables_dict={"price": 35, "market_cap": 875_000_000},
+        currency="USD",
+    )
+
+    assert "Market Cap: 875000000" in synchronized
+    assert "provided market cap is approximately NIS 875m" not in synchronized
+    assert "[non-authoritative market-cap narrative withheld" in synchronized
+    assert "modest market capitalization increases liquidity risk" in synchronized
+
+
+def test_hybrid_valuation_snapshot_contract_is_idempotent() -> None:
+    markdown = "# TEST\n\nCurrent Price: 10\n\nMarket Cap: 100\n\nCurrency: USD\n\n## Body\nText"
+    first = runner._synchronize_hybrid_valuation_snapshot(
+        markdown,
+        variables_dict={"price": 10, "market_cap": 100},
+        currency="USD",
+    )
+    second = runner._synchronize_hybrid_valuation_snapshot(
+        first,
+        variables_dict={"price": 10, "market_cap": 100},
+        currency="USD",
+    )
+
+    assert second == first
+    assert second.count("## Hybrid Valuation Snapshot Contract") == 1
 
 
 def test_valuation_report_uses_clear_sections_and_position_labels() -> None:

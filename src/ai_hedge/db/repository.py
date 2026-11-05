@@ -21,6 +21,15 @@ DROP TABLE IF EXISTS report_jev_predictions;
 DROP TABLE IF EXISTS report_jev_runs;
 DROP TABLE IF EXISTS report_artifacts;
 DROP TABLE IF EXISTS reports;
+DROP TABLE IF EXISTS research_sensitivity_scenarios;
+DROP TABLE IF EXISTS research_contradictions;
+DROP TABLE IF EXISTS research_claim_relations;
+DROP TABLE IF EXISTS research_claim_evidence;
+DROP TABLE IF EXISTS research_claims;
+DROP TABLE IF EXISTS research_evidence;
+DROP TABLE IF EXISTS research_sources;
+DROP TABLE IF EXISTS research_stage_runs;
+DROP TABLE IF EXISTS research_runs;
 DROP TABLE IF EXISTS report_releases;
 DROP TABLE IF EXISTS tickers;
 DROP FUNCTION IF EXISTS validate_report_release_membership();
@@ -85,13 +94,17 @@ INSERT INTO reports (
     company_name, current_price, market_cap, currency,
     recommendation, mean_target_price, median_target_price,
     consensus_target_price, consensus_allocation_pct, consensus_score, consensus_basis,
-    visibility, source, source_run_id, origin_path, workspace, release_id
+    visibility, source, source_run_id, origin_path, workspace, release_id,
+    research_run_id, engine_id, engine_version, harness_schema_version,
+    research_quality_status, automation_eligible
 ) VALUES (
     %(ticker)s, %(user_id)s, %(generated_at)s, %(dashboard_version)s,
     %(company_name)s, %(current_price)s, %(market_cap)s, %(currency)s,
     %(recommendation)s, %(mean_target_price)s, %(median_target_price)s,
     %(consensus_target_price)s, %(consensus_allocation_pct)s, %(consensus_score)s, %(consensus_basis)s,
-    %(visibility)s, %(source)s, %(source_run_id)s, %(origin_path)s, %(workspace)s, %(release_id)s
+    %(visibility)s, %(source)s, %(source_run_id)s, %(origin_path)s, %(workspace)s, %(release_id)s,
+    %(research_run_id)s, %(engine_id)s, %(engine_version)s, %(harness_schema_version)s,
+    %(research_quality_status)s, %(automation_eligible)s
 )
 ON CONFLICT (
     (coalesce(user_id::text, '')),
@@ -143,16 +156,25 @@ def insert_report(
     (existing_id, False) without touching report_artifacts.
     Caller owns the surrounding commit.
     """
+    report_payload = {
+        "research_run_id": None,
+        "engine_id": "deterministic_v1",
+        "engine_version": "1.0.0",
+        "harness_schema_version": "1.0",
+        "research_quality_status": "green",
+        "automation_eligible": True,
+        **report_row,
+    }
     with conn.cursor() as cur:
-        cur.execute(_INSERT_REPORT_SQL, report_row)
+        cur.execute(_INSERT_REPORT_SQL, report_payload)
         result = cur.fetchone()
         if result is None:
             cur.execute(_SELECT_EXISTING_REPORT_ID_SQL, {
-                "user_id": report_row["user_id"],
-                "workspace": report_row["workspace"],
-                "release_id": report_row["release_id"],
-                "ticker": report_row["ticker"],
-                "generated_at": report_row["generated_at"],
+                "user_id": report_payload["user_id"],
+                "workspace": report_payload["workspace"],
+                "release_id": report_payload["release_id"],
+                "ticker": report_payload["ticker"],
+                "generated_at": report_payload["generated_at"],
             })
             existing = cur.fetchone()
             return (str(existing[0]) if existing else "", False)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Play, X } from "lucide-react";
 import { signIn, useSession } from "next-auth/react";
 
@@ -15,6 +15,9 @@ import {
 } from "@/lib/run-submission";
 import type { TickerEntry } from "@/lib/ticker-catalog";
 import { useWorkspace } from "@/components/shell/workspace-context";
+import type { AnalysisEngineId } from "@/lib/analysis-engine";
+
+const HYBRID_SELECTOR_ENABLED = process.env.NEXT_PUBLIC_HYBRID_RUN_ANALYSIS_ENABLED === "1";
 
 export function NewRunModal() {
   const { isOpen, close } = useNewRunModal();
@@ -24,29 +27,30 @@ export function NewRunModal() {
   const [selected, setSelected] = useState<TickerEntry | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [engine, setEngine] = useState<AnalysisEngineId>("deterministic_v1");
   const isGuest = Boolean(session?.user?.isGuest);
 
-  // Reset state when opened
-  useEffect(() => {
-    if (workspace === "nasdaq100" && isOpen) close();
-  }, [close, isOpen, workspace]);
-
-  useEffect(() => {
-    if (!isOpen) return;
+  const resetAndClose = useCallback(() => {
     setSelected(null);
     setError("");
     setSubmitting(false);
-  }, [isOpen]);
+    setEngine("deterministic_v1");
+    close();
+  }, [close]);
+
+  useEffect(() => {
+    if (workspace === "nasdaq100" && isOpen) close();
+  }, [close, isOpen, workspace]);
 
   // Esc to close
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") resetAndClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, close]);
+  }, [isOpen, resetAndClose]);
 
   // Lock body scroll
   useEffect(() => {
@@ -70,9 +74,9 @@ export function NewRunModal() {
     setError("");
     setSubmitting(true);
     try {
-      const result = await submitNewRun(selected.s);
-      push(`Run started for ${result.ticker}`, "success");
-      close();
+      const result = await submitNewRun(selected.s, engine);
+      push(`Run started for ${result.ticker} (${result.engine})`, "success");
+      resetAndClose();
     } catch (err) {
       if (err instanceof TickerNotFoundError) {
         setError(`${err.message} Double-check the symbol or try a different ticker.`);
@@ -92,11 +96,11 @@ export function NewRunModal() {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center px-4 pt-20 sm:pt-28" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={close} aria-hidden />
+      <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={resetAndClose} aria-hidden />
       <div className="hib-modal-surface relative z-10 w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-950/95 p-6 shadow-2xl shadow-black/50">
         <button
           type="button"
-          onClick={close}
+          onClick={resetAndClose}
           aria-label="Close"
           className="hib-modal-close absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
         >
@@ -118,6 +122,43 @@ export function NewRunModal() {
             disabled={submitting}
             autoFocus
           />
+          {HYBRID_SELECTOR_ENABLED ? (
+            <fieldset className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-secondary)]">
+                Analysis engine
+              </legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    ["deterministic_v1", "Deterministic", "Current production pipeline"],
+                    ["hybrid_v1", "Hybrid", "Structured evidence + bounded gap research"],
+                  ] as const
+                ).map(([value, label, description]) => (
+                  <label
+                    key={value}
+                    className={`cursor-pointer rounded-lg border p-3 transition ${
+                      engine === value
+                        ? "border-[color:var(--accent)] bg-[color:var(--warning-soft)]"
+                        : "border-[color:var(--border-subtle)] hover:border-[color:var(--border-strong)]"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
+                      <input
+                        type="radio"
+                        name="analysis-engine"
+                        value={value}
+                        checked={engine === value}
+                        onChange={() => setEngine(value)}
+                        disabled={submitting}
+                      />
+                      {label}
+                    </span>
+                    <span className="mt-1 block text-xs text-[color:var(--text-muted)]">{description}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
           {isEtf ? (
             <p className="hib-disclaimer-amber rounded-lg border px-3 py-2 text-xs">
               ETF analysis isn&apos;t supported yet. Pick a single-issuer equity instead.
@@ -143,7 +184,7 @@ export function NewRunModal() {
             ) : null}
             <button
               type="button"
-              onClick={close}
+              onClick={resetAndClose}
               disabled={submitting}
               className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.14em] text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-[color:var(--text-disabled)] disabled:opacity-60"
             >

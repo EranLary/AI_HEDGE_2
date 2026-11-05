@@ -184,6 +184,7 @@ export async function getJevMetrics(
        AND j.question_version = ${JEV_QUESTION_VERSION}
        AND r.workspace = ${workspace}
        AND r.deleted_at IS NULL
+       AND r.automation_eligible = true
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'));
   `) as unknown as Array<Record<string, unknown>>;
   const rows = raw.map(normalizePrediction);
@@ -232,6 +233,7 @@ export async function getJevDiscoveryRankings(
        AND (${horizon}::text IS NULL OR p.horizon = ${horizon})
        AND r.workspace = ${workspace}
        AND r.deleted_at IS NULL
+       AND r.automation_eligible = true
        AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'))
      ORDER BY p.confidence DESC, r.generated_at DESC, r.ticker ASC, p.horizon_days ASC
      LIMIT ${queryLimit};
@@ -253,6 +255,7 @@ export async function getJevDiscoveryRankings(
          AND (${horizon}::text IS NULL OR p.horizon = ${horizon})
          AND r.workspace = ${workspace}
          AND r.deleted_at IS NULL
+         AND r.automation_eligible = true
          AND (${workspace} = 'analysis' OR rel.status IN ('running', 'active'));
     `,
   ]);

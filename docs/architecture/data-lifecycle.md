@@ -11,6 +11,7 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 | Report catalog and list fields | Site Neon: `reports`, `tickers`, `report_releases` | Denormalized fields inside dashboard JSON | `src/ai_hedge/db/`, `frontend/src/lib/reports-db.ts` |
 | Current ticker classification | Site Neon: `tickers.sector`, `tickers.industry` | Generation-time `company_profile` snapshot inside dashboard JSON | analysis Yahoo collection, `src/ai_hedge/db/transform.py` |
 | Structured dashboard and report text | Site Neon: `report_artifacts` | Run directory under `outputs/`; selected objects in R2 | `src/ai_hedge/db/writer.py`, `src/ai_hedge/db/transform.py` |
+| Research provenance and quality | Site Neon: `research_*` catalog and ledger tables | Immutable manifest, ledger, conflict, sensitivity, and source-body objects in R2 | `src/ai_hedge/harness/`, `src/ai_hedge/db/harness_repository.py` |
 | Jev forecasts and realized outcomes | Site Neon: `report_jev_runs`, `report_jev_predictions` | Vercel AI Gateway request logs and transient yfinance responses | `src/ai_hedge/jev.py`, `scripts/db/refresh_jev_outcomes.py` |
 | Downloadable/generated documents | Rendered from the saved report sources on request | Legacy files or R2 objects when a historical report points to them | artifact API route, `frontend/src/lib/report-document.tsx` |
 | Site analysis status | `site_runs` for shared status/progress fields | `_status.json` for process-local fields and terminal fallback | `src/ai_hedge/io/status.py`, `frontend/src/lib/site-runs-db.ts` |
@@ -62,6 +63,11 @@ restart/cancellation tests cover the new single-store behavior.
 - `nasdaq100` reports belong to a matching staged/running release when inserted;
   readers expose only running or active releases.
 - A report and its `report_artifacts` row are inserted together.
+- A Hybrid report is publishable only after its normalized research ledger is
+  persisted. Deterministic reports preserve legacy availability if the optional
+  measurement ledger cannot be persisted.
+- Claims, evidence, and relations are insert-only. A future human correction
+  creates a revision; it does not rewrite historical provenance.
 - Ticker Summary reads sector and industry from saved ticker metadata, never from
   a page-open provider request. Empty or failed provider responses do not erase a
   previously saved classification.

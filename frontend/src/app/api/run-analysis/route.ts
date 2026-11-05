@@ -21,6 +21,12 @@ import {
 } from "@/lib/site-runner";
 import { insertQueuedRun, listActiveRunsForUser, updateRunStatusFromNode } from "@/lib/site-runs-db";
 import { yahooValidate } from "@/lib/yahoo-lookup";
+import {
+  DEFAULT_ANALYSIS_ENGINE,
+  hybridAnalysisEnabled,
+  isAnalysisEngine,
+  type AnalysisEngineId,
+} from "@/lib/analysis-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,14 +87,24 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { ticker?: string } = {};
+  let body: { ticker?: string; engine?: AnalysisEngineId } = {};
   try {
-    body = (await req.json()) as { ticker?: string };
+    body = (await req.json()) as { ticker?: string; engine?: AnalysisEngineId };
   } catch {
     return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
   }
 
   const ticker = String(body.ticker || "").trim().toUpperCase();
+  const engine = body.engine ?? DEFAULT_ANALYSIS_ENGINE;
+  if (!isAnalysisEngine(engine)) {
+    return NextResponse.json({ error: "Invalid analysis engine." }, { status: 400 });
+  }
+  if (engine === "hybrid_v1" && !hybridAnalysisEnabled()) {
+    return NextResponse.json(
+      { error: "Hybrid analysis is not enabled for new runs.", code: "HYBRID_DISABLED" },
+      { status: 409 },
+    );
+  }
   if (!TICKER_RE.test(ticker)) {
     return NextResponse.json({ error: "Invalid ticker format." }, { status: 400 });
   }
@@ -137,6 +153,12 @@ export async function POST(req: Request) {
     report_id: null,
     persistence_error: "",
     error: "",
+    engine_id: engine,
+    engine_version: "1.0.0",
+    harness_schema_version: "1.0",
+    research_run_id: null,
+    research_quality_status: "green",
+    automation_eligible: true,
   };
 
   try {
@@ -155,6 +177,7 @@ export async function POST(req: Request) {
     userId: userId,
     llmTotalEstimated: initialStatus.llm_total_estimated ?? 50,
     bootAnchorAt: appBootIso(),
+    engine,
   });
 
   const root = repoRoot();
@@ -172,6 +195,8 @@ export async function POST(req: Request) {
         jobDir,
         "--status-file",
         statusFile,
+        "--engine",
+        engine,
       ],
       {
         cwd: root,
@@ -215,5 +240,6 @@ export async function POST(req: Request) {
     job_id: jobId,
     ticker,
     status: "queued",
+    engine,
   });
 }

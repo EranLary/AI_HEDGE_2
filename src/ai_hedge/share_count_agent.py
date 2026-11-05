@@ -88,6 +88,55 @@ def _filing_label(form_type: Any, payload: Dict[str, Any]) -> str:
     return f"{label} ({suffix})" if suffix else label
 
 
+def _filing_metadata_for_excerpt(
+    files_dict: Optional[Dict[str, Any]], evidence_excerpt: str
+) -> Dict[str, Any]:
+    needle = _normalise(evidence_excerpt)
+    if not needle or not isinstance(files_dict, dict):
+        return {}
+    for form_type, raw in files_dict.items():
+        if not isinstance(raw, dict) or needle not in _normalise(raw.get("text")):
+            continue
+        date = next(
+            (
+                str(raw.get(key) or "").strip()
+                for key in (
+                    "period_of_report",
+                    "report_date",
+                    "as_of_date",
+                    "date",
+                    "filing_date",
+                    "publishDate",
+                )
+                if str(raw.get(key) or "").strip()
+            ),
+            "",
+        )
+        source_url = next(
+            (
+                str(raw.get(key) or "").strip()
+                for key in ("source_url", "url", "filing_url", "link")
+                if str(raw.get(key) or "").strip()
+            ),
+            "",
+        )
+        filing_id = next(
+            (
+                str(raw.get(key) or "").strip()
+                for key in ("accession_number", "filing_id", "id")
+                if str(raw.get(key) or "").strip()
+            ),
+            "",
+        )
+        return {
+            "form_type": str(raw.get("form_type") or form_type or "").strip(),
+            "filing_date": date or None,
+            "source_url": source_url or None,
+            "filing_id": filing_id or None,
+        }
+    return {}
+
+
 def filing_share_count_evidence(files_dict: Optional[Dict[str, Any]]) -> str:
     """Extract bounded, verbatim share-count neighborhoods from filings."""
     if not isinstance(files_dict, dict):
@@ -285,6 +334,18 @@ def resolve_share_count(
             filing_evidence=evidence,
         )
         if validated is not None:
+            if validated.get("source_type") == "official_filing":
+                metadata = _filing_metadata_for_excerpt(
+                    files_dict, str(validated.get("evidence_excerpt") or "")
+                )
+                validated.update(metadata)
+                if not validated.get("as_of_date") and metadata.get("filing_date"):
+                    validated["as_of_date"] = metadata["filing_date"]
+                    validated["validation_note"] = (
+                        "Accepted after deterministic evidence validation; as-of uses the "
+                        "matched filing date because the quoted share-count sentence did not "
+                        "state a separate date."
+                    )
             return validated
         return _fallback_resolution(candidates, reason="Share-count agent response failed deterministic validation.")
     except Exception as exc:  # The valuation fallback must remain non-blocking.

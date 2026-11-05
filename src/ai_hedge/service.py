@@ -1073,6 +1073,7 @@ def run_full_analysis(
     user_id: str | None = None,
     workspace: str = "analysis",
     release_id: str | None = None,
+    engine: str = "deterministic_v1",
 ) -> Dict[str, object]:
     """
     Run full analysis pipeline and return a stable result payload without raising.
@@ -1098,6 +1099,10 @@ def run_full_analysis(
         "market_review_json": "",
         "errors": errors,
         "r2_keys": None,
+        "engine_id": engine,
+        "research_run_id": None,
+        "research_quality_status": "green",
+        "automation_eligible": True,
     }
 
     if not is_valid_ticker(ticker_u):
@@ -1128,6 +1133,7 @@ def run_full_analysis(
                 user_id=user_id,
                 workspace=workspace,
                 release_id=release_id,
+                engine=engine,
             )
         finally:
             os.chdir(prev_cwd)
@@ -1206,6 +1212,22 @@ def run_full_analysis(
         result["sec_fallback_used"] = bool(full_out.get("sec_fallback_used", False))
         result["sec_fallback_message"] = str(full_out.get("sec_fallback_message", "") or "")
         result["r2_keys"] = full_out.get("r2_keys")
+        for key in (
+            "engine_id",
+            "engine_version",
+            "harness_schema_version",
+            "research_run_id",
+            "research_quality_status",
+            "automation_eligible",
+            "research_state_json",
+            "execution_manifest_json",
+            "evidence_ledger_jsonl",
+            "contradictions_json",
+            "valuation_sensitivity_json",
+            "research_source_bodies_jsonl",
+            "checkpoint_latest_json",
+        ):
+            result[key] = full_out.get(key)
 
         generated_count = (
             int(copied_analysis)

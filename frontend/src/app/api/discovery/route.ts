@@ -57,6 +57,7 @@ async function loadDashboards(workspace: Workspace): Promise<LoadedDashboard[]> 
   for (const entry of listDashboardReports()) {
     const payload = readJson<DashboardPayload>(entry.path);
     if (!payload) continue;
+    if (payload.research_harness?.automation_eligible === false) continue;
     const ticker = String(payload.ticker || entry.ticker || "").trim().toUpperCase();
     if (!ticker || isExcludedTicker(ticker)) continue;
     const updatedAt =

@@ -57,12 +57,16 @@ class NeonStatusSink(StatusSink):
         job_id, ticker, user_id, status,
         started_at, finished_at,
         llm_total_estimated, llm_completed,
-        error, report_id, workspace, release_id, batch_id, heartbeat_at
+        error, report_id, workspace, release_id, batch_id, heartbeat_at,
+        research_run_id, engine_id, engine_version, harness_schema_version,
+        research_quality_status, automation_eligible
     ) VALUES (
         %(job_id)s, %(ticker)s, %(user_id)s, %(status)s,
         %(started_at)s, %(finished_at)s,
         %(llm_total_estimated)s, %(llm_completed)s,
-        %(error)s, %(report_id)s, %(workspace)s, %(release_id)s, %(batch_id)s, now()
+        %(error)s, %(report_id)s, %(workspace)s, %(release_id)s, %(batch_id)s, now(),
+        %(research_run_id)s, %(engine_id)s, %(engine_version)s, %(harness_schema_version)s,
+        %(research_quality_status)s, %(automation_eligible)s
     )
     ON CONFLICT (job_id) DO UPDATE SET
         ticker              = EXCLUDED.ticker,
@@ -77,6 +81,12 @@ class NeonStatusSink(StatusSink):
         workspace           = EXCLUDED.workspace,
         release_id          = COALESCE(EXCLUDED.release_id, site_runs.release_id),
         batch_id            = COALESCE(EXCLUDED.batch_id, site_runs.batch_id),
+        research_run_id     = COALESCE(EXCLUDED.research_run_id, site_runs.research_run_id),
+        engine_id           = EXCLUDED.engine_id,
+        engine_version      = EXCLUDED.engine_version,
+        harness_schema_version = EXCLUDED.harness_schema_version,
+        research_quality_status = EXCLUDED.research_quality_status,
+        automation_eligible = EXCLUDED.automation_eligible,
         heartbeat_at        = now();
     """
 
@@ -124,6 +134,8 @@ class NeonStatusSink(StatusSink):
         release_id = release_id_raw if _is_valid_uuid(release_id_raw) else None
         batch_id_raw = payload.get("batch_id")
         batch_id = batch_id_raw if _is_valid_uuid(batch_id_raw) else None
+        research_run_id_raw = payload.get("research_run_id")
+        research_run_id = research_run_id_raw if _is_valid_uuid(research_run_id_raw) else None
 
         return {
             "job_id": job_id,
@@ -139,6 +151,12 @@ class NeonStatusSink(StatusSink):
             "workspace": workspace,
             "release_id": release_id,
             "batch_id": batch_id,
+            "research_run_id": research_run_id,
+            "engine_id": str(payload.get("engine_id") or "deterministic_v1"),
+            "engine_version": str(payload.get("engine_version") or "1.0.0"),
+            "harness_schema_version": str(payload.get("harness_schema_version") or "1.0"),
+            "research_quality_status": str(payload.get("research_quality_status") or "green"),
+            "automation_eligible": bool(payload.get("automation_eligible", True)),
         }
 
     def _log_once(self, message: str) -> None:

@@ -74,6 +74,13 @@ const KIND_TO_FILE: Record<
     fileName: "{TICKER}_share_count_resolution.json",
     contentType: "application/json; charset=utf-8",
   },
+  "research-state-json": { fileName: "{TICKER}_research_state.json", contentType: "application/json; charset=utf-8" },
+  "execution-manifest-json": { fileName: "{TICKER}_execution_manifest.json", contentType: "application/json; charset=utf-8" },
+  "evidence-ledger-jsonl": { fileName: "{TICKER}_evidence_ledger.jsonl", contentType: "application/x-ndjson; charset=utf-8" },
+  "contradictions-json": { fileName: "{TICKER}_contradictions.json", contentType: "application/json; charset=utf-8" },
+  "valuation-sensitivity-json": { fileName: "{TICKER}_valuation_sensitivity.json", contentType: "application/json; charset=utf-8" },
+  "research-source-bodies-jsonl": { fileName: "{TICKER}_research_source_bodies.jsonl", contentType: "application/x-ndjson; charset=utf-8" },
+  "checkpoint-latest-json": { fileName: "latest.json", contentType: "application/json; charset=utf-8" },
 };
 
 function findInTree(rootDir: string, fileName: string): string | null {

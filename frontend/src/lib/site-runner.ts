@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { AnalysisEngineId } from "@/lib/analysis-engine";
 
 export const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -29,6 +30,12 @@ export type RunStatusPayload = {
   workspace?: "analysis" | "nasdaq100";
   release_id?: string | null;
   batch_id?: string | null;
+  engine_id?: AnalysisEngineId;
+  engine_version?: string;
+  harness_schema_version?: string;
+  research_run_id?: string | null;
+  research_quality_status?: "green" | "amber_conflict" | "red" | "budget_exhausted";
+  automation_eligible?: boolean;
 };
 
 const APP_BOOT_TIME_MS = Date.now();

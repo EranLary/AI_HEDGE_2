@@ -160,6 +160,19 @@ def _material_failure_error(result: Any) -> str:
     return "Analysis service returned without usable report artifacts."
 
 
+def _failure_harness_metadata(output_dir: str, ticker: str) -> Dict[str, Any]:
+    path = Path(output_dir) / ticker / f"{ticker}_research_state.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    return {
+        "research_run_id": payload.get("run_id"),
+        "research_quality_status": payload.get("quality_status") or "red",
+        "automation_eligible": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a site-triggered valuation job.")
     parser.add_argument("--ticker", required=True, help="Ticker symbol")
@@ -168,6 +181,12 @@ def main() -> int:
     parser.add_argument("--workspace", choices=("analysis", "nasdaq100"), default="analysis")
     parser.add_argument("--release-id", default=None, help="Required for Nasdaq-100 reports")
     parser.add_argument("--batch-id", default=None, help="Parent Nasdaq universe run id")
+    parser.add_argument(
+        "--engine",
+        choices=("deterministic_v1", "hybrid_v1"),
+        default="deterministic_v1",
+        help="Analysis engine (hybrid_v1 is Analysis-only).",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -176,11 +195,13 @@ def main() -> int:
         sys.path.insert(0, str(src))
 
     from ai_hedge.io.status import make_default_sink
+    from ai_hedge.harness import engine_descriptor
 
     ticker = str(args.ticker or "").strip().upper()
     workspace = str(args.workspace or "analysis").strip().lower()
     release_id = str(args.release_id or "").strip() or None
     batch_id = str(args.batch_id or "").strip() or None
+    descriptor = engine_descriptor(args.engine, workspace=workspace)
     if workspace == "nasdaq100" and not release_id:
         parser.error("--release-id is required for the nasdaq100 workspace")
     output_dir = str(Path(args.output_dir).resolve())
@@ -225,6 +246,12 @@ def main() -> int:
         "workspace": workspace,
         "release_id": release_id,
         "batch_id": batch_id,
+        "engine_id": descriptor.engine_id,
+        "engine_version": descriptor.engine_version,
+        "harness_schema_version": descriptor.harness_schema_version,
+        "research_run_id": None,
+        "research_quality_status": "green",
+        "automation_eligible": True,
     }
     sink.update_status(running_payload)
 
@@ -281,6 +308,7 @@ def main() -> int:
             user_id=str(existing_status.get("user_id") or "").strip() or None,
             workspace=workspace,
             release_id=release_id,
+            engine=descriptor.engine_id,
         )
 
         try:
@@ -298,6 +326,7 @@ def main() -> int:
             )
             failed_payload = {
                 **running_payload,
+                **_failure_harness_metadata(output_dir, ticker),
                 "status": "failed",
                 "finished_at": _utc_now(),
                 "llm_completed": failed_completed,
@@ -391,6 +420,9 @@ def main() -> int:
                 "report_id": None,
                 "persistence_error": persistence_error or "DB persistence failed.",
                 "error": "",
+                "research_run_id": result.get("research_run_id"),
+                "research_quality_status": result.get("research_quality_status", "green"),
+                "automation_eligible": bool(result.get("automation_eligible", True)),
             }
             _write_terminal_status(completed_with_warning)
             _append_progress_line(progress_file, "Site Run Finalized: completed")
@@ -412,6 +444,9 @@ def main() -> int:
             "llm_progress_pct": completed_pct,
             "observed_cost_usd": observed_cost_usd,
             "report_id": report_id,
+            "research_run_id": result.get("research_run_id"),
+            "research_quality_status": result.get("research_quality_status", "green"),
+            "automation_eligible": bool(result.get("automation_eligible", True)),
         }
         _write_terminal_status(completed_payload)
         _append_progress_line(progress_file, "Site Run Finalized: completed")
@@ -432,6 +467,7 @@ def main() -> int:
         )
         failed_payload = {
             **running_payload,
+            **_failure_harness_metadata(output_dir, ticker),
             "status": "failed",
             "finished_at": _utc_now(),
             "llm_completed": failed_completed,

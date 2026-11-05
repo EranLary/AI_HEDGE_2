@@ -263,6 +263,12 @@ def ticker_dir_to_row(
         "origin_path": origin_path,
         "workspace": workspace,
         "release_id": release_id,
+        "research_run_id": (dashboard.get("research_harness") or {}).get("run_id"),
+        "engine_id": (dashboard.get("research_harness") or {}).get("engine_id") or "deterministic_v1",
+        "engine_version": (dashboard.get("research_harness") or {}).get("engine_version") or "1.0.0",
+        "harness_schema_version": (dashboard.get("research_harness") or {}).get("harness_schema_version") or "1.0",
+        "research_quality_status": (dashboard.get("research_harness") or {}).get("quality_status") or "green",
+        "automation_eligible": bool((dashboard.get("research_harness") or {}).get("automation_eligible", True)),
     }
 
     artifact_row = {

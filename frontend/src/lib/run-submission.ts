@@ -2,6 +2,7 @@
 
 import { upsertActiveRun, type ClientRunStatus } from "@/lib/active-runs";
 import { nudgeActiveRuns } from "@/components/shell/active-runs-store";
+import { DEFAULT_ANALYSIS_ENGINE, type AnalysisEngineId } from "@/lib/analysis-engine";
 
 export const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -9,6 +10,7 @@ export type SubmitNewRunResult = {
   job_id: string;
   ticker: string;
   status: ClientRunStatus;
+  engine: AnalysisEngineId;
 };
 
 export class InvalidTickerError extends Error {
@@ -35,7 +37,10 @@ export class SignInRequiredForRunError extends Error {
 /** Single source of truth for starting an analysis run. Validates the ticker,
  *  POSTs to /api/run-analysis, seeds the active-runs store, and returns the
  *  job_id so callers can do per-call follow-up if needed. */
-export async function submitNewRun(rawTicker: string): Promise<SubmitNewRunResult> {
+export async function submitNewRun(
+  rawTicker: string,
+  engine: AnalysisEngineId = DEFAULT_ANALYSIS_ENGINE,
+): Promise<SubmitNewRunResult> {
   const ticker = String(rawTicker || "").trim().toUpperCase();
   if (!TICKER_RE.test(ticker)) {
     throw new InvalidTickerError(ticker);
@@ -44,7 +49,7 @@ export async function submitNewRun(rawTicker: string): Promise<SubmitNewRunResul
   const res = await fetch("/api/run-analysis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticker }),
+    body: JSON.stringify({ ticker, engine }),
   });
   const json = (await res.json().catch(() => ({}))) as { job_id?: string; error?: string; status?: string };
   if (res.status === 422) {
@@ -64,8 +69,9 @@ export async function submitNewRun(rawTicker: string): Promise<SubmitNewRunResul
     status,
     llm_progress_pct: 0,
     created_at: new Date().toISOString(),
+    engine_id: engine,
   });
   nudgeActiveRuns();
 
-  return { job_id: json.job_id, ticker, status };
+  return { job_id: json.job_id, ticker, status, engine };
 }

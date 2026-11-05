@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
-import { getHistoricalAdjustedPricesBatch, getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { getHistoricalPricesBatch, getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
@@ -93,13 +93,13 @@ export async function GET(request: Request) {
   const historyEnd = new Date().toISOString().slice(0, 10);
   const [livePrices, historicalPrices] = await Promise.all([
     getLiveCurrentPricesBatch(uniqueTickers),
-    getHistoricalAdjustedPricesBatch(uniqueTickers, historyStart, historyEnd),
+    getHistoricalPricesBatch(uniqueTickers, historyStart, historyEnd),
   ]);
   const livePriceByTicker = new Map<string, number | null>(
     Object.entries(livePrices),
   );
   const historicalPricesByTicker = new Map(Object.entries(historicalPrices));
-  const aggregation = computeHitRateAggregation(reports, livePriceByTicker, mode);
+  const aggregation = computeHitRateAggregation(reports, livePriceByTicker, mode, historicalPricesByTicker);
   const horizonAccuracy = computeHorizonAccuracy(
     reports,
     historicalPricesByTicker,

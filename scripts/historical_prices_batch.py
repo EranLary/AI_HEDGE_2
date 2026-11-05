@@ -1,4 +1,4 @@
-"""Fetch split/dividend-adjusted daily price history for Track Record horizons."""
+"""Fetch split-only-adjusted daily price history for Track Record metrics."""
 from __future__ import annotations
 
 import argparse
@@ -35,31 +35,46 @@ def _parse_tickers(raw: str) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
 
 
+def _split_adjust_rows(raw_rows: list[tuple[date, float, float | None]]) -> list[dict[str, Any]]:
+    """Attach the factor that normalizes a saved quote to Yahoo's share basis."""
+    cumulative_future_split = 1.0
+    adjusted_reversed: list[dict[str, Any]] = []
+    for row_date, close, split_ratio in reversed(raw_rows):
+        adjusted_reversed.append(
+            {
+                "date": row_date.isoformat(),
+                "close": round(close, 8),
+                "split_factor": round(1.0 / cumulative_future_split, 12),
+            }
+        )
+        # Yahoo already revises historical Close values for splits. The event
+        # ratio is needed only to normalize a quote saved before a later split.
+        # A split-date quote is already post-split, so apply its ratio only to
+        # earlier report dates when walking backward through the series.
+        if split_ratio is not None:
+            cumulative_future_split *= split_ratio
+    return list(reversed(adjusted_reversed))
+
+
 def _history(ticker: str, start: date, end: date) -> list[dict[str, Any]]:
     frame = yf.Ticker(ticker).history(
         start=start.isoformat(),
         end=(end + timedelta(days=1)).isoformat(),
         auto_adjust=False,
-        actions=False,
+        actions=True,
     )
     if frame is None or frame.empty or "Close" not in frame.columns:
         return []
-    adjusted_column = "Adj Close" if "Adj Close" in frame.columns else "Close"
-    rows: list[dict[str, Any]] = []
+    split_column = frame["Stock Splits"] if "Stock Splits" in frame.columns else None
+    raw_rows: list[tuple[date, float, float | None]] = []
     for index, close_value in frame["Close"].items():
         close = _safe_float(close_value)
-        adjusted = _safe_float(frame.loc[index, adjusted_column])
-        if close is None or adjusted is None:
+        if close is None:
             continue
         row_date = index.date() if hasattr(index, "date") else date.fromisoformat(str(index)[:10])
-        rows.append(
-            {
-                "date": row_date.isoformat(),
-                "close": round(close, 8),
-                "adjusted_close": round(adjusted, 8),
-            }
-        )
-    return rows
+        split_ratio = _safe_float(split_column.loc[index]) if split_column is not None else None
+        raw_rows.append((row_date, close, split_ratio))
+    return _split_adjust_rows(raw_rows)
 
 
 def main() -> int:

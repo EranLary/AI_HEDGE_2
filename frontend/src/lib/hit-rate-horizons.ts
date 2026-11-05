@@ -8,14 +8,17 @@ import {
   type HitRateMode,
 } from "./hit-rate-aggregate";
 import type { DashboardPayload } from "./dashboard-types";
+import {
+  normalizeHistoricalSeries,
+  splitAdjustedBaseline,
+  utcDateTimestamp,
+  type HistoricalPricePoint,
+  type NormalizedHistoricalPricePoint,
+} from "./hit-rate-price-basis";
+
+export type { HistoricalPricePoint } from "./hit-rate-price-basis";
 
 export type HorizonKey = "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "3y" | "5y" | "current";
-
-export type HistoricalPricePoint = {
-  date: string;
-  close: number;
-  adjusted_close: number;
-};
 
 export type HorizonSourceReport = {
   ticker: string;
@@ -112,61 +115,11 @@ function finalize(definition: HorizonDefinition, accumulator: HorizonAccumulator
   };
 }
 
-function parseDate(value: string | undefined): number | null {
-  const parsed = Date.parse(String(value || ""));
-  if (!Number.isFinite(parsed)) return null;
-  const date = new Date(parsed);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
-
-function pointDate(point: HistoricalPricePoint): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(point.date || ""));
-  if (!match) return null;
-  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-}
-
-function normalizedSeries(points: HistoricalPricePoint[] | undefined): Array<HistoricalPricePoint & { timestamp: number }> {
-  return (Array.isArray(points) ? points : [])
-    .map((point) => ({ ...point, timestamp: pointDate(point) }))
-    .filter(
-      (point): point is HistoricalPricePoint & { timestamp: number } =>
-        typeof point.timestamp === "number"
-        && Number.isFinite(point.close)
-        && point.close > 0
-        && Number.isFinite(point.adjusted_close)
-        && point.adjusted_close > 0,
-    )
-    .sort((a, b) => a.timestamp - b.timestamp);
-}
-
-function lastPointOnOrBefore(
-  points: Array<HistoricalPricePoint & { timestamp: number }>,
-  timestamp: number,
-): (HistoricalPricePoint & { timestamp: number }) | null {
-  for (let index = points.length - 1; index >= 0; index -= 1) {
-    if (points[index].timestamp <= timestamp) return points[index];
-  }
-  return null;
-}
-
 function firstPointOnOrAfter(
-  points: Array<HistoricalPricePoint & { timestamp: number }>,
+  points: NormalizedHistoricalPricePoint[],
   timestamp: number,
-): (HistoricalPricePoint & { timestamp: number }) | null {
+): NormalizedHistoricalPricePoint | null {
   return points.find((point) => point.timestamp >= timestamp) || null;
-}
-
-function adjustedBaseline(
-  reportPrice: number,
-  reportTimestamp: number,
-  points: Array<HistoricalPricePoint & { timestamp: number }>,
-): number {
-  const reference = lastPointOnOrBefore(points, reportTimestamp);
-  if (!reference || reference.close <= 0) return reportPrice;
-  const adjustmentFactor = reference.adjusted_close / reference.close;
-  return Number.isFinite(adjustmentFactor) && adjustmentFactor > 0
-    ? reportPrice * adjustmentFactor
-    : reportPrice;
 }
 
 type Outcome =
@@ -176,18 +129,24 @@ type Outcome =
 
 function outcomeForHorizon(
   definition: HorizonDefinition,
-  reportTimestamp: number,
+  reportTimestamp: number | null,
   baselinePrice: number,
-  points: Array<HistoricalPricePoint & { timestamp: number }>,
+  points: NormalizedHistoricalPricePoint[],
   livePrice: number | null,
   nowTimestamp: number,
 ): Outcome {
   if (definition.days === null) {
-    if (typeof livePrice !== "number" || !Number.isFinite(livePrice) || livePrice <= 0) {
+    // Current intentionally follows the legacy Track Record contract exactly.
+    // Some unavailable/delisted quotes are persisted as 0; the legacy cards
+    // still resolve those against the saved report quote, so the companion
+    // horizon must not silently drop the same prediction.
+    if (typeof livePrice !== "number" || !Number.isFinite(livePrice)) {
       return { kind: "unavailable" };
     }
     return { kind: "resolved", direction: directionOf(livePrice - baselinePrice) };
   }
+
+  if (reportTimestamp === null || baselinePrice <= 0) return { kind: "unavailable" };
 
   const targetTimestamp = reportTimestamp + definition.days * 24 * 60 * 60 * 1000;
   // Do not resolve against a same-day partial session. A target date becomes
@@ -200,7 +159,9 @@ function outcomeForHorizon(
       ? { kind: "pending" }
       : { kind: "unavailable" };
   }
-  return { kind: "resolved", direction: directionOf(outcomePoint.adjusted_close - baselinePrice) };
+  // Yahoo's raw Close history is already normalized for stock splits, but not
+  // dividends. It is therefore on the same share basis as baselinePrice.
+  return { kind: "resolved", direction: directionOf(outcomePoint.close - baselinePrice) };
 }
 
 function applyPrediction(
@@ -250,20 +211,20 @@ export function computeHorizonAccuracy(
   const technical = accumulatorMap(TECHNICAL_HORIZONS);
   const fundamental = accumulatorMap(FUNDAMENTAL_HORIZONS);
   const fundamentalByModel = new Map<string, Map<HorizonKey, HorizonAccumulator>>();
-  const normalizedByTicker = new Map<string, Array<HistoricalPricePoint & { timestamp: number }>>();
+  const normalizedByTicker = new Map<string, NormalizedHistoricalPricePoint[]>();
   const nowTimestamp = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
   for (const report of reports) {
     const ticker = String(report.ticker || "").trim().toUpperCase();
-    const reportTimestamp = parseDate(report.availableAt || report.generatedAt);
+    const reportTimestamp = utcDateTimestamp(report.availableAt || report.generatedAt);
     const reportPrice = toNumOrNull(report.payload.valuation_hub?.consensus?.current_price);
-    if (!ticker || reportTimestamp === null || reportPrice === null || reportPrice <= 0) continue;
+    if (!ticker || reportPrice === null) continue;
 
     if (!normalizedByTicker.has(ticker)) {
-      normalizedByTicker.set(ticker, normalizedSeries(historicalPricesByTicker.get(ticker)));
+      normalizedByTicker.set(ticker, normalizeHistoricalSeries(historicalPricesByTicker.get(ticker)));
     }
     const prices = normalizedByTicker.get(ticker) || [];
-    const baselinePrice = adjustedBaseline(reportPrice, reportTimestamp, prices);
+    const baselinePrice = splitAdjustedBaseline(reportPrice, reportTimestamp, prices);
     const livePrice = livePriceByTicker.get(ticker) ?? null;
 
     const technicalDirection = technicalSignalDirection(report.payload);

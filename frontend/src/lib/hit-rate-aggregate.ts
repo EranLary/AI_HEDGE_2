@@ -12,9 +12,18 @@ import {
   verdictFromDirections,
   type HitRateAccumulator,
 } from "./hit-rate-utils";
+import {
+  normalizeHistoricalSeries,
+  splitAdjustedBaseline,
+  utcDateTimestamp,
+  type HistoricalPricePoint,
+  type NormalizedHistoricalPricePoint,
+} from "./hit-rate-price-basis";
 
 export type HitRateSourceReport = {
   ticker: string;
+  generatedAt?: string;
+  availableAt?: string;
   payload: DashboardPayload;
 };
 
@@ -132,7 +141,10 @@ export function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -
   if (mode === "positive_only") {
     return predictedDirection === 1;
   }
-  return true;
+  // A missing prediction is unavailable, not a neutral call. Excluding it keeps
+  // the legacy Current cards aligned with the horizon metrics and avoids
+  // presenting absent targets or allocations as deliberate neutral forecasts.
+  return predictedDirection !== null;
 }
 
 function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {
@@ -218,6 +230,7 @@ export function computeHitRateAggregation(
   reports: HitRateSourceReport[],
   livePriceByTicker: Map<string, number | null>,
   mode: HitRateMode = "all",
+  historicalPricesByTicker: Map<string, HistoricalPricePoint[]> = new Map(),
 ): HitRateAggregation {
   const uniqueTickers = Array.from(new Set(reports.map((r) => String(r.ticker || "").toUpperCase()).filter(Boolean)));
 
@@ -225,6 +238,7 @@ export function computeHitRateAggregation(
   const byModelMap = new Map<string, MetricAccSet>();
   const byValuatorMap = new Map<string, MetricAccSet>();
   const bySignalMap = new Map<string, MetricAccSet>();
+  const normalizedByTicker = new Map<string, NormalizedHistoricalPricePoint[]>();
 
   let reportsWithBaselinePrice = 0;
 
@@ -236,7 +250,14 @@ export function computeHitRateAggregation(
       reportsWithBaselinePrice += 1;
     }
     const liveCurrent = livePriceByTicker.get(ticker) ?? null;
-    const actualDirection = actualDirectionFromPrices(liveCurrent, reportPrice);
+    if (!normalizedByTicker.has(ticker)) {
+      normalizedByTicker.set(ticker, normalizeHistoricalSeries(historicalPricesByTicker.get(ticker)));
+    }
+    const reportTimestamp = utcDateTimestamp(report.availableAt || report.generatedAt);
+    const baselinePrice = typeof reportPrice === "number"
+      ? splitAdjustedBaseline(reportPrice, reportTimestamp, normalizedByTicker.get(ticker) || [])
+      : reportPrice;
+    const actualDirection = actualDirectionFromPrices(liveCurrent, baselinePrice);
 
     const methodTabs = Array.isArray(payload.valuation_hub?.method_tabs) ? payload.valuation_hub.method_tabs : [];
     const applyModelPrediction = (modelKey: string, targetPrice: number | null, investmentAmount: number | null) => {

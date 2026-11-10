@@ -242,6 +242,8 @@ function localDocumentSource(
 
   if (!analysisPath || !isExistingFile(analysisPath)) return null;
   const valuationPath = resolveFromRoot(path.dirname(analysisPath), `${ticker}_prices_explain.txt`);
+  const deepAnalysisPath = resolveFromRoot(path.dirname(analysisPath), `${ticker}_deep_research_analysis.md`);
+  const deepValuationPath = resolveFromRoot(path.dirname(analysisPath), `${ticker}_deep_research_valuation.md`);
   const header = asObject(dashboard?.header);
   return {
     ticker,
@@ -249,6 +251,8 @@ function localDocumentSource(
     generatedAt: String(dashboard?.generated_at || dashboard?.report_mtime || fileDateFallback(analysisPath)),
     analysisMd: fs.readFileSync(analysisPath, "utf8"),
     pricesExplainMd: valuationPath ? fs.readFileSync(valuationPath, "utf8") : null,
+    deepResearchAnalysisMd: deepAnalysisPath ? fs.readFileSync(deepAnalysisPath, "utf8") : null,
+    deepResearchValuationMd: deepValuationPath ? fs.readFileSync(deepValuationPath, "utf8") : null,
     dashboard,
   };
 }
@@ -274,6 +278,8 @@ async function resolveDocumentSource(
         generatedAt: row.generated_at,
         analysisMd: row.analysis_md,
         pricesExplainMd: row.prices_explain_md,
+        deepResearchAnalysisMd: row.deep_research_analysis_md,
+        deepResearchValuationMd: row.deep_research_valuation_md,
         dashboard: row.dashboard,
       };
     }

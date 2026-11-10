@@ -10,7 +10,7 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 | --- | --- | --- | --- |
 | Report catalog and list fields | Site Neon: `reports`, `tickers`, `report_releases` | Denormalized fields inside dashboard JSON | `src/ai_hedge/db/`, `frontend/src/lib/reports-db.ts` |
 | Current ticker classification | Site Neon: `tickers.sector`, `tickers.industry` | Generation-time `company_profile` snapshot inside dashboard JSON | analysis Yahoo collection, `src/ai_hedge/db/transform.py` |
-| Structured dashboard and report text | Site Neon: `report_artifacts` | Run directory under `outputs/`; selected objects in R2 | `src/ai_hedge/db/writer.py`, `src/ai_hedge/db/transform.py` |
+| Structured dashboard and report text, including split Deep Research analysis/valuation | Site Neon: `report_artifacts` | Run directory under `outputs/`; selected objects in R2 | `src/ai_hedge/db/writer.py`, `src/ai_hedge/db/transform.py` |
 | Jev forecasts and realized outcomes | Site Neon: `report_jev_runs`, `report_jev_predictions` | Vercel AI Gateway request logs and transient yfinance responses | `src/ai_hedge/jev.py`, `scripts/db/refresh_jev_outcomes.py` |
 | Downloadable/generated documents | Rendered from the saved report sources on request | Legacy files or R2 objects when a historical report points to them | artifact API route, `frontend/src/lib/report-document.tsx` |
 | Site analysis status | `site_runs` for shared status/progress fields | `_status.json` for process-local fields and terminal fallback | `src/ai_hedge/io/status.py`, `frontend/src/lib/site-runs-db.ts` |
@@ -23,7 +23,10 @@ current transitional architecture; it is not a proposal to delete fallbacks.
 ## Full-report write path
 
 1. `runner.py` creates one ticker run directory and writes the canonical analysis,
-   valuation input, dashboard JSON, and sidecar artifacts.
+   valuation input, dashboard JSON, and sidecar artifacts. Its isolated Deep
+   Research child writes a full report, split analysis/valuation Markdown,
+   manifest, evidence ledger, valuation case, and compiled result below the same
+   run; no existing AI Hedge target is sent to that child.
 2. The configured artifact store receives each available file. Local mode returns
    the local path; R2 mode uploads immutable objects and returns object keys.
 3. `write_run_to_db()` converts the run directory into a ticker row, a report row,

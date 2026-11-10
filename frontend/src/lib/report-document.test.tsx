@@ -178,9 +178,10 @@ test("current Valuation and Combined documents explain the sector recipe and fin
         mean_target_price: 120,
         median_target_price: 115,
         sector_weighted_target_price: 130,
-        decision_target_price: 122.5,
-        configured_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
-        component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+        deep_research_target_price: 140,
+        decision_target_price: 126,
+        configured_component_weights: { mean: 0.24, median: 0.24, sector_weighted: 0.32, deep_research: 0.2 },
+        component_weights: { mean: 0.24, median: 0.24, sector_weighted: 0.32, deep_research: 0.2 },
       },
       sector_weighted_valuation: {
         policy_version: "sector-weighted-v1",
@@ -223,17 +224,25 @@ test("current Valuation and Combined documents explain the sector recipe and fin
           ],
         },
       },
+      deep_research_valuation: {
+        status: "amber",
+        target_usable: true,
+        target_price: 140,
+        investment_amount: 24_000,
+      },
     },
     score_card: {
       mean_investment_amount_raw: 18000,
       median_investment_amount: 20000,
       sector_weighted_investment_amount: 22000,
+      deep_research_investment_amount: 24000,
       mean_score: 10,
       median_score: 9,
       sector_weighted_score: 14,
-      allocation_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
-      component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
-      configured_component_weights: { mean: 0.3, median: 0.3, sector_weighted: 0.4 },
+      deep_research_score: 18,
+      allocation_component_weights: { mean: 0.24, median: 0.24, sector_weighted: 0.32, deep_research: 0.2 },
+      component_weights: { mean: 0.24, median: 0.24, sector_weighted: 0.32, deep_research: 0.2 },
+      configured_component_weights: { mean: 0.24, median: 0.24, sector_weighted: 0.32, deep_research: 0.2 },
     },
   };
   const source = {
@@ -250,7 +259,7 @@ test("current Valuation and Combined documents explain the sector recipe and fin
 
   assert.match(methodology, /Sector used: Technology/);
   assert.match(methodology, /Yahoo Finance company profile/);
-  assert.match(methodology, /30% Mean \/ 30% Median \/ 40% Sector-Weighted/);
+  assert.match(methodology, /24% Mean \/ 24% Median \/ 32% Sector-Weighted \/ 20% Deep Research/);
   assert.match(methodology, /Scenario DCF \| \$140\.00 \| 20% \| 25% \| Used/);
   assert.match(methodology, /Revenue Scenario \| Not available \| 20% \| Not available \| Unavailable; weight redistributed/);
   assert.match(methodology, /Dream Team inside the sector model/);
@@ -284,6 +293,30 @@ test("TradingAgents tactical fields appear only in Valuation and Combined report
 test("TradingAgents section is omitted when no tactical fields were stored", () => {
   assert.equal(buildTradingAgentsReportMarkdown({ trading_agents: { status: "success" } }), "");
   assert.equal(buildTradingAgentsReportMarkdown({ trading_agents: { status: "unavailable" } }), "");
+});
+
+test("Deep Research parts are placed once in Analysis, Valuation, and Combined downloads", () => {
+  const source = {
+    ticker: "TEST",
+    analysisMd: "# Analysis\n\nPlatform analysis.",
+    pricesExplainMd: "# Valuation\n\nPlatform valuation.",
+    deepResearchAnalysisMd: "# Part I\n\nIndependent fundamental evidence.",
+    deepResearchValuationMd: "# Part II\n\nCompiled independent target.",
+    dashboard: historicalDashboard,
+  };
+  const analysis = buildReportMarkdown(source, "analysis").markdown;
+  const valuation = buildReportMarkdown(source, "valuation").markdown;
+  const combined = buildReportMarkdown(source, "combined").markdown;
+
+  assert.match(analysis, /Independent Fundamental Analysis/);
+  assert.match(analysis, /Independent fundamental evidence/);
+  assert.doesNotMatch(analysis, /Compiled independent target/);
+  assert.match(valuation, /Independent Valuation/);
+  assert.match(valuation, /Compiled independent target/);
+  assert.doesNotMatch(valuation, /Independent fundamental evidence/);
+  assert.equal((combined.match(/Independent fundamental evidence/g) || []).length, 1);
+  assert.equal((combined.match(/Compiled independent target/g) || []).length, 1);
+  assert.equal((combined.match(/source-grounded model/g) || []).length, 2);
 });
 
 test("report Markdown has one H1 and no structural headings deeper than H3", () => {

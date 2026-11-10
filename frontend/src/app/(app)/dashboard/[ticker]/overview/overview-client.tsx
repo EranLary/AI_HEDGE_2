@@ -86,21 +86,37 @@ export function OverviewClient({
     typeof scoreCard?.sector_weighted_investment_amount === "number"
       ? scoreCard.sector_weighted_investment_amount / 100000 * 100
       : null;
+  const deepResearch = data.valuation_hub?.deep_research_valuation;
+  const deepTarget =
+    typeof consensus?.deep_research_target_price === "number"
+      ? consensus.deep_research_target_price
+      : typeof deepResearch?.target_price === "number"
+        ? deepResearch.target_price
+        : null;
+  const deepPositionPct =
+    typeof scoreCard?.deep_research_investment_amount === "number"
+      ? scoreCard.deep_research_investment_amount / 100000 * 100
+      : typeof deepResearch?.investment_amount === "number"
+        ? deepResearch.investment_amount / 100000 * 100
+        : null;
   const targetWeights = effectiveConsensusWeights(consensus?.component_weights, {
     mean: typeof mean === "number",
     median: typeof median === "number",
     sector_weighted: typeof sectorWeighted === "number",
+    deep_research: typeof deepTarget === "number",
   });
   const allocationWeights = effectiveConsensusWeights(scoreCard?.allocation_component_weights, {
     mean: typeof meanPositionPct === "number",
     median: typeof medianPositionPct === "number",
     sector_weighted: typeof sectorPositionPct === "number",
+    deep_research: typeof deepPositionPct === "number",
   });
-  const targetByComponent = { mean, median, sector_weighted: sectorWeighted };
+  const targetByComponent = { mean, median, sector_weighted: sectorWeighted, deep_research: deepTarget };
   const allocationByComponent = {
     mean: meanPositionPct,
     median: medianPositionPct,
     sector_weighted: sectorPositionPct,
+    deep_research: deepPositionPct,
   };
   const signedTone = (value: number | null) =>
     typeof value === "number" && Math.abs(value) > 1e-9

@@ -10,8 +10,19 @@ export type ReportDocumentSource = {
   generatedAt?: string | null;
   analysisMd: string;
   pricesExplainMd?: string | null;
+  deepResearchAnalysisMd?: string | null;
+  deepResearchValuationMd?: string | null;
   dashboard?: unknown;
 };
+
+const DEEP_RESEARCH_INDEPENDENCE_NOTE =
+  "> Deep Research is an independent, source-grounded model. It receives raw company evidence but not AI Hedge targets; when valid, its compiled target and allocation receive a 20% policy weight in the final consensus.";
+
+function deepResearchSection(markdown: string | null | undefined, title: string): string {
+  const body = String(markdown || "").trim();
+  if (!body) return "";
+  return [`# ${title}`, "", DEEP_RESEARCH_INDEPENDENCE_NOTE, "", nestMarkdownUnderSection(body)].join("\n");
+}
 
 export type BuiltReportDocument = {
   html: string;
@@ -139,6 +150,7 @@ function consensusBasisLabel(consensus: Record<string, unknown>, hasMedian: bool
     ["mean", "Mean"],
     ["median", "Median"],
     ["sector_weighted", "Sector-Weighted"],
+    ["deep_research", "Deep Research"],
   ] as const;
   const parts = entries.flatMap(([key, label]) => {
     const weight = finiteNumber(weights?.[key]);
@@ -163,6 +175,11 @@ const CONSENSUS_COMPONENTS = [
     key: "sector_weighted",
     label: "Sector-Weighted",
     description: "The available family results blended with the policy weights for this company's sector.",
+  },
+  {
+    key: "deep_research",
+    label: "Deep Research",
+    description: "An independent source-grounded valuation compiled from raw evidence without access to AI Hedge targets.",
   },
 ] as const;
 
@@ -192,6 +209,9 @@ export function buildSectorConsensusMethodologyMarkdown(dashboard: unknown): str
   const consensus = asObject(hub?.consensus);
   const decision = asObject(root?.score_card) || asObject(root?.decision_card);
   const weighted = asObject(hub?.sector_weighted_valuation);
+  const hasDeepResearchContract = Boolean(
+    hub && Object.prototype.hasOwnProperty.call(hub, "deep_research_valuation"),
+  );
   const sector = textValue(weighted?.sector);
   const policyVersion = textValue(weighted?.policy_version);
   if (!weighted || !sector || !policyVersion) return "";
@@ -214,8 +234,14 @@ export function buildSectorConsensusMethodologyMarkdown(dashboard: unknown): str
     mean: finiteNumber(consensus?.mean_target_price),
     median: finiteNumber(consensus?.median_target_price),
     sector_weighted: finiteNumber(consensus?.sector_weighted_target_price ?? weighted.target_price),
+    deep_research: finiteNumber(
+      consensus?.deep_research_target_price ?? asObject(hub?.deep_research_valuation)?.target_price,
+    ),
   };
-  const componentRows = CONSENSUS_COMPONENTS.map((component) => {
+  const reportComponents = hasDeepResearchContract
+    ? CONSENSUS_COMPONENTS
+    : CONSENSUS_COMPONENTS.filter((component) => component.key !== "deep_research");
+  const componentRows = reportComponents.map((component) => {
     const configuredWeight = finiteNumber(configuredComponents?.[component.key]);
     const effectiveWeight = finiteNumber(targetWeights?.[component.key]);
     return `| ${component.label} | ${component.description} | ${formatPrice(componentTargets[component.key], currency)} | ${formatPercent(configuredWeight)} | ${formatPercent(effectiveWeight)} |`;
@@ -242,7 +268,9 @@ export function buildSectorConsensusMethodologyMarkdown(dashboard: unknown): str
     `> **Sector used: ${markdownCell(sector)}**  `,
     `> Classification source: ${markdownCell(reportSectorSourceLabel(weighted.sector_source))} · Policy: \`${markdownCell(policyVersion)}\``,
     "",
-    "This report keeps the valuation families independent, then summarizes them in three complementary ways. The Simple Mean gives every available family an equal voice, the Median limits the impact of outliers, and the Sector-Weighted view emphasizes the methods that best fit the company's sector.",
+    hasDeepResearchContract
+      ? "This report keeps the valuation families independent, summarizes them through Simple Mean, Median, and Sector-Weighted views, and adds an independent source-grounded Deep Research valuation as a fourth consensus component."
+      : "This report keeps the valuation families independent, then summarizes them through Simple Mean, Median, and Sector-Weighted views.",
     "",
     "### Final consensus recipe",
     "",
@@ -278,9 +306,11 @@ export function buildSectorConsensusMethodologyMarkdown(dashboard: unknown): str
       : []),
     "### How to read the final result",
     "",
-    "- The final consensus target combines the three target views using the effective target weights above.",
+    hasDeepResearchContract
+      ? "- The final consensus target combines the four target views using the effective target weights above; unavailable components are omitted and remaining weights are normalized."
+      : "- The final consensus target combines the three target views using the effective target weights above.",
     "- The allocation is calculated the same way, but only from components with a valid allocation result.",
-    "- Each component score combines 60% target return and 40% suggested allocation. The blended score is then adjusted by the report's existing disagreement-confidence factor.",
+    "- The final score combines 60% final target return and 40% final allocation, then applies the report's disagreement-confidence factor.",
     "- These are model-policy weights, not probabilities that a target will occur and not portfolio guarantees.",
   ].join("\n");
 }
@@ -696,13 +726,24 @@ export function buildReportMarkdown(
 ): { markdown: string; usedStructuredValuationFallback: boolean } {
   const analysis = String(source.analysisMd || "").trim();
   const valuation = valuationMarkdown(source);
+  const deepAnalysis = deepResearchSection(
+    source.deepResearchAnalysisMd,
+    "Deep Research — Independent Fundamental Analysis",
+  );
+  const deepValuation = deepResearchSection(
+    source.deepResearchValuationMd,
+    "Deep Research — Independent Valuation",
+  );
   const tradingAgents = buildTradingAgentsReportMarkdown(source.dashboard);
-  const valuationWithTradingAgents = tradingAgents
-    ? `${valuation.markdown}\n\n---\n\n${tradingAgents}`
-    : valuation.markdown;
+  const valuationWithTradingAgents = [valuation.markdown, deepValuation, tradingAgents]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
   if (kind === "analysis") {
     return {
-      markdown: normalizeStandaloneHeadings(analysis, `${source.ticker} Analysis Report`),
+      markdown: normalizeStandaloneHeadings(
+        [analysis, deepAnalysis].filter(Boolean).join("\n\n---\n\n"),
+        `${source.ticker} Analysis Report`,
+      ),
       usedStructuredValuationFallback: false,
     };
   }
@@ -717,6 +758,8 @@ export function buildReportMarkdown(
   }
   const nestedAnalysis = nestMarkdownUnderSection(analysis);
   const nestedValuation = nestMarkdownUnderSection(valuation.markdown);
+  const nestedDeepAnalysis = deepAnalysis ? nestMarkdownUnderSection(deepAnalysis) : "";
+  const nestedDeepValuation = deepValuation ? nestMarkdownUnderSection(deepValuation) : "";
   const nestedTradingAgents = tradingAgents ? nestMarkdownUnderSection(tradingAgents) : "";
   return {
     markdown: [
@@ -725,12 +768,14 @@ export function buildReportMarkdown(
       "## Analysis",
       "",
       nestedAnalysis,
+      ...(nestedDeepAnalysis ? ["", "### Deep Research — Independent Fundamental Analysis", "", nestedDeepAnalysis] : []),
       "",
       "---",
       "",
       "## Valuation",
       "",
       nestedValuation,
+      ...(nestedDeepValuation ? ["", "### Deep Research — Independent Valuation", "", nestedDeepValuation] : []),
       ...(nestedTradingAgents
         ? ["", "---", "", "## Independent Tactical View", "", nestedTradingAgents]
         : []),

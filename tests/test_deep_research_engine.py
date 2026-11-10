@@ -90,9 +90,9 @@ def test_master_prompt_is_complete_and_independent() -> None:
     assert "Interactive Brokers Group, Inc. (IBKR)" in prompt
     assert "latest annual filing" in prompt
     assert "Seven sector-critical operating KPIs" in prompt
-    assert "Method 1 — Intrinsic valuation" in prompt
-    assert "Method 2 — Comparable-company valuation" in prompt
-    assert "Method 3 — SOTP, asset, or alternative valuation" in prompt
+    assert "Intrinsic valuation role" in prompt
+    assert "Relative valuation role" in prompt
+    assert "SOTP, asset, or alternative valuation role" in prompt
     assert "Valuation control summary" in prompt
     assert "{{" not in prompt
     assert "AI_HEDGE" not in prompt
@@ -497,6 +497,93 @@ def test_valuation_compiler_recomputes_methods_consensus_and_return() -> None:
     )
 
 
+def test_valuation_compiler_builds_sotp_and_accepts_one_method_as_amber() -> None:
+    def evidence(
+        evidence_id: str,
+        value: float,
+        unit: str,
+        *,
+        kind: str = "reported_fact",
+    ) -> dict:
+        return {
+            "id": evidence_id,
+            "kind": kind,
+            "value": value,
+            "unit": unit,
+            "as_of_date": "2026-10-03",
+            "source_url": (
+                None if kind == "analyst_assumption" else f"https://example.com/{evidence_id}"
+            ),
+            "rationale": "Conservative independently reviewed input.",
+        }
+
+    case = {
+        "currency": "USD",
+        "reference_date": "2026-10-03",
+        "reference_price": 12.0,
+        "reference_price_evidence_id": "price",
+        "target_date": "2027-10-03",
+        "diluted_shares": 10_000_000,
+        "diluted_shares_evidence_id": "shares",
+        "investment_amount": 25_000,
+        "investment_rationale": "Positive asymmetry with bounded balance-sheet downside.",
+        "rating": "Buy",
+        "limitations": ["Only one decision-useful method was available."],
+        "evidence": [
+            evidence("price", 12.0, "USD/share", kind="market_observation"),
+            evidence("shares", 10_000_000, "shares"),
+            evidence("segment", 200.0, "USD millions"),
+            evidence("central", 10.0, "USD millions", kind="analyst_assumption"),
+            evidence("debt", 20.0, "USD millions"),
+            evidence("cash", 30.0, "USD millions"),
+        ],
+        "methods": [
+            {
+                "name": "SOTP",
+                "role": "alternative",
+                "type": "sotp",
+                "value_date": "2027-10-03",
+                "weight_pct": 100.0,
+                "weight_rationale": "Distinct segment economics make SOTP decision-useful.",
+                "evidence_ids": ["segment", "central", "debt", "cash"],
+                "sotp_components": [
+                    {
+                        "name": "Core segment",
+                        "value_basis": "enterprise_value",
+                        "value_evidence_id": "segment",
+                        "ownership_pct": 100.0,
+                        "rationale": "Representative segment value.",
+                        "evidence_ids": ["segment"],
+                    }
+                ],
+                "central_costs_evidence_id": "central",
+                "minority_interests_evidence_id": None,
+                "tax_leakage_evidence_id": None,
+                "debt_evidence_id": "debt",
+                "cash_evidence_id": "cash",
+            }
+        ],
+    }
+
+    result = compile_valuation_case(case)
+
+    assert result.target_price == pytest.approx(20.0)
+    assert result.investment_amount == 25_000
+    assert any("Only one valuation method" in warning for warning in result.warnings)
+
+
+def test_invalid_allocation_does_not_invalidate_compiled_target() -> None:
+    case = _compiler_case()
+    case["investment_amount"] = 200_000
+    case["investment_rationale"] = "Too large."
+
+    result = compile_valuation_case(case)
+
+    assert result.target_price > 0
+    assert result.investment_amount is None
+    assert any("allocation" in warning for warning in result.warnings)
+
+
 def test_valuation_compiler_accepts_reasoned_representative_multiple_without_peers() -> None:
     case = _compiler_case()
     multiple = case["methods"][1]
@@ -593,10 +680,13 @@ def test_valuation_case_schema_is_strict_at_nested_boundaries() -> None:
     method = schema["properties"]["methods"]["items"]
     cash_flow = method["properties"]["cash_flows_per_share"]["items"]
     period = method["properties"]["periods"]["items"]
+    sotp_component = method["properties"]["sotp_components"]["items"]
     assert evidence["additionalProperties"] is False
     assert method["additionalProperties"] is False
     assert cash_flow["additionalProperties"] is False
     assert period["additionalProperties"] is False
+    assert sotp_component["additionalProperties"] is False
+    assert "investment_amount" in schema["required"]
 
 
 def test_case_extraction_is_followed_by_deterministic_compilation(tmp_path: Path) -> None:

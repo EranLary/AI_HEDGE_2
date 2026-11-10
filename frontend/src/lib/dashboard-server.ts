@@ -212,6 +212,7 @@ async function loadReportsList(workspace: Workspace): Promise<ReportListItem[]> 
       workspace: "analysis",
       release_id: null,
       consensus_basis:
+        payload?.valuation_hub?.consensus?.consensus_basis === "weighted_components_v2" ||
         String(payload?.valuation_hub?.consensus?.consensus_basis || "").includes("sector_weighted") ||
         payload?.valuation_hub?.consensus?.consensus_basis === "mean_median" ||
         payload?.valuation_hub?.consensus?.consensus_basis === "mean_only"

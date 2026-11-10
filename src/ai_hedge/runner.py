@@ -67,6 +67,8 @@ class RunArtifacts:
     web_search_txt: str
     financials_json: str
     share_count_resolution_json: str
+    deep_research_analysis_md: str
+    deep_research_valuation_md: str
     notes: List[str]
     current_revenue: Optional[float]
     target_revenue: Optional[float]
@@ -1050,7 +1052,12 @@ def _collect_targets_from_methods(methods: Dict[str, Any]) -> List[float]:
 
 
 VALUATION_NOTIONAL_BUDGET = 100_000.0
-CONSENSUS_COMPONENT_WEIGHTS = {"mean": 0.30, "median": 0.30, "sector_weighted": 0.40}
+CONSENSUS_COMPONENT_WEIGHTS = {
+    "mean": 0.24,
+    "median": 0.24,
+    "sector_weighted": 0.32,
+    "deep_research": 0.20,
+}
 
 
 def _blend_consensus_components(values: Dict[str, Any]) -> tuple[Optional[float], Dict[str, float]]:
@@ -1070,11 +1077,16 @@ def _blend_consensus_components(values: Dict[str, Any]) -> tuple[Optional[float]
 
 
 def _consensus_basis_label(component_weights: Dict[str, Any]) -> str:
-    labels = {"mean": "Mean", "median": "Median", "sector_weighted": "Sector-Weighted"}
+    labels = {
+        "mean": "Mean",
+        "median": "Median",
+        "sector_weighted": "Sector-Weighted",
+        "deep_research": "Deep Research",
+    }
     if set(component_weights) == {"mean"} and abs((_first_float(component_weights.get("mean")) or 0.0) - 1.0) <= 1e-9:
         return "Mean only (Median unavailable)"
     parts = []
-    for name in ("mean", "median", "sector_weighted"):
+    for name in ("mean", "median", "sector_weighted", "deep_research"):
         weight = _first_float(component_weights.get(name))
         if weight is None:
             continue
@@ -1812,6 +1824,31 @@ def _run_ticker_valuation_impl(
     if not info_dict.get("short_name"):
         raise ValueError(f"Ticker '{ticker}' is invalid or unavailable")
 
+    deep_research_process = None
+    deep_research_payload: Dict[str, Any] = {
+        "status": "unavailable",
+        "target_usable": False,
+        "unavailable_reason": "Deep Research has not started.",
+        "methods": [],
+        "assumptions": [],
+    }
+    try:
+        from .deep_research.integration import (
+            snapshot_from_platform_inputs,
+            start_isolated_research,
+        )
+
+        deep_snapshot = snapshot_from_platform_inputs(ticker, info_dict)
+        deep_research_process = start_isolated_research(
+            snapshot=deep_snapshot,
+            run_dir=out_dir,
+        )
+        _append_progress(progress_file, "Started independent Deep Research valuation")
+    except Exception as deep_start_exc:  # noqa: BLE001
+        deep_research_payload["unavailable_reason"] = (
+            f"Deep Research failed to start: {type(deep_start_exc).__name__}: {deep_start_exc}"
+        )
+
     text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
     regular_text = str(text or "").strip()
     notes: List[str] = []
@@ -2407,6 +2444,52 @@ def _run_ticker_valuation_impl(
         market_review_json=market_review_json,
     )
 
+    deep_research_analysis_md = ""
+    deep_research_valuation_md = ""
+    if deep_research_process is not None:
+        try:
+            deep_research_payload = deep_research_process.collect(timeout_seconds=2400)
+            artifact_paths = deep_research_payload.get("artifacts")
+            artifact_paths = artifact_paths if isinstance(artifact_paths, dict) else {}
+            stable_names = {
+                "full_report": f"{ticker}_deep_research_report.md",
+                "analysis": f"{ticker}_deep_research_analysis.md",
+                "valuation": f"{ticker}_deep_research_valuation.md",
+                "manifest": f"{ticker}_deep_research_manifest.json",
+                "evidence_ledger": f"{ticker}_deep_research_evidence_ledger.json",
+                "valuation_case": f"{ticker}_deep_research_valuation_case.json",
+                "compiled_result": f"{ticker}_deep_research_compiled.json",
+            }
+            stable_artifacts: Dict[str, str] = {}
+            for artifact_kind, stable_name in stable_names.items():
+                source_value = artifact_paths.get(artifact_kind)
+                source_path = Path(str(source_value)) if source_value else None
+                if source_path is None or not source_path.exists():
+                    continue
+                target_path = out_dir / stable_name
+                shutil.copy2(source_path, target_path)
+                stable_artifacts[artifact_kind] = str(target_path.resolve())
+            deep_research_payload["artifacts"] = stable_artifacts
+            deep_research_analysis_md = stable_artifacts.get("analysis", "")
+            deep_research_valuation_md = stable_artifacts.get("valuation", "")
+        except Exception as deep_collect_exc:  # noqa: BLE001
+            deep_research_payload = {
+                "status": "failed",
+                "target_usable": False,
+                "target_price": None,
+                "investment_amount": None,
+                "unavailable_reason": (
+                    f"Deep Research collection failed: {type(deep_collect_exc).__name__}: "
+                    f"{deep_collect_exc}"
+                ),
+                "methods": [],
+                "assumptions": [],
+            }
+    _append_progress(
+        progress_file,
+        f"Finished independent Deep Research valuation: {deep_research_payload.get('status')}",
+    )
+
     try:
         analysis_duration_minutes = round((time.perf_counter() - run_started) / 60.0, 2)
         filing_sources = _extract_latest_filing_sources(files_dict)
@@ -2446,17 +2529,19 @@ def _run_ticker_valuation_impl(
                 "web_search_txt": web_search_txt,
                 "financials_json": financials_json,
                 "share_count_resolution_json": share_count_resolution_json,
+                "deep_research_analysis_md": deep_research_analysis_md,
+                "deep_research_valuation_md": deep_research_valuation_md,
             },
         )
         dashboard_payload["workspace"] = workspace
         dashboard_payload["release_id"] = release_id
-        if resolved_sector:
-            dashboard_payload = apply_to_dashboard(
-                dashboard_payload,
-                sector=resolved_sector,
-                sector_source=resolved_sector_source,
-                provenance="generated",
-            )
+        dashboard_payload = apply_to_dashboard(
+            dashboard_payload,
+            sector=resolved_sector or "Unknown",
+            sector_source=resolved_sector_source or "unavailable",
+            provenance="generated",
+            deep_research=deep_research_payload,
+        )
         dashboard_json = write_dashboard_payload(out_dir / f"{ticker}_dashboard.json", dashboard_payload)
         try:
             dashboard_signal_snapshot_text = _build_dashboard_signal_snapshot_text(dashboard_payload)
@@ -2503,6 +2588,13 @@ def _run_ticker_valuation_impl(
         "web-search-txt": Path(web_search_txt) if web_search_txt else None,
         "financials-json": Path(financials_json) if financials_json else None,
         "share-count-resolution-json": Path(share_count_resolution_json) if share_count_resolution_json else None,
+        "deep-research-report-md": Path((deep_research_payload.get("artifacts") or {}).get("full_report")) if (deep_research_payload.get("artifacts") or {}).get("full_report") else None,
+        "deep-research-analysis-md": Path(deep_research_analysis_md) if deep_research_analysis_md else None,
+        "deep-research-valuation-md": Path(deep_research_valuation_md) if deep_research_valuation_md else None,
+        "deep-research-manifest-json": Path((deep_research_payload.get("artifacts") or {}).get("manifest")) if (deep_research_payload.get("artifacts") or {}).get("manifest") else None,
+        "deep-research-evidence-ledger-json": Path((deep_research_payload.get("artifacts") or {}).get("evidence_ledger")) if (deep_research_payload.get("artifacts") or {}).get("evidence_ledger") else None,
+        "deep-research-valuation-case-json": Path((deep_research_payload.get("artifacts") or {}).get("valuation_case")) if (deep_research_payload.get("artifacts") or {}).get("valuation_case") else None,
+        "deep-research-compiled-json": Path((deep_research_payload.get("artifacts") or {}).get("compiled_result")) if (deep_research_payload.get("artifacts") or {}).get("compiled_result") else None,
     }
     generated_at_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     collected_keys: Dict[str, str] = {}
@@ -2564,6 +2656,8 @@ def _run_ticker_valuation_impl(
         web_search_txt=web_search_txt,
         financials_json=financials_json,
         share_count_resolution_json=share_count_resolution_json,
+        deep_research_analysis_md=deep_research_analysis_md,
+        deep_research_valuation_md=deep_research_valuation_md,
         notes=notes,
         current_revenue=current_revenue,
         target_revenue=target_revenue,
@@ -2595,6 +2689,8 @@ def _run_ticker_valuation_impl(
         "web_search_txt": artifacts.web_search_txt,
         "financials_json": artifacts.financials_json,
         "share_count_resolution_json": artifacts.share_count_resolution_json,
+        "deep_research_analysis_md": artifacts.deep_research_analysis_md,
+        "deep_research_valuation_md": artifacts.deep_research_valuation_md,
         "notes": artifacts.notes,
         "current_revenue": artifacts.current_revenue,
         "target_revenue": artifacts.target_revenue,

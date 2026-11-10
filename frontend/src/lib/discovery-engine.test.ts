@@ -157,6 +157,39 @@ test("Sector-Weighted Valuation is available as a Discovery model lens", () => {
   assert.equal(rows[0].row.investment_allocation_pct, 25);
 });
 
+test("Deep Research is available as an independent Discovery model lens", () => {
+  const modeled = payload("AAA", 125, 12);
+  modeled.valuation_hub.consensus.deep_research_target_price = 145;
+  modeled.valuation_hub.deep_research_valuation = {
+    status: "amber",
+    target_usable: true,
+    target_price: 145,
+    investment_amount: 18_000,
+  };
+  modeled.score_card = {
+    position_size_pct_of_notional: 12,
+    mean_investment_amount: null,
+    deep_research_investment_amount: 18_000,
+    rationale: "",
+  };
+  const universe = prepareDiscoveryUniverse({
+    reports: [{ ticker: "AAA", generatedAt: "2026-10-01T12:00:00Z", payload: modeled, reportId: "deep" }],
+    priceByTicker: new Map([["AAA", 100]]),
+    asOfMs: Date.parse("2026-10-02T00:00:00Z"),
+  });
+
+  assert.ok(universe.models.includes("Deep Research"));
+  const rows = scoreDiscoveryCandidates(universe, {
+    type: "model",
+    key: "Deep Research",
+    label: "Deep Research",
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].row.return_pct, 45);
+  assert.equal(rows[0].row.investment_allocation_pct, 18);
+  assert.deepEqual(rows[0].sourceReportIds, ["deep"]);
+});
+
 test("Simple Mean and Median are available as independent Discovery model lenses", () => {
   const modeled = payload("AAA", 125, 12);
   modeled.valuation_hub.consensus.median_target_price = 110;

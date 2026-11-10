@@ -64,7 +64,30 @@ export type ConsensusBasis =
   | "mean_median_sector_weighted"
   | "mean_sector_weighted"
   | "median_sector_weighted"
-  | "sector_weighted_only";
+  | "sector_weighted_only"
+  | "weighted_components_v2";
+
+export type DeepResearchMethod = {
+  role?: "intrinsic" | "relative" | "alternative" | string;
+  type?: string;
+  label?: string;
+  value_per_share?: number | null;
+  weight_pct?: number | null;
+  contribution?: number | null;
+};
+
+export type DeepResearchAssumption = {
+  key?: string;
+  label?: string;
+  value?: number | string | null;
+  unit?: string | null;
+  date?: string | null;
+  source_type?: string | null;
+  rationale?: string | null;
+  method?: string | null;
+  ownership_pct?: number | null;
+  value_basis?: string | null;
+};
 
 export type TradingAgentsPayload = {
   status?: "success" | "unavailable" | "error" | string;
@@ -439,8 +462,11 @@ export type DashboardPayload = {
       decision_target_price?: number | null;
       consensus_basis?: ConsensusBasis;
       sector_weighted_target_price?: number | null;
+      deep_research_target_price?: number | null;
       component_weights?: Record<string, number>;
+      allocation_component_weights?: Record<string, number>;
       configured_component_weights?: Record<string, number>;
+      consensus_policy_version?: string;
       std?: number | null;
       cv?: number | null;
       lmil?: number[] | null;
@@ -466,6 +492,30 @@ export type DashboardPayload = {
         personas?: DashboardWeightedPersona[];
       };
       backfill_metadata?: Record<string, unknown>;
+    };
+    deep_research_valuation?: {
+      status?: string;
+      target_usable?: boolean;
+      target_price?: number | null;
+      investment_amount?: number | null;
+      investment_pct?: number | null;
+      investment_rationale?: string | null;
+      reference_date?: string | null;
+      target_date?: string | null;
+      horizon?: string | null;
+      currency?: string | null;
+      rating?: string | null;
+      methods?: DeepResearchMethod[];
+      assumptions?: DeepResearchAssumption[];
+      limitations?: string[];
+      quality?: Record<string, unknown>;
+      provider?: string | null;
+      models?: Record<string, unknown>;
+      duration_seconds?: number | null;
+      cost_usd?: number | null;
+      unavailable_reason?: string | null;
+      policy_version?: string | null;
+      artifacts?: Record<string, string>;
     };
   };
   dream_team: Array<{
@@ -500,6 +550,10 @@ export type DashboardPayload = {
     sector_weighted_investment_amount?: number | null;
     sector_weighted_target_return_pct?: number | null;
     sector_weighted_score?: number | null;
+    deep_research_investment_amount?: number | null;
+    deep_research_target_return_pct?: number | null;
+    deep_research_score?: number | null;
+    consensus_policy_version?: string;
     component_weights?: Record<string, number>;
     allocation_component_weights?: Record<string, number>;
     configured_component_weights?: Record<string, number>;
@@ -525,6 +579,10 @@ export type DashboardPayload = {
     sector_weighted_investment_amount?: number | null;
     sector_weighted_target_return_pct?: number | null;
     sector_weighted_score?: number | null;
+    deep_research_investment_amount?: number | null;
+    deep_research_target_return_pct?: number | null;
+    deep_research_score?: number | null;
+    consensus_policy_version?: string;
     component_weights?: Record<string, number>;
     allocation_component_weights?: Record<string, number>;
     configured_component_weights?: Record<string, number>;

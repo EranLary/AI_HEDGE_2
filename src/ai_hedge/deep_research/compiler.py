@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -21,6 +22,7 @@ class CompiledMethod:
     weight_pct: float
     weighted_contribution: float
     value_date: str
+    role: str = ""
 
 
 @dataclass(frozen=True)
@@ -33,10 +35,17 @@ class CompiledValuation:
     target_price: float
     upside_downside_pct: float
     methods: tuple[CompiledMethod, ...]
+    investment_amount: float | None = None
+    investment_rationale: str = ""
+    rating: str = ""
+    limitations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["methods"] = [asdict(method) for method in self.methods]
+        payload["limitations"] = list(self.limitations)
+        payload["warnings"] = list(self.warnings)
         return payload
 
 
@@ -192,9 +201,27 @@ def _validate_method_common(
     target_date: date,
     evidence: Mapping[str, Mapping[str, Any]],
     issues: list[str],
-) -> tuple[str, str, float, date]:
+) -> tuple[str, str, str, float, date]:
     name = str(method.get("name") or "").strip() or f"method_{position}"
     method_type = str(method.get("type") or "").strip()
+    role = str(method.get("role") or "").strip()
+    if not role:
+        role = (
+            "intrinsic"
+            if method_type in {"dcf", "fcfe", "distribution", "residual_income"}
+            else "relative"
+            if method_type == "multiple"
+            else "alternative"
+        )
+    if role not in {"intrinsic", "relative", "alternative"}:
+        issues.append(f"{name} has invalid valuation role {role or '<empty>'}")
+    role_types = {
+        "intrinsic": {"dcf", "fcfe", "distribution", "residual_income"},
+        "relative": {"multiple"},
+        "alternative": {"asset", "sotp"},
+    }
+    if role in role_types and method_type not in role_types[role]:
+        issues.append(f"{name} type {method_type or '<empty>'} is incompatible with role {role}")
     weight = _number(method.get("weight_pct"), f"{name} weight_pct", issues)
     if weight < 0:
         issues.append(f"{name} weight_pct cannot be negative")
@@ -212,7 +239,7 @@ def _validate_method_common(
         for evidence_id in evidence_ids:
             if str(evidence_id) not in evidence:
                 issues.append(f"{name} references missing evidence id {evidence_id}")
-    return name, method_type, weight, value_date
+    return name, role, method_type, weight, value_date
 
 
 def _compile_dcf(
@@ -454,8 +481,121 @@ def _compile_asset(
     return asset_value * (1 + adjustment)
 
 
+def _optional_evidence_number(
+    evidence: Mapping[str, Mapping[str, Any]],
+    evidence_id: Any,
+    label: str,
+    issues: list[str],
+) -> float:
+    if not str(evidence_id or "").strip():
+        return 0.0
+    return _evidence_number(evidence, evidence_id, label, issues)
+
+
+def _evidence_total(
+    evidence: Mapping[str, Mapping[str, Any]],
+    evidence_id: Any,
+    label: str,
+    issues: list[str],
+) -> float:
+    key = str(evidence_id or "").strip()
+    value = _evidence_number(evidence, key, label, issues)
+    row = evidence.get(key) or {}
+    unit = str(row.get("unit") or "").casefold()
+    if "billion" in unit or re.search(r"\bbn\b", unit):
+        return value * 1_000_000_000.0
+    if "million" in unit or re.search(r"\bmn\b", unit):
+        return value * 1_000_000.0
+    if "thousand" in unit or "000" in unit:
+        return value * 1_000.0
+    return value
+
+
+def _compile_sotp(
+    method: Mapping[str, Any],
+    *,
+    name: str,
+    evidence: Mapping[str, Mapping[str, Any]],
+    diluted_shares: float,
+    issues: list[str],
+) -> float:
+    components = method.get("sotp_components")
+    if not isinstance(components, list) or not components:
+        issues.append(f"{name} requires at least one SOTP component")
+        return 0.0
+    gross_value = 0.0
+    for position, component in enumerate(components):
+        if not isinstance(component, Mapping):
+            issues.append(f"{name} SOTP component {position} must be an object")
+            continue
+        component_name = str(component.get("name") or "").strip() or f"component_{position}"
+        basis = str(component.get("value_basis") or "").strip()
+        if basis not in {"enterprise_value", "equity_value", "asset_value"}:
+            issues.append(f"{name} {component_name} has invalid value_basis")
+        ownership = _number(
+            component.get("ownership_pct"),
+            f"{name} {component_name} ownership_pct",
+            issues,
+        )
+        if not 0 < ownership <= 100:
+            issues.append(f"{name} {component_name} ownership_pct must be in (0, 100]")
+        if not str(component.get("rationale") or "").strip():
+            issues.append(f"{name} {component_name} requires a rationale")
+        component_ids = component.get("evidence_ids")
+        if not isinstance(component_ids, list) or not component_ids:
+            issues.append(f"{name} {component_name} requires evidence_ids")
+        else:
+            for evidence_id in component_ids:
+                if str(evidence_id) not in evidence:
+                    issues.append(
+                        f"{name} {component_name} references missing evidence id {evidence_id}"
+                    )
+        value = _evidence_total(
+            evidence,
+            component.get("value_evidence_id"),
+            f"{name} {component_name} value",
+            issues,
+        )
+        if value <= 0:
+            issues.append(f"{name} {component_name} value must be positive")
+        gross_value += value * ownership / 100.0
+
+    central_costs = _evidence_total(
+        evidence, method.get("central_costs_evidence_id"), f"{name} central costs", issues
+    ) if str(method.get("central_costs_evidence_id") or "").strip() else 0.0
+    minorities = _evidence_total(
+        evidence,
+        method.get("minority_interests_evidence_id"),
+        f"{name} minority interests",
+        issues,
+    ) if str(method.get("minority_interests_evidence_id") or "").strip() else 0.0
+    taxes = _evidence_total(
+        evidence, method.get("tax_leakage_evidence_id"), f"{name} tax leakage", issues
+    ) if str(method.get("tax_leakage_evidence_id") or "").strip() else 0.0
+    debt = _evidence_total(
+        evidence, method.get("debt_evidence_id"), f"{name} debt", issues
+    ) if str(method.get("debt_evidence_id") or "").strip() else 0.0
+    cash = _evidence_total(
+        evidence, method.get("cash_evidence_id"), f"{name} cash", issues
+    ) if str(method.get("cash_evidence_id") or "").strip() else 0.0
+    for label, value in (
+        ("central costs", central_costs),
+        ("minority interests", minorities),
+        ("tax leakage", taxes),
+        ("debt", debt),
+        ("cash", cash),
+    ):
+        if value < 0:
+            issues.append(f"{name} {label} cannot be negative; express it in the formula direction")
+    equity_value = gross_value - central_costs - minorities - taxes - debt + cash
+    if equity_value <= 0:
+        issues.append(f"{name} compiled SOTP equity value must be positive")
+    return equity_value / diluted_shares if diluted_shares else 0.0
+
+
 def compile_valuation_case(payload: Mapping[str, Any]) -> CompiledValuation:
     issues: list[str] = []
+    warnings: list[str] = []
     currency = str(payload.get("currency") or "").upper().strip()
     if len(currency) != 3:
         issues.append("currency must be a three-letter code")
@@ -492,14 +632,14 @@ def compile_valuation_case(payload: Mapping[str, Any]) -> CompiledValuation:
         if not isinstance(method, Mapping):
             issues.append(f"method[{position}] must be an object")
             continue
-        name, method_type, weight, value_date = _validate_method_common(
+        name, role, method_type, weight, value_date = _validate_method_common(
             method,
             position=position,
             target_date=target_date,
             evidence=evidence,
             issues=issues,
         )
-        if method_type in {"dcf", "fcfe"}:
+        if method_type in {"dcf", "fcfe", "distribution"}:
             value = _compile_dcf(
                 method,
                 name=name,
@@ -532,12 +672,21 @@ def compile_valuation_case(payload: Mapping[str, Any]) -> CompiledValuation:
                 evidence=evidence,
                 issues=issues,
             )
+        elif method_type == "sotp":
+            value = _compile_sotp(
+                method,
+                name=name,
+                evidence=evidence,
+                diluted_shares=diluted_shares,
+                issues=issues,
+            )
         else:
             issues.append(f"{name} has unsupported method type {method_type or '<empty>'}")
             value = 0.0
         compiled.append(
             CompiledMethod(
                 name=name,
+                role=role,
                 method_type=method_type,
                 value_per_share=value,
                 weight_pct=weight,
@@ -545,14 +694,46 @@ def compile_valuation_case(payload: Mapping[str, Any]) -> CompiledValuation:
                 value_date=value_date.isoformat(),
             )
         )
+        if weight > 0 and value <= 0:
+            issues.append(f"{name} must compile to a positive per-share value")
 
     weight_sum = sum(method.weight_pct for method in compiled if method.weight_pct > 0)
     if abs(weight_sum - 100.0) > 0.01:
         issues.append(f"positive method weights total {weight_sum:.4g}%, not 100%")
+    positive_methods = [method for method in compiled if method.weight_pct > 0]
+    if not positive_methods:
+        issues.append("at least one valid positive-weight valuation method is required")
+    elif len(positive_methods) == 1:
+        warnings.append("Only one valuation method was usable; publish as Amber.")
     if issues:
         raise ValuationCompilationError(issues)
     target_price = sum(method.weighted_contribution for method in compiled)
+    if not math.isfinite(target_price) or target_price <= 0:
+        raise ValuationCompilationError(["compiled target_price must be finite and positive"])
     upside = (target_price / reference_price - 1) * 100.0
+    investment_amount: float | None = None
+    raw_investment = payload.get("investment_amount")
+    if raw_investment is not None:
+        try:
+            candidate = float(raw_investment)
+        except (TypeError, ValueError):
+            warnings.append("Deep Research allocation is not numeric and was omitted.")
+        else:
+            if math.isfinite(candidate) and -100_000 <= candidate <= 100_000:
+                investment_amount = candidate
+            else:
+                warnings.append(
+                    "Deep Research allocation is outside [-100000, 100000] or non-finite and was omitted."
+                )
+    investment_rationale = str(payload.get("investment_rationale") or "").strip()
+    if investment_amount is not None and not investment_rationale:
+        warnings.append("Deep Research allocation rationale is missing; allocation was omitted.")
+        investment_amount = None
+    limitations = tuple(
+        str(item).strip()
+        for item in payload.get("limitations") or []
+        if str(item).strip()
+    )
     return CompiledValuation(
         currency=currency,
         reference_date=reference_date.isoformat(),
@@ -562,4 +743,9 @@ def compile_valuation_case(payload: Mapping[str, Any]) -> CompiledValuation:
         target_price=target_price,
         upside_downside_pct=upside,
         methods=tuple(compiled),
+        investment_amount=investment_amount,
+        investment_rationale=investment_rationale,
+        rating=str(payload.get("rating") or "").strip(),
+        limitations=limitations,
+        warnings=tuple(warnings),
     )

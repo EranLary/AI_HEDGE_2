@@ -1,8 +1,11 @@
 # Standalone Deep Research engine
 
-This engine is intentionally independent of the existing analysis pipeline. It
-must pass blind report-quality, valuation-compilation, and economic-audit gates
-before any DB, dashboard, consensus, or product integration is considered.
+This engine remains analytically independent from the existing valuation
+families, but new Analysis and Nasdaq runs now launch it as an isolated,
+fail-open subprocess. It receives a raw company snapshot and public evidence,
+never an AI Hedge report or target. A usable compiled result is one fourth
+consensus component under `consensus-deep-research-v1`; it does not enter the
+legacy Mean, Median, or Sector-Weighted calculation.
 
 ## Credentials
 
@@ -23,8 +26,8 @@ with an optional self-hosted SearXNG endpoint, because DeepSeek's API does not
 supply a built-in web-search tool. Trafilatura is the first HTML extractor and
 DDGS extraction is the fallback. DeepSeek Flash drives
 the iterative retrieval loop; V4 Pro plans the investigation, builds the strict
-valuation case, and writes the report. Default safeguards are a $3 estimated
-usage cap, a 45-minute deadline (60-minute hard maximum), 80 tool calls, 36
+valuation case, and writes the report. Default production safeguards are a
+$1.50 estimated usage cap, a 40-minute deadline (60-minute hard maximum), 80 tool calls, 36
 searches, 30 opened sources, up to two focused valuation-case repairs, and one
 report repair. The second case repair exists for compiler-localized defects; it
 does not weaken or auto-correct the valuation contract.
@@ -50,12 +53,13 @@ Focused matches are retained in the evidence packet so accounting notes and
 late-document tables can reach evidence normalization without sending an entire
 hundreds-of-thousands-character filing to the model.
 
-For profitable non-financial companies, valuation defaults to two independent
-methods: intrinsic cash flow and normalized representative earnings multiplied
-by a representative multiple. Three same-basis sourced peers remain preferred.
-When clean peer data are unavailable, the compiler permits a clearly labeled,
-reasoned analyst-assumption multiple instead of either fabricating a peer median
-or discarding the earnings cross-check.
+The valuation case exposes three flexible roles: intrinsic, relative, and
+SOTP/asset/alternative. The model selects the appropriate method types and
+positive weights, which must total 100%. Inapplicable roles may be omitted with
+an explanation; one valid method is accepted as Amber. The compiler owns DCF,
+FCFE, residual-income, distribution, multiple, asset, and SOTP arithmetic. Its
+SOTP bridge validates components, ownership, central costs, minorities, tax,
+debt, cash, diluted shares, units, currency, and dates.
 
 The compiler owns the final `Valuation Control Summary`. Python renders the
 reference/target dates, share denominator, method values, weights, target,
@@ -111,8 +115,32 @@ the old all-or-nothing gate:
 The independent semantic audit follows the same principle: only critical
 identity, freshness, currency, share-count, valuation-method, arithmetic or
 contradiction failures block the target. Major issues remain Amber advisories.
-This status is an evaluation artifact, not authorization to publish into the
-platform.
+Red is reserved for deterministic blockers such as identity, unresolvable
+currency/share basis, compilation, weights, or a missing positive final target.
+Weak source quality, an unusual price, or a single valid method remains Amber.
+Allocation is validated independently in `[-100000, 100000]`; an invalid or
+missing allocation does not erase a valid price.
+
+## Production integration
+
+- One full research run starts after the platform's initial evidence collection
+  and runs in parallel with the legacy valuation path. Up to two focused case
+  repairs are part of that same run and share its time and cost limits.
+- Failure, timeout, or budget excess records an explicit `unavailable` reason and
+  never fails the main report.
+- A valid target uses configured weights Mean 24%, Median 24%, Sector-Weighted
+  32%, and Deep Research 20%. Missing targets are omitted and remaining weights
+  are normalized; without Deep Research this is exactly 30/30/40.
+- Allocation weights normalize independently, so a valid Deep target can keep its
+  20% price weight even when its allocation is unavailable.
+- Deep Research enters target CV and allocation LMIL once. Its internal methods
+  are explanatory subcomponents, not additional consensus observations.
+- The final score is 60% final target return plus 40% final allocation, followed
+  by the existing disagreement confidence factor.
+- The run saves the full report, separate analysis and valuation Markdown,
+  manifest, evidence ledger, valuation case, and compiled result. The split
+  Markdown is stored in `report_artifacts`; immutable files are also eligible for
+  R2 upload.
 
 ## Main commands
 

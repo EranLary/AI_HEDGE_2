@@ -9,7 +9,14 @@ from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 MODEL_NAME = "Sector-Weighted Valuation"
 POLICY_VERSION = "sector-weighted-v1"
-CONSENSUS_COMPONENT_WEIGHTS = {"mean": 0.30, "median": 0.30, "sector_weighted": 0.40}
+CONSENSUS_COMPONENT_WEIGHTS = {
+    "mean": 0.24,
+    "median": 0.24,
+    "sector_weighted": 0.32,
+    "deep_research": 0.20,
+}
+CONSENSUS_POLICY_VERSION = "consensus-deep-research-v1"
+CONSENSUS_BASIS = "weighted_components_v2"
 NOTIONAL = 100_000.0
 
 FAMILIES = (
@@ -302,21 +309,21 @@ def apply_to_dashboard(
     sector_source: str,
     provenance: str,
     computed_at: str | None = None,
+    deep_research: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a dashboard copy with the derived model and 30/30/40 consensus."""
+    """Return a dashboard copy with the derived model and optional Deep Research consensus."""
 
     result = copy.deepcopy(dict(dashboard))
     observations, dreams = _method_observations(result)
     weighted = compute_sector_weighted(sector=sector, observations=observations, dream_outputs=dreams)
-    if weighted is None:
-        return result
     now = computed_at or datetime.now(timezone.utc).isoformat()
     previous_hub = result.get("valuation_hub") if isinstance(result.get("valuation_hub"), Mapping) else {}
     previous_weighted = previous_hub.get("sector_weighted_valuation") if isinstance(previous_hub.get("sector_weighted_valuation"), Mapping) else {}
     previous_consensus = previous_hub.get("consensus") if isinstance(previous_hub.get("consensus"), Mapping) else {}
     previous_card = result.get("score_card") if isinstance(result.get("score_card"), Mapping) else {}
-    weighted.update({"sector_source": sector_source, "provenance": provenance, "computed_at": now})
-    if provenance == "backfill":
+    if weighted is not None:
+        weighted.update({"sector_source": sector_source, "provenance": provenance, "computed_at": now})
+    if weighted is not None and provenance == "backfill":
         weighted["backfill_metadata"] = {
             "policy_version": POLICY_VERSION,
             "applied_at": now,
@@ -340,9 +347,20 @@ def apply_to_dashboard(
     if median is None:
         median = _median_original_targets(observations)
         consensus["median_target_price"] = median
-    sector_target = weighted["target_price"]
+    sector_target = _positive(weighted.get("target_price")) if weighted is not None else None
+    deep_payload = copy.deepcopy(dict(deep_research or {}))
+    deep_target = (
+        _positive(deep_payload.get("target_price"))
+        if deep_payload.get("target_usable")
+        else None
+    )
     decision_target, target_component_weights = _component_blend(
-        {"mean": mean, "median": median, "sector_weighted": sector_target}
+        {
+            "mean": mean,
+            "median": median,
+            "sector_weighted": sector_target,
+            "deep_research": deep_target,
+        }
     )
 
     card = result.setdefault("score_card", {})
@@ -355,9 +373,19 @@ def apply_to_dashboard(
         mean_allocation = statistics.fmean(original_allocations)
     if median_allocation is None and len(original_allocations) >= 2:
         median_allocation = statistics.median(original_allocations)
-    sector_allocation = _allocation(weighted.get("investment_amount"))
+    sector_allocation = _allocation(weighted.get("investment_amount")) if weighted is not None else None
+    deep_allocation = (
+        _allocation(deep_payload.get("investment_amount"))
+        if deep_target is not None
+        else None
+    )
     decision_allocation, allocation_component_weights = _component_blend(
-        {"mean": mean_allocation, "median": median_allocation, "sector_weighted": sector_allocation}
+        {
+            "mean": mean_allocation,
+            "median": median_allocation,
+            "sector_weighted": sector_allocation,
+            "deep_research": deep_allocation,
+        }
     )
 
     def score(target: float | None, allocation: float | None) -> float | None:
@@ -373,48 +401,105 @@ def apply_to_dashboard(
         "mean": score(mean, mean_allocation),
         "median": score(median, median_allocation),
         "sector_weighted": score(sector_target, sector_allocation),
+        "deep_research": score(deep_target, deep_allocation),
     }
-    combined_score, score_component_weights = _component_blend(scores)
-    confidence_factor = _finite(card.get("confidence_factor"))
-    if confidence_factor is None:
-        confidence_factor = 1.0
-    basis_parts = [name for name in ("mean", "median", "sector_weighted") if target_component_weights.get(name) is not None]
-    basis = "_".join(basis_parts) if basis_parts else "sector_weighted_only"
+    score_component_weights = target_component_weights.copy()
 
-    block = {
-        "name": MODEL_NAME,
-        "target_price": sector_target,
-        "upside_pct": ((sector_target - current) / current * 100.0) if current else None,
-        "investment_amount": sector_allocation,
-        "investment_pct": weighted.get("investment_pct"),
-        "key_metric_means": {},
-        "sample_rationale": f"Sector-specific {POLICY_VERSION} weighting for {weighted['sector']}.",
+    original_targets = [
+        value
+        for item in observations
+        if canonical_family(item.get("name"))
+        and (value := _positive(item.get("target"))) is not None
+    ]
+    disagreement_targets = original_targets + ([deep_target] if deep_target is not None else [])
+    price_cv = None
+    if disagreement_targets and current:
+        disagreement_mean = statistics.fmean(disagreement_targets)
+        denominator = abs((current + disagreement_mean) / 2.0)
+        if denominator > 1e-9:
+            price_cv = statistics.pstdev(disagreement_targets) / denominator
+    disagreement_allocations = original_allocations + (
+        [deep_allocation] if deep_allocation is not None else []
+    )
+    allocation_cv = 0.0
+    if len(disagreement_allocations) >= 2:
+        allocation_mean = statistics.fmean(disagreement_allocations)
+        if abs(allocation_mean) > 1e-9:
+            allocation_cv = statistics.pstdev(disagreement_allocations) / abs(allocation_mean)
+    final_return = (
+        (decision_target - current) / current * 100.0
+        if decision_target is not None and current
+        else None
+    )
+    final_allocation_pct = (
+        decision_allocation / NOTIONAL * 100.0
+        if decision_allocation is not None
+        else None
+    )
+    combined_score = (
+        0.6 * final_return + 0.4 * final_allocation_pct
+        if final_return is not None and final_allocation_pct is not None
+        else None
+    )
+    from .dashboard import valuation_confidence_metrics
+
+    overall_cv, confidence_factor, _ = valuation_confidence_metrics(
+        price_cv=price_cv,
+        lmil=[final_allocation_pct or 0.0, allocation_cv],
+        target_return_pct=final_return,
+        position_size_pct=final_allocation_pct,
+    )
+
+    if weighted is not None:
+        block = {
+            "name": MODEL_NAME,
+            "target_price": sector_target,
+            "upside_pct": ((sector_target - current) / current * 100.0) if current and sector_target is not None else None,
+            "investment_amount": sector_allocation,
+            "investment_pct": weighted.get("investment_pct"),
+            "key_metric_means": {},
+            "sample_rationale": f"Sector-specific {POLICY_VERSION} weighting for {weighted['sector']}.",
+        }
+        tab = {
+            "name": MODEL_NAME,
+            "target_price": sector_target,
+            "investment_amount": sector_allocation,
+            "key_metric_means": {},
+            "outputs": [],
+            "weight_breakdown": weighted["family_weights"],
+            "policy_version": POLICY_VERSION,
+            "sector": weighted["sector"],
+        }
+        hub["method_blocks"] = [item for item in hub.get("method_blocks", []) if isinstance(item, Mapping) and _key(item.get("name")) != _key(MODEL_NAME)] + [block]
+        hub["method_tabs"] = [item for item in hub.get("method_tabs", []) if isinstance(item, Mapping) and _key(item.get("name")) != _key(MODEL_NAME)] + [tab]
+        hub["sector_weighted_valuation"] = weighted
+    hub["deep_research_valuation"] = deep_payload or {
+        "status": "unavailable",
+        "target_usable": False,
+        "unavailable_reason": "Deep Research result was not supplied.",
     }
-    tab = {
-        "name": MODEL_NAME,
-        "target_price": sector_target,
-        "investment_amount": sector_allocation,
-        "key_metric_means": {},
-        "outputs": [],
-        "weight_breakdown": weighted["family_weights"],
-        "policy_version": POLICY_VERSION,
-        "sector": weighted["sector"],
-    }
-    hub["method_blocks"] = [item for item in hub.get("method_blocks", []) if isinstance(item, Mapping) and _key(item.get("name")) != _key(MODEL_NAME)] + [block]
-    hub["method_tabs"] = [item for item in hub.get("method_tabs", []) if isinstance(item, Mapping) and _key(item.get("name")) != _key(MODEL_NAME)] + [tab]
-    hub["sector_weighted_valuation"] = weighted
+    prices = hub.get("prices") if isinstance(hub.get("prices"), dict) else {}
+    prices["CV"] = price_cv
+    prices["LMIL"] = [final_allocation_pct or 0.0, allocation_cv]
+    hub["prices"] = prices
     consensus.update(
         {
             "sector_weighted_target_price": sector_target,
+            "deep_research_target_price": deep_target,
             "decision_target_price": decision_target,
             "component_weights": target_component_weights,
+            "allocation_component_weights": allocation_component_weights,
             "configured_component_weights": CONSENSUS_COMPONENT_WEIGHTS.copy(),
-            "consensus_basis": basis,
+            "consensus_basis": CONSENSUS_BASIS,
+            "consensus_policy_version": CONSENSUS_POLICY_VERSION,
+            "cv": price_cv,
+            "lmil": [final_allocation_pct or 0.0, allocation_cv],
         }
     )
-    sector_return = ((sector_target - current) / current * 100.0) if current else None
+    sector_return = ((sector_target - current) / current * 100.0) if sector_target is not None and current else None
     mean_return = ((mean - current) / current * 100.0) if mean is not None and current else None
     median_return = ((median - current) / current * 100.0) if median is not None and current else None
+    deep_return = ((deep_target - current) / current * 100.0) if deep_target is not None and current else None
     card.update(
         {
             "position_size_pct_of_notional": (decision_allocation / NOTIONAL * 100.0) if decision_allocation is not None else 0.0,
@@ -423,20 +508,26 @@ def apply_to_dashboard(
             "mean_investment_amount_raw": mean_allocation,
             "median_investment_amount": median_allocation,
             "sector_weighted_investment_amount": sector_allocation,
+            "deep_research_investment_amount": deep_allocation,
             "mean_target_return_pct": mean_return,
             "median_target_return_pct": median_return,
             "sector_weighted_target_return_pct": sector_return,
+            "deep_research_target_return_pct": deep_return,
             "mean_score": scores["mean"],
             "median_score": scores["median"],
             "sector_weighted_score": scores["sector_weighted"],
-            "target_return_pct": ((decision_target - current) / current * 100.0) if decision_target is not None and current else None,
+            "deep_research_score": scores["deep_research"],
+            "target_return_pct": final_return,
             "combined_score": combined_score,
             "adjusted_score": (combined_score * confidence_factor) if combined_score is not None else None,
+            "overall_cv": overall_cv,
+            "confidence_factor": confidence_factor,
             "component_weights": score_component_weights,
             "allocation_component_weights": allocation_component_weights,
             "configured_component_weights": CONSENSUS_COMPONENT_WEIGHTS.copy(),
-            "consensus_basis": basis,
-            "rationale": "Mean, Median, and Sector-Weighted scores blend 40% allocation with 60% target return, then use 30%/30%/40% consensus weights and the existing disagreement confidence factor.",
+            "consensus_basis": CONSENSUS_BASIS,
+            "consensus_policy_version": CONSENSUS_POLICY_VERSION,
+            "rationale": "Final target and allocation blend Mean, Median, Sector-Weighted, and valid Deep Research components at configured 24%/24%/32%/20% weights, renormalizing missing components. The final score is 60% target return plus 40% allocation, then applies the disagreement confidence factor.",
         }
     )
     return result

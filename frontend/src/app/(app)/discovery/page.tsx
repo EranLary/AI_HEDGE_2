@@ -263,7 +263,7 @@ function JevRankingCard({ row, rank, direction }: { row: JevDiscoveryRow; rank: 
           {row.forecast_mode === "forward" ? "Live forecast" : "Historical backfill"}
         </span>
         <Link
-          href={`${href(`/dashboard/${encodeURIComponent(row.ticker)}/jev`)}?report=${encodeURIComponent(row.report_id)}`}
+          href={`${href(`/dashboard/${encodeURIComponent(row.ticker)}/valuation/jev`)}?report=${encodeURIComponent(row.report_id)}`}
           className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--text-secondary)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--text-primary)]"
         >
           Open report

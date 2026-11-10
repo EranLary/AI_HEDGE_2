@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { DashboardPayload } from "./dashboard-types";
 import { computeHitRateAggregation, type HitRateSourceReport } from "./hit-rate-aggregate";
+import type { HistoricalPricePoint } from "./hit-rate-price-basis";
 
 function basePayload(): DashboardPayload {
   return {
@@ -151,7 +152,7 @@ test("Consensus target < 0 is floored to 0 and neutral allocations are excluded 
   assert.equal(consensus.allocations.hit_rate_pct, null);
 });
 
-test("positive_only mode counts only positive target/allocation predictions", () => {
+test("positive_only mode counts only positive target, allocation, and signal predictions", () => {
   const payload = basePayload();
   payload.valuation_hub.method_tabs = [
     {
@@ -162,6 +163,10 @@ test("positive_only mode counts only positive target/allocation predictions", ()
       outputs: [],
     },
   ];
+  payload.technical_analysis = {
+    status: "success",
+    analysis: { final_decision: "bearish" },
+  };
 
   const reports: HitRateSourceReport[] = [{ ticker: "TEST", payload }];
   const live = new Map<string, number | null>([["TEST", 120]]); // actual up
@@ -182,6 +187,32 @@ test("positive_only mode counts only positive target/allocation predictions", ()
   assert.equal(dcf.allocations.neutral, 0);
   assert.equal(dcf.allocations.considered, 0);
   assert.equal(dcf.allocations.hit_rate_pct, null);
+
+  // Bearish technical calls are excluded from the positive-only view.
+  assert.equal(agg.by_signal.length, 0);
+  assert.equal(agg.overview.signals.considered, 0);
+});
+
+test("all mode excludes unavailable targets and allocations instead of labeling them neutral", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [{
+    name: "DCF",
+    target_price: null,
+    investment_amount: null,
+    key_metric_means: {},
+    outputs: [],
+  }];
+
+  const agg = computeHitRateAggregation(
+    [{ ticker: "TEST", payload }],
+    new Map([["TEST", 120]]),
+  );
+  const dcf = agg.by_model.find((row) => row.key === "Scenario DCF");
+
+  assert.ok(dcf);
+  assert.equal(dcf.targets.neutral, 0);
+  assert.equal(dcf.allocations.neutral, 0);
+  assert.equal(dcf.combined.neutral, 0);
 });
 
 test("P/B track record starts with reports that contain P/B and ignores older reports", () => {
@@ -294,4 +325,37 @@ test("technical analysis can derive direction from probabilities", () => {
   assert.equal(technical.signals.misses, 1);
   assert.equal(technical.signals.considered, 1);
   assert.equal(technical.signals.hit_rate_pct, 0);
+});
+
+test("current hit rate normalizes the saved baseline for stock splits", () => {
+  const payload = basePayload();
+  payload.valuation_hub.method_tabs = [{
+    name: "DCF",
+    target_price: 130,
+    investment_amount: 10_000,
+    key_metric_means: {},
+    outputs: [],
+  }];
+  const reports: HitRateSourceReport[] = [{
+    ticker: "TEST",
+    generatedAt: "2025-01-01T12:00:00Z",
+    availableAt: "2025-01-01T12:00:00Z",
+    payload,
+  }];
+  const prices: HistoricalPricePoint[] = [
+    { date: "2025-01-01", close: 50, split_factor: 0.5 },
+    { date: "2025-01-02", close: 60, split_factor: 1 },
+  ];
+
+  const agg = computeHitRateAggregation(
+    reports,
+    new Map([["TEST", 60]]),
+    "all",
+    new Map([["TEST", prices]]),
+  );
+  const dcf = agg.by_model.find((row) => row.key === "Scenario DCF");
+
+  assert.ok(dcf);
+  assert.equal(dcf.targets.hits, 1);
+  assert.equal(dcf.targets.misses, 0);
 });

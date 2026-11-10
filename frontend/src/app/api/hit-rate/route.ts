@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
 import { normalizeValuationConsensus } from "@/lib/dashboard-normalize";
-import { getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
+import { getHistoricalPricesBatch, getLiveCurrentPricesBatch } from "@/lib/dashboard-server";
 import { isDbEnabled } from "@/lib/db";
 import { getDeletedReportFilter, siteRunIdFromPathLike } from "@/lib/deleted-reports";
 import { computeHitRateAggregation, type HitRateMode } from "@/lib/hit-rate-aggregate";
+import { computeHorizonAccuracy } from "@/lib/hit-rate-horizons";
 import { listAllDashboardsForHitRate } from "@/lib/reports-db";
 import { listDashboardReports, readJson } from "@/lib/server-outputs";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
@@ -13,6 +14,7 @@ import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 type LoadedDashboard = {
   ticker: string;
   generatedAt: string;
+  availableAt: string;
   payload: DashboardPayload;
 };
 
@@ -31,6 +33,7 @@ async function loadHistoricalDashboards(workspace: Workspace): Promise<LoadedDas
       const row = {
         ticker: String(r.ticker || "").toUpperCase(),
         generatedAt: new Date(r.generated_at).toISOString(),
+        availableAt: new Date(r.available_at || r.generated_at).toISOString(),
         payload: normalizeValuationConsensus(r.dashboard as DashboardPayload),
       };
       if (!row.ticker || !row.payload) continue;
@@ -58,7 +61,7 @@ async function loadHistoricalDashboards(workspace: Workspace): Promise<LoadedDas
       typeof payload.generated_at === "string" && payload.generated_at.trim()
         ? payload.generated_at
         : new Date(entry.mtimeMs).toISOString();
-    const row = { ticker, generatedAt, payload: normalizeValuationConsensus(payload) };
+    const row = { ticker, generatedAt, availableAt: generatedAt, payload: normalizeValuationConsensus(payload) };
     const runId = siteRunIdFromPathLike(entry.path);
     const key = runId ? `run:${ticker}:${runId}` : `file:${entry.path}`;
     if (deletedFilter.isDeleted(entry.report_id, ticker, runId)) continue;
@@ -82,10 +85,27 @@ export async function GET(request: Request) {
   if (!workspace) return NextResponse.json({ error: "Invalid workspace." }, { status: 400 });
   const reports = await loadHistoricalDashboards(workspace);
   const uniqueTickers = Array.from(new Set(reports.map((r) => r.ticker).filter(Boolean)));
+  const evaluationDates = reports
+    .map((report) => Date.parse(report.availableAt || report.generatedAt))
+    .filter((value) => Number.isFinite(value));
+  const earliest = evaluationDates.length ? Math.min(...evaluationDates) : Date.now();
+  const historyStart = new Date(earliest - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const historyEnd = new Date().toISOString().slice(0, 10);
+  const [livePrices, historicalPrices] = await Promise.all([
+    getLiveCurrentPricesBatch(uniqueTickers),
+    getHistoricalPricesBatch(uniqueTickers, historyStart, historyEnd),
+  ]);
   const livePriceByTicker = new Map<string, number | null>(
-    Object.entries(await getLiveCurrentPricesBatch(uniqueTickers)),
+    Object.entries(livePrices),
   );
-  const aggregation = computeHitRateAggregation(reports, livePriceByTicker, mode);
+  const historicalPricesByTicker = new Map(Object.entries(historicalPrices));
+  const aggregation = computeHitRateAggregation(reports, livePriceByTicker, mode, historicalPricesByTicker);
+  const horizonAccuracy = computeHorizonAccuracy(
+    reports,
+    historicalPricesByTicker,
+    livePriceByTicker,
+    mode,
+  );
 
   return NextResponse.json({
     generated_at: new Date().toISOString(),
@@ -96,5 +116,6 @@ export async function GET(request: Request) {
     by_model: aggregation.by_model,
     by_valuator: aggregation.by_valuator,
     by_signal: aggregation.by_signal,
+    horizon_accuracy: horizonAccuracy,
   });
 }

@@ -588,7 +588,7 @@ export function SmallCopyButton({
   );
 }
 
-function AutoFitMetric({
+export function AutoFitMetric({
   text,
   className,
   maxPx,

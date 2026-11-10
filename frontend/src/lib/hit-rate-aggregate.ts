@@ -12,10 +12,25 @@ import {
   verdictFromDirections,
   type HitRateAccumulator,
 } from "./hit-rate-utils";
+import {
+  normalizeHistoricalSeries,
+  splitAdjustedBaseline,
+  utcDateTimestamp,
+  type HistoricalPricePoint,
+  type NormalizedHistoricalPricePoint,
+} from "./hit-rate-price-basis";
 
 export type HitRateSourceReport = {
   ticker: string;
+  generatedAt?: string;
+  availableAt?: string;
   payload: DashboardPayload;
+};
+
+export type ValuationModelPrediction = {
+  name: string;
+  targetPrice: number | null;
+  investmentAmount: number | null;
 };
 
 export type MetricCounts = {
@@ -76,7 +91,7 @@ function createMetricSet(): MetricAccSet {
   };
 }
 
-function toNumOrNull(v: unknown): number | null {
+export function toNumOrNull(v: unknown): number | null {
   if (v === null || v === undefined || (typeof v === "string" && !v.trim())) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -122,11 +137,14 @@ function applyPrediction(
   applyVerdict(metric.allocations, verdict);
 }
 
-function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -1 | 0 | 1 | null): boolean {
+export function shouldIncludePrediction(mode: HitRateMode, predictedDirection: -1 | 0 | 1 | null): boolean {
   if (mode === "positive_only") {
     return predictedDirection === 1;
   }
-  return true;
+  // A missing prediction is unavailable, not a neutral call. Excluding it keeps
+  // the legacy Current cards aligned with the horizon metrics and avoids
+  // presenting absent targets or allocations as deliberate neutral forecasts.
+  return predictedDirection !== null;
 }
 
 function finalizeMetricSet(metric: MetricAccSet): MetricCountsSet {
@@ -144,7 +162,7 @@ function coerceProbability(value: unknown): number | null {
   return Math.max(0, Math.min(1, decimal));
 }
 
-function technicalSignalDirection(payload: DashboardPayload): -1 | 0 | 1 | null {
+export function technicalSignalDirection(payload: DashboardPayload): -1 | 0 | 1 | null {
   const technical = payload.technical_analysis;
   if (!technical || !technical.analysis) return null;
   const status = String(technical.status || "").trim().toLowerCase();
@@ -168,10 +186,51 @@ function technicalSignalDirection(payload: DashboardPayload): -1 | 0 | 1 | null 
   return bullishShare > bearishShare ? 1 : -1;
 }
 
+export function valuationModelPredictions(payload: DashboardPayload): ValuationModelPrediction[] {
+  const methodTabs = Array.isArray(payload.valuation_hub?.method_tabs) ? payload.valuation_hub.method_tabs : [];
+  const methodBlocks = Array.isArray(payload.valuation_hub?.method_blocks) ? payload.valuation_hub.method_blocks : [];
+  const stored = methodTabs.length > 0
+    ? methodTabs.map((tab) => ({
+        name: canonicalModelName(String(tab.name || "").trim()),
+        targetPrice: toNumOrNull(tab.target_price),
+        investmentAmount: toNumOrNull(tab.investment_amount),
+      }))
+    : methodBlocks.map((block) => ({
+        name: canonicalModelName(String(block.name || "").trim()),
+        targetPrice: toNumOrNull(block.target_price),
+        investmentAmount: toNumOrNull(block.investment_amount),
+      }));
+
+  const predictions: ValuationModelPrediction[] = [...stored];
+  const storedModelNames = new Set(stored.map((row) => row.name));
+  for (const view of consensusModelViews(payload)) {
+    if (view.key === "sector_weighted" || storedModelNames.has(view.name)) continue;
+    predictions.push({
+      name: view.name,
+      targetPrice: view.targetPrice,
+      investmentAmount: view.investmentAmount,
+    });
+  }
+
+  const consensusTarget = toNumOrNull(payload.valuation_hub?.consensus?.decision_target_price)
+    ?? toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
+  const consensusInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.decision_investment_amount)
+    ?? toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
+  if (consensusTarget !== null || consensusInvestment !== null) {
+    predictions.push({
+      name: "Consensus",
+      targetPrice: consensusTarget,
+      investmentAmount: consensusInvestment,
+    });
+  }
+  return predictions;
+}
+
 export function computeHitRateAggregation(
   reports: HitRateSourceReport[],
   livePriceByTicker: Map<string, number | null>,
   mode: HitRateMode = "all",
+  historicalPricesByTicker: Map<string, HistoricalPricePoint[]> = new Map(),
 ): HitRateAggregation {
   const uniqueTickers = Array.from(new Set(reports.map((r) => String(r.ticker || "").toUpperCase()).filter(Boolean)));
 
@@ -179,6 +238,7 @@ export function computeHitRateAggregation(
   const byModelMap = new Map<string, MetricAccSet>();
   const byValuatorMap = new Map<string, MetricAccSet>();
   const bySignalMap = new Map<string, MetricAccSet>();
+  const normalizedByTicker = new Map<string, NormalizedHistoricalPricePoint[]>();
 
   let reportsWithBaselinePrice = 0;
 
@@ -190,24 +250,16 @@ export function computeHitRateAggregation(
       reportsWithBaselinePrice += 1;
     }
     const liveCurrent = livePriceByTicker.get(ticker) ?? null;
-    const actualDirection = actualDirectionFromPrices(liveCurrent, reportPrice);
+    if (!normalizedByTicker.has(ticker)) {
+      normalizedByTicker.set(ticker, normalizeHistoricalSeries(historicalPricesByTicker.get(ticker)));
+    }
+    const reportTimestamp = utcDateTimestamp(report.availableAt || report.generatedAt);
+    const baselinePrice = typeof reportPrice === "number"
+      ? splitAdjustedBaseline(reportPrice, reportTimestamp, normalizedByTicker.get(ticker) || [])
+      : reportPrice;
+    const actualDirection = actualDirectionFromPrices(liveCurrent, baselinePrice);
 
     const methodTabs = Array.isArray(payload.valuation_hub?.method_tabs) ? payload.valuation_hub.method_tabs : [];
-    const methodBlocks = Array.isArray(payload.valuation_hub?.method_blocks) ? payload.valuation_hub.method_blocks : [];
-
-    const modelRows =
-      methodTabs.length > 0
-        ? methodTabs.map((tab) => ({
-            name: canonicalModelName(String(tab.name || "").trim()),
-            target_price: toNumOrNull(tab.target_price),
-            investment_amount: toNumOrNull(tab.investment_amount),
-          }))
-        : methodBlocks.map((block) => ({
-            name: canonicalModelName(String(block.name || "").trim()),
-            target_price: toNumOrNull(block.target_price),
-            investment_amount: toNumOrNull(block.investment_amount),
-          }));
-
     const applyModelPrediction = (modelKey: string, targetPrice: number | null, investmentAmount: number | null) => {
       if (!byModelMap.has(modelKey)) {
         byModelMap.set(modelKey, createMetricSet());
@@ -227,19 +279,8 @@ export function computeHitRateAggregation(
       }
     };
 
-    for (const modelRow of modelRows) {
-      applyModelPrediction(modelRow.name, modelRow.target_price, modelRow.investment_amount);
-    }
-    const storedModelNames = new Set(modelRows.map((row) => row.name));
-    for (const view of consensusModelViews(payload)) {
-      if (view.key === "sector_weighted" || storedModelNames.has(view.name)) continue;
-      applyModelPrediction(view.name, view.targetPrice, view.investmentAmount);
-    }
-
-    const consensusTarget = toNumOrNull(payload.valuation_hub?.consensus?.decision_target_price) ?? toNumOrNull(payload.valuation_hub?.consensus?.mean_target_price);
-    const consensusInvestment = toNumOrNull((payload.score_card || payload.decision_card)?.decision_investment_amount) ?? toNumOrNull((payload.score_card || payload.decision_card)?.mean_investment_amount);
-    if (consensusTarget !== null || consensusInvestment !== null) {
-      applyModelPrediction("Consensus", consensusTarget, consensusInvestment);
+    for (const prediction of valuationModelPredictions(payload)) {
+      applyModelPrediction(prediction.name, prediction.targetPrice, prediction.investmentAmount);
     }
 
     for (const tab of methodTabs) {
@@ -299,7 +340,7 @@ export function computeHitRateAggregation(
     }
 
     const technicalDirection = technicalSignalDirection(payload);
-    if (technicalDirection !== null) {
+    if (technicalDirection !== null && shouldIncludePrediction(mode, technicalDirection)) {
       const signalKey = "Technical Analysis";
       if (!bySignalMap.has(signalKey)) {
         bySignalMap.set(signalKey, createMetricSet());

@@ -15,7 +15,7 @@ import {
 } from "recharts";
 
 import type { DashboardPayload } from "@/lib/dashboard-types";
-import { buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
+import { AutoFitMetric, buildCurrencyContext, fmtMoney, type CurrencyContext } from "@/components/hedge-dashboard";
 import { targetPriceTone, type TargetPriceTone } from "@/lib/target-price-comparison";
 import { useThemeTokens } from "@/lib/theme-tokens";
 import {
@@ -333,9 +333,12 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
                 </span>
               ) : null}
             </div>
-            <p className={`mt-2 break-words text-xl font-bold tabular-nums ${item.valueClass}`}>
-              {fmtMoney(item.value, currencyContext, "price")}
-            </p>
+            <AutoFitMetric
+              text={fmtMoney(item.value, currencyContext, "price")}
+              maxPx={20}
+              minPx={12}
+              className={`mt-2 w-full min-w-0 overflow-hidden whitespace-nowrap font-bold leading-tight tabular-nums ${item.valueClass}`}
+            />
             <div className="mt-2 min-h-4 text-[11px] leading-4">
               {typeof item.changePct === "number" ? (
                 <span className={`block font-semibold ${TARGET_TONE_CLASS[targetPriceTone(item.value, consensusCurrent)]}`}>

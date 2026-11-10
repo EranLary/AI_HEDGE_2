@@ -13,7 +13,7 @@ import type { SummarySourceReport } from "@/lib/ticker-summary-aggregate";
 import { computeScreenerTickerSummary } from "@/lib/screener-consensus";
 import { parseApiWorkspace, type Workspace } from "@/lib/workspace";
 
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 
 const SCREENER_FILES = {
   sp500: {

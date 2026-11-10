@@ -3,7 +3,7 @@
 This engine remains analytically independent from the existing valuation
 families, but new Analysis and Nasdaq runs now launch it as an isolated,
 fail-open subprocess. It receives a raw company snapshot and public evidence,
-never an AI Hedge report or target. A usable compiled result is one fourth
+never an AI Hedge report or target. A usable compiled result is one fifth
 consensus component under `consensus-deep-research-v1`; it does not enter the
 legacy Mean, Median, or Sector-Weighted calculation.
 
@@ -63,8 +63,23 @@ debt, cash, diluted shares, units, currency, and dates.
 
 The compiler owns the final `Valuation Control Summary`. Python renders the
 reference/target dates, share denominator, method values, weights, target,
-upside and rate inputs directly from the validated case. The report writer may
-explain those values but cannot silently replace them.
+upside, allocation, forecast rows, method inputs, evidence ledger and
+limitations directly from the validated case. The report writer may explain
+those values but cannot silently replace them. The deterministic appendix also
+guarantees a reproducible Part II when narrative generation is incomplete.
+
+Production subprocesses prepend the repository `src/` directory to their own
+`PYTHONPATH`; the site image also sets `PYTHONPATH=/app/src`. This is required
+because the Fly image copies the package source without installing it as a
+wheel. Subprocess smoke tests deliberately clear any inherited development
+`PYTHONPATH` so a host configuration cannot mask an image import failure.
+
+The quality score distinguishes discovered, opened and cited sources. Only
+opened sources satisfy the source-depth gate. A compiled report is also scored
+on Part II depth and method count: a thin valuation section or a single-method
+case remains usable Amber but cannot receive a near-perfect research score.
+Public failure reasons are sanitized before persistence and display; host paths,
+tracebacks and credential-like strings are not part of the dashboard contract.
 
 ## Pipeline
 

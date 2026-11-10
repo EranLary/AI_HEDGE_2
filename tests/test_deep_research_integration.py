@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from ai_hedge.deep_research.integration import (
     DeepResearchProcess,
+    _child_environment,
     build_summary,
     snapshot_from_platform_inputs,
+    unavailable_summary,
 )
 from ai_hedge.deep_research.integration_worker import production_config
 
@@ -112,4 +116,36 @@ def test_production_worker_clamps_env_overrides_to_policy_limits(monkeypatch) ->
 
     assert config.max_cost_usd == 1.5
     assert config.max_seconds == 2400
+
+
+def test_child_environment_bootstraps_source_tree_without_existing_pythonpath(monkeypatch) -> None:
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    child_env = _child_environment()
+    completed = subprocess.run(
+        [sys.executable, "-c", "import ai_hedge.deep_research.integration_worker"],
+        cwd=os.fspath(Path.cwd().parent),
+        env=child_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert str(Path(__file__).resolve().parents[1] / "src") in child_env["PYTHONPATH"]
+
+
+def test_unavailable_summary_redacts_runtime_paths_and_credentials() -> None:
+    payload = unavailable_summary(
+        "failed",
+        'Traceback (most recent call last):\n  File "C:\\Users\\Person\\secret.py", line 1\n'
+        "RuntimeError: failed under /app/src/ai_hedge with api-key-abcdefghijklmnop",
+        stderr="C:\\Users\\Person\\private\\worker.log",
+    )
+
+    rendered = json.dumps(payload)
+    assert "C:\\\\Users" not in rendered
+    assert "/app/src" not in rendered
+    assert "abcdefghijklmnop" not in rendered
+    assert "RuntimeError" in payload["unavailable_reason"]
 

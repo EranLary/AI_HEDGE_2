@@ -35,6 +35,21 @@ DEEPSEEK_PRO_MODEL = "deepseek-v4-pro"
 DEEPSEEK_FLASH_MODEL = "deepseek-flash"
 ENGINE_VERSION = "deepseek-agentic-research-v4"
 
+_VALUATION_FILING_PATTERNS = (
+    "CONSOLIDATED STATEMENTS OF CASH FLOWS",
+    "Net cash provided by operating activities",
+    "Purchases of property and equipment",
+    "capital expenditures",
+    "depreciation and amortization",
+    "stock-based compensation",
+    "weighted average number of shares",
+    "stockholders' equity",
+    "segment revenues",
+    "segment operating income",
+    "cash and cash equivalents",
+    "long-term debt",
+)
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -84,6 +99,14 @@ def select_valuation_sources(
         or row.get("kind") in {"deterministic_market_input", "primary_filing"}
     ]
     return compact or source_packet
+
+
+def prime_filing_valuation_excerpts(repository: Any, source_ids: list[str]) -> None:
+    """Expose valuation-relevant filing sections beyond the initial excerpt window."""
+
+    for source_id in source_ids:
+        for pattern in _VALUATION_FILING_PATTERNS:
+            repository.find(source_id=source_id, pattern=pattern)
 
 
 def review_hard_blockers(review: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -1105,6 +1128,13 @@ scope nor date contradictions silently. The snapshot timestamp is a hard cutoff:
 information. For every material numerical fact, use only a source whose opened field is true; an
 unopened search snippet may identify a gap but cannot support a valuation input.
 
+Valuation-ready extraction is mandatory when the opened evidence supports it. Preserve separate,
+dated ledger rows for operating cash flow, capital expenditure, depreciation/amortization, stock
+compensation, working-capital investment, cash, debt, book equity, diluted shares, dividends,
+reported GAAP earnings, and segment revenue/profit. Inspect the focused primary-filing excerpts
+before declaring one of these anchors missing. Do not collapse several line items into an opaque
+prose claim. Missing remains missing; this requirement never authorizes inference.
+
 Frozen snapshot:
 {json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2)}
 
@@ -1212,7 +1242,10 @@ Mandatory economic controls:
     extraordinary conclusion with an explicit limitation when the arithmetic and evidence remain valid.
 17. Return investment_amount as one finite number in [-100000, 100000] for a $100,000 notional
     portfolio, plus an investment_rationale tied to valuation asymmetry, downside and conviction.
-    Allocation quality is independent of target validity.
+    Allocation quality is independent of target validity. Consider expected dividends or other cash
+    distributions over the target horizon as a separate total-return input when evidence supports
+    them. Do not add distributions to the compiled target price; explain their effect in the allocation
+    rationale instead.
 18. For SOTP, provide every component value and ownership percentage plus central costs, minority
     interests, tax leakage, debt and cash as separately evidenced totals. Python will compile the
     equity bridge and divide by diluted shares exactly once.
@@ -1591,6 +1624,14 @@ or valuation case. It contains no approved factual content. Never introduce a nu
 because it appeared in an earlier draft or source page; every material claim must map to a supplied
 ledger claim or valuation-case evidence item. Remove unsupported details from a prior draft.
 
+Part II is a decision document, not a short conclusion. Preserve the numbered valuation-basis,
+intrinsic, relative, alternative, weighted-fair-value and control-summary headings. For every
+included method, explain why it fits, reproduce its inputs and arithmetic, show its forecast rows or
+component bridge, state the weight rationale and identify the principal sensitivity. Include a
+two-dimensional sensitivity table when the supplied case permits one. Explain omitted roles and the
+allocation rationale, including evidenced dividends or distributions as total return without changing
+the compiled price target. Never replace these sections with only the compiler summary.
+
 Research mandate and required report structure:
 {mandate}
 
@@ -1658,8 +1699,10 @@ Pre-publication review issues that must all be fixed:
         result = compiled.get("compiled")
         result = result if isinstance(result, Mapping) else {}
         currency = str(result.get("currency") or "")
-        lines = [
-            start,
+        lines = [start]
+        if not re.search(r"(?im)^#\s+Part\s+II\b", clean_report):
+            lines.extend(["# Part II — Comprehensive valuation", ""])
+        lines.extend([
             "## Valuation Control Summary",
             "",
             "This block is rendered directly from the validated valuation case and Python compiler.",
@@ -1673,7 +1716,7 @@ Pre-publication review issues that must all be fixed:
             "",
             "| Method | Value per share | Weight | Weighted contribution |",
             "|---|---:|---:|---:|",
-        ]
+        ])
         for method in result.get("methods") or []:
             if not isinstance(method, Mapping):
                 continue
@@ -1722,6 +1765,149 @@ Pre-publication review issues that must all be fixed:
                 )
         if rate_rows:
             lines.extend(["", "Compiler input rates:", *rate_rows])
+
+        investment = result.get("investment_amount")
+        if investment is not None:
+            lines.extend(
+                [
+                    "",
+                    "### Portfolio allocation",
+                    "",
+                    f"- Recommended amount in a 100,000 notional portfolio: {float(investment):,.6g}",
+                    f"- Rationale: {str(result.get('investment_rationale') or 'Not supplied.')}",
+                ]
+            )
+
+        def cell(value: Any) -> str:
+            return re.sub(r"\s+", " ", str(value or "")).replace("|", "/").strip()
+
+        compiled_methods = {
+            str(method.get("name") or ""): method
+            for method in result.get("methods") or []
+            if isinstance(method, Mapping)
+        }
+        for method in valuation_case.get("methods") or []:
+            if not isinstance(method, Mapping):
+                continue
+            try:
+                weight = float(method.get("weight_pct") or 0)
+            except (TypeError, ValueError):
+                weight = 0.0
+            if weight <= 0:
+                continue
+            name = str(method.get("name") or method.get("type") or "Method")
+            compiled_method = compiled_methods.get(name, {})
+            lines.extend(
+                [
+                    "",
+                    f"### {cell(name)} — method detail",
+                    "",
+                    f"- Role/type: {cell(method.get('role'))} / {cell(method.get('type'))}",
+                    f"- Weight: {weight:.6g}%",
+                    f"- Compiled value per share: {float(compiled_method.get('value_per_share') or 0):.6g} {currency}",
+                    f"- Weight rationale: {cell(method.get('weight_rationale')) or 'Not supplied.'}",
+                ]
+            )
+            method_type = str(method.get("type") or "")
+            if method_type in {"dcf", "fcfe"}:
+                lines.extend(
+                    [
+                        "",
+                        "| Forecast date | Cash flow per share | Driver rationale |",
+                        "|---|---:|---|",
+                    ]
+                )
+                for flow in method.get("cash_flows_per_share") or []:
+                    if isinstance(flow, Mapping):
+                        lines.append(
+                            f"| {cell(flow.get('date'))} | {float(flow.get('amount') or 0):.6g} {currency} | "
+                            f"{cell(flow.get('rationale'))} |"
+                        )
+            elif method_type == "residual_income":
+                lines.extend(
+                    [
+                        "",
+                        "| Forecast date | Net income | Dividends | Driver rationale |",
+                        "|---|---:|---:|---|",
+                    ]
+                )
+                for period in method.get("periods") or []:
+                    if isinstance(period, Mapping):
+                        lines.append(
+                            f"| {cell(period.get('end_date'))} | {float(period.get('net_income') or 0):,.6g} | "
+                            f"{float(period.get('dividends') or 0):,.6g} | {cell(period.get('rationale'))} |"
+                        )
+            elif method_type == "multiple":
+                subject = evidence.get(str(method.get("subject_metric_evidence_id") or ""), {})
+                peer = evidence.get(str(method.get("peer_statistic_evidence_id") or ""), {})
+                lines.extend(
+                    [
+                        "",
+                        "| Multiple input | Value | Basis / rationale |",
+                        "|---|---:|---|",
+                        f"| Subject metric | {cell(subject.get('value'))} {cell(subject.get('unit'))} | "
+                        f"{cell(method.get('subject_metric_basis'))}; {cell(subject.get('rationale'))} |",
+                        f"| Representative multiple | {cell(peer.get('value'))} {cell(peer.get('unit'))} | "
+                        f"{cell(method.get('peer_metric_basis'))}; {cell(peer.get('rationale'))} |",
+                        f"| Applied multiple | {cell(method.get('applied_multiple'))}x | Compiler input |",
+                    ]
+                )
+            elif method_type == "sotp":
+                lines.extend(
+                    [
+                        "",
+                        "| Component | Value basis | Component value | Ownership | Rationale |",
+                        "|---|---|---:|---:|---|",
+                    ]
+                )
+                for component in method.get("sotp_components") or []:
+                    if not isinstance(component, Mapping):
+                        continue
+                    item = evidence.get(str(component.get("value_evidence_id") or ""), {})
+                    lines.append(
+                        f"| {cell(component.get('name'))} | {cell(component.get('value_basis'))} | "
+                        f"{cell(item.get('value'))} {cell(item.get('unit'))} | "
+                        f"{float(component.get('ownership_pct') or 0):.6g}% | {cell(component.get('rationale'))} |"
+                    )
+
+        referenced_ids: list[str] = []
+        for method in valuation_case.get("methods") or []:
+            if not isinstance(method, Mapping):
+                continue
+            for key, value in method.items():
+                if key.endswith("_evidence_id") and value:
+                    referenced_ids.append(str(value))
+                elif key.endswith("_evidence_ids") and isinstance(value, list):
+                    referenced_ids.extend(str(item) for item in value if item)
+        referenced_ids.extend(
+            str(valuation_case.get(key) or "")
+            for key in ("reference_price_evidence_id", "diluted_shares_evidence_id")
+        )
+        material_evidence = [
+            evidence[evidence_id]
+            for evidence_id in dict.fromkeys(referenced_ids)
+            if evidence_id in evidence
+        ]
+        if material_evidence:
+            lines.extend(
+                [
+                    "",
+                    "### Valuation evidence ledger",
+                    "",
+                    "| Input | Value | Unit | Date | Type | Rationale |",
+                    "|---|---:|---|---|---|---|",
+                ]
+            )
+            for item in material_evidence:
+                lines.append(
+                    f"| {cell(item.get('id'))} | {cell(item.get('value'))} | {cell(item.get('unit'))} | "
+                    f"{cell(item.get('as_of_date'))} | {cell(item.get('kind'))} | {cell(item.get('rationale'))} |"
+                )
+
+        limitations = [cell(item) for item in result.get("limitations") or [] if cell(item)]
+        if limitations:
+            lines.extend(["", "### Valuation limitations", ""])
+            lines.extend(f"- {item}" for item in limitations)
         lines.append(end)
         return f"{clean_report}\n\n" + "\n".join(lines)
 
@@ -1862,8 +2048,12 @@ Draft:
                 filing_error = f"{type(exc).__name__}: {_clean(exc, max_chars=500)}"
             if not filing_packet and not filing_error:
                 filing_error = "The platform SEC/MAYA router returned no usable filing document."
+        filing_source_ids: list[str] = []
         for filing in filing_packet:
-            sources.register_preloaded(filing)
+            source_id = sources.register_preloaded(filing)
+            if source_id:
+                filing_source_ids.append(source_id)
+        prime_filing_valuation_excerpts(sources, filing_source_ids)
         _write_json(
             output_dir / "primary_filings_manifest.json",
             {

@@ -122,7 +122,7 @@ For an equity-value denominator, prefer a current point-in-time fully diluted sh
 
 Include a **Valuation evidence ledger** before the method calculations. For every material input, show: exact value, units, observation or period date, whether it is a reported fact / market observation / third-party estimate / analyst assumption, exact source link when external, and the method that consumes it. This must include the reference price, shares, peer metrics, risk-free rate, beta or risk adjustment, equity-risk premium, terminal assumption, forecast anchors, net debt or book equity, and FX when relevant. An analyst assumption must be labeled as such and justified; never present it as externally observed data.
 
-## 17. Method 1 — Intrinsic valuation
+## 17. Intrinsic valuation role
 
 Build a transparent DCF, dividend-discount, residual-income, excess-return, distributable-cash, or other economically appropriate intrinsic model. Explain why the chosen model fits the company.
 
@@ -148,7 +148,7 @@ Show the complete discount-rate arithmetic numerically. For CAPM, show `cost of 
 
 Forecasts must be driver-based rather than a free-standing growth sequence. Provide a bridge from the sector KPIs and financial anchors to revenue, margins, earnings or cash flow, reinvestment, and the terminal state. Separate reported history, consensus when used, and the analyst's own forecast. Explain why each major step-change or fade rate is economically consistent.
 
-## 18. Method 2 — Comparable-company valuation
+## 18. Relative valuation role
 
 For a profitable non-financial company, construct a second valuation from **representative normalized earnings and a representative multiple**. Start with reported GAAP earnings, show every material normalization adjustment, state the treatment of stock compensation, acquired-intangible amortization, acquisition costs, capitalized development, unusual taxes and other one-offs, and reconcile to normalized net income and diluted EPS for the applicable period. Do not adopt management non-GAAP EPS without independently evaluating its exclusions.
 
@@ -156,15 +156,15 @@ Use the public peer set established above when clean same-basis data are availab
 
 Every peer row must have an exact source link for its dated price, denominator metric, and multiple; a generic phrase such as "finance data" is not sufficient. Show the selected peer statistic and any explicit premium or discount arithmetically. Do not infer a forward peer multiple from a trailing table without a separately explained conversion.
 
-## 19. Method 3 — SOTP, asset, or alternative valuation
+## 19. SOTP, asset, or alternative valuation role
 
 Use SOTP when distinct segments, subsidiaries, holdings, or non-operating assets require separate treatment. Apply a suitable method to each component, account for ownership percentages, minority interests, central costs, net debt, taxes, and holding-company discounts.
 
-If the business is integrated, use a conservative asset, liquidation, replacement-cost, or another genuinely useful third method. If no third method is decision-useful, assign it zero weight and explain why; do not manufacture false precision merely to produce three numbers.
+If the business is integrated, use a conservative asset, liquidation, replacement-cost, or another genuinely useful alternative only when it adds decision value. If no alternative method is useful, omit it and explain why; do not manufacture false precision merely to produce three numbers.
 
 ## 20. Weighted fair value
 
-Provide a summary table containing every valuation method, low/base/high or point estimate, assigned weight, weighted contribution, and principal limitation. Weights must sum to 100% across valid methods and must reflect economic relevance and evidence quality.
+Provide a summary table containing every included valuation method, low/base/high or point estimate, assigned weight, weighted contribution, and principal limitation. The model chooses the methods and weights. Weights must sum to 100% across valid methods and must reflect economic relevance and evidence quality. A single valid method is acceptable when disclosed as a material limitation.
 
 Calculate:
 
@@ -204,6 +204,7 @@ Conclude with:
 4. the assumptions on which the target price is most sensitive;
 5. what would change the recommendation;
 6. the final target price, expected return, rating, horizon, and confidence level;
-7. a concise list of unresolved red flags and data limitations.
+7. a concise list of unresolved red flags and data limitations;
+8. a recommended investment allocation between -100% and +100% of a $100,000 notional portfolio, expressed as an amount between -100,000 and 100,000, with a concise rationale tied to valuation asymmetry, downside risk, and conviction.
 
 The report must be candid enough to reject the investment when the evidence or valuation does not justify risk. Quality, traceability, and correct scope are more important than reaching a positive conclusion.

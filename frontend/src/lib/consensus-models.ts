@@ -4,10 +4,11 @@ import type { DashboardPayload } from "@/lib/dashboard-types";
 export const SIMPLE_MEAN_MODEL_NAME = "Simple Mean";
 export const MEDIAN_MODEL_NAME = "Median";
 export const SECTOR_WEIGHTED_MODEL_NAME = "Sector-Weighted Valuation";
+export const DEEP_RESEARCH_MODEL_NAME = "Deep Research";
 
 export type ConsensusModelView = {
   key: ConsensusComponentKey;
-  name: typeof SIMPLE_MEAN_MODEL_NAME | typeof MEDIAN_MODEL_NAME | typeof SECTOR_WEIGHTED_MODEL_NAME;
+  name: typeof SIMPLE_MEAN_MODEL_NAME | typeof MEDIAN_MODEL_NAME | typeof SECTOR_WEIGHTED_MODEL_NAME | typeof DEEP_RESEARCH_MODEL_NAME;
   shortLabel: string;
   targetPrice: number | null;
   investmentAmount: number | null;
@@ -23,19 +24,26 @@ function finiteNumber(value: unknown): number | null {
 }
 
 /**
- * Exposes the three independently measurable inputs to the final consensus.
+ * Exposes the four independently measurable inputs to the final consensus.
  * Mean and Median live in the consensus/score contracts rather than method_tabs,
  * so shared analytics use this adapter instead of manufacturing method tabs.
  */
 export function consensusModelViews(payload: DashboardPayload): ConsensusModelView[] {
   const consensus = payload.valuation_hub?.consensus || {};
   const card = payload.score_card || payload.decision_card || {};
+  const hasDeepResearchContract =
+    Object.prototype.hasOwnProperty.call(payload.valuation_hub || {}, "deep_research_valuation") ||
+    Object.prototype.hasOwnProperty.call(consensus, "deep_research_target_price") ||
+    Object.prototype.hasOwnProperty.call(card, "deep_research_investment_amount");
 
   const targetByKey: Record<ConsensusComponentKey, number | null> = {
     mean: finiteNumber(consensus.mean_target_price),
     median: finiteNumber(consensus.median_target_price),
     sector_weighted: finiteNumber(
       consensus.sector_weighted_target_price ?? payload.valuation_hub?.sector_weighted_valuation?.target_price,
+    ),
+    deep_research: finiteNumber(
+      consensus.deep_research_target_price ?? payload.valuation_hub?.deep_research_valuation?.target_price,
     ),
   };
   const investmentByKey: Record<ConsensusComponentKey, number | null> = {
@@ -44,11 +52,15 @@ export function consensusModelViews(payload: DashboardPayload): ConsensusModelVi
     sector_weighted: finiteNumber(
       card.sector_weighted_investment_amount ?? payload.valuation_hub?.sector_weighted_valuation?.investment_amount,
     ),
+    deep_research: finiteNumber(
+      card.deep_research_investment_amount ?? payload.valuation_hub?.deep_research_valuation?.investment_amount,
+    ),
   };
   const scoreByKey: Record<ConsensusComponentKey, number | null> = {
     mean: finiteNumber(card.mean_score),
     median: finiteNumber(card.median_score),
     sector_weighted: finiteNumber(card.sector_weighted_score),
+    deep_research: finiteNumber(card.deep_research_score),
   };
 
   const targetWeights = new Map(
@@ -56,6 +68,7 @@ export function consensusModelViews(payload: DashboardPayload): ConsensusModelVi
       mean: targetByKey.mean !== null,
       median: targetByKey.median !== null,
       sector_weighted: targetByKey.sector_weighted !== null,
+      deep_research: targetByKey.deep_research !== null,
     }).map((component) => [component.key, component.weight]),
   );
   const allocationWeights = new Map(
@@ -63,11 +76,18 @@ export function consensusModelViews(payload: DashboardPayload): ConsensusModelVi
       mean: investmentByKey.mean !== null,
       median: investmentByKey.median !== null,
       sector_weighted: investmentByKey.sector_weighted !== null,
+      deep_research: investmentByKey.deep_research !== null,
     }).map((component) => [component.key, component.weight]),
   );
 
+  const deepDefinition: Pick<ConsensusModelView, "key" | "name" | "shortLabel"> = {
+    key: "deep_research",
+    name: DEEP_RESEARCH_MODEL_NAME,
+    shortLabel: DEEP_RESEARCH_MODEL_NAME,
+  };
   const definitions: Array<Pick<ConsensusModelView, "key" | "name" | "shortLabel">> = [
     { key: "sector_weighted", name: SECTOR_WEIGHTED_MODEL_NAME, shortLabel: "Sector-Weighted" },
+    ...(hasDeepResearchContract ? [deepDefinition] : []),
     { key: "mean", name: SIMPLE_MEAN_MODEL_NAME, shortLabel: SIMPLE_MEAN_MODEL_NAME },
     { key: "median", name: MEDIAN_MODEL_NAME, shortLabel: MEDIAN_MODEL_NAME },
   ];

@@ -59,7 +59,10 @@ function scoreFor(target: number | null, investment: number | null, currentPrice
 function enrichLegacyMeanMedian(payload: DashboardPayload): DashboardPayload {
   const existingBasis = payload.valuation_hub?.consensus?.consensus_basis;
   const weightedPolicy = payload.valuation_hub?.sector_weighted_valuation?.policy_version;
-  if (weightedPolicy === "sector-weighted-v1" && String(existingBasis || "").includes("sector_weighted")) {
+  if (
+    existingBasis === "weighted_components_v2" ||
+    (weightedPolicy === "sector-weighted-v1" && String(existingBasis || "").includes("sector_weighted"))
+  ) {
     return payload;
   }
   const prices = payload.valuation_hub?.prices;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -169,16 +170,17 @@ def _is_peak(value: datetime) -> bool:
 
 def _estimate_call_cost(model: str, usage: Mapping[str, Any], at: datetime) -> float:
     _input, output, cached, miss = _usage_tokens(usage)
+    cached_rate, miss_rate, output_rate = _model_token_rates(model, at)
+    return (cached * cached_rate + miss * miss_rate + output * output_rate) / 1_000_000
+
+
+def _model_token_rates(model: str, at: datetime) -> tuple[float, float, float]:
     peak = _is_peak(at)
     if model == DEEPSEEK_PRO_MODEL:
-        cached_rate, miss_rate, output_rate = (
+        return (
             (0.044, 1.32, 3.96) if peak else (0.022, 0.66, 1.98)
         )
-    else:
-        cached_rate, miss_rate, output_rate = (
-            (0.006, 0.30, 1.20) if peak else (0.003, 0.15, 0.60)
-        )
-    return (cached * cached_rate + miss * miss_rate + output * output_rate) / 1_000_000
+    return (0.006, 0.30, 1.20) if peak else (0.003, 0.15, 0.60)
 
 
 @dataclass
@@ -224,8 +226,8 @@ class DeepSeekResearchConfig:
     controller_model: str = DEEPSEEK_PRO_MODEL
     helper_model: str = DEEPSEEK_FLASH_MODEL
     reasoning_effort: str = "max"
-    max_cost_usd: float = 3.0
-    max_seconds: int = 2700
+    max_cost_usd: float = 1.5
+    max_seconds: int = 2400
     max_tool_calls: int = 80
     max_search_queries: int = 36
     max_opened_sources: int = 30
@@ -265,8 +267,8 @@ class DeepSeekResearchConfig:
             return default
 
         return cls(
-            max_cost_usd=number("DEEPSEEK_RESEARCH_MAX_COST_USD", 3.0),
-            max_seconds=integer("DEEPSEEK_RESEARCH_MAX_SECONDS", 2700, 3600),
+            max_cost_usd=number("DEEPSEEK_RESEARCH_MAX_COST_USD", 1.5),
+            max_seconds=integer("DEEPSEEK_RESEARCH_MAX_SECONDS", 2400, 3600),
             max_tool_calls=integer("DEEPSEEK_RESEARCH_MAX_TOOL_CALLS", 80, 120),
             max_search_queries=integer(
                 "DEEPSEEK_RESEARCH_MAX_SEARCH_QUERIES", 36, 60
@@ -701,6 +703,9 @@ class DeepSeekResearchResult:
     report_path: Path
     manifest_path: Path
     quality_path: Path
+    analysis_path: Optional[Path] = None
+    valuation_path: Optional[Path] = None
+    compiled_path: Optional[Path] = None
 
     @property
     def provider(self) -> str:
@@ -774,9 +779,34 @@ class DeepSeekResearchEngine:
             payload["tool_choice"] = "auto"
         if json_output:
             payload["response_format"] = {"type": "json_object"}
+        call_at = self.now()
+        remaining_cost = self.config.max_cost_usd - self.usage.estimated_cost_usd
+        request_shape = {"messages": messages, "tools": tools or []}
+        # Two UTF-8 bytes per token deliberately overestimates normal English
+        # prompts and leaves room for provider tokenization differences.
+        estimated_input_tokens = max(
+            1,
+            math.ceil(
+                len(json.dumps(request_shape, ensure_ascii=False, default=str).encode("utf-8"))
+                / 2.0
+            ),
+        )
+        _cached_rate, miss_rate, output_rate = _model_token_rates(model, call_at)
+        estimated_input_cost = estimated_input_tokens * miss_rate / 1_000_000
+        output_budget = max(0.0, remaining_cost - estimated_input_cost) * 0.98
+        max_completion_tokens = min(
+            32_768,
+            math.floor(output_budget * 1_000_000 / output_rate),
+        )
+        if max_completion_tokens < 256:
+            raise RuntimeError(
+                "DeepSeek research cost cap would be exceeded before "
+                f"{stage}: ${self.usage.estimated_cost_usd:.4f} already used"
+            )
+        payload["max_tokens"] = max_completion_tokens
         self.progress(f"DeepSeek stage {stage}: {model}")
         response = self.client.chat.completions.create(**payload)
-        self.usage.add(stage=stage, model=model, response=response, at=self.now())
+        self.usage.add(stage=stage, model=model, response=response, at=call_at)
         if self.usage.estimated_cost_usd > self.config.max_cost_usd:
             raise RuntimeError(
                 f"DeepSeek research cost cap exceeded: ${self.usage.estimated_cost_usd:.4f}"
@@ -1141,14 +1171,12 @@ Mandatory economic controls:
 4. Never mix FCFF with cost of equity or FCFE with WACC.
 5. Match trailing peer multiples with trailing subject metrics or forward with forward.
 6. Every positive-weight method needs enough sourced evidence to reproduce it.
-7. Obey the deterministic valuation-method policy below. When it is locked for a profitable
-   non-financial company, return exactly two central methods: one DCF/FCFE at 50% and one forward
-   independently normalized earnings multiple at 50%. Residual income, asset value and management
-   non-GAAP may be discussed only as sensitivities in the final report; they cannot replace either
-   central method. Start normalized earnings from reported GAAP, expense stock compensation, review
-   acquired-intangible amortization and other recurring/non-recurring adjustments explicitly, and
-   bridge to the target period. If an anchor is missing, make a conservative labeled analyst
-   assumption with sensitivity rather than changing the mandated method family.
+7. Select economically appropriate methods and weights independently. Consider three roles:
+   intrinsic (DCF, FCFE, distribution or residual income), relative (a representative normalized
+   metric times a representative multiple), and alternative (SOTP or asset value). Omit an
+   unsupported role and explain why in the report. Do not force a method or a 50/50 split. Every
+   included method must have a positive weight and the weights must sum to 100%. One valid method
+   is acceptable but must be disclosed as an Amber limitation.
 8. Omit every unsupported method entirely, including a nominal zero-weight method. Every method in the
    array must be fully valid, must have positive weight, and positive weights must sum to 100%.
 9. Valuation is forward-looking analysis, so sourced historical/LTM facts may be projected with explicit
@@ -1179,9 +1207,15 @@ Mandatory economic controls:
     year-end is less than roughly ten months away, insert an explicit stub cash flow dated at that year-end
     and prorate it using actual calendar days; then include full-year flows. Never omit the stub by starting
     more than one year after value_date, and never place a full year's cash flow into a short stub.
-16. Before returning the case, compare the two independently calculated method values. Do not force them
-    to agree, but if they differ by more than 2x or imply a target outside 0.1x-5x the frozen market price,
-    rebuild units, dates, shares, and forecast bases before accepting an extraordinary economic conclusion.
+16. Before returning the case, compare independently calculated method values. Do not force them to
+    agree. Recheck units, dates, shares and forecast bases when results are extreme, then retain an
+    extraordinary conclusion with an explicit limitation when the arithmetic and evidence remain valid.
+17. Return investment_amount as one finite number in [-100000, 100000] for a $100,000 notional
+    portfolio, plus an investment_rationale tied to valuation asymmetry, downside and conviction.
+    Allocation quality is independent of target validity.
+18. For SOTP, provide every component value and ownership percentage plus central costs, minority
+    interests, tax leakage, debt and cash as separately evidenced totals. Python will compile the
+    equity bridge and divide by diluted shares exactly once.
 
 Frozen snapshot:
 {json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2)}
@@ -1302,6 +1336,13 @@ Required JSON schema:
             issues.append(
                 f"reference_price must equal frozen snapshot price {snapshot.current_price}"
             )
+        case_currency = str(case.get("currency") or "").strip().upper()
+        snapshot_currency = str(snapshot.quote_currency or "").strip().upper()
+        if snapshot_currency and case_currency != snapshot_currency:
+            issues.append(
+                f"valuation currency {case_currency or '<empty>'} must equal frozen quote currency "
+                f"{snapshot_currency}; FX must be compiled before the per-share target"
+            )
         evidence_rows = case.get("evidence") or []
         evidence_by_id = {
             str(row.get("id") or ""): row
@@ -1341,14 +1382,6 @@ Required JSON schema:
             for method in methods
             if isinstance(method, Mapping) and float(method.get("weight_pct") or 0) > 0
         ]
-        if positive_methods and not any(
-            str(method.get("type") or "") in {"dcf", "fcfe", "residual_income"}
-            for method in positive_methods
-        ):
-            issues.append(
-                "going-concern valuation requires at least one positive-weight income or cash-flow "
-                "method (dcf, fcfe, or residual_income); asset/multiple-only targets are not publishable"
-            )
         evidence_rows = case.get("evidence") or []
         evidence_by_id = {
             str(row.get("id") or ""): row
@@ -1961,6 +1994,22 @@ Draft:
             _write_json(output_dir / "human_review_required.json", review)
         report_path = output_dir / "research_report.md"
         report_path.write_text(report + "\n", encoding="utf-8")
+        part_match = re.search(r"(?im)^#\s+Part\s+II\b", report)
+        if part_match:
+            analysis_report = report[: part_match.start()].rstrip()
+            valuation_report = report[part_match.start() :].strip()
+        else:
+            analysis_report = report.rstrip()
+            valuation_report = self._attach_compiler_control_summary(
+                "# Part II — Comprehensive valuation\n\n"
+                "The narrative valuation section was unavailable; the validated compiler output follows.",
+                valuation_case,
+                compiled,
+            )
+        analysis_path = output_dir / "deep_research_analysis.md"
+        valuation_path = output_dir / "deep_research_valuation.md"
+        analysis_path.write_text(analysis_report + "\n", encoding="utf-8")
+        valuation_path.write_text(valuation_report + "\n", encoding="utf-8")
 
         # The structural gate intentionally trusts retained-source metadata rather
         # than counting arbitrary Markdown links. Mark only exact retained URLs
@@ -2076,4 +2125,7 @@ Draft:
             report_path=report_path,
             manifest_path=manifest_path,
             quality_path=quality_path,
+            analysis_path=analysis_path,
+            valuation_path=valuation_path,
+            compiled_path=output_dir / "valuation_compiled.json",
         )

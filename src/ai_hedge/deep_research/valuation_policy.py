@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any, Mapping
 
 
-POLICY_VERSION = "valuation-method-policy-v2"
+POLICY_VERSION = "valuation-method-policy-v3"
 ANCHOR_PACKET_VERSION = "valuation-anchor-packet-v1"
 COHERENCE_AUDIT_VERSION = "valuation-coherence-audit-v1"
 
@@ -101,13 +101,10 @@ def build_valuation_method_policy(
     classification_text = f"{sector} {industry}".casefold()
     financial = any(signal in classification_text for signal in _FINANCIAL_SIGNALS)
     profit_rows = _positive_reported_profit_rows(evidence)
-    locked = bool(profit_rows and not financial)
     return {
         "version": POLICY_VERSION,
-        "classification": (
-            "profitable_non_financial" if locked else "flexible_special_case"
-        ),
-        "locked": locked,
+        "classification": "model_selected_flexible_roles",
+        "locked": False,
         "classification_inputs": {
             "sector": sector,
             "industry": industry,
@@ -116,24 +113,31 @@ def build_valuation_method_policy(
                 str(row.get("claim_id") or "") for row in profit_rows
             ],
         },
-        "central_methods": (
-            [
-                {
-                    "family": "intrinsic_cash_flow",
-                    "allowed_types": ["dcf", "fcfe"],
-                    "weight_pct": 50.0,
-                },
-                {
-                    "family": "normalized_earnings_multiple",
-                    "allowed_types": ["multiple"],
-                    "weight_pct": 50.0,
-                    "subject_metric_basis": "forward",
-                    "peer_metric_basis": "forward",
-                },
-            ]
-            if locked
-            else []
-        ),
+        "central_methods": [
+            {
+                "role": "intrinsic",
+                "allowed_types": ["dcf", "fcfe", "distribution", "residual_income"],
+                "required": False,
+            },
+            {
+                "role": "relative",
+                "allowed_types": ["multiple"],
+                "required": False,
+            },
+            {
+                "role": "alternative",
+                "allowed_types": ["sotp", "asset"],
+                "required": False,
+            },
+        ],
+        "selection_policy": {
+            "minimum_valid_methods": 1,
+            "preferred_roles": ["intrinsic", "relative", "alternative"],
+            "positive_weights_sum_pct": 100.0,
+            "single_method_status": "amber",
+            "model_selects_methods_and_weights": True,
+            "omit_unsupported_role_with_explanation": True,
+        },
         "earnings_policy": {
             "central_basis": "independently_normalized_forward_earnings",
             "start_from": "reported_GAAP",
@@ -150,12 +154,7 @@ def build_valuation_method_policy(
         },
         "repair_policy": {
             "may_change": ["format", "units", "dates", "evidence links", "arithmetic"],
-            "may_not_change": [
-                "method family",
-                "method weight",
-                "earnings basis",
-                "normalization policy",
-            ],
+            "may_not_change": ["company identity", "currency", "share denominator without evidence"],
         },
     }
 
@@ -411,9 +410,9 @@ def build_valuation_coherence_audit(
     warnings: list[str] = []
     if method_ratio is not None:
         if method_ratio > 2.0:
-            blocking.append(
+            warnings.append(
                 f"central valuation methods differ by {method_ratio:.2f}x; recheck units, timing, "
-                "share denominator, and forecast basis before publishing"
+                "share denominator, and forecast basis; retain as Amber if arithmetic is valid"
             )
         elif method_ratio > 1.5:
             warnings.append(
@@ -421,9 +420,9 @@ def build_valuation_coherence_audit(
             )
     if target_ratio is not None:
         if target_ratio > 5.0 or target_ratio < 0.10:
-            blocking.append(
+            warnings.append(
                 f"compiled target is {target_ratio:.2f}x the frozen reference price; this is outside the "
-                "broad scale sanity band and requires an explicit unit and assumption rebuild"
+                "broad scale sanity band and requires explicit reconciliation and Amber status"
             )
         elif target_ratio > 3.0 or target_ratio < 0.25:
             warnings.append(

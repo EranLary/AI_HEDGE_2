@@ -25,6 +25,7 @@ import {
 } from "@/lib/consensus-components";
 import {
   consensusModelViews,
+  DEEP_RESEARCH_MODEL_NAME,
   SECTOR_WEIGHTED_MODEL_NAME,
   type ConsensusModelView,
 } from "@/lib/consensus-models";
@@ -100,6 +101,8 @@ const CONSENSUS_MODEL_EXPLANATIONS: Record<ConsensusComponentKey, string> = {
     "Uses the simple arithmetic mean across the available valuation-family targets and allocations. Every available family contributes equally to this view.",
   median:
     "Uses the middle valuation-family result (or the average of the two middle results). It is less sensitive to unusually high or low model outputs.",
+  deep_research:
+    "Runs an independent source-grounded research and valuation process that receives raw company evidence but never AI Hedge targets. Python validates and compiles its selected methods, assumptions, weights, target, and optional allocation.",
 };
 
 const MONEY_METRIC_KEYS = new Set([
@@ -1538,6 +1541,8 @@ export function HedgeDashboard({
   const sectorWeightedMethod = methodTabs.find((tab) => tab.name === SECTOR_WEIGHTED_MODEL_NAME) || null;
   const activeMethod: DashboardMethodTab | null = methodTabs.find((m) => m.name === valuationTab) || null;
   const sectorWeightedDreamPersonas = data?.valuation_hub?.sector_weighted_valuation?.dream_team?.personas || [];
+  const deepResearch = data?.valuation_hub?.deep_research_valuation;
+  const hasDeepResearchContract = Boolean(deepResearch);
   const tradingAgentsPayload = data?.trading_agents;
   const tradingAgentsTone = tradingAgentsDecisionTone(
     tradingAgentsPayload?.rating,
@@ -1580,6 +1585,12 @@ export function HedgeDashboard({
     typeof consensus?.sector_weighted_target_price === "number" && Number.isFinite(consensus.sector_weighted_target_price)
       ? Number(consensus.sector_weighted_target_price)
       : null;
+  const consensusDeepResearch =
+    typeof consensus?.deep_research_target_price === "number" && Number.isFinite(consensus.deep_research_target_price)
+      ? Number(consensus.deep_research_target_price)
+      : typeof deepResearch?.target_price === "number" && Number.isFinite(deepResearch.target_price)
+        ? Number(deepResearch.target_price)
+        : null;
   const consensusDecision =
     typeof consensus?.decision_target_price === "number" && Number.isFinite(consensus.decision_target_price)
       ? Number(consensus.decision_target_price)
@@ -1973,6 +1984,12 @@ export function HedgeDashboard({
     typeof scoreCard?.sector_weighted_investment_amount === "number" && Number.isFinite(scoreCard.sector_weighted_investment_amount)
       ? Number(scoreCard.sector_weighted_investment_amount) / NOTIONAL_BASE_USD * 100
       : null;
+  const deepResearchAllocationPct =
+    typeof scoreCard?.deep_research_investment_amount === "number" && Number.isFinite(scoreCard.deep_research_investment_amount)
+      ? Number(scoreCard.deep_research_investment_amount) / NOTIONAL_BASE_USD * 100
+      : typeof deepResearch?.investment_amount === "number" && Number.isFinite(deepResearch.investment_amount)
+        ? Number(deepResearch.investment_amount) / NOTIONAL_BASE_USD * 100
+        : null;
   const decisionAllocationPct =
     typeof scoreCard?.position_size_pct_of_notional === "number" &&
     Number.isFinite(scoreCard.position_size_pct_of_notional)
@@ -1984,21 +2001,28 @@ export function HedgeDashboard({
     mean: typeof consensusMean === "number",
     median: typeof consensusMedian === "number",
     sector_weighted: typeof consensusSectorWeighted === "number",
+    deep_research: typeof consensusDeepResearch === "number",
   });
   const allocationComponentWeights = effectiveConsensusWeights(scoreCard?.allocation_component_weights, {
     mean: typeof meanAllocationPct === "number",
     median: typeof medianAllocationPct === "number",
     sector_weighted: typeof sectorWeightedAllocationPct === "number",
+    deep_research: typeof deepResearchAllocationPct === "number",
   });
   const targetValueByComponent = {
     mean: { value: consensusMeanText, className: consensusMeanClass },
     median: { value: consensusMedianText, className: consensusMedianClass },
     sector_weighted: { value: consensusSectorWeightedText, className: consensusSectorWeightedClass },
+    deep_research: {
+      value: fmtTargetOrFloor(consensusDeepResearch, currencyContext),
+      className: toneClassFromTarget(consensusDeepResearch, consensusCurrent),
+    },
   };
   const allocationValueByComponent = {
     mean: meanAllocationPct,
     median: medianAllocationPct,
     sector_weighted: sectorWeightedAllocationPct,
+    deep_research: deepResearchAllocationPct,
   };
   const activeConsensusTargetChangePct = targetChangePctFromCurrent(
     activeConsensusModel?.targetPrice,
@@ -2030,6 +2054,11 @@ export function HedgeDashboard({
     if (cleanMethod === SECTOR_WEIGHTED_MODEL_NAME) {
       setValuationTab("consensus");
       setConsensusModelTab("sector_weighted");
+      return;
+    }
+    if (cleanMethod === DEEP_RESEARCH_MODEL_NAME) {
+      setValuationTab("consensus");
+      setConsensusModelTab("deep_research");
       return;
     }
     setValuationTab(cleanMethod);
@@ -2477,10 +2506,12 @@ export function HedgeDashboard({
                             Final Consensus
                           </p>
                           <h3 className="mt-1 text-xl font-bold text-[color:var(--text-primary)]">
-                            Three independent views, one decision
+                            {hasDeepResearchContract ? "Four" : "Three"} independent views, one decision
                           </h3>
                           <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-secondary)]">
-                            The target, allocation, and score are blended from Sector-Weighted, Simple Mean, and Median. If a component is unavailable, its positive weight is redistributed proportionally across the available components.
+                            {hasDeepResearchContract
+                              ? "The target and allocation blend Sector-Weighted, Simple Mean, Median, and Deep Research."
+                              : "The target and allocation blend Sector-Weighted, Simple Mean, and Median."} If a component is unavailable, its positive weight is redistributed proportionally across the available components.
                           </p>
                         </div>
                         <div className="rounded-lg border border-[color:var(--consensus-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-right">
@@ -2570,6 +2601,49 @@ export function HedgeDashboard({
                               currentPrice={consensusCurrent}
                               currencyContext={currencyContext}
                             />
+                          </div>
+                        ) : null}
+
+                        {activeConsensusModel.key === "deep_research" ? (
+                          <div className="mt-5 space-y-4">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Status</p>
+                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{deepResearch?.status || "Unavailable"}</p>
+                              </div>
+                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Rating / Horizon</p>
+                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{deepResearch?.rating || "N/A"} · {deepResearch?.horizon || "N/A"}</p>
+                              </div>
+                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Estimated Cost</p>
+                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch?.cost_usd === "number" ? `$${deepResearch.cost_usd.toFixed(4)}` : "N/A"}</p>
+                              </div>
+                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Duration</p>
+                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch?.duration_seconds === "number" ? `${(deepResearch.duration_seconds / 60).toFixed(1)} min` : "N/A"}</p>
+                              </div>
+                            </div>
+                            {deepResearch?.unavailable_reason ? (
+                              <p className="rounded-lg border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-3 text-sm text-[color:var(--warning-text)]">Unavailable: {deepResearch.unavailable_reason}</p>
+                            ) : null}
+                            {deepResearch?.methods?.length ? (
+                              <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
+                                <table className="w-full min-w-[620px] text-left text-xs">
+                                  <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Role</th><th className="p-2">Method</th><th className="p-2 text-right">Value / Share</th><th className="p-2 text-right">Weight</th><th className="p-2 text-right">Contribution</th></tr></thead>
+                                  <tbody>{deepResearch.methods.map((method, index) => <tr key={`${method.label || method.type}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 capitalize">{method.role || "N/A"}</td><td className="p-2">{method.label || method.type || "Method"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.value_per_share, currencyContext)}</td><td className="p-2 text-right font-mono">{typeof method.weight_pct === "number" ? `${method.weight_pct.toFixed(1)}%` : "N/A"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.contribution, currencyContext)}</td></tr>)}</tbody>
+                                </table>
+                              </div>
+                            ) : null}
+                            {deepResearch?.assumptions?.length ? (
+                              <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
+                                <table className="w-full min-w-[760px] text-left text-xs">
+                                  <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Assumption</th><th className="p-2">Method</th><th className="p-2 text-right">Value</th><th className="p-2">Date / Type</th><th className="p-2">Rationale</th></tr></thead>
+                                  <tbody>{deepResearch.assumptions.map((assumption, index) => <tr key={`${assumption.key}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 font-medium">{assumption.label || assumption.key || "Assumption"}</td><td className="p-2">{assumption.method || "N/A"}</td><td className="p-2 text-right font-mono">{String(assumption.value ?? "N/A")} {assumption.unit || ""}</td><td className="p-2">{assumption.date || "N/A"} · {assumption.source_type || "N/A"}</td><td className="p-2 text-[color:var(--text-secondary)]">{assumption.rationale || "N/A"}</td></tr>)}</tbody>
+                                </table>
+                              </div>
+                            ) : null}
+                            {deepResearch?.limitations?.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-[color:var(--text-secondary)]">{deepResearch.limitations.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : null}
                           </div>
                         ) : null}
                       </section>

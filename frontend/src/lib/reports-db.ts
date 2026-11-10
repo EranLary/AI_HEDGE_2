@@ -44,6 +44,8 @@ export interface DbReportFull extends DbReportSummary {
   dashboard: unknown;
   analysis_md: string;
   prices_explain_md: string | null;
+  deep_research_analysis_md: string | null;
+  deep_research_valuation_md: string | null;
   analysis_md_source: "md" | "txt" | "html" | "pdf";
   r2_keys: Record<string, string> | null;
 }
@@ -82,6 +84,7 @@ function isConsensusBasis(value: unknown): value is ConsensusBasis {
     "mean_sector_weighted",
     "median_sector_weighted",
     "sector_weighted_only",
+    "weighted_components_v2",
   ].includes(String(value || ""));
 }
 
@@ -152,6 +155,8 @@ export async function fetchLatestReport(ticker: string, workspace: Workspace = "
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
+           a.deep_research_analysis_md,
+           a.deep_research_valuation_md,
            a.analysis_md_source,
            a.r2_keys
       FROM reports r
@@ -201,6 +206,8 @@ export async function fetchReportById(id: string, workspace: Workspace = "analys
            a.dashboard,
            a.analysis_md,
            a.prices_explain_md,
+           a.deep_research_analysis_md,
+           a.deep_research_valuation_md,
            a.analysis_md_source,
            a.r2_keys
       FROM reports r

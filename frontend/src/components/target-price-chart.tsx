@@ -96,16 +96,29 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       : typeof sectorWeighted?.target_price === "number" && Number.isFinite(sectorWeighted.target_price)
         ? Number(sectorWeighted.target_price)
         : null;
+  const deepResearchTarget =
+    typeof consensus?.deep_research_target_price === "number" && Number.isFinite(consensus.deep_research_target_price)
+      ? Number(consensus.deep_research_target_price)
+      : typeof data?.valuation_hub?.deep_research_valuation?.target_price === "number" &&
+          Number.isFinite(data.valuation_hub.deep_research_valuation.target_price)
+        ? Number(data.valuation_hub.deep_research_valuation.target_price)
+        : null;
+  const hasDeepResearchContract = Object.prototype.hasOwnProperty.call(
+    data?.valuation_hub || {},
+    "deep_research_valuation",
+  );
   const meanTone = targetPriceTone(consensusMean, consensusCurrent);
   const medianTone = targetPriceTone(consensusMedian, consensusCurrent);
   const sectorWeightedTone = targetPriceTone(sectorWeightedTarget, consensusCurrent);
+  const deepResearchTone = targetPriceTone(deepResearchTarget, consensusCurrent);
   const consensusTone = targetPriceTone(consensusDecision, consensusCurrent);
   const targetWeights = effectiveConsensusWeights(consensus?.component_weights, {
     mean: typeof consensusMean === "number",
     median: typeof consensusMedian === "number",
     sector_weighted: typeof sectorWeightedTarget === "number",
+    deep_research: typeof deepResearchTarget === "number",
   });
-  const targetWeight = (key: "mean" | "median" | "sector_weighted") =>
+  const targetWeight = (key: "mean" | "median" | "sector_weighted" | "deep_research") =>
     targetWeights.find((component) => component.key === key)?.weight ?? null;
   const blendLabel = consensusBlendLabel(targetWeights);
 
@@ -136,6 +149,15 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
         performer: methodPerformerByName.get(b.name) || "Model Aggregate",
         investment: b.investment_amount,
       }));
+    if (typeof deepResearchTarget === "number" && !rows.some((row) => row.name === "Deep Research")) {
+      rows.push({
+        name: "Deep Research",
+        target: deepResearchTarget,
+        aboveCurrent: typeof consensusCurrent === "number" ? deepResearchTarget >= consensusCurrent : true,
+        performer: "Independent source-grounded model",
+        investment: data?.valuation_hub?.deep_research_valuation?.investment_amount ?? null,
+      });
+    }
     if (rows.length) {
       if (typeof consensusDecision === "number" && !rows.some((row) => row.name === "Consensus")) {
         rows.push({
@@ -196,6 +218,18 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
       valueClass: TARGET_TONE_CLASS[sectorWeightedTone],
       featured: false,
     },
+    ...(hasDeepResearchContract
+      ? [{
+          key: "deep-research",
+          label: "Deep Research",
+          value: deepResearchTarget,
+          changePct: targetChangePct(deepResearchTarget, consensusCurrent),
+          detail: targetWeight("deep_research") !== null ? `${formatConsensusWeight(targetWeight("deep_research")!)} consensus weight` : "Independent model",
+          detailEmphasis: data?.valuation_hub?.deep_research_valuation?.status || null,
+          valueClass: TARGET_TONE_CLASS[deepResearchTone],
+          featured: false,
+        }]
+      : []),
     {
       key: "consensus",
       label: "Consensus",
@@ -214,6 +248,7 @@ export function TargetPriceChart({ data }: { data: DashboardPayload | null }) {
     if (typeof consensusMean === "number") values.push(consensusMean);
     if (typeof consensusMedian === "number") values.push(consensusMedian);
     if (typeof consensusDecision === "number") values.push(consensusDecision);
+    if (typeof deepResearchTarget === "number") values.push(deepResearchTarget);
     if (!values.length) return { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1], currentEpsilon: 0.001 };
     let min = Math.min(...values);
     let max = Math.max(...values);

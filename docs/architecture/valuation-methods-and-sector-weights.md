@@ -4,7 +4,7 @@
 
 This document describes the valuation families produced by AI Hedge and the active **Sector-Weighted Valuation** policy, version `sector-weighted-v1`. The weights are judgment-based priors informed by model mechanics, persona definitions, and a qualitative cross-sector review of eleven recent reports; they are not yet out-of-sample accuracy estimates.
 
-The sector-weighted model is a separate derived valuation row and tab. It does not enter the original Mean, Median, standard deviation, CV, or LMIL calculations. Dream Team remains one 10% family inside this model, where its family target is a sector-weighted average of valid investor-persona targets. The existing standalone Dream Team row remains an arithmetic mean, preserving the original Mean and Median inputs. P/B is present only for eligible sectors and only when it returns a valid result.
+The sector-weighted model is a separate derived valuation row and tab. It does not enter the original Mean or Median. Deep Research is a fourth independent consensus component: it receives raw evidence but no AI Hedge targets, and its internal methods never enter Mean, Median, or Sector-Weighted. Dream Team remains one 10% family inside Sector-Weighted. P/B is present only for eligible sectors and only when it returns a valid result.
 
 ## Shared conventions
 
@@ -164,13 +164,16 @@ Operational rules:
 7. Keep the unweighted mean, median, dispersion, and individual family targets visible as diagnostics.
 8. Apply persona weights only inside Dream Team. They divide its 10% family envelope and do not add extra weight to the overall target.
 
-The decision consensus uses the same component blend for target price, allocation, and score:
+Policy `consensus-deep-research-v1` uses these configured target weights:
 
-- Mean: 30%.
-- Median: 30%.
-- Sector-Weighted Valuation: 40%.
+- Mean: 24%.
+- Median: 24%.
+- Sector-Weighted Valuation: 32%.
+- Deep Research: 20%.
 
-If a component is unavailable, the remaining component weights are normalized proportionally. For example, Mean plus Sector-Weighted becomes `3/7` and `4/7`. Each component score is `40% allocation + 60% target return`; the three component scores then use the same 30/30/40 blend before the existing confidence factor is applied. Sector-Weighted Valuation never re-enters CV or LMIL.
+If a target component is unavailable, the remaining target weights are normalized proportionally. With no Deep Research, 24/24/32 normalizes exactly to the historical 30/30/40 recipe. Allocations normalize separately across components with valid allocations. The final score is `60% final target return + 40% final allocation`, followed by the existing confidence factor.
+
+Deep Research is excluded from Mean, Median, and Sector-Weighted. It enters price CV once beside the original valuation families and enters LMIL allocation CV once when its allocation is valid. Its intrinsic, relative, and alternative/SOTP submethods are not separate observations. `LMIL[0]` stores the final allocation percentage and `LMIL[1]` the updated allocation CV. The persisted basis is `weighted_components_v2`; the stored effective target and allocation weights are the authoritative recipe for each report.
 
 Canonical and legacy aliases that represent the same family are averaged inside that family before its configured weight is applied. Targets must be finite and positive. Allocations must be finite and inside `[-100000, 100000]`; allocation weights are normalized independently across families that have both a valid target and valid allocation.
 
@@ -180,7 +183,7 @@ The company profile sector is authoritative when it matches one of the eleven po
 
 ### Historical backfill
 
-The shared backfill command is `python scripts/db/backfill_sector_weighted_valuation.py`; it is read-only by default and requires `--apply` to write. It supports workspace/report filters and batching. The backfill preserves the stored Mean, reconstructs a missing Median from original model rows without the derived model, maps legacy aliases, and stores a small snapshot of the pre-backfill consensus and score. It updates only `report_artifacts.dashboard` and the matching summary columns in `reports`. It does not rewrite valuation prose, R2 objects, generation timestamps, release/workspace identity, or portfolio history. Re-running the same policy skips already-current reports unless `--force` is supplied.
+The historical Sector-Weighted backfill remains available for its original policy. Deep Research is never backfilled: only reports generated after this integration can contain its independent evidence, target, allocation, artifacts, and Track Record history. Legacy reports and their stored effective weights remain unchanged.
 
 ## Recent-report qualitative calibration review
 

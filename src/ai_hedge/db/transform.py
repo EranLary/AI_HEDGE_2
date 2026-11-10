@@ -147,6 +147,7 @@ def _pluck_dashboard_fields(dashboard: dict) -> dict:
         "mean_sector_weighted",
         "median_sector_weighted",
         "sector_weighted_only",
+        "weighted_components_v2",
     }:
         consensus_basis = None
     return {
@@ -209,6 +210,12 @@ def ticker_dir_to_row(
     prices_explain_md, _ = _extract_md_with_fallback(
         ticker_dir, ticker, "prices_explain"
     )
+    deep_research_analysis_md, _ = _extract_md_with_fallback(
+        ticker_dir, ticker, "deep_research_analysis"
+    )
+    deep_research_valuation_md, _ = _extract_md_with_fallback(
+        ticker_dir, ticker, "deep_research_valuation"
+    )
 
     generated_at = _parse_generated_at(dashboard.get("generated_at"))
     if generated_at is None:
@@ -270,6 +277,8 @@ def ticker_dir_to_row(
         "analysis_md": analysis_md,
         "prices_explain_md": prices_explain_md,
         "analysis_md_source": analysis_source,
+        "deep_research_analysis_md": deep_research_analysis_md,
+        "deep_research_valuation_md": deep_research_valuation_md,
         "r2_keys": None,
     }
 

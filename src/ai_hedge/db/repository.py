@@ -115,9 +115,11 @@ SELECT id FROM reports
 
 _INSERT_ARTIFACT_SQL = """
 INSERT INTO report_artifacts (
-    report_id, dashboard, analysis_md, prices_explain_md, analysis_md_source, r2_keys
+    report_id, dashboard, analysis_md, prices_explain_md, analysis_md_source,
+    deep_research_analysis_md, deep_research_valuation_md, r2_keys
 ) VALUES (
-    %(report_id)s, %(dashboard)s, %(analysis_md)s, %(prices_explain_md)s, %(analysis_md_source)s, %(r2_keys)s
+    %(report_id)s, %(dashboard)s, %(analysis_md)s, %(prices_explain_md)s, %(analysis_md_source)s,
+    %(deep_research_analysis_md)s, %(deep_research_valuation_md)s, %(r2_keys)s
 );
 """
 
@@ -178,7 +180,8 @@ def get_latest_by_ticker(
            r.consensus_score, r.consensus_basis,
            r.visibility, r.source, r.source_run_id, r.origin_path,
            r.created_at,
-           a.dashboard, a.analysis_md, a.prices_explain_md, a.analysis_md_source
+           a.dashboard, a.analysis_md, a.prices_explain_md, a.analysis_md_source,
+           a.deep_research_analysis_md, a.deep_research_valuation_md
       FROM reports r
       JOIN report_artifacts a ON a.report_id = r.id
       LEFT JOIN report_releases rr ON rr.id = r.release_id

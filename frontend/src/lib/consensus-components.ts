@@ -1,4 +1,4 @@
-export type ConsensusComponentKey = "mean" | "median" | "sector_weighted";
+export type ConsensusComponentKey = "mean" | "median" | "sector_weighted" | "deep_research";
 
 export type ConsensusComponentWeight = {
   key: ConsensusComponentKey;
@@ -7,9 +7,10 @@ export type ConsensusComponentWeight = {
 };
 
 const COMPONENTS: Array<{ key: ConsensusComponentKey; label: string; configured: number }> = [
-  { key: "mean", label: "Mean", configured: 0.3 },
-  { key: "median", label: "Median", configured: 0.3 },
-  { key: "sector_weighted", label: "Sector-Weighted", configured: 0.4 },
+  { key: "mean", label: "Mean", configured: 0.24 },
+  { key: "median", label: "Median", configured: 0.24 },
+  { key: "sector_weighted", label: "Sector-Weighted", configured: 0.32 },
+  { key: "deep_research", label: "Deep Research", configured: 0.2 },
 ];
 
 function finitePositive(value: unknown): number | null {

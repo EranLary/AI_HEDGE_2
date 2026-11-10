@@ -86,6 +86,28 @@ def test_model_self_review_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     assert DeepSeekResearchConfig.from_env().enable_model_review is True
 
 
+def test_model_call_is_rejected_before_it_can_exceed_cost_cap() -> None:
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **_kwargs: pytest.fail("provider call should not run")
+            )
+        )
+    )
+    engine = DeepSeekResearchEngine(
+        config=DeepSeekResearchConfig(max_cost_usd=0.000001),
+        client=client,
+        now=lambda: datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(RuntimeError, match="cost cap would be exceeded"):
+        engine._complete(
+            stage="budget_test",
+            model=DEEPSEEK_PRO_MODEL,
+            messages=[{"role": "user", "content": "x" * 10_000}],
+        )
+
+
 class _FakeSearchClient:
     def news(self, *_args: object, **_kwargs: object) -> list[dict[str, str]]:
         return []
@@ -382,7 +404,7 @@ def test_case_policy_requires_one_year_target_sourced_shares_and_positive_method
     assert any("non-positive weight" in issue for issue in issues)
 
 
-def test_case_policy_rejects_asset_only_going_concern_target() -> None:
+def test_case_policy_allows_one_economically_valid_method_role() -> None:
     snapshot = CompanySnapshot(
         ticker="TEST",
         company_name="Test Inc.",
@@ -406,7 +428,7 @@ def test_case_policy_rejects_asset_only_going_concern_target() -> None:
 
     issues = DeepSeekResearchEngine._case_policy_issues(snapshot, case)
 
-    assert any("income or cash-flow" in issue for issue in issues)
+    assert not any("income or cash-flow" in issue for issue in issues)
 
 
 def test_case_policy_rejects_unscaled_million_share_unit() -> None:
@@ -526,12 +548,16 @@ def _profitable_software_policy() -> dict[str, object]:
     )
 
 
-def test_profitable_non_financial_policy_locks_two_methods_at_50_50() -> None:
+def test_profitable_non_financial_policy_keeps_three_flexible_roles() -> None:
     policy = _profitable_software_policy()
 
-    assert policy["locked"] is True
-    assert policy["classification"] == "profitable_non_financial"
-    assert [row["weight_pct"] for row in policy["central_methods"]] == [50.0, 50.0]
+    assert policy["locked"] is False
+    assert policy["classification"] == "model_selected_flexible_roles"
+    assert [row["role"] for row in policy["central_methods"]] == [
+        "intrinsic",
+        "relative",
+        "alternative",
+    ]
 
 
 def test_financial_company_does_not_receive_generic_two_method_lock() -> None:
@@ -557,10 +583,10 @@ def test_financial_company_does_not_receive_generic_two_method_lock() -> None:
     )
 
     assert policy["locked"] is False
-    assert policy["classification"] == "flexible_special_case"
+    assert policy["classification"] == "model_selected_flexible_roles"
 
 
-def test_locked_policy_rejects_residual_income_substitution_and_wrong_weights() -> None:
+def test_flexible_policy_accepts_model_selected_methods_and_weights() -> None:
     policy = _profitable_software_policy()
     case = {
         "evidence": [
@@ -584,12 +610,10 @@ def test_locked_policy_rejects_residual_income_substitution_and_wrong_weights() 
 
     issues = valuation_method_policy_issues(policy, case)
 
-    assert any("exactly one DCF/FCFE" in issue for issue in issues)
-    assert any("exactly 50%" in issue for issue in issues)
-    assert any("forward basis" in issue for issue in issues)
+    assert issues == []
 
 
-def test_locked_policy_rejects_management_non_gaap_central_earnings() -> None:
+def test_flexible_policy_does_not_hard_reject_reasoned_non_gaap_metric() -> None:
     policy = _profitable_software_policy()
     case = {
         "evidence": [
@@ -613,7 +637,7 @@ def test_locked_policy_rejects_management_non_gaap_central_earnings() -> None:
 
     issues = valuation_method_policy_issues(policy, case)
 
-    assert any("independently reconciled from GAAP" in issue for issue in issues)
+    assert issues == []
 
 
 def test_locked_policy_rejects_absolute_earnings_as_multiple_subject() -> None:
@@ -731,7 +755,7 @@ def test_locked_policy_accepts_actual_day_stub() -> None:
     assert not any("stub" in issue.casefold() for issue in issues)
 
 
-def test_coherence_audit_blocks_scale_error_and_records_fingerprint() -> None:
+def test_coherence_audit_marks_scale_error_amber_and_records_fingerprint() -> None:
     case = {
         "diluted_shares": 20_000_000,
         "evidence": [
@@ -768,9 +792,10 @@ def test_coherence_audit_blocks_scale_error_and_records_fingerprint() -> None:
 
     audit = build_valuation_coherence_audit(case, compiled)
 
-    assert audit["passed"] is False
-    assert any("differ by" in issue for issue in audit["blocking_issues"])
-    assert any("reference price" in issue for issue in audit["blocking_issues"])
+    assert audit["passed"] is True
+    assert audit["blocking_issues"] == []
+    assert any("differ by" in issue for issue in audit["warnings"])
+    assert any("reference price" in issue for issue in audit["warnings"])
     assert audit["fingerprint"]["methods"][1]["subject_metric_unit"] == "USD millions"
 
 
@@ -792,7 +817,7 @@ def test_coherence_audit_warns_but_does_not_block_unusual_market_gap_alone() -> 
     assert any("not blocked solely" in warning for warning in audit["warnings"])
 
 
-def test_repair_cannot_switch_a_valid_fcfe_blueprint_to_dcf() -> None:
+def test_repair_may_switch_method_when_model_rebuilds_economic_case() -> None:
     policy = _profitable_software_policy()
     evidence = [
         {
@@ -830,7 +855,7 @@ def test_repair_cannot_switch_a_valid_fcfe_blueprint_to_dcf() -> None:
 
     issues = repair_method_policy_issues(policy, prior, candidate)
 
-    assert any("cannot switch" in issue for issue in issues)
+    assert issues == []
 
 
 def test_anchor_packet_normalizes_explicit_thousand_share_units() -> None:

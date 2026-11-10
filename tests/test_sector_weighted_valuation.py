@@ -107,7 +107,7 @@ def _dashboard() -> dict:
     }
 
 
-def test_dashboard_adds_model_without_changing_mean_median_and_blends_30_30_40() -> None:
+def test_dashboard_without_deep_research_falls_back_exactly_to_30_30_40() -> None:
     original = _dashboard()
     result = apply_to_dashboard(
         original,
@@ -121,13 +121,17 @@ def test_dashboard_adds_model_without_changing_mean_median_and_blends_30_30_40()
     assert consensus["mean_target_price"] == 120
     assert consensus["median_target_price"] == 110
     assert consensus["decision_target_price"] == pytest.approx(0.3 * 120 + 0.3 * 110 + 0.4 * sector_target)
-    assert consensus["consensus_basis"] == "mean_median_sector_weighted"
-    assert consensus["component_weights"] == {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    assert consensus["consensus_basis"] == "weighted_components_v2"
+    assert consensus["component_weights"] == pytest.approx(
+        {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    )
     assert result["score_card"]["mean_score"] == pytest.approx(16.0)
     assert result["score_card"]["median_score"] == pytest.approx(14.0)
     assert result["score_card"]["sector_weighted_score"] == pytest.approx(16.0)
     assert result["score_card"]["combined_score"] == pytest.approx(15.4)
-    assert result["score_card"]["adjusted_score"] == pytest.approx(12.32)
+    assert result["score_card"]["adjusted_score"] == pytest.approx(
+        result["score_card"]["combined_score"] * result["score_card"]["confidence_factor"]
+    )
     assert [row["name"] for row in result["valuation_hub"]["method_blocks"]].count(MODEL_NAME) == 1
     # Idempotent replacement, never a second derived row.
     again = apply_to_dashboard(result, sector="Technology", sector_source="tickers", provenance="backfill")
@@ -143,4 +147,102 @@ def test_consensus_renormalizes_when_median_is_unavailable() -> None:
     result = apply_to_dashboard(dashboard, sector="Technology", sector_source="test", provenance="generated")
     weights = result["valuation_hub"]["consensus"]["component_weights"]
     assert weights == pytest.approx({"mean": 3 / 7, "sector_weighted": 4 / 7})
-    assert result["valuation_hub"]["consensus"]["consensus_basis"] == "mean_sector_weighted"
+    assert result["valuation_hub"]["consensus"]["consensus_basis"] == "weighted_components_v2"
+
+
+def test_deep_research_gets_20_percent_and_enters_disagreement_once() -> None:
+    result = apply_to_dashboard(
+        _dashboard(),
+        sector="Technology",
+        sector_source="test",
+        provenance="generated",
+        deep_research={
+            "status": "amber",
+            "target_usable": True,
+            "target_price": 150.0,
+            "investment_amount": None,
+            "methods": [
+                {"label": "DCF", "value_per_share": 140.0, "weight_pct": 60.0},
+                {"label": "Multiple", "value_per_share": 165.0, "weight_pct": 40.0},
+            ],
+        },
+    )
+    consensus = result["valuation_hub"]["consensus"]
+    sector_target = result["valuation_hub"]["sector_weighted_valuation"]["target_price"]
+
+    assert consensus["component_weights"] == pytest.approx(
+        {"mean": 0.24, "median": 0.24, "sector_weighted": 0.32, "deep_research": 0.20}
+    )
+    assert consensus["decision_target_price"] == pytest.approx(
+        0.24 * 120 + 0.24 * 110 + 0.32 * sector_target + 0.20 * 150
+    )
+    assert result["score_card"]["allocation_component_weights"] == pytest.approx(
+        {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    )
+    # Three original family targets plus Deep once; its two internal methods are not observations.
+    expected_cv = pytest.approx(
+        __import__("statistics").pstdev([100.0, 120.0, 140.0, 150.0])
+        / ((100.0 + __import__("statistics").fmean([100.0, 120.0, 140.0, 150.0])) / 2.0)
+    )
+    assert consensus["cv"] == expected_cv
+
+
+def test_deep_research_still_participates_when_sector_weighted_is_unavailable() -> None:
+    dashboard = {
+        "header": {"current_price": 100},
+        "valuation_hub": {
+            "method_tabs": [],
+            "method_blocks": [],
+            "consensus": {
+                "current_price": 100,
+                "mean_target_price": 120,
+                "median_target_price": None,
+            },
+        },
+        "score_card": {"mean_investment_amount_raw": 10_000},
+    }
+    result = apply_to_dashboard(
+        dashboard,
+        sector="Technology",
+        sector_source="test",
+        provenance="generated",
+        deep_research={
+            "status": "amber",
+            "target_usable": True,
+            "target_price": 150,
+            "investment_amount": 20_000,
+        },
+    )
+
+    consensus = result["valuation_hub"]["consensus"]
+    assert consensus["component_weights"] == pytest.approx(
+        {"mean": 0.24 / 0.44, "deep_research": 0.20 / 0.44}
+    )
+    assert consensus["decision_target_price"] == pytest.approx(
+        (120 * 0.24 + 150 * 0.20) / 0.44
+    )
+    assert result["valuation_hub"]["deep_research_valuation"]["target_price"] == 150
+    assert "sector_weighted_valuation" not in result["valuation_hub"]
+
+
+def test_unusable_deep_target_cannot_contribute_an_allocation() -> None:
+    result = apply_to_dashboard(
+        _dashboard(),
+        sector="Technology",
+        sector_source="test",
+        provenance="generated",
+        deep_research={
+            "status": "budget_exceeded",
+            "target_usable": False,
+            "target_price": 150,
+            "investment_amount": 100_000,
+        },
+    )
+
+    assert result["valuation_hub"]["consensus"]["component_weights"] == pytest.approx(
+        {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    )
+    assert result["score_card"]["allocation_component_weights"] == pytest.approx(
+        {"mean": 0.3, "median": 0.3, "sector_weighted": 0.4}
+    )
+    assert result["score_card"]["deep_research_investment_amount"] is None

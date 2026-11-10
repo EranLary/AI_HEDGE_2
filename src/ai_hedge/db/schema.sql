@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS reports (
     consensus_score    numeric,
     consensus_basis    text CHECK (consensus_basis IN (
         'mean_median', 'mean_only', 'mean_median_sector_weighted',
-        'mean_sector_weighted', 'median_sector_weighted', 'sector_weighted_only'
+        'mean_sector_weighted', 'median_sector_weighted', 'sector_weighted_only',
+        'weighted_components_v2'
     )),
 
     visibility          text NOT NULL DEFAULT 'public',-- public | private | unlisted
@@ -150,6 +151,8 @@ CREATE TABLE IF NOT EXISTS report_artifacts (
     analysis_md         text  NOT NULL,
     prices_explain_md   text,
     analysis_md_source  text  NOT NULL DEFAULT 'txt',  -- md | txt | html | pdf
+    deep_research_analysis_md text,
+    deep_research_valuation_md text,
     r2_keys             jsonb                          -- {kind: r2_object_key}; NULL until Phase 1
 );
 

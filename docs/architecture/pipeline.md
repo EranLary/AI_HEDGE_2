@@ -27,13 +27,18 @@ portfolio, and trading topology, see `docs/architecture/system-map.md`.
 7. Run complementary Web Search and append its evidence-backed report.
 8. Extract the pre-valuation dashboard sections from analysis, filing, and
    financial context, then persist the exact valuation-input Markdown.
-9. Run the valuation blocks in parallel and aggregate their structured results.
-10. Build Wall St, Financials, and Technical Analysis sidecars; merge final
+9. Launch the isolated Deep Research subprocess from the raw company snapshot;
+   it independently retrieves SEC/MAYA and public evidence while the regular
+   valuation path continues. It never receives AI Hedge targets.
+10. Run the valuation blocks in parallel and aggregate their structured results.
+11. Build Wall St, Financials, and Technical Analysis sidecars; merge final
     analysis sections and the post-valuation TradingAgents decision.
-11. Build and write the final dashboard JSON.
-12. Upload available artifacts through the configured Local/R2 artifact store.
-13. Persist the report catalog, dashboard/text sources, and R2 keys to Neon.
-14. When `AI_GATEWAY_API_KEY` is configured, build a date-redacted, Analysis-only
+12. Collect Deep Research within its 40-minute/$1.50 limits. Timeout, budget, or
+    research failure is recorded as unavailable and does not fail the report.
+13. Build the final dashboard JSON and apply the four-component consensus.
+14. Upload available artifacts through the configured Local/R2 artifact store.
+15. Persist the report catalog, dashboard/text sources, and R2 keys to Neon.
+16. When `AI_GATEWAY_API_KEY` is configured, build a date-redacted, Analysis-only
     evidence pack from complete high-signal sections, submit it to Jev, and
     store seven probabilistic direction forecasts.
     Jev failure is enrichment-only and never changes a successful report into a
@@ -56,7 +61,7 @@ legacy core analysis -----> TradingAgents (parallel)
       pre-valuation extraction
                   |
                   v
-              valuations
+      valuations + Deep Research
                   |
                   v
    sidecars + final dashboard JSON

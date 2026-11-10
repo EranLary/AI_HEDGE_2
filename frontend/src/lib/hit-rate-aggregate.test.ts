@@ -102,6 +102,32 @@ test("Sector-Weighted Valuation participates in the same model hit-rate row", ()
   assert.equal(row.allocations.hits, 1);
 });
 
+test("Deep Research participates once in Track Record and Hit Rate", () => {
+  const payload = basePayload();
+  payload.valuation_hub.consensus.deep_research_target_price = 135;
+  payload.valuation_hub.deep_research_valuation = {
+    status: "amber",
+    target_usable: true,
+    target_price: 135,
+    investment_amount: 15_000,
+  };
+  payload.score_card = {
+    position_size_pct_of_notional: 0,
+    mean_investment_amount: null,
+    deep_research_investment_amount: 15_000,
+    rationale: "",
+  };
+
+  const agg = computeHitRateAggregation(
+    [{ ticker: "TEST", payload }],
+    new Map<string, number | null>([["TEST", 120]]),
+  );
+  const rows = agg.by_model.filter((item) => item.key === "Deep Research");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].targets.hits, 1);
+  assert.equal(rows[0].allocations.hits, 1);
+});
+
 test("Simple Mean and Median receive independent model hit-rate rows", () => {
   const payload = basePayload();
   payload.valuation_hub.consensus.mean_target_price = 130;

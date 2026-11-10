@@ -2,10 +2,12 @@
 numpy>=1.25
 matplotlib>=3.8
 requests>=2.31
+openai>=2.38,<3
 ddgs>=9.15,<10
 yfinance>=0.2.40
 yahooquery>=2.4.1
 html2text>=2024.2.26
+trafilatura>=2.0,<3
 Markdown>=3.6
 weasyprint>=62.0
 python-pptx>=0.6.23

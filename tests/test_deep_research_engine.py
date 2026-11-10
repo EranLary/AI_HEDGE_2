@@ -1216,6 +1216,7 @@ def test_quality_gate_requires_depth_sources_and_valuation_controls() -> None:
             "url": f"https://example.com/{index}",
             "cited": index < 12,
             "consulted": True,
+            "opened": True,
         }
         for index in range(18)
     ]
@@ -1224,6 +1225,31 @@ def test_quality_gate_requires_depth_sources_and_valuation_controls() -> None:
 
     assert result.passed is True
     assert result.score == 100
+
+
+def test_quality_gate_caps_a_compiled_target_with_a_thin_valuation_section() -> None:
+    report = (
+        "# Part I — Research\n"
+        + ("business analysis evidence risk opportunity " * 900)
+        + "\n# Part II — Comprehensive valuation\n"
+        + "## Valuation Control Summary\nSensitivity, diluted shares, target price, upside, equity value."
+    )
+    sources = [
+        {"url": f"https://example.com/{index}", "opened": True, "cited": index < 10}
+        for index in range(18)
+    ]
+    result = evaluate_report_quality(
+        report,
+        sources,
+        valuation_case={"methods": [{"weight_pct": 100}]},
+        compiled={"valid": True},
+    )
+
+    assert result.valuation_word_count < 700
+    assert result.score <= 50
+    assert any(
+        finding.code == "valuation_section_too_short" for finding in result.findings
+    )
 
 
 def test_structured_audit_schema_is_strict_at_every_object_boundary() -> None:

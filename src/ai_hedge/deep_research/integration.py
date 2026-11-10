@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -18,6 +19,37 @@ POLICY_VERSION = "consensus-deep-research-v1"
 CONSENSUS_BASIS = "weighted_components_v2"
 DEFAULT_TIMEOUT_SECONDS = 2400
 DEFAULT_MAX_COST_USD = 1.5
+
+
+def _public_error_text(value: Any, *, fallback: str = "Deep Research unavailable") -> str:
+    """Return a useful failure reason without leaking host paths or secrets."""
+
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    text = re.sub(r"(?i)(?:sk|api)[-_][a-z0-9_-]{12,}", "[redacted credential]", text)
+    text = re.sub(r'File\s+"[^"]+"', 'File "[runtime path]"', text)
+    text = re.sub(r"(?i)\b[A-Z]:\\[^\r\n\"']+", "[local runtime path]", text)
+    text = re.sub(r"(?<![A-Za-z0-9])/(?:app|data|home|tmp|workspace)/[^\s\"']+", "[runtime path]", text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if any(line.casefold().startswith("traceback (") for line in lines):
+        lines = [line for line in lines if not line.casefold().startswith("traceback (")]
+    text = " | ".join(lines[-4:])
+    text = re.sub(r"\s+", " ", text).strip(" |")
+    return text[-800:] if text else fallback
+
+
+def _child_environment() -> dict[str, str]:
+    """Build a self-contained child environment for source-tree deployments."""
+
+    child_env = os.environ.copy()
+    src_root = str(Path(__file__).resolve().parents[2])
+    existing = str(child_env.get("PYTHONPATH") or "").strip()
+    entries = [entry for entry in existing.split(os.pathsep) if entry]
+    if src_root not in entries:
+        entries.insert(0, src_root)
+    child_env["PYTHONPATH"] = os.pathsep.join(entries)
+    return child_env
 
 
 def _boolean_env(name: str, default: bool) -> bool:
@@ -100,18 +132,19 @@ class DeepResearchProcess:
                 return unavailable_summary("failed", f"Invalid Deep Research result: {exc}")
             if isinstance(payload, dict):
                 return payload
-        reason = (stderr or stdout or f"worker exited with code {self.process.returncode}").strip()
-        return unavailable_summary("failed", reason[-2000:])
+        reason = stderr or stdout or f"worker exited with code {self.process.returncode}"
+        return unavailable_summary("failed", reason)
 
 
 def unavailable_summary(status: str, reason: str, **diagnostics: Any) -> dict[str, Any]:
+    safe_reason = _public_error_text(reason)
     return {
         "status": status,
         "target_usable": False,
         "target_price": None,
         "investment_amount": None,
         "investment_pct": None,
-        "unavailable_reason": str(reason or "Deep Research unavailable"),
+        "unavailable_reason": safe_reason,
         "methods": [],
         "assumptions": [],
         "limitations": [],
@@ -121,7 +154,11 @@ def unavailable_summary(status: str, reason: str, **diagnostics: Any) -> dict[st
         "duration_seconds": None,
         "cost_usd": None,
         "artifacts": {},
-        "diagnostics": {key: value for key, value in diagnostics.items() if value},
+        "diagnostics": {
+            key: _public_error_text(value, fallback="")
+            for key, value in diagnostics.items()
+            if value
+        },
     }
 
 
@@ -169,7 +206,7 @@ def start_isolated_research(
         process = subprocess.Popen(
             command,
             cwd=str(Path.cwd()),
-            env=os.environ.copy(),
+            env=_child_environment(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

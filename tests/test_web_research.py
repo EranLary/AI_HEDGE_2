@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ai_hedge import web_research
 
@@ -194,6 +195,7 @@ def test_isolated_web_research_passes_secret_only_through_child_environment(monk
     assert payload == expected
     assert captured["timeout"] == 123
     assert captured["env"]["DEEPSEEK_API_KEY"] == "secret-key"
+    assert str(Path(web_research.__file__).resolve().parents[1]) in captured["env"]["PYTHONPATH"]
     assert "api_key" not in request
     assert request["analysis_text"] == "Completed analysis"
     assert captured["command"][-1] == "ai_hedge.web_research_worker"

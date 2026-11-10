@@ -15,6 +15,7 @@ from ai_hedge.deep_research.deepseek_engine import (
     SourceRepository,
     UsageLedger,
     _parse_json,
+    prime_filing_valuation_excerpts,
     select_valuation_sources,
     review_hard_blockers,
 )
@@ -41,6 +42,74 @@ def test_parse_json_accepts_first_object_before_trailing_content() -> None:
     )
 
     assert payload == {"evidence": [1], "coverage": {}}
+
+
+def test_primary_filing_valuation_excerpts_are_primed_deterministically() -> None:
+    calls: list[tuple[str, str]] = []
+
+    class Repository:
+        def find(self, *, source_id: str, pattern: str) -> None:
+            calls.append((source_id, pattern))
+
+    prime_filing_valuation_excerpts(Repository(), ["S001"])
+
+    assert len(calls) >= 10
+    assert ("S001", "CONSOLIDATED STATEMENTS OF CASH FLOWS") in calls
+    assert ("S001", "segment operating income") in calls
+
+
+def test_compiler_appendix_guarantees_reproducible_part_two() -> None:
+    case = {
+        "reference_price_evidence_id": "PRICE",
+        "diluted_shares_evidence_id": "SHARES",
+        "evidence": [
+            {"id": "PRICE", "value": 40, "unit": "USD/share", "as_of_date": "2026-01-01", "kind": "market_observation", "rationale": "Frozen price"},
+            {"id": "SHARES", "value": 20_000_000, "unit": "shares", "as_of_date": "2026-01-01", "kind": "reported_fact", "rationale": "Diluted shares"},
+            {"id": "EPS", "value": 4, "unit": "USD/share", "as_of_date": "2027-01-01", "kind": "analyst_assumption", "rationale": "Normalized forward EPS"},
+            {"id": "PE", "value": 12, "unit": "x", "as_of_date": "2026-01-01", "kind": "analyst_assumption", "rationale": "Representative multiple"},
+        ],
+        "methods": [
+            {
+                "name": "Forward P/E",
+                "role": "relative",
+                "type": "multiple",
+                "weight_pct": 100,
+                "weight_rationale": "Best supported method.",
+                "subject_metric_basis": "forward",
+                "peer_metric_basis": "forward",
+                "subject_metric_evidence_id": "EPS",
+                "peer_statistic_evidence_id": "PE",
+                "applied_multiple": 12,
+            }
+        ],
+    }
+    compiled = {
+        "valid": True,
+        "compiled": {
+            "currency": "USD",
+            "reference_date": "2026-01-01",
+            "target_date": "2027-01-01",
+            "reference_price": 40,
+            "diluted_shares": 20_000_000,
+            "target_price": 48,
+            "upside_downside_pct": 20,
+            "investment_amount": 10_000,
+            "investment_rationale": "Positive total-return asymmetry.",
+            "methods": [
+                {"name": "Forward P/E", "value_per_share": 48, "weight_pct": 100, "weighted_contribution": 48}
+            ],
+            "limitations": ["Peer evidence is limited."],
+        },
+    }
+
+    report = DeepSeekResearchEngine._attach_compiler_control_summary(
+        "# Part I — Research\nBusiness analysis.", case, compiled
+    )
+
+    assert "# Part II — Comprehensive valuation" in report
+    assert "### Forward P/E — method detail" in report
+    assert "### Valuation evidence ledger" in report
+    assert "Positive total-return asymmetry" in report
 
 
 def test_usage_ledger_prices_peak_pro_tokens() -> None:

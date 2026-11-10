@@ -60,9 +60,12 @@ class QualityGateResult:
     score: int
     word_count: int
     source_count: int
+    opened_source_count: int
     cited_source_count: int
     covered_sections: int
     required_sections: int
+    valuation_word_count: int
+    method_count: int
     findings: tuple[QualityFinding, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -83,12 +86,35 @@ def _normalized_headings(markdown: str) -> str:
 def evaluate_report_quality(
     report: str,
     sources: Iterable[Mapping[str, Any]],
+    *,
+    valuation_case: Mapping[str, Any] | None = None,
+    compiled: Mapping[str, Any] | None = None,
 ) -> QualityGateResult:
     text = str(report or "").strip()
     source_rows = [source for source in sources if isinstance(source, Mapping)]
-    cited_sources = [source for source in source_rows if source.get("cited")]
+    opened_sources = [source for source in source_rows if source.get("opened")]
+    cited_sources = [
+        source for source in opened_sources if source.get("cited")
+    ]
     words = re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE)
     word_count = len(words)
+    part_match = re.search(r"(?im)^#\s+Part\s+II\b", text)
+    valuation_text = text[part_match.start() :] if part_match else ""
+    valuation_word_count = len(
+        re.findall(r"\b[\w'-]+\b", valuation_text, flags=re.UNICODE)
+    )
+    case_methods: list[Mapping[str, Any]] = []
+    for method in (valuation_case or {}).get("methods") or []:
+        if not isinstance(method, Mapping):
+            continue
+        try:
+            weight = float(method.get("weight_pct") or 0)
+        except (TypeError, ValueError):
+            weight = 0.0
+        if weight > 0:
+            case_methods.append(method)
+    method_count = len(case_methods)
+    compiled_valid = bool((compiled or {}).get("valid"))
     headings = _normalized_headings(text)
     covered = sum(1 for marker in _SECTION_MARKERS if marker in headings)
     valuation_coverage = sum(
@@ -120,15 +146,24 @@ def evaluate_report_quality(
         )
         score -= 8
 
-    if len(source_rows) < 15:
+    if len(opened_sources) < 12:
         findings.append(
             QualityFinding(
                 "warning",
-                "insufficient_sources",
-                f"Only {len(source_rows)} unique web sources were retained; minimum is 15.",
+                "insufficient_opened_sources",
+                f"Only {len(opened_sources)} unique sources were opened; minimum is 12.",
             )
         )
         score -= 20
+    elif len(opened_sources) < 15:
+        findings.append(
+            QualityFinding(
+                "warning",
+                "limited_opened_sources",
+                f"Only {len(opened_sources)} unique sources were opened; quality target is 15.",
+            )
+        )
+        score -= 8
     if len(cited_sources) < 10:
         findings.append(
             QualityFinding(
@@ -174,6 +209,35 @@ def evaluate_report_quality(
         )
         score -= 20
 
+    if compiled_valid and valuation_word_count < 700:
+        findings.append(
+            QualityFinding(
+                "warning",
+                "valuation_section_too_short",
+                f"Part II has only {valuation_word_count} words; a compiled target needs at least 700 words of reproducible valuation detail.",
+            )
+        )
+        score -= 25
+    elif compiled_valid and valuation_word_count < 1_200:
+        findings.append(
+            QualityFinding(
+                "warning",
+                "limited_valuation_depth",
+                f"Part II has {valuation_word_count} words; quality target is at least 1,200.",
+            )
+        )
+        score -= 12
+
+    if compiled_valid and method_count == 1:
+        findings.append(
+            QualityFinding(
+                "warning",
+                "single_method_valuation",
+                "The compiled target relies on one valid method; the target remains usable but is Amber.",
+            )
+        )
+        score -= 5
+
     if "valuation control summary" not in headings:
         findings.append(
             QualityFinding(
@@ -204,9 +268,12 @@ def evaluate_report_quality(
         score=score,
         word_count=word_count,
         source_count=len(source_rows),
+        opened_source_count=len(opened_sources),
         cited_source_count=len(cited_sources),
         covered_sections=covered,
         required_sections=len(_SECTION_MARKERS),
+        valuation_word_count=valuation_word_count,
+        method_count=method_count,
         findings=tuple(findings),
     )
 
@@ -216,13 +283,32 @@ def evaluate_run_artifacts(
     *,
     report_filename: str = "research_report.md",
     sources_filename: str = "research_sources.json",
+    valuation_case_filename: str = "valuation_case.json",
+    compiled_filename: str = "valuation_compiled.json",
 ) -> QualityGateResult:
     report_path = Path(output_dir) / report_filename
     sources_path = Path(output_dir) / sources_filename
     report = report_path.read_text(encoding="utf-8")
     payload = json.loads(sources_path.read_text(encoding="utf-8"))
     sources = payload.get("sources") if isinstance(payload, Mapping) else []
-    return evaluate_report_quality(report, sources or [])
+    valuation_case_path = Path(output_dir) / valuation_case_filename
+    compiled_path = Path(output_dir) / compiled_filename
+    valuation_case = (
+        json.loads(valuation_case_path.read_text(encoding="utf-8"))
+        if valuation_case_path.exists()
+        else {}
+    )
+    compiled = (
+        json.loads(compiled_path.read_text(encoding="utf-8"))
+        if compiled_path.exists()
+        else {}
+    )
+    return evaluate_report_quality(
+        report,
+        sources or [],
+        valuation_case=valuation_case,
+        compiled=compiled,
+    )
 
 
 def write_quality_report(

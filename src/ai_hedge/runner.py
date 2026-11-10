@@ -1836,6 +1836,7 @@ def _run_ticker_valuation_impl(
         from .deep_research.integration import (
             snapshot_from_platform_inputs,
             start_isolated_research,
+            unavailable_summary,
         )
 
         deep_snapshot = snapshot_from_platform_inputs(ticker, info_dict)
@@ -1845,8 +1846,11 @@ def _run_ticker_valuation_impl(
         )
         _append_progress(progress_file, "Started independent Deep Research valuation")
     except Exception as deep_start_exc:  # noqa: BLE001
-        deep_research_payload["unavailable_reason"] = (
-            f"Deep Research failed to start: {type(deep_start_exc).__name__}: {deep_start_exc}"
+        from .deep_research.integration import unavailable_summary
+
+        deep_research_payload = unavailable_summary(
+            "failed",
+            f"Deep Research failed to start: {type(deep_start_exc).__name__}: {deep_start_exc}",
         )
 
     text = legacy.load_text_from_file(legacy.ANALYSIS_MARKDOWN_FILE)
@@ -2473,18 +2477,13 @@ def _run_ticker_valuation_impl(
             deep_research_analysis_md = stable_artifacts.get("analysis", "")
             deep_research_valuation_md = stable_artifacts.get("valuation", "")
         except Exception as deep_collect_exc:  # noqa: BLE001
-            deep_research_payload = {
-                "status": "failed",
-                "target_usable": False,
-                "target_price": None,
-                "investment_amount": None,
-                "unavailable_reason": (
-                    f"Deep Research collection failed: {type(deep_collect_exc).__name__}: "
-                    f"{deep_collect_exc}"
-                ),
-                "methods": [],
-                "assumptions": [],
-            }
+            from .deep_research.integration import unavailable_summary
+
+            deep_research_payload = unavailable_summary(
+                "failed",
+                f"Deep Research collection failed: {type(deep_collect_exc).__name__}: "
+                f"{deep_collect_exc}",
+            )
     _append_progress(
         progress_file,
         f"Finished independent Deep Research valuation: {deep_research_payload.get('status')}",

@@ -1589,6 +1589,7 @@ Required JSON schema:
         compiled_ok: bool,
         draft: Optional[str] = None,
         review: Optional[Mapping[str, Any]] = None,
+        deadline: Optional[float] = None,
     ) -> str:
         valuation_instruction = (
             "The deterministic valuation compiler passed. Use every compiled numeric output exactly; "
@@ -1659,18 +1660,37 @@ Prior draft to correct (empty on first pass):
 Pre-publication review issues that must all be fixed:
 {json.dumps(review or {}, ensure_ascii=False)}
 """.strip()
-        response = self._complete(
-            stage="final_report" if not draft else "final_report_repair",
-            model=self.config.controller_model,
-            messages=[
-                {"role": "system", "content": DEVELOPER_INSTRUCTIONS},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        report = self._content(response)
-        if not report:
-            raise RuntimeError("DeepSeek returned an empty final report")
-        return self._attach_compiler_control_summary(report, valuation_case, compiled)
+        base_stage = "final_report" if not draft else "final_report_repair"
+        messages = [
+            {"role": "system", "content": DEVELOPER_INSTRUCTIONS},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(2):
+            if attempt:
+                if deadline is not None:
+                    self._require_time(deadline, "empty final report recovery")
+                messages = [
+                    *messages,
+                    {
+                        "role": "user",
+                        "content": (
+                            "The prior completion returned no report content. Return the complete "
+                            "Markdown report now. Do not return an empty response, tool call, or "
+                            "commentary about the task."
+                        ),
+                    },
+                ]
+            response = self._complete(
+                stage=base_stage if attempt == 0 else f"{base_stage}_empty_retry",
+                model=self.config.controller_model,
+                messages=messages,
+            )
+            report = self._content(response)
+            if report:
+                return self._attach_compiler_control_summary(
+                    report, valuation_case, compiled
+                )
+        raise RuntimeError("DeepSeek returned an empty final report after one retry")
 
     @staticmethod
     def _attach_compiler_control_summary(
@@ -2011,6 +2031,55 @@ Draft:
         )
         output_dir = Path(output_root).resolve() / "deepseek" / snapshot.ticker / run_id
         output_dir.mkdir(parents=True, exist_ok=False)
+        try:
+            return self._run(
+                snapshot,
+                output_dir=output_dir,
+                run_id=run_id,
+                started_at=started_at,
+            )
+        except Exception as exc:
+            completed_at = self.now()
+            safe_message = re.sub(
+                r"(?i)(?:sk|api)[-_][a-z0-9_-]{12,}",
+                "[redacted credential]",
+                str(exc),
+            ).strip()
+            _write_json(
+                output_dir / "research_manifest.json",
+                {
+                    "engine": ENGINE_VERSION,
+                    "engine_contract_version": 1,
+                    "provider": "deepseek",
+                    "run_id": run_id,
+                    "ticker": snapshot.ticker,
+                    "company_name": snapshot.company_name,
+                    "status": "failed",
+                    "started_at": _iso(started_at),
+                    "completed_at": _iso(completed_at),
+                    "duration_seconds": round(
+                        (completed_at - started_at).total_seconds(), 3
+                    ),
+                    "controller_model": self.config.controller_model,
+                    "helper_model": self.config.helper_model,
+                    "limits": _jsonable(self.config),
+                    "usage_and_cost": self.usage.to_dict(),
+                    "failure": {
+                        "type": type(exc).__name__,
+                        "message": safe_message[-800:],
+                    },
+                },
+            )
+            raise
+
+    def _run(
+        self,
+        snapshot: CompanySnapshot,
+        *,
+        output_dir: Path,
+        run_id: str,
+        started_at: datetime,
+    ) -> DeepSeekResearchResult:
         input_packet: ResearchInputPacket = build_research_input_packet(snapshot)
         input_payload = input_packet.to_dict()
         mandate = (
@@ -2168,6 +2237,7 @@ Draft:
             compiled=compiled,
             valuation_case=valuation_case,
             compiled_ok=compiled_ok,
+            deadline=deadline,
         )
         structure_issues = self._report_structure_issues(report)
         if structure_issues:
@@ -2197,6 +2267,7 @@ Draft:
                     ],
                     "minor_issues": [],
                 },
+                deadline=deadline,
             )
         review: dict[str, Any] = {
             "publishable": False,
@@ -2236,6 +2307,7 @@ Draft:
                     compiled_ok=True,
                     draft=report,
                     review=review,
+                    deadline=deadline,
                 )
                 self._require_time(deadline, "final pre-publication review")
                 review = self._review_report(

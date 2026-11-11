@@ -7,10 +7,13 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from ai_hedge.deep_research.integration import (
     DeepResearchProcess,
     _child_environment,
     build_summary,
+    failed_run_summary,
     snapshot_from_platform_inputs,
     unavailable_summary,
 )
@@ -148,4 +151,40 @@ def test_unavailable_summary_redacts_runtime_paths_and_credentials() -> None:
     assert "/app/src" not in rendered
     assert "abcdefghijklmnop" not in rendered
     assert "RuntimeError" in payload["unavailable_reason"]
+
+
+def test_failed_run_summary_preserves_cost_duration_and_partial_artifacts(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "deepseek" / "TEST" / "run-1"
+    run_dir.mkdir(parents=True)
+    _write_json(
+        run_dir / "research_manifest.json",
+        {
+            "status": "failed",
+            "duration_seconds": 321.5,
+            "controller_model": "deepseek-reasoner",
+            "helper_model": "deepseek-chat",
+            "usage_and_cost": {
+                "estimated_cost_usd": 0.42,
+                "calls": [{"stage": "final_report_empty_retry"}],
+            },
+        },
+    )
+    _write_json(run_dir / "valuation_compiled.json", {"valid": True})
+
+    payload = failed_run_summary(
+        output_root=tmp_path,
+        ticker="TEST",
+        status="failed",
+        reason="RuntimeError: empty report",
+    )
+
+    assert payload["target_usable"] is False
+    assert payload["duration_seconds"] == pytest.approx(321.5)
+    assert payload["cost_usd"] == pytest.approx(0.42)
+    assert payload["models"]["controller"] == "deepseek-reasoner"
+    assert payload["artifacts"]["manifest"].endswith("research_manifest.json")
+    assert payload["artifacts"]["compiled_result"].endswith("valuation_compiled.json")
+    assert payload["diagnostics"]["last_completed_stage"] == "final_report_empty_retry"
 

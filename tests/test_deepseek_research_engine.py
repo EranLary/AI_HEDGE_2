@@ -27,6 +27,7 @@ from ai_hedge.deep_research.valuation_policy import (
     build_canonical_valuation_anchors,
     build_valuation_method_policy,
     repair_method_policy_issues,
+    valuation_case_integrity_issues,
     valuation_method_policy_issues,
 )
 
@@ -822,6 +823,64 @@ def test_locked_policy_accepts_actual_day_stub() -> None:
     issues = valuation_method_policy_issues(policy, case)
 
     assert not any("stub" in issue.casefold() for issue in issues)
+
+
+def test_integrity_rejects_terminal_value_inside_explicit_fcfe_row() -> None:
+    case = {
+        "evidence": [],
+        "methods": [
+            {
+                "value_date": "2027-11-10",
+                "type": "fcfe",
+                "weight_pct": 100.0,
+                "cash_flows_per_share": [
+                    {
+                        "date": "2028-12-31",
+                        "amount": 4.159,
+                        "rationale": "FY2028 recurring FCFE per share.",
+                    },
+                    {
+                        "date": "2029-12-31",
+                        "amount": 76.814,
+                        "rationale": "FY2029 FCFE plus terminal value of $72 per share.",
+                    },
+                ],
+            }
+        ],
+    }
+
+    issues = valuation_case_integrity_issues(case)
+
+    assert any("compiler calculates terminal value separately" in issue for issue in issues)
+
+
+def test_report_structure_detects_the_truncated_itron_shape() -> None:
+    report = "**Rating: MODERATE BUY\n\n# Part II — Comprehensive valuation\n\nTarget price."
+
+    issues = DeepSeekResearchEngine._report_structure_issues(report)
+
+    assert any("Part I" in issue for issue in issues)
+    assert any("Part II" in issue for issue in issues)
+    assert any("opened sources" in issue for issue in issues)
+
+
+def test_report_structure_accepts_a_complete_report() -> None:
+    links = "\n".join(
+        f"[Source {index}](https://example.com/{index})" for index in range(8)
+    )
+    headings = "\n".join(f"## Analysis section {index}" for index in range(11))
+    report = (
+        "# Part I — Fundamental analysis\n\n"
+        + headings
+        + "\n\n"
+        + ("analysis evidence " * 1_300)
+        + "\n\n"
+        + links
+        + "\n\n# Part II — Comprehensive valuation\n\n"
+        + ("valuation detail " * 500)
+    )
+
+    assert DeepSeekResearchEngine._report_structure_issues(report) == []
 
 
 def test_coherence_audit_marks_scale_error_amber_and_records_fingerprint() -> None:

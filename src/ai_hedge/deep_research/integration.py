@@ -19,7 +19,6 @@ POLICY_VERSION = "consensus-deep-research-v1"
 CONSENSUS_BASIS = "weighted_components_v2"
 DEFAULT_TIMEOUT_SECONDS = 2400
 DEFAULT_MAX_COST_USD = 1.5
-# This no-op marker exists only to provision the temporary Fly end-to-end test preview.
 
 
 def _public_error_text(value: Any, *, fallback: str = "Deep Research unavailable") -> str:

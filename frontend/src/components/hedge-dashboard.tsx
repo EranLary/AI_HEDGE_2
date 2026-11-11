@@ -2138,6 +2138,14 @@ export function HedgeDashboard({
     Number.isFinite(consensus.configured_component_weights.deep_research)
       ? Number(consensus.configured_component_weights.deep_research)
       : 0.2;
+  const deepResearchTargetPrice =
+    typeof deepResearchModel?.targetPrice === "number" && Number.isFinite(deepResearchModel.targetPrice)
+      ? deepResearchModel.targetPrice
+      : null;
+  const deepResearchTargetChangePct = targetChangePctFromCurrent(
+    deepResearchTargetPrice,
+    consensusCurrent,
+  );
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
@@ -2627,12 +2635,14 @@ export function HedgeDashboard({
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
                           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Target Price</p>
-                          <p className={`mt-1 text-2xl font-bold ${toneClassFromTarget(deepResearchModel?.targetPrice, consensusCurrent)}`}>
-                            {fmtTargetOrFloor(deepResearchModel?.targetPrice, currencyContext)}
+                          <p className={`mt-1 text-2xl font-bold ${toneClassFromTarget(deepResearchTargetPrice, consensusCurrent)}`}>
+                            {deepResearchTargetPrice !== null
+                              ? fmtTargetOrFloor(deepResearchTargetPrice, currencyContext)
+                              : "N/A"}
                           </p>
-                          <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent))}`}>
-                            {typeof targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent) === "number"
-                              ? `${fmtPct(targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent))} vs current`
+                          <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(deepResearchTargetChangePct)}`}>
+                            {typeof deepResearchTargetChangePct === "number"
+                              ? `${fmtPct(deepResearchTargetChangePct)} vs current`
                               : "Not included in consensus"}
                           </p>
                         </div>

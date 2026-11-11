@@ -1911,6 +1911,50 @@ Pre-publication review issues that must all be fixed:
         lines.append(end)
         return f"{clean_report}\n\n" + "\n".join(lines)
 
+    @staticmethod
+    def _report_structure_issues(report: str) -> list[str]:
+        """Return focused repair instructions for a materially incomplete final report."""
+
+        text = str(report or "").strip()
+        part_match = re.search(r"(?im)^#\s+Part\s+II\b", text)
+        analysis_text = text[: part_match.start()] if part_match else text
+        valuation_text = text[part_match.start() :] if part_match else ""
+        word_pattern = r"\b[\w'-]+\b"
+        total_words = len(re.findall(word_pattern, text, flags=re.UNICODE))
+        analysis_words = len(re.findall(word_pattern, analysis_text, flags=re.UNICODE))
+        valuation_words = len(re.findall(word_pattern, valuation_text, flags=re.UNICODE))
+        headings = sum(
+            1 for line in text.splitlines() if re.match(r"^#{1,4}\s+\S", line.strip())
+        )
+        links = len(set(re.findall(r"\[[^\]]+\]\((https?://[^)]+)\)", text)))
+        issues: list[str] = []
+        if total_words < 3_500:
+            issues.append(
+                f"expand the complete report from {total_words} to at least 3,500 words"
+            )
+        if analysis_words < 2_000:
+            issues.append(
+                f"write a substantive Part I fundamental analysis of at least 2,000 words; "
+                f"the draft has {analysis_words}"
+            )
+        if not part_match:
+            issues.append("include an explicit '# Part II' valuation section")
+        elif valuation_words < 900:
+            issues.append(
+                f"expand Part II to at least 900 words of reproducible valuation detail; "
+                f"the draft has {valuation_words}"
+            )
+        if headings < 12:
+            issues.append(
+                f"restore the mandated analytical section headings; only {headings} were found"
+            )
+        if links < 8:
+            issues.append(
+                f"cite at least 8 distinct opened sources with inline Markdown links; "
+                f"the draft cites {links}"
+            )
+        return issues
+
     def _review_report(
         self,
         *,
@@ -2125,6 +2169,35 @@ Draft:
             valuation_case=valuation_case,
             compiled_ok=compiled_ok,
         )
+        structure_issues = self._report_structure_issues(report)
+        if structure_issues:
+            (output_dir / "research_report_structural_draft.md").write_text(
+                report + "\n", encoding="utf-8"
+            )
+            self._require_time(deadline, "structural final report repair")
+            report = self._write_report(
+                snapshot=snapshot,
+                mandate=mandate,
+                plan=plan,
+                evidence=evidence,
+                source_packet=source_packet,
+                compiled=compiled,
+                valuation_case=valuation_case,
+                compiled_ok=compiled_ok,
+                draft=report,
+                review={
+                    "publishable": False,
+                    "major_issues": [
+                        {
+                            "category": "report_structure",
+                            "description": issue,
+                            "correction": issue,
+                        }
+                        for issue in structure_issues
+                    ],
+                    "minor_issues": [],
+                },
+            )
         review: dict[str, Any] = {
             "publishable": False,
             "major_issues": [

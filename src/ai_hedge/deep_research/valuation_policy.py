@@ -255,6 +255,22 @@ def valuation_case_integrity_issues(case: Mapping[str, Any]) -> list[str]:
             for flow in method.get("cash_flows_per_share") or []
             if isinstance(flow, Mapping)
         ]
+        for position, flow in enumerate(flows, start=1):
+            rationale = str(flow.get("rationale") or "").casefold()
+            if any(
+                marker in rationale
+                for marker in (
+                    "terminal value",
+                    "continuing value",
+                    "perpetuity value",
+                    "value of perpetuity",
+                )
+            ):
+                issues.append(
+                    f"DCF/FCFE explicit cash flow {position} embeds a terminal or continuing "
+                    "value; supply only the period cash flow because the deterministic compiler "
+                    "calculates terminal value separately"
+                )
         try:
             value_date = date.fromisoformat(str(method.get("value_date") or "")[:10])
         except ValueError:

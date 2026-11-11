@@ -63,7 +63,8 @@ of these contracts:
 3. Every analyst assumption needs a concise economic rationale. It must not pretend to be sourced fact.
 4. For DCF/FCFE, provide explicit cash_flows_per_share after the target date, a sourced or reasoned terminal
    growth rate, and a reproducible discount rate. Do not put EPS in cash_flows_per_share unless it is
-   explicitly converted to distributable FCFE.
+   explicitly converted to distributable FCFE. Each row contains only that period's recurring cash flow;
+   never add terminal, continuing, or perpetuity value because Python calculates terminal value separately.
 5. For residual income, make beginning book equity and every forecast period consistent with target_date;
    include net income, dividends, terminal ROE, and a bridge from final explicit ROE to terminal ROE.
 6. For multiples, use at least three individually sourced same-period peer multiples when available. Put

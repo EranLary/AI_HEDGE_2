@@ -257,7 +257,9 @@ fact, use an empty string or null where the schema permits it; the deterministic
 Rules:
 1. All monetary totals used by residual income must use one consistent unit; record that unit in evidence.
 2. DCF/FCFE cash_flows_per_share must contain explicit forecast cash flows per share, not earnings unless
-   the report explicitly defines them as distributable FCFE.
+   the report explicitly defines them as distributable FCFE. Each row is a single-period cash flow only:
+   never include terminal value, continuing value, or a perpetuity in a forecast row because the
+   deterministic compiler calculates terminal value separately.
 3. Every non-assumption evidence item needs the exact supporting URL. Do not substitute a generic home page.
 4. Every analyst assumption needs a concise economic rationale and no fabricated source URL.
 5. value_date is the date on which each method's value applies. target_date is the common date claimed by

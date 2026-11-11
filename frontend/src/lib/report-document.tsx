@@ -19,7 +19,9 @@ const DEEP_RESEARCH_INDEPENDENCE_NOTE =
   "> Deep Research is an independent, source-grounded model. It receives raw company evidence but not AI Hedge targets; when valid, its compiled target and allocation receive a 20% policy weight in the final consensus.";
 
 function deepResearchSection(markdown: string | null | undefined, title: string): string {
-  const body = String(markdown || "").trim();
+  const body = String(markdown || "")
+    .replace(/<!--\s*COMPILER_CONTROL_SUMMARY_(?:START|END)\s*-->/gi, "")
+    .trim();
   if (!body) return "";
   return [`# ${title}`, "", DEEP_RESEARCH_INDEPENDENCE_NOTE, "", nestMarkdownUnderSection(body)].join("\n");
 }

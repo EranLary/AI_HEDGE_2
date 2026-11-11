@@ -301,7 +301,13 @@ test("Deep Research parts are placed once in Analysis, Valuation, and Combined d
     analysisMd: "# Analysis\n\nPlatform analysis.",
     pricesExplainMd: "# Valuation\n\nPlatform valuation.",
     deepResearchAnalysisMd: "# Part I\n\nIndependent fundamental evidence.",
-    deepResearchValuationMd: "# Part II\n\nCompiled independent target.",
+    deepResearchValuationMd: [
+      "# Part II",
+      "",
+      "<!-- COMPILER_CONTROL_SUMMARY_START -->",
+      "Compiled independent target.",
+      "<!-- COMPILER_CONTROL_SUMMARY_END -->",
+    ].join("\n"),
     dashboard: historicalDashboard,
   };
   const analysis = buildReportMarkdown(source, "analysis").markdown;
@@ -317,6 +323,9 @@ test("Deep Research parts are placed once in Analysis, Valuation, and Combined d
   assert.equal((combined.match(/Independent fundamental evidence/g) || []).length, 1);
   assert.equal((combined.match(/Compiled independent target/g) || []).length, 1);
   assert.equal((combined.match(/source-grounded model/g) || []).length, 2);
+  for (const markdown of [valuation, combined]) {
+    assert.doesNotMatch(markdown, /COMPILER_CONTROL_SUMMARY/);
+  }
 });
 
 test("report Markdown has one H1 and no structural headings deeper than H3", () => {

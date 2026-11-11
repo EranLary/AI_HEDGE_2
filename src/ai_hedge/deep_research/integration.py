@@ -17,7 +17,7 @@ from .snapshot import CompanySnapshot
 
 POLICY_VERSION = "consensus-deep-research-v1"
 CONSENSUS_BASIS = "weighted_components_v2"
-DEFAULT_TIMEOUT_SECONDS = 2400
+DEFAULT_TIMEOUT_SECONDS = 3600
 DEFAULT_MAX_COST_USD = 1.5
 
 

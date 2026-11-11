@@ -37,6 +37,9 @@ import {
 } from "@/lib/trading-agents";
 
 type MainTab = "valuation" | "executive" | "bull" | "bear" | "values";
+type DeepResearchValuation = NonNullable<
+  NonNullable<DashboardPayload["valuation_hub"]>["deep_research_valuation"]
+>;
 
 export type HedgeDashboardProps = {
   tickerOverride?: string;
@@ -512,6 +515,101 @@ function Tab({
         <span>{label}</span>
       </span>
     </button>
+  );
+}
+
+function DeepResearchDetails({
+  deepResearch,
+  currencyContext,
+}: {
+  deepResearch: DeepResearchValuation;
+  currencyContext: CurrencyContext;
+}) {
+  const quality = deepResearch.quality && typeof deepResearch.quality === "object"
+    ? deepResearch.quality
+    : {};
+  const researchQualityRaw = quality.research_quality;
+  const researchQuality = researchQualityRaw && typeof researchQualityRaw === "object" && !Array.isArray(researchQualityRaw)
+    ? researchQualityRaw as Record<string, unknown>
+    : {};
+  const valuationQualityRaw = quality.valuation_quality;
+  const valuationQuality = valuationQualityRaw && typeof valuationQualityRaw === "object" && !Array.isArray(valuationQualityRaw)
+    ? valuationQualityRaw as Record<string, unknown>
+    : {};
+  const majorIssues = Array.isArray(valuationQuality.major_issues)
+    ? valuationQuality.major_issues.filter((issue): issue is Record<string, unknown> => Boolean(issue && typeof issue === "object" && !Array.isArray(issue)))
+    : [];
+  const compilerPassed = typeof valuationQuality.compiler_passed === "boolean"
+    ? valuationQuality.compiler_passed
+    : null;
+  const researchScore = typeof researchQuality.score === "number" && Number.isFinite(researchQuality.score)
+    ? researchQuality.score
+    : null;
+  const noTargetExplanation = !deepResearch.target_usable && !deepResearch.unavailable_reason
+    ? majorIssues.map((issue) => String(issue.description || issue.correction || "").trim()).filter(Boolean)
+    : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Status</p>
+          <p className="mt-1 font-semibold capitalize text-[color:var(--text-primary)]">{deepResearch.status || "Unavailable"}</p>
+        </div>
+        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Rating / Horizon</p>
+          <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{deepResearch.rating || "N/A"} · {deepResearch.horizon || "N/A"}</p>
+        </div>
+        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Research Quality</p>
+          <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{researchScore !== null ? `${researchScore.toFixed(0)}/100` : "N/A"}</p>
+        </div>
+        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Estimated Cost</p>
+          <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch.cost_usd === "number" ? `$${deepResearch.cost_usd.toFixed(4)}` : "N/A"}</p>
+        </div>
+        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Duration</p>
+          <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch.duration_seconds === "number" ? `${(deepResearch.duration_seconds / 60).toFixed(1)} min` : "N/A"}</p>
+        </div>
+      </div>
+
+      {deepResearch.unavailable_reason ? (
+        <p className="rounded-lg border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-3 text-sm text-[color:var(--warning-text)]">
+          Unavailable: {deepResearch.unavailable_reason}
+        </p>
+      ) : null}
+      {noTargetExplanation.length ? (
+        <div className="rounded-lg border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-3 text-sm text-[color:var(--warning-text)]">
+          <p className="font-semibold">Why no target was published</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {noTargetExplanation.map((issue, index) => <li key={`${issue}-${index}`}>{issue}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      <p className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface)] p-3 text-sm leading-relaxed text-[color:var(--text-secondary)]">
+        The research model is independent from AI Hedge targets. Its valuation is accepted only when the deterministic compiler can reproduce a valid positive target. Compiler status: {compilerPassed === null ? "N/A" : compilerPassed ? "passed" : "failed"}.
+      </p>
+
+      {deepResearch.methods?.length ? (
+        <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
+          <table className="w-full min-w-[620px] text-left text-xs">
+            <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Role</th><th className="p-2">Method</th><th className="p-2 text-right">Value / Share</th><th className="p-2 text-right">Weight</th><th className="p-2 text-right">Contribution</th></tr></thead>
+            <tbody>{deepResearch.methods.map((method, index) => <tr key={`${method.label || method.type}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 capitalize">{method.role || "N/A"}</td><td className="p-2">{method.label || method.type || "Method"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.value_per_share, currencyContext)}</td><td className="p-2 text-right font-mono">{typeof method.weight_pct === "number" ? `${method.weight_pct.toFixed(1)}%` : "N/A"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.contribution, currencyContext)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : null}
+      {deepResearch.assumptions?.length ? (
+        <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
+          <table className="w-full min-w-[760px] text-left text-xs">
+            <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Assumption</th><th className="p-2">Method</th><th className="p-2 text-right">Value</th><th className="p-2">Date / Type</th><th className="p-2">Rationale</th></tr></thead>
+            <tbody>{deepResearch.assumptions.map((assumption, index) => <tr key={`${assumption.key}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 font-medium">{assumption.label || assumption.key || "Assumption"}</td><td className="p-2">{assumption.method || "N/A"}</td><td className="p-2 text-right font-mono">{String(assumption.value ?? "N/A")} {assumption.unit || ""}</td><td className="p-2">{assumption.date || "N/A"} · {assumption.source_type || "N/A"}</td><td className="p-2 text-[color:var(--text-secondary)]">{assumption.rationale || "N/A"}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : null}
+      {deepResearch.limitations?.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-[color:var(--text-secondary)]">{deepResearch.limitations.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : null}
+    </div>
   );
 }
 
@@ -1536,6 +1634,7 @@ export function HedgeDashboard({
     [methodTabs],
   );
   const consensusModels = useMemo(() => (data ? consensusModelViews(data) : []), [data]);
+  const deepResearchModel = consensusModels.find((view) => view.key === "deep_research") || null;
   const activeConsensusModel: ConsensusModelView | null =
     consensusModels.find((view) => view.key === consensusModelTab) || consensusModels[0] || null;
   const sectorWeightedMethod = methodTabs.find((tab) => tab.name === SECTOR_WEIGHTED_MODEL_NAME) || null;
@@ -2034,6 +2133,11 @@ export function HedgeDashboard({
       : null;
   const activeConsensusTargetWeight = activeConsensusModel?.targetWeight ?? null;
   const activeConsensusAllocationWeight = activeConsensusModel?.allocationWeight ?? null;
+  const deepResearchConfiguredWeight =
+    typeof consensus?.configured_component_weights?.deep_research === "number" &&
+    Number.isFinite(consensus.configured_component_weights.deep_research)
+      ? Number(consensus.configured_component_weights.deep_research)
+      : 0.2;
   const finalCombinedScore =
     typeof scoreCard?.combined_score === "number" && Number.isFinite(scoreCard.combined_score)
       ? Number(scoreCard.combined_score)
@@ -2057,8 +2161,7 @@ export function HedgeDashboard({
       return;
     }
     if (cleanMethod === DEEP_RESEARCH_MODEL_NAME) {
-      setValuationTab("consensus");
-      setConsensusModelTab("deep_research");
+      setValuationTab("deep-research");
       return;
     }
     setValuationTab(cleanMethod);
@@ -2316,6 +2419,14 @@ export function HedgeDashboard({
                     label="Consensus"
                     tone={tabToneFromTarget(consensusDecision, consensusCurrent)}
                   />
+                  {hasDeepResearchContract ? (
+                    <Tab
+                      active={valuationTab === "deep-research"}
+                      onClick={() => setValuationTab("deep-research")}
+                      label={DEEP_RESEARCH_MODEL_NAME}
+                      tone={tabToneFromTarget(deepResearchModel?.targetPrice, consensusCurrent)}
+                    />
+                  ) : null}
                   {visibleMethodTabs.map((m) => (
                     <Tab
                       key={m.name}
@@ -2497,6 +2608,58 @@ export function HedgeDashboard({
                       </div>
                     ) : null}
                   </div>
+                ) : valuationTab === "deep-research" && deepResearch ? (
+                  <div className="mt-3 space-y-4">
+                    <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-elevated)] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="max-w-3xl">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--text-muted)]">Independent Valuation Model</p>
+                          <h3 className="mt-1 text-xl font-bold text-[color:var(--text-primary)]">Deep Research</h3>
+                          <p className="mt-1 text-sm leading-relaxed text-[color:var(--text-secondary)]">
+                            Independent source-grounded research. It receives raw company evidence but not AI Hedge targets; Python validates and compiles the final valuation before it can enter consensus.
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-[color:var(--border-strong)] px-3 py-1 text-xs font-semibold capitalize text-[color:var(--text-secondary)]">
+                          {deepResearch.status || "Unavailable"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Target Price</p>
+                          <p className={`mt-1 text-2xl font-bold ${toneClassFromTarget(deepResearchModel?.targetPrice, consensusCurrent)}`}>
+                            {fmtTargetOrFloor(deepResearchModel?.targetPrice, currencyContext)}
+                          </p>
+                          <p className={`mt-1 text-xs font-semibold ${toneClassFromSign(targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent))}`}>
+                            {typeof targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent) === "number"
+                              ? `${fmtPct(targetChangePctFromCurrent(deepResearchModel?.targetPrice, consensusCurrent))} vs current`
+                              : "Not included in consensus"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Allocation</p>
+                          <p className={`mt-1 text-2xl font-bold ${toneClassFromSign(deepResearchAllocationPct)}`}>{fmtScoreInputPctOnly(deepResearchAllocationPct)}</p>
+                          <p className="mt-1 text-xs text-[color:var(--text-muted)]">of the {fmtMoneyCompact(NOTIONAL_BASE_USD, currencyContext, "financial")} model notional</p>
+                        </div>
+                        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Component Score</p>
+                          <p className={`mt-1 text-2xl font-bold ${toneClassFromSign(deepResearchModel?.score)}`}>{typeof deepResearchModel?.score === "number" ? deepResearchModel.score.toFixed(2) : "N/A"}</p>
+                          <p className="mt-1 text-xs text-[color:var(--text-muted)]">Before the final disagreement adjustment</p>
+                        </div>
+                        <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Consensus Weight</p>
+                          <p className="mt-1 text-2xl font-bold text-[color:var(--text-primary)]">{formatConsensusWeight(deepResearchConfiguredWeight)}</p>
+                          <p className="mt-1 text-xs text-[color:var(--text-muted)]">
+                            Effective target weight {deepResearchModel?.targetWeight !== null && deepResearchModel?.targetWeight !== undefined ? formatConsensusWeight(deepResearchModel.targetWeight) : "0%"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <DeepResearchDetails deepResearch={deepResearch} currencyContext={currencyContext} />
+                      </div>
+                    </section>
+                  </div>
                 ) : valuationTab === "consensus" ? (
                   <div className="mt-3 space-y-4">
                     <section className="rounded-xl border border-[color:var(--consensus-border)] bg-[color:var(--consensus-soft)] p-4">
@@ -2604,46 +2767,12 @@ export function HedgeDashboard({
                           </div>
                         ) : null}
 
-                        {activeConsensusModel.key === "deep_research" ? (
-                          <div className="mt-5 space-y-4">
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
-                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Status</p>
-                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{deepResearch?.status || "Unavailable"}</p>
-                              </div>
-                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
-                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Rating / Horizon</p>
-                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{deepResearch?.rating || "N/A"} · {deepResearch?.horizon || "N/A"}</p>
-                              </div>
-                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
-                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Estimated Cost</p>
-                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch?.cost_usd === "number" ? `$${deepResearch.cost_usd.toFixed(4)}` : "N/A"}</p>
-                              </div>
-                              <div className="rounded-lg border border-[color:var(--border-subtle)] p-3">
-                                <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">Duration</p>
-                                <p className="mt-1 font-semibold text-[color:var(--text-primary)]">{typeof deepResearch?.duration_seconds === "number" ? `${(deepResearch.duration_seconds / 60).toFixed(1)} min` : "N/A"}</p>
-                              </div>
-                            </div>
-                            {deepResearch?.unavailable_reason ? (
-                              <p className="rounded-lg border border-[color:var(--warning-border)] bg-[color:var(--warning-soft)] p-3 text-sm text-[color:var(--warning-text)]">Unavailable: {deepResearch.unavailable_reason}</p>
-                            ) : null}
-                            {deepResearch?.methods?.length ? (
-                              <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
-                                <table className="w-full min-w-[620px] text-left text-xs">
-                                  <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Role</th><th className="p-2">Method</th><th className="p-2 text-right">Value / Share</th><th className="p-2 text-right">Weight</th><th className="p-2 text-right">Contribution</th></tr></thead>
-                                  <tbody>{deepResearch.methods.map((method, index) => <tr key={`${method.label || method.type}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 capitalize">{method.role || "N/A"}</td><td className="p-2">{method.label || method.type || "Method"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.value_per_share, currencyContext)}</td><td className="p-2 text-right font-mono">{typeof method.weight_pct === "number" ? `${method.weight_pct.toFixed(1)}%` : "N/A"}</td><td className="p-2 text-right font-mono">{fmtTargetOrFloor(method.contribution, currencyContext)}</td></tr>)}</tbody>
-                                </table>
-                              </div>
-                            ) : null}
-                            {deepResearch?.assumptions?.length ? (
-                              <div className="overflow-x-auto rounded-lg border border-[color:var(--border-subtle)]">
-                                <table className="w-full min-w-[760px] text-left text-xs">
-                                  <thead className="bg-[color:var(--surface)] text-[color:var(--text-muted)]"><tr><th className="p-2">Assumption</th><th className="p-2">Method</th><th className="p-2 text-right">Value</th><th className="p-2">Date / Type</th><th className="p-2">Rationale</th></tr></thead>
-                                  <tbody>{deepResearch.assumptions.map((assumption, index) => <tr key={`${assumption.key}-${index}`} className="border-t border-[color:var(--border-subtle)]"><td className="p-2 font-medium">{assumption.label || assumption.key || "Assumption"}</td><td className="p-2">{assumption.method || "N/A"}</td><td className="p-2 text-right font-mono">{String(assumption.value ?? "N/A")} {assumption.unit || ""}</td><td className="p-2">{assumption.date || "N/A"} · {assumption.source_type || "N/A"}</td><td className="p-2 text-[color:var(--text-secondary)]">{assumption.rationale || "N/A"}</td></tr>)}</tbody>
-                                </table>
-                              </div>
-                            ) : null}
-                            {deepResearch?.limitations?.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-[color:var(--text-secondary)]">{deepResearch.limitations.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : null}
+                        {activeConsensusModel.key === "deep_research" && deepResearch ? (
+                          <div className="mt-5">
+                            <DeepResearchDetails
+                              deepResearch={deepResearch}
+                              currencyContext={currencyContext}
+                            />
                           </div>
                         ) : null}
                       </section>

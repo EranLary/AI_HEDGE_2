@@ -33,7 +33,7 @@ portfolio, and trading topology, see `docs/architecture/system-map.md`.
 10. Run the valuation blocks in parallel and aggregate their structured results.
 11. Build Wall St, Financials, and Technical Analysis sidecars; merge final
     analysis sections and the post-valuation TradingAgents decision.
-12. Collect Deep Research within its 40-minute/$1.50 limits. Timeout, budget, or
+12. Collect Deep Research within its 60-minute/$1.50 limits. Timeout, budget, or
     research failure is recorded as unavailable and does not fail the report.
 13. Build the final dashboard JSON and apply the four-component consensus.
 14. Upload available artifacts through the configured Local/R2 artifact store.

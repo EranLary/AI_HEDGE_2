@@ -2452,7 +2452,7 @@ def _run_ticker_valuation_impl(
     deep_research_valuation_md = ""
     if deep_research_process is not None:
         try:
-            deep_research_payload = deep_research_process.collect(timeout_seconds=2400)
+            deep_research_payload = deep_research_process.collect(timeout_seconds=3600)
             artifact_paths = deep_research_payload.get("artifacts")
             artifact_paths = artifact_paths if isinstance(artifact_paths, dict) else {}
             stable_names = {

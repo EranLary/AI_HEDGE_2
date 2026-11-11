@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +35,18 @@ from ai_hedge.deep_research.valuation_policy import (
 
 def _usage(**values: int) -> SimpleNamespace:
     return SimpleNamespace(usage=SimpleNamespace(**values))
+
+
+def _response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=SimpleNamespace(
+            prompt_tokens=100,
+            completion_tokens=max(1, len(content) // 4),
+            prompt_cache_hit_tokens=0,
+            prompt_cache_miss_tokens=100,
+        ),
+    )
 
 
 def test_parse_json_accepts_first_object_before_trailing_content() -> None:
@@ -176,6 +189,172 @@ def test_model_call_is_rejected_before_it_can_exceed_cost_cap() -> None:
             model=DEEPSEEK_PRO_MODEL,
             messages=[{"role": "user", "content": "x" * 10_000}],
         )
+
+
+def test_empty_final_report_is_retried_once() -> None:
+    responses = iter([_response(""), _response("# Part I — Recovered report")])
+    engine = DeepSeekResearchEngine(
+        client=SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **_kwargs: next(responses))
+            )
+        ),
+        now=lambda: datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+    )
+
+    report = engine._write_report(
+        snapshot=CompanySnapshot(
+            ticker="TEST",
+            company_name="Test Company",
+            exchange="Nasdaq",
+            security_type="EQUITY",
+            quote_currency="USD",
+            reporting_currency="USD",
+            current_price=10.0,
+            as_of_utc="2026-10-06T07:00:00Z",
+        ),
+        mandate="Research TEST",
+        plan={},
+        evidence={},
+        source_packet=[],
+        compiled={"valid": False},
+        valuation_case={},
+        compiled_ok=False,
+    )
+
+    assert "Recovered report" in report
+    assert [row["stage"] for row in engine.usage.calls] == [
+        "final_report",
+        "final_report_empty_retry",
+    ]
+
+
+def test_empty_final_report_fails_after_one_retry() -> None:
+    engine = DeepSeekResearchEngine(
+        client=SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **_kwargs: _response(""))
+            )
+        ),
+        now=lambda: datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(RuntimeError, match="after one retry"):
+        engine._write_report(
+            snapshot=CompanySnapshot(
+                ticker="TEST",
+                company_name="Test Company",
+                exchange="Nasdaq",
+                security_type="EQUITY",
+                quote_currency="USD",
+                reporting_currency="USD",
+                current_price=10.0,
+                as_of_utc="2026-10-06T07:00:00Z",
+            ),
+            mandate="Research TEST",
+            plan={},
+            evidence={},
+            source_packet=[],
+            compiled={"valid": False},
+            valuation_case={},
+            compiled_ok=False,
+        )
+
+    assert len(engine.usage.calls) == 2
+
+
+def test_empty_report_retry_respects_run_deadline() -> None:
+    provider_calls = 0
+
+    def empty_response(**_kwargs: object) -> SimpleNamespace:
+        nonlocal provider_calls
+        provider_calls += 1
+        return _response("")
+
+    engine = DeepSeekResearchEngine(
+        client=SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=empty_response)
+            )
+        ),
+        now=lambda: datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(TimeoutError, match="empty final report recovery"):
+        engine._write_report(
+            snapshot=CompanySnapshot(
+                ticker="TEST",
+                company_name="Test Company",
+                exchange="Nasdaq",
+                security_type="EQUITY",
+                quote_currency="USD",
+                reporting_currency="USD",
+                current_price=10.0,
+                as_of_utc="2026-10-06T07:00:00Z",
+            ),
+            mandate="Research TEST",
+            plan={},
+            evidence={},
+            source_packet=[],
+            compiled={"valid": False},
+            valuation_case={},
+            compiled_ok=False,
+            deadline=0,
+        )
+
+    assert provider_calls == 1
+
+
+def test_failed_engine_run_writes_usage_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moments = iter(
+        [
+            datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+            datetime(2026, 10, 6, 7, tzinfo=timezone.utc),
+            datetime(2026, 10, 6, 7, tzinfo=timezone.utc) + timedelta(seconds=12),
+        ]
+    )
+    engine = DeepSeekResearchEngine(
+        client=SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: _response("intermediate")
+                )
+            )
+        ),
+        now=lambda: next(moments),
+    )
+
+    def fail_run(*_args: object, **_kwargs: object) -> DeepSeekResearchResult:
+        engine._complete(
+            stage="final_report",
+            model=DEEPSEEK_PRO_MODEL,
+            messages=[{"role": "user", "content": "report"}],
+        )
+        raise RuntimeError("forced final report failure")
+
+    monkeypatch.setattr(engine, "_run", fail_run)
+    snapshot = CompanySnapshot(
+        ticker="TEST",
+        company_name="Test Company",
+        exchange="Nasdaq",
+        security_type="EQUITY",
+        quote_currency="USD",
+        reporting_currency="USD",
+        current_price=10.0,
+        as_of_utc="2026-10-06T07:00:00Z",
+    )
+
+    with pytest.raises(RuntimeError, match="forced final report failure"):
+        engine.run(snapshot, output_root=tmp_path)
+
+    manifest_path = next((tmp_path / "deepseek" / "TEST").glob("run-*/research_manifest.json"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["duration_seconds"] == pytest.approx(12.0)
+    assert manifest["usage_and_cost"]["estimated_cost_usd"] > 0
+    assert manifest["usage_and_cost"]["calls"][-1]["stage"] == "final_report"
 
 
 class _FakeSearchClient:

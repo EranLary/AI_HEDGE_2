@@ -136,7 +136,16 @@ class DeepResearchProcess:
         return unavailable_summary("failed", reason)
 
 
-def unavailable_summary(status: str, reason: str, **diagnostics: Any) -> dict[str, Any]:
+def unavailable_summary(
+    status: str,
+    reason: str,
+    *,
+    duration_seconds: float | None = None,
+    cost_usd: float | None = None,
+    models: Mapping[str, Any] | None = None,
+    artifacts: Mapping[str, Any] | None = None,
+    **diagnostics: Any,
+) -> dict[str, Any]:
     safe_reason = _public_error_text(reason)
     return {
         "status": status,
@@ -150,16 +159,70 @@ def unavailable_summary(status: str, reason: str, **diagnostics: Any) -> dict[st
         "limitations": [],
         "quality": {"publication_status": "red"},
         "provider": "deepseek",
-        "models": {},
-        "duration_seconds": None,
-        "cost_usd": None,
-        "artifacts": {},
+        "models": dict(models or {}),
+        "duration_seconds": duration_seconds,
+        "cost_usd": cost_usd,
+        "artifacts": dict(artifacts or {}),
         "diagnostics": {
             key: _public_error_text(value, fallback="")
             for key, value in diagnostics.items()
             if value
         },
     }
+
+
+def failed_run_summary(
+    *,
+    output_root: Path,
+    ticker: str,
+    status: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Preserve bounded telemetry and partial artifacts for a failed engine run."""
+
+    ticker_root = Path(output_root).resolve() / "deepseek" / ticker
+    run_dirs = sorted(
+        (path for path in ticker_root.glob("run-*") if path.is_dir()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not run_dirs:
+        return unavailable_summary(status, reason)
+    run_dir = run_dirs[0]
+    manifest_path = run_dir / "research_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return unavailable_summary(status, reason)
+    usage = manifest.get("usage_and_cost")
+    usage = usage if isinstance(usage, Mapping) else {}
+    calls = usage.get("calls")
+    calls = calls if isinstance(calls, list) else []
+    last_call = calls[-1] if calls and isinstance(calls[-1], Mapping) else {}
+    artifact_candidates = {
+        "manifest": manifest_path,
+        "evidence_ledger": run_dir / "evidence_ledger.json",
+        "valuation_case": run_dir / "valuation_case.json",
+        "compiled_result": run_dir / "valuation_compiled.json",
+    }
+    artifacts = {
+        key: str(path)
+        for key, path in artifact_candidates.items()
+        if path.exists()
+    }
+    return unavailable_summary(
+        status,
+        reason,
+        duration_seconds=_finite(manifest.get("duration_seconds")),
+        cost_usd=_finite(usage.get("estimated_cost_usd")),
+        models={
+            "controller": manifest.get("controller_model"),
+            "helper": manifest.get("helper_model"),
+        },
+        artifacts=artifacts,
+        usage_call_count=len(calls),
+        last_completed_stage=last_call.get("stage"),
+    )
 
 
 def start_isolated_research(

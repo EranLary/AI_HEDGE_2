@@ -27,7 +27,7 @@ supply a built-in web-search tool. Trafilatura is the first HTML extractor and
 DDGS extraction is the fallback. DeepSeek Flash drives
 the iterative retrieval loop; V4 Pro plans the investigation, builds the strict
 valuation case, and writes the report. Default production safeguards are a
-$1.50 estimated usage cap, a 40-minute deadline (60-minute hard maximum), 80 tool calls, 36
+$1.50 estimated usage cap, a 60-minute deadline, 80 tool calls, 36
 searches, 30 opened sources, up to two focused valuation-case repairs, and one
 report repair. The second case repair exists for compiler-localized defects; it
 does not weaken or auto-correct the valuation contract.

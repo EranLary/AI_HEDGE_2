@@ -15,7 +15,7 @@ def production_config() -> DeepSeekResearchConfig:
     return replace(
         configured,
         max_cost_usd=min(configured.max_cost_usd, 1.5),
-        max_seconds=min(configured.max_seconds, 2400),
+        max_seconds=min(configured.max_seconds, 3600),
     )
 
 

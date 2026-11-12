@@ -250,7 +250,7 @@ class DeepSeekResearchConfig:
     helper_model: str = DEEPSEEK_FLASH_MODEL
     reasoning_effort: str = "max"
     max_cost_usd: float = 1.5
-    max_seconds: int = 2400
+    max_seconds: int = 3600
     max_tool_calls: int = 80
     max_search_queries: int = 36
     max_opened_sources: int = 30
@@ -291,7 +291,7 @@ class DeepSeekResearchConfig:
 
         return cls(
             max_cost_usd=number("DEEPSEEK_RESEARCH_MAX_COST_USD", 1.5),
-            max_seconds=integer("DEEPSEEK_RESEARCH_MAX_SECONDS", 2400, 3600),
+            max_seconds=integer("DEEPSEEK_RESEARCH_MAX_SECONDS", 3600, 3600),
             max_tool_calls=integer("DEEPSEEK_RESEARCH_MAX_TOOL_CALLS", 80, 120),
             max_search_queries=integer(
                 "DEEPSEEK_RESEARCH_MAX_SEARCH_QUERIES", 36, 60

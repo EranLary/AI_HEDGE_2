@@ -113,12 +113,12 @@ def test_process_timeout_is_fail_open_and_kills_worker(tmp_path: Path) -> None:
 
 def test_production_worker_clamps_env_overrides_to_policy_limits(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_RESEARCH_MAX_COST_USD", "9")
-    monkeypatch.setenv("DEEPSEEK_RESEARCH_MAX_SECONDS", "3600")
+    monkeypatch.setenv("DEEPSEEK_RESEARCH_MAX_SECONDS", "7200")
 
     config = production_config()
 
     assert config.max_cost_usd == 1.5
-    assert config.max_seconds == 2400
+    assert config.max_seconds == 3600
 
 
 def test_child_environment_bootstraps_source_tree_without_existing_pythonpath(monkeypatch) -> None:
